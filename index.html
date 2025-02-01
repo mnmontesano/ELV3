@@ -221,6 +221,32 @@
         .content-section.active {
             display: block;
         }
+
+        .disclaimer {
+            text-align: center;
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 10px;
+        }
+
+        /* Show buttons by default; hide dropdown */
+        #tabButtons {
+            display: flex;
+        }
+
+        #tabDropdown {
+            display: none;
+        }
+
+        /* For small screens, hide buttons and show dropdown */
+        @media (max-width: 600px) {
+            #tabButtons {
+                display: none;
+            }
+            #tabDropdown {
+                display: block;
+            }
+        }
     </style>
 </head>
 <body>
@@ -229,24 +255,35 @@
     </a>
     <h1>ELV3 Cheat Sheet</h1>
 
-    <div class="tab-buttons">
-        <button onclick="showTab('main')" id="mainTab" class="tab-button">Main</button>
-        <button onclick="showTab('dob')" id="dobTab" class="tab-button">DOB NOW</button>
+    <!-- Button-based Tabs (default for larger screens) -->
+    <div id="tabButtons" class="tab-buttons">
+         <button onclick="showTab('main')" id="mainTab" class="tab-button">Main</button>
+         <button onclick="showTab('dob')" id="dobTab" class="tab-button">DOB NOW</button>
+         <button onclick="showTab('dates')" id="datesTab" class="tab-button">Dates</button>
+    </div>
+
+    <!-- Dropdown-based Tabs (visible on small screens) -->
+    <div id="tabDropdown" class="tab-dropdown" style="margin: 20px auto; text-align: center;">
+         <select id="tabSelect" onchange="showTab(this.value)" style="font-size: 1.2em; padding: 5px; text-align: center; text-align-last: center;">
+             <option value="main">Main</option>
+             <option value="dob">DOB NOW</option>
+             <option value="dates">Dates</option>
+         </select>
     </div>
 
     <div id="mainContent" class="content-section active">
         <div class="input-group">
-            <input type="text" id="numInput" placeholder="Enter Elevator Part Number">
+            <input type="text" id="numInput" placeholder="Enter Elevator Part Number" maxlength="3">
             <div id="numResult" class="result"></div>
         </div>
 
         <div class="input-group">
-            <input type="text" id="letterInput" placeholder="Enter Violating Condition">
+            <input type="text" id="letterInput" placeholder="Enter Violating Condition" maxlength="2">
             <div id="letterResult" class="result"></div>
         </div>
 
         <div class="input-group">
-            <input type="text" id="secondaryNumInput" placeholder="Enter Suggested Remedy">
+            <input type="text" id="secondaryNumInput" placeholder="Enter Suggested Remedy" maxlength="2">
             <div id="secondaryNumResult" class="result"></div>
         </div>
 
@@ -267,9 +304,22 @@
     </div>
 
     <div id="dobContent" class="content-section">
+        <button onclick="refreshDOB()" style="display: block; margin: 10px auto; padding: 8px 16px;">Refresh DOB Page</button>
         <div class="dob-viewer">
             <iframe src="https://a810-dobnow.nyc.gov/publish/Index.html#!/" frameborder="0"></iframe>
         </div>
+        <div class="disclaimer">
+            <span style="color: red;">Disclaimer: The DOB NOW page is provided by the New York City Department of Buildings. This embeded page should not be used as an official source for filing and should only be used to quickly look up information related to a building or device.</span>
+        </div>
+    </div>
+
+    <div id="datesContent" class="content-section">
+        <div class="input-group">
+            <label for="dateInput">Select Date:</label>
+            <input type="date" id="dateInput">
+            <button onclick="calculateDate()">Calculate 91 Days After</button>
+        </div>
+        <div id="dateResult" class="result"></div>
     </div>
 
     <script>
@@ -725,10 +775,31 @@
         document.getElementById('Notes').addEventListener('input', function(e) {
             localStorage.setItem('elevatorNotes', e.target.value);
         });
+
+        function calculateDate() {
+            const dateStr = document.getElementById('dateInput').value;
+            if (!dateStr) {
+                document.getElementById('dateResult').textContent = "Please select a date.";
+                return;
+            }
+            // Append T12:00:00 to treat the date as noon, reducing timezone-related shifts
+            const inputDate = new Date(dateStr + "T12:00:00");
+            const resultDate = new Date(inputDate);
+            resultDate.setDate(resultDate.getDate() + 91);
+            document.getElementById('dateResult').textContent = "91 days after " + inputDate.toLocaleDateString() + " is " + resultDate.toLocaleDateString();
+        }
+
+        function refreshDOB() {
+            const iframe = document.querySelector('#dobContent .dob-viewer iframe');
+            if (iframe) {
+                // Reassigning src forces the iframe to reload
+                iframe.src = iframe.src;
+            }
+        }
     </script>
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
-    <div class="credit-text">Designed by Michael N. Montesano</div>
+    <div class="credit-text">Created by Michael N. Montesano</div>
     <div class="social-icons">
         <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">
             <img src="linkedin-icon.svg" alt="LinkedIn" class="social-icon">
