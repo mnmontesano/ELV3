@@ -317,9 +317,14 @@
         <div class="input-group">
             <label for="dateInput">Select Date:</label>
             <input type="date" id="dateInput">
-            <button onclick="calculateDate()">Calculate 91 Days After</button>
         </div>
-        <div id="dateResult" class="result"></div>
+        <div class="input-group date-buttons-group" style="display: flex; justify-content: center; gap: 10px;">
+            <button onclick="calculateDate(30)" style="display: inline-block; margin: 0;">30 Days</button>
+            <button onclick="calculateDate(60)" style="display: inline-block; margin: 0;">60 Days</button>
+            <button onclick="calculateDate(90)" style="display: inline-block; margin: 0;">90 Days</button>
+        </div>
+        <div id="dateResult" class="result" style="width:80%;"></div>
+        <div id="dateSpelledResult" class="result" style="width:80%;"></div>
     </div>
 
     <script>
@@ -776,17 +781,24 @@
             localStorage.setItem('elevatorNotes', e.target.value);
         });
 
-        function calculateDate() {
+        function calculateDate(days) {
             const dateStr = document.getElementById('dateInput').value;
             if (!dateStr) {
                 document.getElementById('dateResult').textContent = "Please select a date.";
+                document.getElementById('dateSpelledResult').textContent = "";
                 return;
             }
             // Append T12:00:00 to treat the date as noon, reducing timezone-related shifts
             const inputDate = new Date(dateStr + "T12:00:00");
             const resultDate = new Date(inputDate);
-            resultDate.setDate(resultDate.getDate() + 91);
-            document.getElementById('dateResult').textContent = "91 days after " + inputDate.toLocaleDateString() + " is " + resultDate.toLocaleDateString();
+            resultDate.setDate(resultDate.getDate() + days);
+            document.getElementById('dateResult').textContent = days + " days after " + inputDate.toLocaleDateString() + " is " + resultDate.toLocaleDateString();
+
+            // Spelled-out format using long options
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            const spelledInput = inputDate.toLocaleDateString('en-US', options);
+            const spelledResult = resultDate.toLocaleDateString('en-US', options);
+            document.getElementById('dateSpelledResult').textContent = "" + spelledInput + " becomes " + spelledResult;
         }
 
         function refreshDOB() {
