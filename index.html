@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ELV3 Cheat Sheet</title>
+    <link rel="icon" type="image/png" href="https://github.com/mnmontesano/ELV3/blob/main/ELV3%20Cheat%20Sheet%20Icon.png?raw=true">
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
@@ -254,6 +255,183 @@
                 display: block;
             }
         }
+
+        .main-container {
+            display: flex;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .main-left {
+            flex: 1;
+            min-width: 0;  /* Prevents flex item from overflowing */
+        }
+
+        .reference-panel {
+            width: 350px;  /* Slightly wider to accommodate content */
+            padding: 20px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            height: 80vh;  /* Set a fixed height */
+            overflow-y: auto;  /* Enable scrolling */
+            display: none;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+
+        .reference-panel ul {
+            padding-left: 20px;
+            margin: 10px 0;
+        }
+
+        .reference-panel li {
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+
+        .reference-panel h3 {
+            background-color: #f5f5f5;
+            padding: 10px 0;
+            margin: 0;
+            clear: both;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .reference-panel {
+                background-color: #333;
+                box-shadow: 0 0 10px rgba(255,255,255,0.1);
+            }
+            .reference-panel h3 {
+                background-color: #333;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .reference-panel {
+                width: 90%;
+                max-height: 80vh;
+                left: 50%;
+                transform: translate(-50%, -50%);
+            }
+        }
+
+        .show-reference-mobile {
+            display: none;
+        }
+
+        @media (max-width: 900px) {
+            .show-reference-mobile {
+                display: block;
+                margin: 10px auto;
+            }
+        }
+
+        .toggle-reference {
+            position: fixed;
+            right: 20px;
+            top: 20px;
+            z-index: 1001;
+            padding: 8px 16px;
+            background-color: #000;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        /* Add this media query to adjust button position on smaller screens */
+        @media (max-width: 900px) {
+            .toggle-reference {
+                position: static;  /* Change from fixed to static positioning */
+                display: block;
+                margin: 10px auto;  /* Center the button */
+                width: fit-content;
+            }
+        }
+
+        /* Existing dark mode styles */
+        @media (prefers-color-scheme: dark) {
+            .toggle-reference {
+                background-color: #fff;
+                color: #000;
+            }
+            .toggle-reference:hover {
+                background-color: #ccc;
+            }
+        }
+
+        /* Add these styles to your existing CSS */
+        .reference-panel {
+            /* ... existing styles ... */
+            position: fixed;
+            z-index: 1000;
+        }
+
+        .reference-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: none;
+            z-index: 999;
+        }
+
+        .close-reference {
+            position: sticky;  /* Change from absolute to sticky */
+            top: 0;
+            right: 10px;
+            background: none;
+            border: none;
+            font-size: 24px;  /* Make it slightly bigger */
+            cursor: pointer;
+            color: #666;
+            padding: 5px 10px;
+            float: right;     /* Add float to position it on the right */
+            z-index: 2;       /* Ensure it's above other content */
+            margin-top: -5px; /* Adjust vertical position */
+        }
+
+        .reference-panel h3 {
+            background-color: #f5f5f5;
+            padding: 10px 0;
+            margin: 0;
+            clear: both;
+        }
+
+        .close-reference:hover {
+            color: #000;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .reference-panel h3 {
+                background-color: #333;
+            }
+            .close-reference {
+                color: #999;
+            }
+            .close-reference:hover {
+                color: #fff;
+            }
+        }
+
+        .reference-panel ul li[style*="font-weight: bold"] {
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 5px;
+            margin-top: 20px;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .reference-panel ul li[style*="font-weight: bold"] {
+                border-bottom-color: #666;
+            }
+        }
     </style>
 </head>
 <body>
@@ -281,35 +459,219 @@
     </div>
 
     <div id="mainContent" class="content-section active">
-        <div class="input-group">
-            <input type="text" id="numInput" placeholder="Enter Elevator Part Number">
-            <div id="numResult" class="result"></div>
+        <button class="toggle-reference" onclick="toggleReference()">Quick Reference</button>
+        <div class="main-container">
+            <div class="main-left">
+                <div class="input-group">
+                    <input type="text" id="numInput" placeholder="Enter Elevator Part Number">
+                    <div id="numResult" class="result"></div>
+                </div>
+
+                <div class="input-group">
+                    <input type="text" id="letterInput" placeholder="Enter Violating Condition">
+                    <div id="letterResult" class="result"></div>
+                </div>
+
+                <div class="input-group">
+                    <input type="text" id="secondaryNumInput" placeholder="Enter Suggested Remedy">
+                    <div id="secondaryNumResult" class="result"></div>
+                </div>
+
+                <button onclick="clearInputs()">Clear</button>
+                <button onclick="togglePdfViewer()" id="pdfToggleButton">Show PDF</button>
+
+                <div class="image-viewer hidden" id="pdfViewer">
+                    <iframe src="DOB ELV3 - CAT.pdf#view=FitH&zoom=100" type="application/pdf" width="100%" height="100%" 
+                        onerror="this.innerHTML='<p>PDF failed to load. Please ensure the file exists.</p>'">
+                        <p>Unable to display PDF file. <a href="DOB ELV3 - CAT.pdf">Download</a> instead.</p>
+                    </iframe>
+                </div>
+
+                <div class="notes-container">
+                    <h3>Notes</h3>
+                    <textarea id="Notes" class="notes-textarea" 
+                        placeholder="Enter your notes here..."></textarea>
+                </div>
+            </div>
         </div>
 
-        <div class="input-group">
-            <input type="text" id="letterInput" placeholder="Enter Violating Condition">
-            <div id="letterResult" class="result"></div>
-        </div>
+        <!-- Add this div right after your mainContent div opens -->
+        <div class="reference-overlay" onclick="toggleReference()"></div>
 
-        <div class="input-group">
-            <input type="text" id="secondaryNumInput" placeholder="Enter Suggested Remedy">
-            <div id="secondaryNumResult" class="result"></div>
-        </div>
+        <!-- Modify your reference panel div to include the close button -->
+        <div class="reference-panel">
+            <button class="close-reference" onclick="toggleReference()">×</button>
+            <h3>Quick Reference</h3>
+            
+            <p><strong>Part Numbers:</strong></p>
+            <ul>
+                <li style="font-weight: bold; color: #666;">Inside Car (01-15)</li>
+                <li>01: Emergency Stop Switch</li>
+                <li>02: Alarm System</li>
+                <li>03: Car Enclosure</li>
+                <li>04: Side Emergency Exit</li>
+                <li>05: Car Door/Gate</li>
+                <li>06: Car Door/Gate Contact</li>
+                <li>07: Door Reopening Device</li>
+                <li>08: Car Floor to Landing Still</li>
+                <li>09: Car Floor</li>
+                <li>10: Car Door Gibs</li>
+                <li>11: Car Button Station</li>
+                <li>12: Car Lighting</li>
+                <li>13: Emergency Lighting</li>
+                <li>14: Car Mirror</li>
+                <li>15: Certificate Frame</li>
 
-        <button onclick="clearInputs()">Clear</button>
-        <button onclick="togglePdfViewer()" id="pdfToggleButton">Show PDF</button>
+                <li style="font-weight: bold; margin-top: 15px; color: #666;">Outside Hoistway (16-25)</li>
+                <li>16: Hoistway Doors</li>
+                <li>17: Hoistway Door Gibs</li>
+                <li>18: Hoistway Door Reinforcements</li>
+                <li>19: Hoistway Door Safety Retainer</li>
+                <li>20: Vision Panel</li>
+                <li>21: Interlocks</li>
+                <li>22: Parking Device</li>
+                <li>23: Hall Button Station</li>
+                <li>24: Indicators</li>
+                <li>25: Door Safety Retainer</li>
 
-        <div class="image-viewer hidden" id="pdfViewer">
-            <iframe src="DOB ELV3 - CAT.pdf#view=FitH&zoom=100" type="application/pdf" width="100%" height="100%" 
-                onerror="this.innerHTML='<p>PDF failed to load. Please ensure the file exists.</p>'">
-                <p>Unable to display PDF file. <a href="DOB ELV3 - CAT.pdf">Download</a> instead.</p>
-            </iframe>
-        </div>
+                <li style="font-weight: bold; margin-top: 15px; color: #666;">Top of Car (26-39)</li>
+                <li>26: Top Emergency Exit Cover</li>
+                <li>27: Governor Release Carrier</li>
+                <li>28: Door Hangers & Connectors</li>
+                <li>29: Door Operator</li>
+                <li>30: Normal Limits</li>
+                <li>31: Final Limits</li>
+                <li>32: Guide Shoes / Roller Guides</li>
+                <li>33: Counterweight</li>
+                <li>34: Hoistway</li>
+                <li>35: Electrical Wiring</li>
+                <li>36: Pipes and Ducts</li>
+                <li>37: Overhead & Deflector Sheave</li>
+                <li>38: Traveling Cable & Junction</li>
+                <li>39: Car Top</li>
 
-        <div class="notes-container">
-            <h3>Notes</h3>
-            <textarea id="Notes" class="notes-textarea" 
-                placeholder="Enter your notes here..."></textarea>
+                <li style="font-weight: bold; margin-top: 15px; color: #666;">Machine Room (40-69)</li>
+                <li>40: Machine Room</li>
+                <li>41: Machine Room Door</li>
+                <li>42: Controller—Selector</li>
+                <li>43: Reverse Phase Relay</li>
+                <li>44: Traction Sheave</li>
+                <li>45: Governor</li>
+                <li>46: Governor Switch</li>
+                <li>47: Drum</li>
+                <li>48: Pump Unit</li>
+                <li>49: Drum Machine Limit SW</li>
+                <li>50: Generator</li>
+                <li>51: Slack Rope Switch</li>
+                <li>52: Hoist Cables</li>
+                <li>53: Governor Ropes</li>
+                <li>54: Car Counterweight Rope</li>
+                <li>55: Drum Counterweight Rope</li>
+                <li>56: Hoist Machine</li>
+                <li>57: Hoist Motor</li>
+                <li>58: Worm / Gear / Bearings</li>
+                <li>59: Machine Brake</li>
+                <li>60: Lighting Machine Space</li>
+                <li>61: Machine Disconnect SW</li>
+                <li>62: Commutator</li>
+                <li>63: Motor Brushes</li>
+                <li>64: NYC Device #</li>
+                <li>65: Unintended Car Movement</li>
+                <li>66: Emergency Brake/Rope Gripper</li>
+                <li>67: Communication</li>
+                <li>68: Maintenance Log</li>
+                <li>69: Code Data Plate</li>
+
+                <li style="font-weight: bold; margin-top: 15px; color: #666;">Pit (70-82)</li>
+                <li>70: Pit</li>
+                <li>71: Pit Light</li>
+                <li>72: Pit Stop Switch</li>
+                <li>73: Car Guide-Rails & Brackets</li>
+                <li>74: Cwt Guide-Rails & Brackets</li>
+                <li>75: Buffers</li>
+                <li>76: Car Safety & Tail Rope</li>
+                <li>77: Underside Platform</li>
+                <li>78: Tension Weight</li>
+                <li>79: Comp / Chains / Ropes / Switch</li>
+                <li>80: Counterweight Runby</li>
+                <li>81: Counterweight Runby Signage</li>
+                <li>82: Plunger Gripper</li>
+
+                <li style="font-weight: bold; margin-top: 15px; color: #666;">Escalator/Moving Walk (83-96)</li>
+                <li>83: Fire Shutters</li>
+                <li>84: Skirt Switch</li>
+                <li>85: Skirt Deflection Device</li>
+                <li>86: Comb Plate / Comb Plate Teeth</li>
+                <li>87: Landing Plate / Impact Switches</li>
+                <li>88: Handrails / Handrail Safeties</li>
+                <li>89: Step / Thread</li>
+                <li>90: Key Switch</li>
+                <li>91: Emergency Stop Button</li>
+                <li>92: Decking and Ballistrades</li>
+                <li>93: Ceiling Guards</li>
+                <li>94: Deck Barricades</li>
+                <li>95: Internal Safeties</li>
+                <li>96: Safety Signage</li>
+
+                <li style="font-weight: bold; margin-top: 15px; color: #666;">All Types (97-100)</li>
+                <li>97: Entire Device</li>
+                <li>98: Current Five Year Tag</li>
+                <li>99: Current One Year Tag</li>
+                <li>100: Miscellaneous</li>
+            </ul>
+
+            <p><strong>Violations:</strong></p>
+            <ul>
+                <li>A: Altered</li>
+                <li>B: Insufficient</li>
+                <li>C: Padlocked</li>
+                <li>D: Unsecured</li>
+                <li>E: Rubbing</li>
+                <li>F: Lost Motion</li>
+                <li>G: Improper Fuses</li>
+                <li>H: Worn</li>
+                <li>I: Damaged</li>
+                <li>J: Misaligned</li>
+                <li>K: Rusted</li>
+                <li>L: Defective</li>
+                <li>M: Missing</li>
+                <li>N: By-Passed</li>
+                <li>O: Dirty</li>
+                <li>P: No Means Of Access</li>
+                <li>Q: Unguarded</li>
+                <li>R: Illegal</li>
+                <li>S: Not Fire Retardant</li>
+                <li>T: Unlabeled</li>
+                <li>U: Device Not Tagged</li>
+                <li>V: Not Level</li>
+                <li>W: Unlocked</li>
+                <li>X: Inoperative</li>
+                <li>Y: Oil Leak</li>
+                <li>Z: Water Leak</li>
+                <li>AA: Carbon Buildup</li>
+                <li>BB: Expired Tag</li>
+            </ul>
+
+            <p><strong>Remedies:</strong></p>
+            <ul>
+                <li>01: Adjust</li>
+                <li>02: Clean</li>
+                <li>03: Install Guards</li>
+                <li>04: Patch</li>
+                <li>05: Perform & File Test</li>
+                <li>06: Properly Secure</li>
+                <li>07: Provide</li>
+                <li>08: Regroove</li>
+                <li>09: Remove</li>
+                <li>10: Repair</li>
+                <li>11: Replace</li>
+                <li>12: Reshackle</li>
+                <li>13: Seal</li>
+                <li>14: Shorten</li>
+                <li>15: Tag Device</li>
+                <li>16: Provide Means of Access</li>
+                <li>17: Re-inspection Required</li>
+            </ul>
         </div>
     </div>
 
@@ -903,6 +1265,21 @@
             newWindow.className = 'dob-viewer';
             newWindow.innerHTML = '<iframe src="https://a810-dobnow.nyc.gov/publish/Index.html#!/" frameborder="0"></iframe>';
             document.getElementById('dobWindows').appendChild(newWindow);
+        }
+
+        function toggleReference() {
+            const panel = document.querySelector('.reference-panel');
+            const overlay = document.querySelector('.reference-overlay');
+            const button = document.querySelector('.toggle-reference');
+            if (panel.style.display === 'block') {
+                panel.style.display = 'none';
+                overlay.style.display = 'none';
+                button.textContent = 'Quick Reference';
+            } else {
+                panel.style.display = 'block';
+                overlay.style.display = 'block';
+                button.textContent = 'Hide Reference';
+            }
         }
     </script>
 
