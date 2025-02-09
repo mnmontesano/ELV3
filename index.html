@@ -120,6 +120,13 @@
             .notes-textarea {
                 width: 90%;
             }
+
+            .date-buttons-group {
+                display: none !important;
+            }
+            .date-dropdown-group {
+                display: block !important;
+            }
         }
 
         .feedback-button {
@@ -260,6 +267,7 @@
          <button onclick="showTab('main')" id="mainTab" class="tab-button">Main</button>
          <button onclick="showTab('dob')" id="dobTab" class="tab-button">DOB NOW</button>
          <button onclick="showTab('dates')" id="datesTab" class="tab-button">Dates</button>
+         <button onclick="showTab('pdf')" id="pdfTab" class="tab-button">PDF</button>
     </div>
 
     <!-- Dropdown-based Tabs (visible on small screens) -->
@@ -268,22 +276,23 @@
              <option value="main">Main</option>
              <option value="dob">DOB NOW</option>
              <option value="dates">Dates</option>
+             <option value="pdf">PDF</option>
          </select>
     </div>
 
     <div id="mainContent" class="content-section active">
         <div class="input-group">
-            <input type="text" id="numInput" placeholder="Enter Elevator Part Number" maxlength="3">
+            <input type="text" id="numInput" placeholder="Enter Elevator Part Number">
             <div id="numResult" class="result"></div>
         </div>
 
         <div class="input-group">
-            <input type="text" id="letterInput" placeholder="Enter Violating Condition" maxlength="2">
+            <input type="text" id="letterInput" placeholder="Enter Violating Condition">
             <div id="letterResult" class="result"></div>
         </div>
 
         <div class="input-group">
-            <input type="text" id="secondaryNumInput" placeholder="Enter Suggested Remedy" maxlength="2">
+            <input type="text" id="secondaryNumInput" placeholder="Enter Suggested Remedy">
             <div id="secondaryNumResult" class="result"></div>
         </div>
 
@@ -291,7 +300,8 @@
         <button onclick="togglePdfViewer()" id="pdfToggleButton">Show PDF</button>
 
         <div class="image-viewer hidden" id="pdfViewer">
-            <iframe src="DOB ELV3 - CAT.pdf#view=FitH&zoom=100" type="application/pdf" width="100%" height="100%">
+            <iframe src="DOB ELV3 - CAT.pdf#view=FitH&zoom=100" type="application/pdf" width="100%" height="100%" 
+                onerror="this.innerHTML='<p>PDF failed to load. Please ensure the file exists.</p>'">
                 <p>Unable to display PDF file. <a href="DOB ELV3 - CAT.pdf">Download</a> instead.</p>
             </iframe>
         </div>
@@ -308,10 +318,15 @@
             <button onclick="refreshDOB()" style="display: inline-block; margin: 0; padding: 8px 16px;">Refresh DOB Page</button>
             <button onclick="popoutDOB()" style="display: inline-block; margin: 0; padding: 8px 16px;">Open in New Window</button>
         </div>
-        <div class="dob-viewer">
-            <iframe src="https://a810-dobnow.nyc.gov/publish/Index.html#!/" frameborder="0"></iframe>
+        <div id="dobWindows">
+            <div class="dob-viewer">
+                <iframe src="https://a810-dobnow.nyc.gov/publish/Index.html#!/" frameborder="0"></iframe>
+            </div>
         </div>
-        <div class="disclaimer">
+        <button onclick="addDOBWindow()" style="display: block; margin: 10px auto 30px auto; padding: 8px 16px;">
+            <span style="font-size: 20px;">+</span> Add DOB Window
+        </button>
+        <div class="disclaimer" style="margin-top: 20px;">
             <span style="color: red;">Disclaimer: The DOB NOW page is provided by the New York City Department of Buildings. This embeded page should not be used as an official source for filing and should only be used to quickly look up information related to a building or device.</span>
         </div>
     </div>
@@ -321,423 +336,438 @@
             <label for="dateInput">Select Date:</label>
             <input type="date" id="dateInput">
         </div>
-        <div class="input-group date-buttons-group" style="display: flex; justify-content: center; gap: 10px;">
+        
+        <!-- Button-based Days (default for larger screens) -->
+        <div class="date-buttons-group" style="display: flex; justify-content: center; gap: 10px;">
             <button onclick="calculateDate(30)" style="display: inline-block; margin: 0;">30 Days</button>
             <button onclick="calculateDate(60)" style="display: inline-block; margin: 0;">60 Days</button>
             <button onclick="calculateDate(90)" style="display: inline-block; margin: 0;">90 Days</button>
+        </div>
+        
+        <!-- Dropdown-based Days (visible on small screens) -->
+        <div class="date-dropdown-group" style="display: none; text-align: center; margin: 10px auto;">
+            <select id="daysSelect" onchange="calculateDate(parseInt(this.value))" style="padding: 8px; width: 200px;">
+                <option value="">Select Days</option>
+                <option value="30">30 Days</option>
+                <option value="60">60 Days</option>
+                <option value="90">90 Days</option>
+            </select>
+        </div>
+
+        <div class="input-group" style="margin-top: 20px;">
+            <input type="number" id="customDays" placeholder="Enter number of days" style="width: 200px;">
+            <button onclick="calculateCustomDate()" style="display: inline-block; margin: 10px;">Calculate Custom Days</button>
         </div>
         <div id="dateResult" class="result" style="width:80%;"></div>
         <div id="dateSpelledResult" class="result" style="width:80%;"></div>
         <button onclick="clearDateInput()">Clear</button>
     </div>
 
-    <script>
-        function numberToWord(number) {
-        var result = "";
-        
-        switch (number) {
-        case "": result = "Enter Number"; break;
-        case "00": result = "Invalid number"; break;
-        case "Invalid number": result = "00"; break;
-        case "01": result = "Emergency Stop Switch"; break;
-        case "Emergency Stop Switch": result = "01"; break;
-        case "02": result = "Alarm System"; break;
-        case "Alarm System": result = "02"; break;
-        case "03": result = "Car Enclosure"; break;
-        case "Car Enclosure": result = "03"; break;
-        case "04": result = "Side Emergency Exit"; break;
-        case "Side Emergency Exit": result = "04"; break;
-        case "05": result = "Car Door/Gate"; break;
-        case "Car Door/Gate": result = "05"; break;
-        case "06": result = "Car Door/Gate Contact"; break;
-        case "Car Door/Gate Contact": result = "06"; break;
-        case "07": result = "Door Reopening Device"; break;
-        case "Door Reopening Device": result = "07"; break;
-        case "08": result = "Car Floor to Landing Still"; break;
-        case "Car Floor to Landing Still": result = "08"; break;
-        case "09": result = "Car Floor"; break;
-        case "Car Floor": result = "09"; break;
-        case "10": result = "Car Door Gibs"; break;
-        case "Car Door Gibs": result = "10"; break;
-        case "11": result = "Car Button Station"; break;
-        case "Car Button Station": result = "11"; break;
-        case "12": result = "Car Lighting"; break;
-        case "Car Lighting": result = "12"; break;
-        case "13": result = "Emergency Lighting"; break;
-        case "Emergency Lighting": result = "13"; break;
-        case "14": result = "Car Mirror"; break;
-        case "Car Mirror": result = "14"; break;
-        case "15": result = "Certificate Frame"; break;
-        case "Certificate Frame": result = "15"; break;
-        case "16": result = "Hoistway Doors"; break;
-        case "Hoistway Doors": result = "16"; break;
-        case "17": result = "Hoistway Door Gibs"; break;
-        case "Hoistway Door Gibs": result = "17"; break;
-        case "18": result = "Hoistway Door Reinforcements"; break;
-        case "Hoistway Door Reinforcements": result = "18"; break;
-        case "19": result = "Hoistway Door Safety Retainer"; break;
-        case "Hoistway Door Safety Retainer": result = "19"; break;
-        case "20": result = "Vision Panel"; break;
-        case "Vision Panel": result = "20"; break;
-        case "21": result = "Interlocks"; break;
-        case "Interlocks": result = "21"; break;
-        case "22": result = "Parking Device"; break;
-        case "Parking Device": result = "22"; break;
-        case "23": result = "Hall Button Station"; break;
-        case "Hall Button Station": result = "23"; break;
-        case "24": result = "Indicators"; break;
-        case "Indicators": result = "24"; break;
-        case "25": result = "Door Safety Retainer"; break;
-        case "Door Safety Retainer": result = "25"; break;
-        case "26": result = "Top Emergency Exit Cover"; break;
-        case "Top Emergency Exit Cover": result = "26"; break;
-        case "27": result = "Governor Release Carrier"; break;
-        case "Governor Release Carrier": result = "27"; break;
-        case "28": result = "Door Hangers & Connectors"; break;
-        case "Door Hangers & Connectors": result = "28"; break;
-        case "29": result = "Door Operator"; break;
-        case "Door Operator": result = "29"; break;
-        case "30": result = "Normal Limits"; break;
-        case "Normal Limits": result = "30"; break;
-        case "31": result = "Final Limits"; break;
-        case "Final Limits": result = "31"; break;
-        case "32": result = "Guide Shoes / Roller Guides"; break;
-        case "Guide Shoes / Roller Guides": result = "32"; break;
-        case "33": result = "Counterweight"; break;
-        case "Counterweight": result = "33"; break;
-        case "34": result = "Hoistway"; break;
-        case "Hoistway": result = "34"; break;
-        case "35": result = "Electrical Wiring"; break;
-        case "Electrical Wiring": result = "35"; break;
-        case "36": result = "Pipes and Ducts"; break;
-        case "Pipes and Ducts": result = "36"; break;
-        case "37": result = "Overhead & Deflector Sheave"; break;
-        case "Overhead & Deflector Sheave": result = "37"; break;
-        case "38": result = "Traveling Cable & Junction"; break;
-        case "Traveling Cable & Junction": result = "38"; break;
-        case "39": result = "Car Top"; break;
-        case "Car Top": result = "39"; break;
-        case "40": result = "Machine Room"; break;
-        case "Machine Room": result = "40"; break;
-        case "41": result = "Machine Room Door"; break;
-        case "Machine Room Door": result = "41"; break;
-        case "42": result = "Controller—Selector"; break;
-        case "Controller—Selector": result = "42"; break;
-        case "43": result = "Reverse Phase Relay"; break;
-        case "Reverse Phase Relay": result = "43"; break;
-        case "44": result = "Traction Sheave"; break;
-        case "Traction Sheave": result = "44"; break;
-        case "45": result = "Governor"; break;
-        case "Governor": result = "45"; break;
-        case "46": result = "Governor Switch"; break;
-        case "Governor Switch": result = "46"; break;
-        case "47": result = "Drum"; break;
-        case "Drum": result = "47"; break;
-        case "48": result = "Pump Unit"; break;
-        case "Pump Unit": result = "48"; break;
-        case "49": result = "Drum Machine Limit SW"; break;
-        case "Drum Machine Limit SW": result = "49"; break;
-        case "50": result = "Generator"; break;
-        case "Generator": result = "50"; break;
-        case "51": result = "Slack Rope Switch"; break;
-        case "Slack Rope Switch": result = "51"; break;
-        case "52": result = "Hoist Cables"; break;
-        case "Hoist Cables": result = "52"; break;
-        case "53": result = "Governor Ropes"; break;
-        case "Governor Ropes": result = "53"; break;
-        case "54": result = "Car Counterweight Rope"; break;
-        case "Car Counterweight Rope": result = "54"; break;
-        case "55": result = "Drum Counterweight Rope"; break;
-        case "Drum Counterweight Rope": result = "55"; break;
-        case "56": result = "Hoist Machine"; break;
-        case "Hoist Machine": result = "56"; break;
-        case "57": result = "Hoist Motor"; break;
-        case "Hoist Motor": result = "57"; break;
-        case "58": result = "Worm / Gear / Bearings"; break;
-        case "Worm / Gear / Bearings": result = "58"; break;
-        case "59": result = "Machine Brake"; break;
-        case "Machine Brake": result = "59"; break;
-        case "60": result = "Lighting Machine Space"; break;
-        case "Lighting Machine Space": result = "60"; break;
-        case "61": result = "Machine Disconnect SW"; break;
-        case "Machine Disconnect SW": result = "61"; break;
-        case "62": result = "Commutator"; break;
-        case "Commutator": result = "62"; break;
-        case "63": result = "Motor Brushes"; break;
-        case "Motor Brushes": result = "63"; break;
-        case "64": result = "NYC Device #"; break;
-        case "NYC Device #": result = "64"; break;
-        case "65": result = "Unintended Car Movement"; break;
-        case "Unintended Car Movement": result = "65"; break;
-        case "66": result = "Emergency Brake/Rope Gripper"; break;
-        case "Emergency Brake/Rope Gripper": result = "66"; break;
-        case "67": result = "Communication"; break;
-        case "Communication": result = "67"; break;
-        case "68": result = "Maintenance Log"; break;
-        case "Maintenance Log": result = "68"; break;
-        case "69": result = "Code Data Plate"; break;
-        case "Code Data Plate": result = "69"; break;
-        case "70": result = "Pit"; break;
-        case "Pit": result = "70"; break;
-        case "71": result = "Pit Light"; break;
-        case "Pit Light": result = "71"; break;
-        case "72": result = "Pit Stop Switch"; break;
-        case "Pit Stop Switch": result = "72"; break;
-        case "73": result = "Car Guide-Rails & Brackets"; break;
-        case "Car Guide-Rails & Brackets": result = "73"; break;
-        case "74": result = "Cwt Guide-Rails & Brackets"; break;
-        case "Cwt Guide-Rails & Brackets": result = "74"; break;
-        case "75": result = "Buffers"; break;
-        case "Buffers": result = "75"; break;
-        case "76": result = "Car Safety & Tail Rope"; break;
-        case "Car Safety & Tail Rope": result = "76"; break;
-        case "77": result = "Underside Platform"; break;
-        case "Underside Platform": result = "77"; break;
-        case "78": result = "Tension Weight"; break;
-        case "Tension Weight": result = "78"; break;
-        case "79": result = "Comp / Chains / Ropes / Switch"; break;
-        case "Comp / Chains / Ropes / Switch": result = "79"; break;
-        case "80": result = "Counterweight Runby"; break;
-        case "Counterweight Runby": result = "80"; break;
-        case "81": result = "Counterweight Runby Signage"; break;
-        case "Counterweight Runby Signage": result = "81"; break;
-        case "82": result = "Plunger Gripper"; break;
-        case "Plunger Gripper": result = "82"; break;
-        case "83": result = "Fire Shutters"; break;
-        case "Fire Shutters": result = "83"; break;
-        case "84": result = "Skirt Switch"; break;
-        case "Skirt Switch": result = "84"; break;
-        case "85": result = "Skirt Deflection Device"; break;
-        case "Skirt Deflection Device": result = "85"; break;
-        case "86": result = "Comb Plate / Comb Plate Teeth"; break;
-        case "Comb Plate / Comb Plate Teeth": result = "86"; break;
-        case "87": result = "Landing Plate / Impact Switches"; break;
-        case "Landing Plate / Impact Switches": result = "87"; break;
-        case "88": result = "Handrails / Handrail Safeties"; break;
-        case "Handrails / Handrail Safeties": result = "88"; break;
-        case "89": result = "Step / Thread"; break;
-        case "Step / Thread": result = "89"; break;
-        case "90": result = "Key Switch"; break;
-        case "Key Switch": result = "90"; break;
-        case "91": result = "Emergency Stop Button"; break;
-        case "Emergency Stop Button": result = "91"; break;
-        case "92": result = "Decking and Ballistrades"; break;
-        case "Decking and Ballistrades": result = "92"; break;
-        case "93": result = "Ceiling Guards"; break;
-        case "Ceiling Guards": result = "93"; break;
-        case "94": result = "Deck Barricades"; break;
-        case "Deck Barricades": result = "94"; break;
-        case "95": result = "Internal Safeties"; break;
-        case "Internal Safeties": result = "95"; break;
-        case "96": result = "Safety Signage"; break;
-        case "Safety Signage": result = "96"; break;
-        case "97": result = "Entire Device"; break;
-        case "Entire Device": result = "97"; break;
-        case "98": result = "Current Five Year Tag"; break;
-        case "Current Five Year Tag": result = "98"; break;
-        case "99": result = "Current One Year Tag"; break;
-        case "Current One Year Tag": result = "99"; break;
-        case "100": result = "Miscellaneous"; break;
-        case "Miscellaneous": result = "100"; break;
-        default: result = "Invalid Number"; break;
-        }
-        
-        if (result !== "Invalid Number" && result !== "Enter Number" && result !== "Invalid number") {
-            var intValue = parseInt(number);
-            if (intValue >= 1 && intValue <= 15) {
-                result += " (Inside Car)";
-            }
-            
-            if (intValue >= 16 && intValue <= 25) {
-                result += " (Outside Hoistway)";
-            }
-            
-            if (intValue >= 26 && intValue <= 39) {
-                result += " (Top of Car)";
-            }
-            
-            if (intValue >= 40 && intValue <= 69) {
-                result += " (Machine Room)";
-            }
-            
-            if (intValue >= 70 && intValue <= 82) {
-                result += " (Pit)";
-            }
-            
-            if (intValue >= 83 && intValue <= 96) {
-                result += " (Escalator/Moving Walk)";
-            }
-            
-            if (intValue >= 97 && intValue <= 100) {
-                result += " (All Types)";
-            }
-        }
-        
-        return result;
-        
-    }
+    <div id="pdfContent" class="content-section">
+        <div class="pdf-viewer" style="width: 100%; height: 80vh;">
+            <iframe src="DOB ELV3 - CAT.pdf#view=FitH&zoom=100" type="application/pdf" width="100%" height="100%" 
+                onerror="this.innerHTML='<p>PDF failed to load. Please ensure the file exists.</p>'">
+                <p>Unable to display PDF file. <a href="DOB ELV3 - CAT.pdf">Download</a> instead.</p>
+            </iframe>
+        </div>
+    </div>
 
-        function letterToWord(letter) {
+    <script>
+        function numberToWord(input) {
+            // Convert input to lowercase for case-insensitive comparison
+            if (typeof input === 'string') {
+                input = input.toLowerCase();
+            }
+            
+            const mapping = {
+                "": "Enter Number",
+                "00": "Invalid number",
+                "01": "Emergency Stop Switch",
+                "1": "Emergency Stop Switch",
+                "emergency stop switch": "01",
+                "02": "Alarm System",
+                "2": "Alarm System",
+                "alarm system": "02",
+                "03": "Car Enclosure",
+                "3": "Car Enclosure",
+                "car enclosure": "03",
+                "04": "Side Emergency Exit",
+                "4": "Side Emergency Exit",
+                "side emergency exit": "04",
+                "05": "Car Door/Gate",
+                "5": "Car Door/Gate",
+                "car door/gate": "05",
+                "06": "Car Door/Gate Contact",
+                "6": "Car Door/Gate Contact",
+                "car door/gate contact": "06",
+                "07": "Door Reopening Device",
+                "7": "Door Reopening Device",
+                "door reopening device": "07",
+                "08": "Car Floor to Landing Still",
+                "8": "Car Floor to Landing Still",
+                "car floor to landing still": "08",
+                "09": "Car Floor",
+                "9": "Car Floor",
+                "car floor": "09",
+                "10": "Car Door Gibs",
+                "car door gibs": "10",
+                "11": "Car Button Station",
+                "car button station": "11",
+                "12": "Car Lighting",
+                "car lighting": "12",
+                "13": "Emergency Lighting",
+                "emergency lighting": "13",
+                "14": "Car Mirror",
+                "car mirror": "14",
+                "15": "Certificate Frame",
+                "certificate frame": "15",
+                "16": "Hoistway Doors",
+                "hoistway doors": "16",
+                "17": "Hoistway Door Gibs",
+                "hoistway door gibs": "17",
+                "18": "Hoistway Door Reinforcements",
+                "hoistway door reinforcements": "18",
+                "19": "Hoistway Door Safety Retainer",
+                "hoistway door safety retainer": "19",
+                "20": "Vision Panel",
+                "vision panel": "20",
+                "21": "Interlocks",
+                "interlocks": "21",
+                "22": "Parking Device",
+                "parking device": "22",
+                "23": "Hall Button Station",
+                "hall button station": "23",
+                "24": "Indicators",
+                "indicators": "24",
+                "25": "Door Safety Retainer",
+                "door safety retainer": "25",
+                "26": "Top Emergency Exit Cover",
+                "top emergency exit cover": "26",
+                "27": "Governor Release Carrier",
+                "governor release carrier": "27",
+                "28": "Door Hangers & Connectors",
+                "door hangers & connectors": "28",
+                "29": "Door Operator",
+                "door operator": "29",
+                "30": "Normal Limits",
+                "normal limits": "30",
+                "31": "Final Limits",
+                "final limits": "31",
+                "32": "Guide Shoes / Roller Guides",
+                "guide shoes / roller guides": "32",
+                "33": "Counterweight",
+                "counterweight": "33",
+                "34": "Hoistway",
+                "hoistway": "34",
+                "35": "Electrical Wiring",
+                "electrical wiring": "35",
+                "36": "Pipes and Ducts",
+                "pipes and ducts": "36",
+                "37": "Overhead & Deflector Sheave",
+                "overhead & deflector sheave": "37",
+                "38": "Traveling Cable & Junction",
+                "traveling cable & junction": "38",
+                "39": "Car Top",
+                "car top": "39",
+                "40": "Machine Room",
+                "machine room": "40",
+                "41": "Machine Room Door",
+                "machine room door": "41",
+                "42": "Controller—Selector",
+                "controller—selector": "42",
+                "43": "Reverse Phase Relay",
+                "reverse phase relay": "43",
+                "44": "Traction Sheave",
+                "traction sheave": "44",
+                "45": "Governor",
+                "governor": "45",
+                "46": "Governor Switch",
+                "governor switch": "46",
+                "47": "Drum",
+                "drum": "47",
+                "48": "Pump Unit",
+                "pump unit": "48",
+                "49": "Drum Machine Limit SW",
+                "drum machine limit sw": "49",
+                "50": "Generator",
+                "generator": "50",
+                "51": "Slack Rope Switch",
+                "slack rope switch": "51",
+                "52": "Hoist Cables",
+                "hoist cables": "52",
+                "53": "Governor Ropes",
+                "governor ropes": "53",
+                "54": "Car Counterweight Rope",
+                "car counterweight rope": "54",
+                "55": "Drum Counterweight Rope",
+                "drum counterweight rope": "55",
+                "56": "Hoist Machine",
+                "hoist machine": "56",
+                "57": "Hoist Motor",
+                "hoist motor": "57",
+                "58": "Worm / Gear / Bearings",
+                "worm / gear / bearings": "58",
+                "59": "Machine Brake",
+                "machine brake": "59",
+                "60": "Lighting Machine Space",
+                "lighting machine space": "60",
+                "61": "Machine Disconnect SW",
+                "machine disconnect sw": "61",
+                "62": "Commutator",
+                "commutator": "62",
+                "63": "Motor Brushes",
+                "motor brushes": "63",
+                "64": "NYC Device #",
+                "nyc device #": "64",
+                "65": "Unintended Car Movement",
+                "unintended car movement": "65",
+                "66": "Emergency Brake/Rope Gripper",
+                "emergency brake/rope gripper": "66",
+                "67": "Communication",
+                "communication": "67",
+                "68": "Maintenance Log",
+                "maintenance log": "68",
+                "69": "Code Data Plate",
+                "code data plate": "69",
+                "70": "Pit",
+                "pit": "70",
+                "71": "Pit Light",
+                "pit light": "71",
+                "72": "Pit Stop Switch",
+                "pit stop switch": "72",
+                "73": "Car Guide-Rails & Brackets",
+                "car guide-rails & brackets": "73",
+                "74": "Cwt Guide-Rails & Brackets",
+                "cwt guide-rails & brackets": "74",
+                "75": "Buffers",
+                "buffers": "75",
+                "76": "Car Safety & Tail Rope",
+                "car safety & tail rope": "76",
+                "77": "Underside Platform",
+                "underside platform": "77",
+                "78": "Tension Weight",
+                "tension weight": "78",
+                "79": "Comp / Chains / Ropes / Switch",
+                "comp / chains / ropes / switch": "79",
+                "80": "Counterweight Runby",
+                "counterweight runby": "80",
+                "81": "Counterweight Runby Signage",
+                "counterweight runby signage": "81",
+                "82": "Plunger Gripper",
+                "plunger gripper": "82",
+                "83": "Fire Shutters",
+                "fire shutters": "83",
+                "84": "Skirt Switch",
+                "skirt switch": "84",
+                "85": "Skirt Deflection Device",
+                "skirt deflection device": "85",
+                "86": "Comb Plate / Comb Plate Teeth",
+                "comb plate / comb plate teeth": "86",
+                "87": "Landing Plate / Impact Switches",
+                "landing plate / impact switches": "87",
+                "88": "Handrails / Handrail Safeties",
+                "handrails / handrail safeties": "88",
+                "89": "Step / Thread",
+                "step / thread": "89",
+                "90": "Key Switch",
+                "key switch": "90",
+                "91": "Emergency Stop Button",
+                "emergency stop button": "91",
+                "92": "Decking and Ballistrades",
+                "decking and ballistrades": "92",
+                "93": "Ceiling Guards",
+                "ceiling guards": "93",
+                "94": "Deck Barricades",
+                "deck barricades": "94",
+                "95": "Internal Safeties",
+                "internal safeties": "95",
+                "96": "Safety Signage",
+                "safety signage": "96",
+                "97": "Entire Device",
+                "entire device": "97",
+                "98": "Current Five Year Tag",
+                "current five year tag": "98",
+                "99": "Current One Year Tag",
+                "current one year tag": "99",
+                "100": "Miscellaneous",
+                "miscellaneous": "100"
+            };
+
+            let result = mapping[input] || "Invalid Number";
+            
+            // Only add location information if the result is a description (not a code)
+            if (result !== "Invalid Number" && result !== "Enter Number" && !result.match(/^\d+$/)) {
+                var intValue = parseInt(input);
+                if (intValue >= 1 && intValue <= 15) {
+                    result += " (Inside Car)";
+                }
+                
+                if (intValue >= 16 && intValue <= 25) {
+                    result += " (Outside Hoistway)";
+                }
+                
+                if (intValue >= 26 && intValue <= 39) {
+                    result += " (Top of Car)";
+                }
+                
+                if (intValue >= 40 && intValue <= 69) {
+                    result += " (Machine Room)";
+                }
+                
+                if (intValue >= 70 && intValue <= 82) {
+                    result += " (Pit)";
+                }
+                
+                if (intValue >= 83 && intValue <= 96) {
+                    result += " (Escalator/Moving Walk)";
+                }
+                
+                if (intValue >= 97 && intValue <= 100) {
+                    result += " (All Types)";
+                }
+            }
+            
+            return result;
+        }
+
+        function letterToWord(input) {
+            // Convert input to lowercase for case-insensitive comparison
+            if (typeof input === 'string') {
+                input = input.toLowerCase();
+            }
+            
             const mapping = {
                 "": "Enter Letter",
                 "a": "Altered",
-                "A": "Altered", 
-                "Altered": "A",
+                "altered": "A",
                 "b": "Insufficient",
-                "B": "Insufficient",
-                "Insufficient": "B",
+                "insufficient": "B",
                 "c": "Padlocked",
-                "C": "Padlocked",
-                "Padlocked": "C",
+                "padlocked": "C",
                 "d": "Unsecured",
-                "D": "Unsecured",
-                "Unsecured": "D",
+                "unsecured": "D",
                 "e": "Rubbing",
-                "E": "Rubbing",
-                "Rubbing": "E",
+                "rubbing": "E",
                 "f": "Lost Motion",
-                "F": "Lost Motion",
-                "Lost Motion": "F",
+                "lost motion": "F",
                 "g": "Improper Fuses",
-                "G": "Improper Fuses",
-                "Improper Fuses": "G",
+                "improper fuses": "G",
                 "h": "Worn",
-                "H": "Worn",
-                "Worn": "H",
+                "worn": "H",
                 "i": "Damaged",
-                "I": "Damaged",
-                "Damaged": "I",
+                "damaged": "I",
                 "j": "Misaligned",
-                "J": "Misaligned",
-                "Misaligned": "J",
+                "misaligned": "J",
                 "k": "Rusted",
-                "K": "Rusted",
-                "Rusted": "K",
+                "rusted": "K",
                 "l": "Defective",
-                "L": "Defective",
-                "Defective": "L",
+                "defective": "L",
                 "m": "Missing",
-                "M": "Missing",
-                "Missing": "M",
+                "missing": "M",
                 "n": "By-Passed",
-                "N": "By-Passed",
-                "By-Passed": "N",
+                "by-passed": "N",
                 "o": "Dirty",
-                "O": "Dirty",
-                "Dirty": "O",
+                "dirty": "O",
                 "p": "No Means Of Access",
-                "P": "No Means Of Access",
-                "No Means Of Access": "P",
+                "no means of access": "P",
                 "q": "Unguarded",
-                "Q": "Unguarded",
-                "Unguarded": "Q",
+                "unguarded": "Q",
                 "r": "Illegal",
-                "R": "Illegal",
-                "Illegal": "R",
+                "illegal": "R",
                 "s": "Not Fire Retardant",
-                "S": "Not Fire Retardant",
-                "Not Fire Retardant": "S",
+                "not fire retardant": "S",
                 "t": "Unlabeled",
-                "T": "Unlabeled",
-                "Unlabeled": "T",
+                "unlabeled": "T",
                 "u": "Device Not Tagged",
-                "U": "Device Not Tagged",
-                "Device Not Tagged": "U",
+                "device not tagged": "U",
                 "v": "Not Level",
-                "V": "Not Level",
-                "Not Level": "V",
+                "not level": "V",
                 "w": "Unlocked",
-                "W": "Unlocked",
-                "Unlocked": "W",
+                "unlocked": "W",
                 "x": "Inoperative",
-                "X": "Inoperative",
-                "Inoperative": "X",
+                "inoperative": "X",
                 "y": "Oil Leak",
-                "Y": "Oil Leak",
-                "Oil Leak": "Y",
+                "oil leak": "Y",
                 "z": "Water Leak",
-                "Z": "Water Leak",
-                "Water Leak": "Z",
+                "water leak": "Z",
                 "aa": "Carbon Buildup",
-                "Aa": "Carbon Buildup",
-                "AA": "Carbon Buildup",
-                "Carbon Buildup": "AA",
+                "carbon buildup": "AA",
                 "bb": "Expired Tag",
-                "Bb": "Expired Tag", 
-                "BB": "Expired Tag",
-                "Expired Tag": "BB"
+                "expired tag": "BB"
             };
-            return mapping[letter] || "Invalid Letter";
+            
+            return mapping[input] || "Invalid Letter";
         }
 
-        function secondaryNumberToWord(number) {
+        function secondaryNumberToWord(input) {
+            // Convert input to lowercase for case-insensitive comparison
+            if (typeof input === 'string') {
+                input = input.toLowerCase();
+            }
+            
             const mapping = {
                 "": "Enter Number",
                 "01": "Adjust",
-                "Adjust": "01",
+                "1": "Adjust", 
                 "adjust": "01",
-                "02": "Clean", 
-                "Clean": "02",
-                "clean": "02",
+                "02": "Clean",
+                "2": "Clean",
+                "clean": "02", 
                 "03": "Install Guards",
-                "Install Guards": "03",
+                "3": "Install Guards",
                 "install guards": "03",
                 "04": "Patch",
-                "Patch": "04",
+                "4": "Patch",
                 "patch": "04",
                 "05": "Perform & File Test",
-                "Perform & File Test": "05", 
+                "5": "Perform & File Test", 
                 "perform & file test": "05",
                 "06": "Properly Secure",
-                "Properly Secure": "06",
+                "6": "Properly Secure",
                 "properly secure": "06",
                 "07": "Provide",
-                "Provide": "07",
+                "7": "Provide",
                 "provide": "07",
-                "08": "Regroove",
-                "Regroove": "08",
+                "08": "Regroove", 
+                "8": "Regroove",
                 "regroove": "08",
                 "09": "Remove",
-                "Remove": "09",
+                "9": "Remove",
                 "remove": "09",
                 "10": "Repair",
-                "Repair": "10",
                 "repair": "10",
                 "11": "Replace",
-                "Replace": "11",
                 "replace": "11",
-                "12": "Reshackle", 
-                "Reshackle": "12",
+                "12": "Reshackle",
                 "reshackle": "12",
                 "13": "Seal",
-                "Seal": "13",
                 "seal": "13",
                 "14": "Shorten",
-                "Shorten": "14",
                 "shorten": "14",
                 "15": "Tag Device",
-                "Tag Device": "15",
                 "tag device": "15",
                 "16": "Provide Means of Access",
-                "Provide Means of Access": "16",
                 "provide means of access": "16",
                 "17": "Re-inspection Required",
-                "Re-inspection Required": "17",
                 "re-inspection required": "17"
             };
-            return mapping[number] || "Invalid Number";
+            
+            return mapping[input] || "Invalid Number";
         }
 
         document.getElementById('numInput').addEventListener('input', function(e) {
-            document.getElementById('numResult').textContent = numberToWord(e.target.value);
+            let result = numberToWord(e.target.value);
+            document.getElementById('numResult').textContent = result;
         });
 
         document.getElementById('letterInput').addEventListener('input', function(e) {
-            document.getElementById('letterResult').textContent = letterToWord(e.target.value);
+            let result = letterToWord(e.target.value);
+            document.getElementById('letterResult').textContent = result;
         });
 
         document.getElementById('secondaryNumInput').addEventListener('input', function(e) {
-            document.getElementById('secondaryNumResult').textContent = secondaryNumberToWord(e.target.value);
+            let result = secondaryNumberToWord(e.target.value);
+            document.getElementById('secondaryNumResult').textContent = result;
         });
 
         function clearInputs() {
@@ -792,8 +822,11 @@
                 document.getElementById('dateSpelledResult').textContent = "";
                 return;
             }
-            // Append T12:00:00 to treat the date as noon, reducing timezone-related shifts
-            const inputDate = new Date(dateStr + "T12:00:00");
+            
+            // Create date object and set to noon UTC
+            const inputDate = new Date(dateStr);
+            inputDate.setUTCHours(12, 0, 0, 0);
+            
             const resultDate = new Date(inputDate);
             resultDate.setDate(resultDate.getDate() + days);
             document.getElementById('dateResult').textContent = days + " days after " + inputDate.toLocaleDateString() + " is " + resultDate.toLocaleDateString();
@@ -805,6 +838,54 @@
             document.getElementById('dateSpelledResult').textContent = "" + spelledInput + " becomes " + spelledResult;
         }
 
+        function calculateCustomDate() {
+            const dateStr = document.getElementById('dateInput').value;
+            const days = parseInt(document.getElementById('customDays').value);
+            
+            if (isNaN(days)) {
+                document.getElementById('dateResult').textContent = "Please enter a valid number.";
+                document.getElementById('dateSpelledResult').textContent = "";
+                return;
+            }
+            
+            // Add maximum reasonable limit
+            if (Math.abs(days) > 36500) { // 100 years
+                document.getElementById('dateResult').textContent = "Please enter a more reasonable number of days.";
+                document.getElementById('dateSpelledResult').textContent = "";
+                return;
+            }
+            
+            if (!dateStr) {
+                document.getElementById('dateResult').textContent = "Please select a date.";
+                document.getElementById('dateSpelledResult').textContent = "";
+                return;
+            }
+            
+            const inputDate = new Date(dateStr + "T12:00:00");
+            const resultDate = new Date(inputDate);
+            resultDate.setDate(resultDate.getDate() + days);
+            
+            const dayText = days > 0 ? " days after " : " days before ";
+            const absDay = Math.abs(days);
+            
+            document.getElementById('dateResult').textContent = 
+                absDay + dayText + inputDate.toLocaleDateString() + " is " + resultDate.toLocaleDateString();
+
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            const spelledInput = inputDate.toLocaleDateString('en-US', options);
+            const spelledResult = resultDate.toLocaleDateString('en-US', options);
+            document.getElementById('dateSpelledResult').textContent = 
+                spelledInput + " becomes " + spelledResult;
+        }
+
+        function clearDateInput() {
+            document.getElementById('dateInput').value = '';
+            document.getElementById('customDays').value = '';
+            document.getElementById('daysSelect').value = ''; // Reset dropdown
+            document.getElementById('dateResult').textContent = '';
+            document.getElementById('dateSpelledResult').textContent = '';
+        }
+
         function refreshDOB() {
             const iframe = document.querySelector('#dobContent .dob-viewer iframe');
             if (iframe) {
@@ -813,22 +894,23 @@
             }
         }
 
-        function clearDateInput() {
-            document.getElementById('dateInput').value = '';
-            document.getElementById('dateResult').textContent = '';
-            document.getElementById('dateSpelledResult').textContent = '';
-        }
-
         function popoutDOB() {
             window.open('https://a810-dobnow.nyc.gov/publish/Index.html#!/', '_blank', 'width=1200,height=800');
+        }
+
+        function addDOBWindow() {
+            const newWindow = document.createElement('div');
+            newWindow.className = 'dob-viewer';
+            newWindow.innerHTML = '<iframe src="https://a810-dobnow.nyc.gov/publish/Index.html#!/" frameborder="0"></iframe>';
+            document.getElementById('dobWindows').appendChild(newWindow);
         }
     </script>
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
-    <div class="credit-text">Created by <a href="https://www.google.com" target="_blank">Michael N. Montesano</a></div>
+    <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael N. Montesano</a></div>
     <div class="social-icons">
         <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">
-            <img src="linkedin-icon.svg" alt="LinkedIn" class="social-icon">
+            <img src="linkedin-icon.svg" alt="LinkedIn" class="social-icon" onerror="this.innerText='LinkedIn'">
         </a>
     </div>
 </body>
