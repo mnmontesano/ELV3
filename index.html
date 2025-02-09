@@ -699,14 +699,14 @@
             <input type="date" id="dateInput">
         </div>
         
-        <!-- Button-based Days (default for larger screens) -->
+        <!-- Adding back the buttons -->
         <div class="date-buttons-group" style="display: flex; justify-content: center; gap: 10px;">
             <button onclick="calculateDate(30)" style="display: inline-block; margin: 0;">30 Days</button>
             <button onclick="calculateDate(60)" style="display: inline-block; margin: 0;">60 Days</button>
             <button onclick="calculateDate(90)" style="display: inline-block; margin: 0;">90 Days</button>
         </div>
         
-        <!-- Dropdown-based Days (visible on small screens) -->
+        <!-- Adding back the dropdown for small screens -->
         <div class="date-dropdown-group" style="display: none; text-align: center; margin: 10px auto;">
             <select id="daysSelect" onchange="calculateDate(parseInt(this.value))" style="padding: 8px; width: 200px;">
                 <option value="">Select Days</option>
@@ -722,6 +722,13 @@
         </div>
         <div id="dateResult" class="result" style="width:80%;"></div>
         <div id="dateSpelledResult" class="result" style="width:80%;"></div>
+
+        <!-- 90-day start date div remains here -->
+        <div style="text-align: center; margin: 20px auto;">
+            <div style="font-weight: bold;">To be within 90 days of today:</div>
+            <div id="ninetyDayStart" style="margin: 10px 0;"></div>
+        </div>
+
         <button onclick="clearDateInput()">Clear</button>
     </div>
 
@@ -1170,6 +1177,7 @@
             if (savedNotes) {
                 document.getElementById('Notes').value = savedNotes;
             }
+            calculateNinetyDayStart();
         }
 
         // Save notes when user types
@@ -1280,6 +1288,23 @@
                 overlay.style.display = 'block';
                 button.textContent = 'Hide Reference';
             }
+        }
+
+        function calculateNinetyDayStart() {
+            const today = new Date();
+            const startDate = new Date(today);
+            startDate.setDate(today.getDate() - 90);
+            
+            // Format for the simple date
+            const simpleDate = startDate.toLocaleDateString();
+            
+            // Format for the spelled out date
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            const spelledDate = startDate.toLocaleDateString('en-US', options);
+            
+            document.getElementById('ninetyDayStart').innerHTML = 
+                `<div>Start Date must be after: ${simpleDate}</div>
+                 <div style="margin-top: 5px;">(${spelledDate})</div>`;
         }
     </script>
 
