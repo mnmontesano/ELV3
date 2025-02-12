@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ELV3 Cheat Sheet</title>
-    <link rel="icon" type="image/png" href="https://github.com/mnmontesano/ELV3/blob/main/ELV3%20Cheat%20Sheet%20Icon.png?raw=true">
+    <title>ELV3 Terminal</title>
+    <link rel="icon" type="image/png" href="logo.png">
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
@@ -432,13 +432,124 @@
                 border-bottom-color: #666;
             }
         }
+
+        .dropdown {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+        }
+
+        .dropdown-button {
+            background-color: #000;
+            color: #fff;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1.2em;
+        }
+
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            background-color: #f9f9f9;
+            min-width: 160px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+            z-index: 1;
+            border-radius: 5px;
+            margin-top: 5px;
+        }
+
+        .dropdown-content button {
+            width: 100%;
+            padding: 12px 16px;
+            margin: 0;
+            display: block;
+            background: none;
+            color: black;
+            text-align: left;
+            border-radius: 0;
+        }
+
+        .dropdown-content button:hover {
+            background-color: #f1f1f1;
+        }
+
+        .settings-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 1001;
+            width: 300px;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .dropdown-button {
+                background-color: #fff;
+                color: #000;
+            }
+            .dropdown-content {
+                background-color: #333;
+            }
+            .dropdown-content button {
+                color: white;
+            }
+            .dropdown-content button:hover {
+                background-color: #444;
+            }
+            .settings-modal {
+                background: #333;
+                color: white;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .dropdown {
+                position: static;
+                margin: 20px auto;
+                text-align: center;
+            }
+            .dropdown-content {
+                position: relative;
+                width: 100%;
+                margin: 5px auto;
+            }
+        }
     </style>
 </head>
 <body>
+    <div class="dropdown">
+        <button onclick="toggleDropdown()" class="dropdown-button">Menu ☰</button>
+        <div id="dropdownContent" class="dropdown-content">
+            <button onclick="openSettings()">Settings</button>
+        </div>
+    </div>
+
+    <div id="settingsModal" class="settings-modal">
+        <h3>Settings</h3>
+        <label for="defaultTab">Default Starting Tab:</label>
+        <select id="defaultTab" style="width: 100%; padding: 8px; margin: 10px 0;">
+            <option value="main">ELV3 Terminal</option>
+            <option value="dob">DOB Terminal</option>
+            <option value="dates">Dates Terminal</option>
+            <option value="pdf">PDF Terminal</option>
+        </select>
+        <button onclick="saveSettings()">Save</button>
+        <button onclick="closeSettings()" style="background-color: #666;">Cancel</button>
+    </div>
+
+    <div id="settingsOverlay" class="reference-overlay"></div>
+
     <a href="javascript:window.location.reload()">
         <img src="https://github.com/mnmontesano/ELV3/blob/main/ELV3%20Cheat%20Sheet%20Icon.png?raw=true" alt="Logo" class="logo">
     </a>
-    <h1>ELV3 Cheat Sheet</h1>
+    <h1 id="pageTitle">ELV3 Terminal</h1>
 
     <!-- Button-based Tabs (default for larger screens) -->
     <div id="tabButtons" class="tab-buttons">
@@ -725,7 +836,7 @@
 
         <!-- Modify the 90-day start date div -->
         <div style="text-align: center; margin: 20px auto;">
-            <div style="font-weight: bold;">90 days from today:</div>
+            <div style="font-weight: bold;">Any date before:</div>
             <div id="ninetyDayStart" style="margin: 10px 0;"></div>
         </div>
 
@@ -1165,6 +1276,18 @@
                 button.style.backgroundColor = '';
             });
             document.getElementById(tabName + 'Tab').style.backgroundColor = '#333';
+            updatePageTitle(tabName);
+        }
+
+        function updatePageTitle(tabName) {
+            const titleMapping = {
+                main: 'ELV3 Terminal',
+                dob: 'DOB Terminal',
+                dates: 'Dates Terminal',
+                pdf: 'PDF Terminal'
+            };
+            document.title = titleMapping[tabName];
+            document.getElementById('pageTitle').textContent = titleMapping[tabName];
         }
 
         function submitFeedback() {
@@ -1178,6 +1301,12 @@
                 document.getElementById('Notes').value = savedNotes;
             }
             calculateNinetyDayStart();
+
+            // Load default tab if set
+            const defaultTab = localStorage.getItem('defaultTab');
+            if (defaultTab) {
+                showTab(defaultTab);
+            }
         }
 
         // Save notes when user types
@@ -1305,6 +1434,48 @@
             document.getElementById('ninetyDayStart').innerHTML = 
                 `<div>Any date before: ${simpleDate}</div>
                  <div style="margin-top: 5px;">(${spelledDate})</div>`;
+        }
+
+        function toggleDropdown() {
+            const dropdown = document.getElementById('dropdownContent');
+            dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+        }
+
+        function openSettings() {
+            const modal = document.getElementById('settingsModal');
+            const overlay = document.getElementById('settingsOverlay');
+            modal.style.display = 'block';
+            overlay.style.display = 'block';
+            
+            // Load current setting
+            const savedTab = localStorage.getItem('defaultTab') || 'main';
+            document.getElementById('defaultTab').value = savedTab;
+            
+            // Close dropdown
+            document.getElementById('dropdownContent').style.display = 'none';
+        }
+
+        function closeSettings() {
+            const modal = document.getElementById('settingsModal');
+            const overlay = document.getElementById('settingsOverlay');
+            modal.style.display = 'none';
+            overlay.style.display = 'none';
+        }
+
+        function saveSettings() {
+            const defaultTab = document.getElementById('defaultTab').value;
+            localStorage.setItem('defaultTab', defaultTab);
+            closeSettings();
+        }
+
+        // Close dropdown when clicking outside
+        window.onclick = function(event) {
+            if (!event.target.matches('.dropdown-button')) {
+                const dropdown = document.getElementById('dropdownContent');
+                if (dropdown.style.display === 'block') {
+                    dropdown.style.display = 'none';
+                }
+            }
         }
     </script>
 
