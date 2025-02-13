@@ -829,6 +829,95 @@
     </div>
 
     <div id="dobContent" class="content-section">
+        <!-- Add BIN Lookup Section at the top -->
+        <div style="max-width: 500px; margin: 20px auto; padding: 20px; background: #2c2c2c; border-radius: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+            <h3 style="text-align: center; margin-bottom: 20px; color: #ffffff;">Device & BIN Lookup</h3>
+            
+            <!-- Device Number Search -->
+            <div style="margin-bottom: 25px;">
+                <h4 style="color: #ffffff; margin-bottom: 10px;">Search by Device Number:</h4>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" 
+                           id="deviceNumber" 
+                           placeholder="Enter Device Number"
+                           style="flex: 1; padding: 12px; border-radius: 4px; border: 1px solid #444; background: #1c1c1c; color: #ffffff;">
+                    <button onclick="lookupBIN()" 
+                            style="white-space: nowrap; padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                        Look up BIN
+                    </button>
+                </div>
+                <div id="binResult" class="result" style="margin-top: 15px; display: none;">
+                    <!-- Results will be displayed here -->
+                </div>
+            </div>
+
+            <!-- BIN Search -->
+            <div style="margin-top: 20px;">
+                <h4 style="color: #ffffff; margin-bottom: 10px;">Search by BIN:</h4>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" 
+                           id="binNumber" 
+                           placeholder="Enter BIN Number"
+                           style="flex: 1; padding: 12px; border-radius: 4px; border: 1px solid #444; background: #1c1c1c; color: #ffffff;">
+                    <button onclick="lookupDevices()" 
+                            style="white-space: nowrap; padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                        Find Devices
+                    </button>
+                </div>
+                <div id="deviceResult" class="result" style="margin-top: 15px; display: none;">
+                    <!-- Device results will be displayed here -->
+                </div>
+            </div>
+
+            <!-- Move export button here, before Clear All -->
+            <div style="display: flex; gap: 10px; justify-content: center; margin-top: 20px;">
+                <button id="binExportButton" 
+                        onclick="exportBinToCSV()" 
+                        style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
+                    Export to CSV
+                </button>
+            </div>
+
+            <!-- Add Clear Button -->
+            <button onclick="clearLookups()" 
+                    style="display: block; margin: 25px auto 5px; padding: 12px 30px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                Clear All
+            </button>
+        </div>
+
+        <!-- Add this after the existing lookup section -->
+        <div style="max-width: 500px; margin: 20px auto; padding: 20px; background: #2c2c2c; border-radius: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+            <h3 style="text-align: center; margin-bottom: 20px; color: #ffffff;">Bulk Device Lookup</h3>
+            
+            <div style="margin-bottom: 15px;">
+                <textarea id="bulkDeviceNumbers" 
+                         placeholder="Enter multiple device numbers (one per line)"
+                         style="width: 100%; height: 100px; padding: 12px; border-radius: 4px; border: 1px solid #444; background: #1c1c1c; color: #ffffff; resize: vertical;"></textarea>
+            </div>
+
+            <!-- Modify the bulk lookup buttons div -->
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button onclick="lookupBulkDevices()" 
+                        style="padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                    Look up All Devices
+                </button>
+                <button onclick="clearBulkLookup()" 
+                        style="padding: 12px 20px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                    Clear
+                </button>
+                <button id="exportButton" 
+                        onclick="exportToCSV()" 
+                        style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
+                    Export to CSV
+                </button>
+            </div>
+
+            <div id="bulkResult" class="result" style="margin-top: 15px; display: none;">
+                <!-- Results will be displayed here -->
+            </div>
+        </div>
+
+        <!-- Existing DOB NOW content -->
         <div style="display: flex; justify-content: center; gap: 10px; margin: 10px auto;">
             <button onclick="refreshDOB()" style="display: inline-block; margin: 0; padding: 8px 16px;">Refresh DOB Page</button>
             <button onclick="popoutDOB()" style="display: inline-block; margin: 0; padding: 8px 16px;">Open in New Window</button>
@@ -1518,6 +1607,523 @@
                     dropdown.style.display = 'none';
                 }
             }
+        }
+
+        // Add this new function to your script section
+        async function lookupBIN() {
+            const deviceNumber = document.getElementById('deviceNumber').value.trim();
+            const resultDiv = document.getElementById('binResult');
+            const binInput = document.getElementById('binNumber');
+            
+            if (!deviceNumber) {
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Please enter a device number</span>';
+                resultDiv.style.display = 'block';
+                return;
+            }
+
+            resultDiv.innerHTML = '<span style="color: #ffffff;">Looking up device...</span>';
+            resultDiv.style.display = 'block';
+
+            try {
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
+                
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    const device = data[0];
+                    binInput.value = device.bin || '';
+                    if (device.bin) {
+                        lookupDevices();
+                    }
+
+                    // Format CAT 1, CAT 5, and PVI dates if available
+                    const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed).toLocaleDateString() : 'N/A';
+                    const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed).toLocaleDateString() : 'N/A';
+                    const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection).toLocaleDateString() : 'N/A';
+                    
+                    resultDiv.innerHTML = `
+                        <div style="background: #1c1c1c; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); color: #ffffff; border: 1px solid #333;">
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: #4a9eff; display: inline-block; width: 120px;">BIN:</strong> 
+                                <span>${device.bin || 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: #4a9eff; display: inline-block; width: 120px;">Address:</strong> 
+                                <span>${device.house_number ? device.house_number + ' ' + device.street_name : 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: #4a9eff; display: inline-block; width: 120px;">Borough:</strong> 
+                                <span>${device.borough || 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: #4a9eff; display: inline-block; width: 120px;">Device Type:</strong> 
+                                <span>${device.device_type || 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: #4a9eff; display: inline-block; width: 120px;">Status:</strong> 
+                                <span>${device.device_status || 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: #4a9eff; display: inline-block; width: 120px;">ZIP Code:</strong> 
+                                <span>${device.zip_code || 'N/A'}</span>
+                            </div>
+                            <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
+                                <strong style="color: #4a9eff; margin-bottom: 10px; display: block;">Inspection History:</strong>
+                                <div style="margin-bottom: 10px;">
+                                    <strong style="color: #4a9eff; display: inline-block; width: 120px;">Latest CAT 1:</strong> 
+                                    <span>${cat1Date}</span>
+                                </div>
+                                <div style="margin-bottom: 10px;">
+                                    <strong style="color: #4a9eff; display: inline-block; width: 120px;">Latest CAT 5:</strong> 
+                                    <span>${cat5Date}</span>
+                                </div>
+                                <div>
+                                    <strong style="color: #4a9eff; display: inline-block; width: 120px;">Latest PVI:</strong> 
+                                    <span>${pviDate}</span>
+                                </div>
+                            </div>
+                        </div>`;
+                } else {
+                    resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No device found with this number</span>';
+                    binInput.value = '';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up device. Please try again later.</span>';
+                console.error('Error:', error);
+                binInput.value = '';
+            }
+        }
+
+        // Add event listener for Enter key
+        document.getElementById('deviceNumber').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                lookupBIN();
+            }
+        });
+
+        // Add the new lookupDevices function
+        async function lookupDevices() {
+            const binNumber = document.getElementById('binNumber').value.trim();
+            const resultDiv = document.getElementById('deviceResult');
+            
+            if (!binNumber) {
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Please enter a BIN number</span>';
+                resultDiv.style.display = 'block';
+                return;
+            }
+
+            resultDiv.innerHTML = '<span style="color: #ffffff;">Looking up devices...</span>';
+            resultDiv.style.display = 'block';
+
+            try {
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?bin=${binNumber}`);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    // Store the data for CSV export
+                    window.lastBinSearchResults = data;
+                    document.getElementById('binExportButton').style.display = 'block';
+                    
+                    const address = `${data[0].house_number} ${data[0].street_name}, ${data[0].borough}`;
+                    
+                    // Group devices by type
+                    const deviceTypes = {};
+                    data.forEach(device => {
+                        const type = device.device_type || 'Unknown';
+                        if (!deviceTypes[type]) {
+                            deviceTypes[type] = [];
+                        }
+                        deviceTypes[type].push(device);
+                    });
+                    
+                    let html = `
+                        <div style="background: #1c1c1c; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); color: #ffffff; border: 1px solid #333;">
+                            <div style="margin-bottom: 20px;">
+                                <strong style="color: #4a9eff;">Building Address:</strong> 
+                                <span>${address}</span>
+                            </div>
+                            <div style="margin-bottom: 15px;">
+                                <strong style="color: #4a9eff;">Total Devices Found:</strong> 
+                                <span>${data.length}</span>
+                            </div>
+                            <div style="margin-top: 20px;">
+                                <strong style="color: #4a9eff; display: block; margin-bottom: 10px;">Devices by Type:</strong>
+                                <div style="max-height: 300px; overflow-y: auto; padding-right: 10px;">
+                    `;
+                    
+                    // First display elevators if they exist
+                    if (deviceTypes['ELEVATOR']) {
+                        html += generateDeviceTypeSection('ELEVATOR', deviceTypes['ELEVATOR']);
+                        delete deviceTypes['ELEVATOR']; // Remove elevators so they're not shown again
+                    }
+                    
+                    // Then display the rest of the device types
+                    for (const [type, devices] of Object.entries(deviceTypes)) {
+                        html += generateDeviceTypeSection(type, devices);
+                    }
+                    
+                    html += `</div></div></div>`;
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No devices found for this BIN number</span>';
+                    window.lastBinSearchResults = null;
+                    document.getElementById('binExportButton').style.display = 'none';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
+                console.error('Error:', error);
+                window.lastBinSearchResults = null;
+                document.getElementById('binExportButton').style.display = 'none';
+            }
+        }
+
+        // Helper function to generate HTML for a device type section
+        function generateDeviceTypeSection(type, devices) {
+            return `
+                <div style="background: #2c2c2c; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+                    <div style="margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 10px;">
+                        <strong style="color: #4a9eff;">${type}:</strong> ${devices.length} device(s)
+                    </div>
+                    <div style="padding-left: 15px;">
+                        ${devices.map(device => `
+                            <div style="margin-bottom: 10px; padding: 10px; background: #1c1c1c; border-radius: 5px;">
+                                <strong style="color: #4a9eff;">Device #:</strong> ${device.device_number}<br>
+                                <strong style="color: #4a9eff;">Status:</strong> ${device.device_status || 'N/A'}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Add event listener for Enter key on BIN input
+        document.getElementById('binNumber').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                lookupDevices();
+            }
+        });
+
+        // Add this new function to your script section
+        function clearLookups() {
+            // Clear input fields
+            document.getElementById('deviceNumber').value = '';
+            document.getElementById('binNumber').value = '';
+            document.getElementById('binResult').style.display = 'none';
+            document.getElementById('deviceResult').style.display = 'none';
+            document.getElementById('binExportButton').style.display = 'none';
+            window.lastBinSearchResults = null;
+        }
+
+        // Add these new functions to your script section
+        async function lookupBulkDevices() {
+            const textarea = document.getElementById('bulkDeviceNumbers');
+            const resultDiv = document.getElementById('bulkResult');
+            
+            const deviceNumbers = textarea.value.split('\n')
+                .map(num => num.trim())
+                .filter(num => num !== '');
+
+            if (deviceNumbers.length === 0) {
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Please enter at least one device number</span>';
+                resultDiv.style.display = 'block';
+                return;
+            }
+
+            resultDiv.innerHTML = '<span style="color: #ffffff;">Looking up devices...</span>';
+            resultDiv.style.display = 'block';
+
+            try {
+                // Create an object to group devices by BIN
+                const binGroups = {};
+                const notFound = [];
+
+                // Look up each device
+                for (const deviceNumber of deviceNumbers) {
+                    const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
+                    
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+
+                    const data = await response.json();
+                    
+                    if (data && data.length > 0) {
+                        const device = data[0];
+                        const bin = device.bin || 'Unknown BIN';
+                        
+                        if (!binGroups[bin]) {
+                            binGroups[bin] = {
+                                address: `${device.house_number} ${device.street_name}, ${device.borough}`,
+                                devices: []
+                            };
+                        }
+                        binGroups[bin].devices.push(device);
+                    } else {
+                        notFound.push(deviceNumber);
+                    }
+                }
+
+                let html = `
+                    <div style="background: #1c1c1c; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); color: #ffffff; border: 1px solid #333;">
+                        <div style="margin-bottom: 15px;">
+                            <strong style="color: #4a9eff;">Total Devices Searched:</strong> 
+                            <span>${deviceNumbers.length}</span>
+                        </div>
+                        <div style="max-height: 400px; overflow-y: auto; padding-right: 10px;">
+                `;
+
+                // Display grouped devices
+                for (const [bin, group] of Object.entries(binGroups)) {
+                    html += `
+                        <div style="background: #2c2c2c; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+                            <div style="margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 10px;">
+                                <strong style="color: #4a9eff;">BIN:</strong> ${bin}<br>
+                                <strong style="color: #4a9eff;">Address:</strong> ${group.address}<br>
+                                <strong style="color: #4a9eff;">Devices Found:</strong> ${group.devices.length}
+                            </div>
+                            <div style="padding-left: 15px;">
+                    `;
+
+                    group.devices.forEach(device => {
+                        html += `
+                            <div style="margin-bottom: 10px; padding: 10px; background: #1c1c1c; border-radius: 5px;">
+                                <strong style="color: #4a9eff;">Device Number:</strong> ${device.device_number}<br>
+                                <strong style="color: #4a9eff;">Type:</strong> ${device.device_type || 'N/A'}<br>
+                                <strong style="color: #4a9eff;">Status:</strong> ${device.device_status || 'N/A'}
+                            </div>
+                        `;
+                    });
+
+                    html += `
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Display devices not found
+                if (notFound.length > 0) {
+                    html += `
+                        <div style="background: #2c2c2c; padding: 15px; border-radius: 5px; margin-bottom: 10px;">
+                            <div style="color: #ff6b6b;">
+                                <strong>Devices Not Found:</strong>
+                                <div style="margin-top: 5px;">
+                                    ${notFound.join('<br>')}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                html += `
+                        </div>
+                    </div>
+                `;
+                
+                resultDiv.innerHTML = html;
+
+                // Store the results for CSV export
+                window.lastBulkSearchResults = {
+                    binGroups: binGroups,
+                    notFound: notFound
+                };
+
+                // Show the export button if we have results
+                document.getElementById('exportButton').style.display = 'block';
+            } catch (error) {
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
+                console.error('Error:', error);
+                document.getElementById('exportButton').style.display = 'none';
+            }
+        }
+
+        function clearBulkLookup() {
+            document.getElementById('bulkDeviceNumbers').value = '';
+            const resultDiv = document.getElementById('bulkResult');
+            resultDiv.innerHTML = '';
+            resultDiv.style.display = 'none';
+            document.getElementById('exportButton').style.display = 'none';
+            window.lastBulkSearchResults = null;
+        }
+
+        // Add this new function to your script section
+        async function lookupAddress() {
+            const fullAddress = document.getElementById('fullAddress').value.trim().toUpperCase();
+            const resultDiv = document.getElementById('addressResult');
+            
+            if (!fullAddress) {
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Please enter an address</span>';
+                resultDiv.style.display = 'block';
+                return;
+            }
+
+            resultDiv.innerHTML = '<span style="color: #ffffff;">Looking up address...</span>';
+            resultDiv.style.display = 'block';
+
+            try {
+                // Parse address into components (e.g., "120 Broadway, Manhattan")
+                const addressParts = fullAddress.split(',').map(part => part.trim());
+                const streetAddress = addressParts[0];
+                const borough = addressParts[1] || '';
+
+                // Split street address into house number and street name
+                const match = streetAddress.match(/^(\d+)\s+(.+)$/);
+                if (!match) {
+                    resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Please enter address in format: "123 Street Name, Borough"</span>';
+                    return;
+                }
+
+                const [_, houseNumber, streetName] = match;
+                
+                // Build the query
+                const query = `$where=UPPER(house_number)='${houseNumber}' AND UPPER(street_name) like '${streetName}%'${borough ? ` AND UPPER(borough) like '${borough}%'` : ''}`;
+                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?${query}`;
+                
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    // Group results by BIN to avoid duplicates
+                    const binGroups = {};
+                    data.forEach(device => {
+                        if (!binGroups[device.bin]) {
+                            binGroups[device.bin] = {
+                                address: `${device.house_number} ${device.street_name}, ${device.borough}`,
+                                devices: []
+                            };
+                        }
+                        binGroups[device.bin].devices.push(device);
+                    });
+
+                    let html = `
+                        <div style="background: #1c1c1c; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); color: #ffffff; border: 1px solid #333;">
+                            <div style="margin-bottom: 15px;">
+                                <strong style="color: #4a9eff;">Buildings Found:</strong> ${Object.keys(binGroups).length}
+                            </div>
+                            <div style="max-height: 300px; overflow-y: auto; padding-right: 10px;">
+                    `;
+
+                    for (const [bin, group] of Object.entries(binGroups)) {
+                        html += `
+                            <div style="background: #2c2c2c; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+                                <div style="margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 10px;">
+                                    <strong style="color: #4a9eff;">BIN:</strong> ${bin}<br>
+                                    <strong style="color: #4a9eff;">Address:</strong> ${group.address}<br>
+                                    <strong style="color: #4a9eff;">Total Devices:</strong> ${group.devices.length}
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    html += `</div></div>`;
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No buildings found at this address</span>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up address. Please try again later.</span>';
+                console.error('Error:', error);
+            }
+        }
+
+        function clearAddressLookup() {
+            document.getElementById('fullAddress').value = '';
+            const resultDiv = document.getElementById('addressResult');
+            resultDiv.innerHTML = '';
+            resultDiv.style.display = 'none';
+        }
+
+        // Add event listener for Enter key
+        document.getElementById('fullAddress').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                lookupAddress();
+            }
+        });
+
+        // Add this new function to your script section
+        function exportToCSV() {
+            // Get the stored data from the last search
+            const deviceData = window.lastBulkSearchResults;
+            if (!deviceData || (!deviceData.binGroups && !deviceData.notFound)) {
+                alert('No data to export. Please perform a search first.');
+                return;
+            }
+
+            // Create CSV content
+            let csvContent = 'Device Number,BIN,Address,Borough,Type,Status\n';
+
+            // Add found devices
+            for (const [bin, group] of Object.entries(deviceData.binGroups)) {
+                group.devices.forEach(device => {
+                    const row = [
+                        device.device_number,
+                        bin,
+                        `${device.house_number} ${device.street_name}`,
+                        device.borough,
+                        device.device_type || 'N/A',
+                        device.device_status || 'N/A'
+                    ].map(field => `"${field}"`).join(',');
+                    csvContent += row + '\n';
+                });
+            }
+
+            // Add not found devices
+            if (deviceData.notFound && deviceData.notFound.length > 0) {
+                deviceData.notFound.forEach(deviceNumber => {
+                    csvContent += `"${deviceNumber}","Not Found","N/A","N/A","N/A","N/A"\n`;
+                });
+            }
+
+            // Create and trigger download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'device_lookup_results.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function exportBinToCSV() {
+            const data = window.lastBinSearchResults;
+            if (!data || data.length === 0) {
+                alert('No data to export. Please perform a search first.');
+                return;
+            }
+
+            // Create CSV content
+            let csvContent = 'Device Number,BIN,Address,Borough,Type,Status\n';
+
+            // Add all devices
+            data.forEach(device => {
+                const row = [
+                    device.device_number,
+                    device.bin,
+                    `${device.house_number} ${device.street_name}`,
+                    device.borough,
+                    device.device_type || 'N/A',
+                    device.device_status || 'N/A'
+                ].map(field => `"${field}"`).join(',');
+                csvContent += row + '\n';
+            });
+
+            // Create and trigger download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `bin_${data[0].bin}_devices.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
     </script>
 
