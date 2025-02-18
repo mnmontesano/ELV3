@@ -1545,6 +1545,7 @@
             const panel = document.querySelector('.reference-panel');
             const overlay = document.querySelector('.reference-overlay');
             const button = document.querySelector('.toggle-reference');
+            
             if (panel.style.display === 'block') {
                 panel.style.display = 'none';
                 overlay.style.display = 'none';
@@ -1554,7 +1555,32 @@
                 overlay.style.display = 'block';
                 button.textContent = 'Hide Reference';
             }
+            
+            // Prevent the click from immediately triggering the document click handler
+            event.stopPropagation();
         }
+
+        // Update the click outside handler
+        document.addEventListener('click', function(event) {
+            const panel = document.querySelector('.reference-panel');
+            const overlay = document.querySelector('.reference-overlay');
+            const button = document.querySelector('.toggle-reference');
+            
+            // Check if the click is outside the panel and not on the toggle button
+            if (panel.style.display === 'block' && 
+                !panel.contains(event.target) && 
+                event.target !== button) {
+                
+                panel.style.display = 'none';
+                overlay.style.display = 'none';
+                button.textContent = 'Quick Reference';
+            }
+        });
+
+        // Update the panel click handler
+        document.querySelector('.reference-panel').addEventListener('click', function(event) {
+            event.stopPropagation();
+        });
 
         function calculateNinetyDayStart() {
             const today = new Date();
@@ -1646,10 +1672,25 @@
                         lookupDevices();
                     }
 
-                    // Format dates
-                    const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed).toLocaleDateString() : 'N/A';
-                    const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed).toLocaleDateString() : 'N/A';
-                    const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection).toLocaleDateString() : 'N/A';
+                    // Format dates and calculate most recent inspection
+                    const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                    const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                    const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                    
+                    // Find most recent date
+                    const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                    const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
+                    
+                    // Calculate days since most recent inspection
+                    const today = new Date();
+                    const daysSinceInspection = mostRecentDate ? 
+                        Math.floor((today - mostRecentDate) / (1000 * 60 * 60 * 24)) : null;
+                    
+                    // Format dates for display
+                    const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
+                    const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
+                    const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
+                    const mostRecentDisplay = mostRecentDate ? mostRecentDate.toLocaleDateString() : 'N/A';
                     
                     resultDiv.innerHTML = `
                         <div style="background: #1c1c1c; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); color: #ffffff; border: 1px solid #333;">
@@ -1681,16 +1722,37 @@
                                 <strong style="color: #4a9eff; margin-bottom: 10px; display: block;">Inspection History:</strong>
                                 <div style="margin-bottom: 10px;">
                                     <strong style="color: #4a9eff; display: inline-block; width: 120px;">Latest CAT 1:</strong> 
-                                    <span>${cat1Date}</span>
+                                    <span>${cat1Display}</span>
                                 </div>
                                 <div style="margin-bottom: 10px;">
                                     <strong style="color: #4a9eff; display: inline-block; width: 120px;">Latest CAT 5:</strong> 
-                                    <span>${cat5Date}</span>
+                                    <span>${cat5Display}</span>
                                 </div>
-                                <div>
+                                <div style="margin-bottom: 10px;">
                                     <strong style="color: #4a9eff; display: inline-block; width: 120px;">Latest PVI:</strong> 
-                                    <span>${pviDate}</span>
+                                    <span>${pviDisplay}</span>
                                 </div>
+                                <div style="margin-bottom: 10px;">
+                                    <strong style="color: #4a9eff; display: inline-block; width: 120px;">Latest Inspection:</strong> 
+                                    <span>${mostRecentDisplay}</span>
+                                    ${mostRecentDate ? 
+                                        `<br><span style="color: #888; margin-left: 120px; font-size: 0.9em;">
+                                            (from ${
+                                                mostRecentDate.getTime() === cat1Date?.getTime() ? 'CAT 1' :
+                                                mostRecentDate.getTime() === cat5Date?.getTime() ? 'CAT 5' :
+                                                'PVI'
+                                            })
+                                        </span>` : 
+                                        ''}
+                                </div>
+                                ${daysSinceInspection !== null ? 
+                                    `<div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 120px;">Days Since Last Inspection:</strong> 
+                                        <span style="color: ${daysSinceInspection >= 90 ? '#4CAF50' : '#ff6b6b'}">
+                                            ${daysSinceInspection} days
+                                        </span>
+                                    </div>` : 
+                                    ''}
                             </div>
                             
                             <!-- Add More Info button and dropdown -->
