@@ -1646,7 +1646,7 @@
                         lookupDevices();
                     }
 
-                    // Format CAT 1, CAT 5, and PVI dates if available
+                    // Format dates
                     const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed).toLocaleDateString() : 'N/A';
                     const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed).toLocaleDateString() : 'N/A';
                     const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection).toLocaleDateString() : 'N/A';
@@ -1692,6 +1692,25 @@
                                     <span>${pviDate}</span>
                                 </div>
                             </div>
+                            
+                            <!-- Add More Info button and dropdown -->
+                            <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
+                                <button onclick="toggleMoreInfo('moreInfo_${device.device_number}')"
+                                        style="width: 100%; padding: 10px; background: #2c2c2c; color: white; border: 1px solid #444; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                                    <span>More Info</span>
+                                    <span class="arrow">▼</span>
+                                </button>
+                                <div id="moreInfo_${device.device_number}" style="display: none; margin-top: 10px; padding: 10px; background: #2c2c2c; border-radius: 4px;">
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 120px;">Block:</strong> 
+                                        <span>${device.block || 'N/A'}</span>
+                                    </div>
+                                    <div>
+                                        <strong style="color: #4a9eff; display: inline-block; width: 120px;">Lot:</strong> 
+                                        <span>${device.lot || 'N/A'}</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>`;
                 } else {
                     resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No device found with this number</span>';
@@ -1701,6 +1720,21 @@
                 resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up device. Please try again later.</span>';
                 console.error('Error:', error);
                 binInput.value = '';
+            }
+        }
+
+        // Add this new function to handle the dropdown toggle
+        function toggleMoreInfo(elementId) {
+            const element = document.getElementById(elementId);
+            const button = element.previousElementSibling;
+            const arrow = button.querySelector('.arrow');
+            
+            if (element.style.display === 'none') {
+                element.style.display = 'block';
+                arrow.textContent = '▲';
+            } else {
+                element.style.display = 'none';
+                arrow.textContent = '▼';
             }
         }
 
