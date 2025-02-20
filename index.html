@@ -830,7 +830,7 @@
 
     <div id="dobContent" class="content-section">
         <!-- Add BIN Lookup Section at the top -->
-        <div style="max-width: 500px; margin: 20px auto; padding: 20px; background: #2c2c2c; border-radius: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+        <div style="max-width: 800px; margin: 20px auto; padding: 20px; background: #2c2c2c; border-radius: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
             <h3 style="text-align: center; margin-bottom: 20px; color: #ffffff;">Device & BIN Lookup</h3>
             
             <!-- Device Number Search -->
@@ -842,11 +842,17 @@
                            placeholder="Enter Device Number"
                            oninput="this.value = this.value.toUpperCase()"
                            style="width: calc(100% - 10px); padding: 12px; border-radius: 4px; border: 1px solid #444; background: #1c1c1c; color: #ffffff; margin-bottom: 10px;">
-                    <div style="display: flex; justify-content: center; gap: 10px;">
-                        <button onclick="lookupBIN()" 
-                                style="padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
-                            Look up BIN
-                        </button>
+                    <div style="display: flex; justify-content: center; gap: 5px;">
+                        <div style="position: relative; display: inline-flex; align-items: center;">
+                            <button onclick="lookupBIN()" 
+                                    style="padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; width: 200px;">
+                                Look up BIN
+                            </button>
+                            <button onclick="clearDeviceSearch()" 
+                                    style="padding: 8px; background: #333; color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; font-size: 18px; margin-left: 5px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                ✕
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div id="binResult" class="result" style="margin-top: 15px; display: none;">
@@ -862,11 +868,17 @@
                            id="binNumber" 
                            placeholder="Enter BIN Number"
                            style="width: calc(100% - 10px); padding: 12px; border-radius: 4px; border: 1px solid #444; background: #1c1c1c; color: #ffffff; margin-bottom: 10px;">
-                    <div style="display: flex; justify-content: center; gap: 10px;">
-                        <button onclick="lookupDevices()" 
-                                style="padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
-                            Find Devices
-                        </button>
+                    <div style="display: flex; justify-content: center; gap: 5px;">
+                        <div style="position: relative; display: inline-flex; align-items: center;">
+                            <button onclick="lookupDevices()" 
+                                    style="padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; width: 200px;">
+                                Find Devices
+                            </button>
+                            <button onclick="clearDeviceSearch()" 
+                                    style="padding: 8px; background: #333; color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; font-size: 18px; margin-left: 5px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                ✕
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div id="deviceResult" class="result" style="margin-top: 15px; display: none;">
@@ -891,7 +903,7 @@
         </div>
 
         <!-- Add this after the existing lookup section -->
-        <div style="max-width: 500px; margin: 20px auto; padding: 20px; background: #2c2c2c; border-radius: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+        <div style="max-width: 800px; margin: 20px auto; padding: 20px; background: #2c2c2c; border-radius: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
             <h3 style="text-align: center; margin-bottom: 20px; color: #ffffff;">Bulk Device Lookup</h3>
             
             <div style="margin-bottom: 15px; padding: 0 5px;">
@@ -1833,7 +1845,20 @@
                     
                     const address = `${data[0].house_number} ${data[0].street_name}, ${data[0].borough}`;
                     
-                    // Group devices by type
+                    // Count active, removed, and dismantled devices
+                    const removedDevices = data.filter(device => 
+                        device.device_status && device.device_status.toUpperCase() === 'REMOVED'
+                    ).length;
+                    const dismantledDevices = data.filter(device => 
+                        device.device_status && device.device_status.toUpperCase() === 'DISMANTLED'
+                    ).length;
+                    const activeDevices = data.filter(device => 
+                        !device.device_status || 
+                        (device.device_status.toUpperCase() !== 'REMOVED' && 
+                         device.device_status.toUpperCase() !== 'DISMANTLED')
+                    ).length;
+
+                    // Add back the device grouping code
                     const deviceTypes = {};
                     data.forEach(device => {
                         const type = device.device_type || 'Unknown';
@@ -1842,7 +1867,7 @@
                         }
                         deviceTypes[type].push(device);
                     });
-                    
+
                     let html = `
                         <div style="background: #1c1c1c; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); color: #ffffff; border: 1px solid #333;">
                             <div style="margin-bottom: 20px;">
@@ -1852,6 +1877,12 @@
                             <div style="margin-bottom: 15px;">
                                 <strong style="color: #4a9eff;">Total Devices Found:</strong> 
                                 <span>${data.length}</span>
+                                <br>
+                                <span style="margin-left: 20px; color: #4CAF50;">• Active Devices: ${activeDevices}</span>
+                                <br>
+                                <span style="margin-left: 20px; color: #ff6b6b;">• Removed Devices: ${removedDevices}</span>
+                                <br>
+                                <span style="margin-left: 20px; color: #ffd700;">• Dismantled Devices: ${dismantledDevices}</span>
                             </div>
                             <div style="margin-top: 20px;">
                                 <strong style="color: #4a9eff; display: block; margin-bottom: 10px;">Devices by Type:</strong>
@@ -2226,6 +2257,148 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+        }
+
+        // Add this function to fetch violations
+        async function fetchViolations(deviceNumber) {
+            try {
+                const response = await fetch(`https://data.cityofnewyork.us/resource/855j-jady.json?device_number=${deviceNumber}`);
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Error fetching violations:', error);
+                return [];
+            }
+        }
+
+        // Update the lookupDeviceDetails function
+        async function lookupDeviceDetails(deviceNumber) {
+            // ... existing device lookup code ...
+
+            // Add violations lookup
+            const violations = await fetchViolations(deviceNumber);
+            
+            // Add violations to the details display
+            let violationsHtml = '';
+            if (violations.length > 0) {
+                violationsHtml = `
+                    <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
+                        <h4 style="color: #4a9eff;">Violations:</h4>
+                        <div style="max-height: 200px; overflow-y: auto;">
+                            ${violations.map(v => `
+                                <div style="margin-bottom: 10px; padding: 10px; background: #1c1c1c; border-radius: 5px;">
+                                    <strong>Violation #:</strong> ${v.violation_number}<br>
+                                    <strong>Issue Date:</strong> ${new Date(v.violation_issue_date).toLocaleDateString()}<br>
+                                    <strong>Status:</strong> ${v.violation_status}<br>
+                                    <strong>Type:</strong> ${v.violation_type}<br>
+                                    <strong>Remarks:</strong> ${v.violation_remarks}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            } else {
+                violationsHtml = `
+                    <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
+                        <h4 style="color: #4a9eff;">Violations:</h4>
+                        <p>No violations found for this device.</p>
+                    </div>
+                `;
+            }
+
+            // Update the details display to include violations
+            deviceDetailsDiv.innerHTML = `
+                <div style="background: #2c2c2c; padding: 20px; border-radius: 5px; margin-top: 20px;">
+                    <h3 style="color: #4a9eff; margin-bottom: 15px;">Device Details</h3>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Device #:</strong> ${deviceNumber}<br>
+                        <strong>Status:</strong> ${device.device_status || 'N/A'}<br>
+                        <strong>Type:</strong> ${device.device_type || 'N/A'}<br>
+                        <strong>Address:</strong> ${device.house_number} ${device.street_name}, ${device.borough}<br>
+                        <strong>BIN:</strong> ${device.bin || 'N/A'}
+                    </div>
+                    ${violationsHtml}
+                </div>
+            `;
+            deviceDetailsDiv.style.display = 'block';
+        }
+
+        // Update the CSV export to include violations
+        function exportToCSV() {
+            const deviceData = window.lastSearchResults;
+            if (!deviceData || (!deviceData.found || deviceData.found.length === 0) && (!deviceData.notFound || deviceData.notFound.length === 0)) {
+                alert('No data to export. Please perform a search first.');
+                return;
+            }
+
+            // Create CSV content with violations
+            let csvContent = 'Device Number,Status,Type,Address,BIN,Violations\n';
+
+            // Add found devices
+            if (deviceData.found) {
+                deviceData.found.forEach(async device => {
+                    const violations = await fetchViolations(device.device_number);
+                    const violationCount = violations.length;
+                    const violationStatus = violations.map(v => v.violation_status).join('; ');
+                    
+                    const row = [
+                        device.device_number,
+                        device.device_status || 'N/A',
+                        device.device_type || 'N/A',
+                        `${device.house_number} ${device.street_name}, ${device.borough}`,
+                        device.bin || 'N/A',
+                        `${violationCount} (${violationStatus})`
+                    ].map(field => `"${field}"`).join(',');
+                    csvContent += row + '\n';
+                });
+            }
+
+            // Rest of the export function remains the same...
+        }
+
+        // Add these functions to your script section
+        async function handleDOBLogin() {
+            // Get stored credentials or prompt user
+            const username = prompt("Enter DOB NOW username:");
+            const password = prompt("Enter DOB NOW password:");
+            
+            if (!username || !password) {
+                alert("Username and password are required");
+                return;
+            }
+
+            try {
+                // Open DOB NOW in a new window
+                const dobWindow = window.open('https://a810-dobnow.nyc.gov/publish/Index.html#!/', '_blank');
+                
+                if (!dobWindow) {
+                    alert("Please allow pop-ups to use this feature");
+                    return;
+                }
+
+                // Wait for the page to load
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Attempt to fill in credentials
+                dobWindow.postMessage({
+                    type: 'LOGIN',
+                    username: username,
+                    password: password
+                }, 'https://a810-dobnow.nyc.gov');
+
+            } catch (error) {
+                console.error('Login failed:', error);
+                alert('Login automation failed. Please try logging in manually.');
+            }
+        }
+
+        // Add this function to your JavaScript section
+        function clearDeviceSearch() {
+            document.getElementById('deviceNumber').value = '';
+            document.getElementById('binNumber').value = '';
+            document.getElementById('binResult').style.display = 'none';
+            document.getElementById('deviceResult').style.display = 'none';
+            document.getElementById('binExportButton').style.display = 'none';
         }
     </script>
 
