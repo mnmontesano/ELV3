@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ELV3 Terminal</title>
+    <title>Vertical Terminal</title>
     <link rel="icon" type="image/png" href="logo.png">
     <style>
         /* Add these CSS variables right after the <style> tag */
@@ -849,8 +849,8 @@
     <!-- Button-based Tabs (default for larger screens) -->
     <div id="tabButtons" class="tab-buttons">
         <button onclick="showTab('main')" id="mainTab" class="tab-button">ELV3</button>
-        <button onclick="showTab('dob')" id="dobTab" class="tab-button">DOB NOW</button>
-        <button onclick="showTab('dates')" id="datesTab" class="tab-button">Dates</button>
+        <button onclick="showTab('dob')" id="dobTab" class="tab-button">DOB</button>
+        <button onclick="showTab('dates')" id="datesTab" class="tab-button">DATES</button>
         <button onclick="showTab('pdf')" id="pdfTab" class="tab-button">PDF</button>
     </div>
 
@@ -858,8 +858,8 @@
     <div id="tabDropdown" class="tab-dropdown" style="margin: 20px auto; text-align: center;">
         <select id="tabSelect" onchange="showTab(this.value)" style="font-size: 1.2em; padding: 5px; text-align: center; text-align-last: center;">
             <option value="main">ELV3</option>
-            <option value="dob">DOB NOW</option>
-            <option value="dates">Dates</option>
+            <option value="dob">DOB</option>
+            <option value="dates">DATES</option>
             <option value="pdf">PDF</option>
         </select>
     </div>
@@ -1754,10 +1754,12 @@
             const titleMapping = {
                 main: 'ELV3 Terminal',
                 dob: 'DOB Terminal',
-                dates: 'Dates Terminal',
+                dates: 'DATES Terminal',
                 pdf: 'PDF Terminal'
             };
-            document.title = titleMapping[tabName];
+            // Keep document title static as "Vertical Terminal"
+            document.title = "Vertical Terminal";
+            // Still update the visible page title element
             document.getElementById('pageTitle').textContent = titleMapping[tabName];
         }
 
@@ -2100,6 +2102,13 @@
                         lookupDevices();
                     }
 
+                    // Fetch violations for this device
+                    const violations = await fetchViolations(deviceNumber);
+                    const activeViolations = violations.filter(v => 
+                        v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                        v.violation_status?.toUpperCase() === 'OPEN');
+                    const violationCount = activeViolations.length;
+
                     // Format dates and calculate most recent inspection
                     const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
                     const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
@@ -2146,6 +2155,36 @@
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">ZIP Code:</strong> 
                                 <span>${device.zip_code || 'N/A'}</span>
                             </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Violations:</strong> 
+                                <span style="color: ${violationCount > 0 ? '#ff6b6b' : 'var(--text-color)'}">
+                                    ${violationCount > 0 ? `${violationCount} active` : 'None'}
+                                </span>
+                            </div>
+                            ${violationCount > 0 ? `
+                                <div style="margin-bottom: 15px;">
+                                    <button onclick="toggleViolations('device_violations_${deviceNumber}')" 
+                                            id="violationsBtn_device_violations_${deviceNumber}"
+                                            style="width: 100%; padding: 8px; background: var(--panel-bg); color: var(--text-color); 
+                                                   border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                                   font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
+                                        <span>Show Violation Details</span>
+                                        <span class="arrow">▼</span>
+                                    </button>
+                                    <div id="violations_device_violations_${deviceNumber}" style="display: none; margin-top: 8px; 
+                                         padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em; max-height: 200px; overflow-y: auto;">
+                                        ${activeViolations.map(v => `
+                                            <div style="margin-bottom: 10px; padding: 10px; background: var(--input-bg); border-radius: 5px;">
+                                                <strong>Violation #:</strong> ${v.violation_number}<br>
+                                                <strong>Issue Date:</strong> ${new Date(v.violation_issue_date).toLocaleDateString()}<br>
+                                                <strong>Status:</strong> ${v.violation_status}<br>
+                                                <strong>Type:</strong> ${v.violation_type || 'N/A'}<br>
+                                                <strong>Remarks:</strong> ${v.violation_remarks || 'N/A'}
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
                             <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
                                 <strong style="color: var(--header-color); margin-bottom: 10px; display: block;">Inspection History:</strong>
                                 <div style="margin-bottom: 10px;">
@@ -2325,7 +2364,7 @@
                             </div>
                             <div style="margin-top: 20px;">
                                 <strong style="color: var(--header-color); display: block; margin-bottom: 10px;">Devices by Type:</strong>
-                                <div style="max-height: 300px; overflow-y: auto; padding-right: 10px;">
+                                <div style="max-height: 600px; overflow-y: auto; padding-right: 10px;">
                     `;
                     
                     // First display elevators if they exist
@@ -2361,7 +2400,7 @@
                     <div style="margin-bottom: 10px; border-bottom: 1px solid var(--input-border); padding-bottom: 10px;">
                         <strong style="color: var(--header-color);">${type} (${devices.length}):</strong>
                     </div>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px;">
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
                         ${devices.map(device => {
                             // Get violations for this device
                             const deviceViolations = violationsByDevice[device.device_number] || [];
@@ -2421,6 +2460,12 @@
             if (violationsDiv.style.display === 'none') {
                 violationsDiv.style.display = 'block';
                 arrow.textContent = '▲';
+                
+                // Check if this is a pre-rendered violations section (from device search)
+                if (deviceNumber.startsWith('device_violations_') || deviceNumber.startsWith('quick_device_violations_')) {
+                    // The violations are already pre-rendered in the HTML, so we don't need to do anything
+                    return;
+                }
                 
                 // Use pre-fetched violations if available
                 let activeViolations = [];
@@ -2603,7 +2648,7 @@
                             <strong style="color: #4a9eff;">Total Devices Searched:</strong> 
                             <span>${deviceNumbers.length}</span>
                         </div>
-                        <div style="max-height: 400px; overflow-y: auto; padding-right: 10px;">
+                        <div style="max-height: 600px; overflow-y: auto; padding-right: 10px;">
                 `;
 
                 // Display grouped devices
@@ -2734,7 +2779,7 @@
                             <div style="margin-bottom: 15px;">
                                 <strong style="color: #4a9eff;">Buildings Found:</strong> ${Object.keys(binGroups).length}
                             </div>
-                            <div style="max-height: 300px; overflow-y: auto; padding-right: 10px;">
+                            <div style="max-height: 600px; overflow-y: auto; padding-right: 10px;">
                     `;
 
                     for (const [bin, group] of Object.entries(binGroups)) {
@@ -3028,6 +3073,13 @@
                         quickLookupDevices();
                     }
 
+                    // Fetch violations for this device
+                    const violations = await fetchViolations(deviceNumber);
+                    const activeViolations = violations.filter(v => 
+                        v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                        v.violation_status?.toUpperCase() === 'OPEN');
+                    const violationCount = activeViolations.length;
+
                     // Format dates and calculate most recent inspection
                     const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
                     const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
@@ -3074,6 +3126,36 @@
                                 <strong style="color: #4a9eff; display: inline-block; width: 120px;">ZIP Code:</strong> 
                                 <span>${device.zip_code || 'N/A'}</span>
                             </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: #4a9eff; display: inline-block; width: 120px;">Violations:</strong> 
+                                <span style="color: ${violationCount > 0 ? '#ff6b6b' : '#ffffff'}">
+                                    ${violationCount > 0 ? `${violationCount} active` : 'None'}
+                                </span>
+                            </div>
+                            ${violationCount > 0 ? `
+                                <div style="margin-bottom: 15px;">
+                                    <button onclick="toggleViolations('quick_device_violations_${deviceNumber}')" 
+                                            id="violationsBtn_quick_device_violations_${deviceNumber}"
+                                            style="width: 100%; padding: 8px; background: #2c2c2c; color: white; 
+                                                   border: 1px solid #444; border-radius: 4px; cursor: pointer; 
+                                                   font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
+                                        <span>Show Violation Details</span>
+                                        <span class="arrow">▼</span>
+                                    </button>
+                                    <div id="violations_quick_device_violations_${deviceNumber}" style="display: none; margin-top: 8px; 
+                                         padding: 8px; background: #2c2c2c; border-radius: 4px; font-size: 0.9em; max-height: 200px; overflow-y: auto;">
+                                        ${activeViolations.map(v => `
+                                            <div style="margin-bottom: 10px; padding: 10px; background: #1c1c1c; border-radius: 5px;">
+                                                <strong>Violation #:</strong> ${v.violation_number}<br>
+                                                <strong>Issue Date:</strong> ${new Date(v.violation_issue_date).toLocaleDateString()}<br>
+                                                <strong>Status:</strong> ${v.violation_status}<br>
+                                                <strong>Type:</strong> ${v.violation_type || 'N/A'}<br>
+                                                <strong>Remarks:</strong> ${v.violation_remarks || 'N/A'}
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
                             <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
                                 <strong style="color: #4a9eff; margin-bottom: 10px; display: block;">Inspection History:</strong>
                                 <div style="margin-bottom: 10px;">
@@ -3239,7 +3321,7 @@
                             </div>
                             <div style="margin-top: 20px;">
                                 <strong style="color: #4a9eff; display: block; margin-bottom: 10px;">Devices by Type:</strong>
-                                <div style="max-height: 300px; overflow-y: auto; padding-right: 10px;">
+                                <div style="max-height: 600px; overflow-y: auto; padding-right: 10px;">
                     `;
                     
                     // First display elevators if they exist
@@ -3341,7 +3423,7 @@
                             <strong style="color: #4a9eff;">Total Devices Searched:</strong> 
                             <span>${deviceNumbers.length}</span>
                         </div>
-                        <div style="max-height: 400px; overflow-y: auto; padding-right: 10px;">
+                        <div style="max-height: 600px; overflow-y: auto; padding-right: 10px;">
                 `;
 
                 // Display grouped devices
@@ -3472,7 +3554,7 @@
                             <div style="margin-bottom: 15px;">
                                 <strong style="color: #4a9eff;">Buildings Found:</strong> ${Object.keys(binGroups).length}
                             </div>
-                            <div style="max-height: 300px; overflow-y: auto; padding-right: 10px;">
+                            <div style="max-height: 600px; overflow-y: auto; padding-right: 10px;">
                     `;
 
                     for (const [bin, group] of Object.entries(binGroups)) {
