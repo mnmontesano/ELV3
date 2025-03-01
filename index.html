@@ -2855,7 +2855,7 @@
                 return;
             }
 
-            resultDiv.innerHTML = '<span style="color: #ffffff;">Looking up devices...</span>';
+            resultDiv.innerHTML = '<span style="color: var(--text-color);">Looking up devices...</span>';
             resultDiv.style.display = 'block';
 
             try {
@@ -2890,9 +2890,9 @@
                 }
 
                 let html = `
-                    <div style="background: #1c1c1c; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); color: #ffffff; border: 1px solid #333;">
+                    <div style="background: var(--input-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
                         <div style="margin-bottom: 15px;">
-                            <strong style="color: #4a9eff;">Total Devices Searched:</strong> 
+                            <strong style="color: var(--header-color); display: inline-block; width: 180px;">Total Devices Searched:</strong> 
                             <span>${deviceNumbers.length}</span>
                         </div>
                         <div style="max-height: 600px; overflow-y: auto; padding-right: 10px;">
@@ -2901,21 +2901,21 @@
                 // Display grouped devices
                 for (const [bin, group] of Object.entries(binGroups)) {
                     html += `
-                        <div style="background: #2c2c2c; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
-                            <div style="margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 10px;">
-                                <strong style="color: #4a9eff;">BIN:</strong> ${bin}<br>
-                                <strong style="color: #4a9eff;">Address:</strong> ${group.address}<br>
-                                <strong style="color: #4a9eff;">Devices Found:</strong> ${group.devices.length}
+                        <div style="background: var(--panel-bg); padding: 15px; border-radius: 5px; margin-bottom: 15px; border: 1px solid var(--input-border);">
+                            <div style="margin-bottom: 10px; border-bottom: 1px solid var(--input-border); padding-bottom: 10px;">
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">BIN:</strong> ${bin}<br>
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Address:</strong> ${group.address}<br>
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Devices Found:</strong> ${group.devices.length}
                             </div>
                             <div style="padding-left: 15px;">
                     `;
 
                     group.devices.forEach(device => {
                         html += `
-                            <div style="margin-bottom: 10px; padding: 10px; background: #1c1c1c; border-radius: 5px;">
-                                <strong style="color: #4a9eff;">Device Number:</strong> ${device.device_number}<br>
-                                <strong style="color: #4a9eff;">Type:</strong> ${device.device_type || 'N/A'}<br>
-                                <strong style="color: #4a9eff;">Status:</strong> ${device.device_status || 'N/A'}
+                            <div style="margin-bottom: 10px; padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid var(--input-border);">
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Device Number:</strong> ${device.device_number}<br>
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Type:</strong> ${device.device_type || 'N/A'}<br>
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Status:</strong> ${device.device_status || 'N/A'}
                             </div>
                         `;
                     });
@@ -2929,10 +2929,10 @@
                 // Display devices not found
                 if (notFound.length > 0) {
                     html += `
-                        <div style="background: #2c2c2c; padding: 15px; border-radius: 5px; margin-bottom: 10px;">
+                        <div style="background: var(--panel-bg); padding: 15px; border-radius: 5px; margin-bottom: 10px; border: 1px solid var(--input-border);">
                             <div style="color: #ff6b6b;">
-                                <strong>Devices Not Found:</strong>
-                                <div style="margin-top: 5px;">
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Devices Not Found:</strong>
+                                <div style="margin-top: 5px; padding-left: 120px;">
                                     ${notFound.join('<br>')}
                                 </div>
                             </div>
@@ -2958,7 +2958,6 @@
             } catch (error) {
                 resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
                 console.error('Error:', error);
-                document.getElementById('exportButton').style.display = 'none';
             }
         }
 
@@ -3212,7 +3211,7 @@
         }
 
         // Update the CSV export to include violations
-        function exportToCSV() {
+        function exportDevicesToCSV() {
             const deviceData = window.lastSearchResults;
             if (!deviceData || (!deviceData.found || deviceData.found.length === 0) && (!deviceData.notFound || deviceData.notFound.length === 0)) {
                 alert('No data to export. Please perform a search first.');
@@ -3241,7 +3240,23 @@
                 });
             }
 
-            // Rest of the export function remains the same...
+            // Add not found devices
+            if (deviceData.notFound && deviceData.notFound.length > 0) {
+                deviceData.notFound.forEach(deviceNumber => {
+                    csvContent += `"${deviceNumber}","Not Found","N/A","N/A","N/A","N/A"\n`;
+                });
+            }
+
+            // Create and trigger download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'device_search_results.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
 
         // Add these functions to your script section
@@ -3986,7 +4001,7 @@
         }
 
         // Update the CSV export to include violations
-        function quickExportToCSV() {
+        function quickExportDevicesToCSV() {
             const deviceData = window.lastSearchResults;
             if (!deviceData || (!deviceData.found || deviceData.found.length === 0) && (!deviceData.notFound || deviceData.notFound.length === 0)) {
                 alert('No data to export. Please perform a search first.');
@@ -4015,7 +4030,23 @@
                 });
             }
 
-            // Rest of the export function remains the same...
+            // Add not found devices
+            if (deviceData.notFound && deviceData.notFound.length > 0) {
+                deviceData.notFound.forEach(deviceNumber => {
+                    csvContent += `"${deviceNumber}","Not Found","N/A","N/A","N/A","N/A"\n`;
+                });
+            }
+
+            // Create and trigger download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'quick_device_search_results.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
 
         // Add these functions to your script section
@@ -4351,6 +4382,91 @@
                 showDobNowBtn.textContent = 'Show DOB NOW Interface';
             }
         }
+
+        // Function to fetch the last update date for the violations API
+        async function fetchViolationsAPILastUpdateDate() {
+            try {
+                // Set the default date based on known information
+                const defaultDate = "February 28, 2025";
+                const violationsApiLastUpdatedElement = document.getElementById('violationsApiLastUpdated');
+                
+                // Start with the known date from screenshot
+                violationsApiLastUpdatedElement.textContent = defaultDate;
+                
+                // Calculate and display days since update
+                let updateDate = new Date(defaultDate);
+                
+                // Try to fetch the most current data
+                const metadataResponse = await fetch('https://data.cityofnewyork.us/api/views/metadata/855j-jady.json');
+                if (metadataResponse.ok) {
+                    const metadata = await metadataResponse.json();
+                    
+                    // Look for the update date in different possible locations
+                    let updateDateString = metadata.rowsUpdatedAt || 
+                                          (metadata.customFields && metadata.customFields.last_update) || 
+                                          metadata.dataUpdatedAt ||
+                                          metadata.viewLastModified;
+                    
+                    if (updateDateString) {
+                        updateDate = new Date(updateDateString);
+                        // Only update if we got a valid date
+                        if (!isNaN(updateDate.getTime())) {
+                            const formattedDate = updateDate.toLocaleDateString('en-US', { 
+                                year: 'numeric', 
+                                month: 'long', 
+                                day: 'numeric' 
+                            });
+                            violationsApiLastUpdatedElement.textContent = formattedDate;
+                            console.log("Violations API data last updated:", formattedDate);
+                        }
+                    }
+                }
+                
+                // Calculate days since update (whether we got a new date or are using the default)
+                const today = new Date();
+                const timeDiff = today - updateDate;
+                const daysSinceUpdate = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+                
+                // Get the days since element
+                const daysSinceElement = document.getElementById('violationsDaysSinceUpdate');
+                
+                daysSinceElement.textContent = daysSinceUpdate === 0 ? 'Updated Today' : `Updated ${daysSinceUpdate} days ago`;
+                daysSinceElement.style.color = daysSinceUpdate < 14 ? "#4CAF50" : 
+                                              daysSinceUpdate < 30 ? "#FFA500" : "#FF6B6B";
+            } catch (error) {
+                console.error('Error fetching Violations API update date:', error);
+                // Display days since the default date even if there's an error
+                const today = new Date();
+                const defaultDate = new Date("February 28, 2025");
+                const timeDiff = today - defaultDate;
+                const daysSinceUpdate = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+                
+                // Get the days since element
+                const daysSinceElement = document.getElementById('violationsDaysSinceUpdate');
+                
+                daysSinceElement.textContent = daysSinceUpdate === 0 ? 'Updated Today' : `Updated ${daysSinceUpdate} days ago`;
+                daysSinceElement.style.color = daysSinceUpdate < 14 ? "#4CAF50" : 
+                                              daysSinceUpdate < 30 ? "#FFA500" : "#FF6B6B";
+            }
+        }
+
+        // Add event listener to call the function when the violations tab is shown
+        document.addEventListener('DOMContentLoaded', function() {
+            // Call the function immediately when the page loads
+            fetchViolationsAPILastUpdateDate();
+            
+            // Also set up the tab click listener
+            const violationsTab = document.getElementById('violationsTab');
+            if (violationsTab) {
+                violationsTab.addEventListener('click', fetchViolationsAPILastUpdateDate);
+            }
+            
+            // Also check if violations tab is the default tab on load
+            const defaultTab = localStorage.getItem('defaultTab') || 'main';
+            if (defaultTab === 'violations') {
+                fetchViolationsAPILastUpdateDate();
+            }
+        });
     </script>
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
@@ -4359,6 +4475,50 @@
         <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">
             <img src="linkedin-icon.svg" alt="LinkedIn" class="social-icon" onerror="this.innerText='LinkedIn'">
         </a>
+    </div>
+
+    <!-- Add the violations API data source section -->
+    <div style="max-width: 800px; margin: 20px auto; padding: 20px; background: var(--card-bg); border-radius: 5px; box-shadow: 0 2px 8px var(--card-shadow);">
+        <h3 style="text-align: center; margin-bottom: 20px; color: var(--text-color);">Violations API Information</h3>
+        
+        <div style="text-align: center; margin-bottom: 15px; font-size: 0.9em; color: var(--text-color); opacity: 0.8;">
+            <span>Data source: NYC DOB Safety Violations API</span>
+            <br>
+            <span>Last Updated: <span id="violationsApiLastUpdated">February 28, 2025</span></span>
+            <a href="https://data.cityofnewyork.us/Housing-Development/DOB-Safety-Violations/855j-jady" 
+               target="_blank" 
+               style="margin-left: 5px; text-decoration: underline; color: var(--header-color);">
+                (Source)
+            </a>
+            <div id="violationsDaysSinceUpdate" style="text-align: center; font-size: 0.9em; color: #4CAF50; opacity: 0.8; margin-top: 5px;">
+                Updated 0 days ago
+            </div>
+            <script>
+                // Calculate initial days since update
+                (function() {
+                    const today = new Date();
+                    const updateDate = new Date("February 28, 2025");
+                    const timeDiff = today - updateDate;
+                    const daysSinceUpdate = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+                    
+                    const daysSinceElement = document.getElementById('violationsDaysSinceUpdate');
+                    if (daysSinceElement) {
+                        daysSinceElement.textContent = daysSinceUpdate === 0 ? 'Updated Today' : `Updated ${daysSinceUpdate} days ago`;
+                        daysSinceElement.style.color = daysSinceUpdate < 14 ? "#4CAF50" : 
+                                                      daysSinceUpdate < 30 ? "#FFA500" : "#FF6B6B";
+                    }
+                })();
+            </script>
+        </div>
+        
+        <div style="margin-top: 20px; text-align: center;">
+            <p style="color: var(--text-color);">
+                This website uses the NYC Department of Buildings Safety Violations API to provide up-to-date information about elevator violations.
+            </p>
+            <p style="color: var(--text-color);">
+                The API provides information about violations issued for elevator devices, including violation numbers, issue dates, statuses, types, and remarks.
+            </p>
+        </div>
     </div>
 </body>
 </html>
