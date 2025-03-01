@@ -2267,6 +2267,228 @@
             }
         }
 
+        // Add this new function to handle the device details dropdown toggle
+        function toggleDeviceDetails(deviceNumber) {
+            const detailsElement = document.getElementById(`details_${deviceNumber}`);
+            const button = document.getElementById(`detailsBtn_${deviceNumber}`);
+            const arrow = button.querySelector('.arrow');
+            
+            if (detailsElement.style.display === 'none') {
+                // Fetch additional device details if not already loaded
+                if (detailsElement.getAttribute('data-loaded') !== 'true') {
+                    fetchDeviceDetails(deviceNumber);
+                }
+                detailsElement.style.display = 'block';
+                arrow.textContent = '▲';
+            } else {
+                detailsElement.style.display = 'none';
+                arrow.textContent = '▼';
+            }
+        }
+
+        // Function to fetch additional device details
+        async function fetchDeviceDetails(deviceNumber) {
+            const detailsElement = document.getElementById(`details_${deviceNumber}`);
+            detailsElement.innerHTML = '<span style="color: var(--text-color);">Loading details...</span>';
+            
+            try {
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    const device = data[0];
+                    
+                    // Get inspection dates directly from the device data
+                    const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                    const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                    const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                    
+                    // Find most recent date
+                    const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                    const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
+                    
+                    // Calculate days since most recent inspection
+                    const today = new Date();
+                    const daysSinceInspection = mostRecentDate ? 
+                        Math.floor((today - mostRecentDate) / (1000 * 60 * 60 * 24)) : null;
+                    
+                    // Format dates for display
+                    const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
+                    const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
+                    const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
+                    const mostRecentDisplay = mostRecentDate ? mostRecentDate.toLocaleDateString() : 'N/A';
+                    
+                    // Get recent inspections if available
+                    let inspectionHistory = '';
+                    try {
+                        const inspResponse = await fetch(`https://data.cityofnewyork.us/resource/rzpd-6qkc.json?device_number=${deviceNumber}`);
+                        if (inspResponse.ok) {
+                            const inspData = await inspResponse.json();
+                            if (inspData && inspData.length > 0) {
+                                // Sort inspections by date (newest first)
+                                const inspections = inspData.filter(insp => insp.inspection_date);
+                                inspections.sort((a, b) => {
+                                    return new Date(b.inspection_date) - new Date(a.inspection_date);
+                                });
+                                
+                                // Get the most recent inspections
+                                const recentInspections = inspections.slice(0, 5);
+                                
+                                if (recentInspections.length > 0) {
+                                    inspectionHistory = `
+                                        <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 10px;">
+                                            <strong style="color: var(--header-color); display: block; margin-bottom: 8px;">Recent Inspections:</strong>
+                                            ${recentInspections.map(insp => `
+                                                <div style="margin-bottom: 8px; padding: 5px; background: var(--input-bg); border-radius: 4px;">
+                                                    <div><strong style="color: var(--header-color);">Date:</strong> ${insp.inspection_date ? new Date(insp.inspection_date).toLocaleDateString() : 'N/A'}</div>
+                                                    <div><strong style="color: var(--header-color);">Type:</strong> ${insp.inspection_type || 'N/A'}</div>
+                                                    <div><strong style="color: var(--header-color);">Result:</strong> ${insp.inspection_result || 'N/A'}</div>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    `;
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error fetching inspection history:', error);
+                    }
+                    
+                    let html = `
+                        <div style="margin-bottom: 5px;">
+                            <strong style="color: var(--header-color);">Device Type:</strong> ${device.device_type || 'N/A'}
+                        </div>
+                        <div style="margin-bottom: 5px;">
+                            <strong style="color: var(--header-color);">Status:</strong> ${device.device_status || 'N/A'}
+                        </div>
+                        <div style="margin-bottom: 5px;">
+                            <strong style="color: var(--header-color);">Borough:</strong> ${device.borough || 'N/A'}
+                        </div>
+                        <div style="margin-bottom: 5px;">
+                            <strong style="color: var(--header-color);">Block:</strong> ${device.block || 'N/A'}
+                        </div>
+                        <div style="margin-bottom: 5px;">
+                            <strong style="color: var(--header-color);">Lot:</strong> ${device.lot || 'N/A'}
+                        </div>
+                        ${device.house_number && device.street_name ? `
+                            <div style="margin-bottom: 5px;">
+                                <strong style="color: var(--header-color);">Address:</strong> ${device.house_number} ${device.street_name}
+                            </div>
+                        ` : ''}
+                        ${device.bin ? `
+                            <div style="margin-bottom: 5px;">
+                                <strong style="color: var(--header-color);">BIN:</strong> ${device.bin}
+                            </div>
+                        ` : ''}
+                        <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 10px;">
+                            <strong style="color: var(--header-color); display: block; margin-bottom: 8px;">Inspection Dates:</strong>
+                            <div style="margin-bottom: 5px;">
+                                <strong style="color: var(--header-color);">Latest CAT 1:</strong> ${cat1Display}
+                            </div>
+                            <div style="margin-bottom: 5px;">
+                                <strong style="color: var(--header-color);">Latest CAT 5:</strong> ${cat5Display}
+                            </div>
+                            <div style="margin-bottom: 5px;">
+                                <strong style="color: var(--header-color);">Latest PVI:</strong> ${pviDisplay}
+                            </div>
+                            <div style="margin-bottom: 5px;">
+                                <strong style="color: var(--header-color);">Latest Inspection:</strong> ${mostRecentDisplay}
+                                ${mostRecentDate ? 
+                                    `<br><span style="color: var(--text-muted); margin-left: 10px; font-size: 0.9em;">
+                                        (from ${
+                                            mostRecentDate.getTime() === cat1Date?.getTime() ? 'CAT 1' :
+                                            mostRecentDate.getTime() === cat5Date?.getTime() ? 'CAT 5' :
+                                            'PVI'
+                                        })
+                                    </span>` : 
+                                    ''}
+                            </div>
+                            ${daysSinceInspection !== null ? 
+                                `<div style="margin-bottom: 5px;">
+                                    <strong style="color: var(--header-color);">Days Since Last Inspection:</strong> 
+                                    <span style="color: ${daysSinceInspection >= 90 ? '#4CAF50' : '#ff6b6b'}">
+                                        ${daysSinceInspection} days
+                                    </span>
+                                </div>` : 
+                                ''}
+                        </div>
+                        ${inspectionHistory}
+                    `;
+                    
+                    detailsElement.innerHTML = html;
+                    detailsElement.setAttribute('data-loaded', 'true');
+                } else {
+                    detailsElement.innerHTML = '<span style="color: var(--text-color);">No additional details found</span>';
+                }
+            } catch (error) {
+                detailsElement.innerHTML = '<span style="color: #ff6b6b;">Error loading details</span>';
+                console.error('Error fetching device details:', error);
+            }
+        }
+
+        // Add this new function to handle the violations dropdown toggle
+        function toggleViolations(deviceNumber) {
+            const violationsElement = document.getElementById(`violations_${deviceNumber}`);
+            const button = document.getElementById(`violationsBtn_${deviceNumber}`);
+            const arrow = button.querySelector('.arrow');
+            
+            if (violationsElement.style.display === 'none') {
+                // Fetch and display violations if not already loaded
+                if (violationsElement.innerHTML.trim() === '') {
+                    fetchViolations(deviceNumber);
+                }
+                violationsElement.style.display = 'block';
+                arrow.textContent = '▲';
+            } else {
+                violationsElement.style.display = 'none';
+                arrow.textContent = '▼';
+            }
+        }
+
+        // Function to fetch violations for a device
+        async function fetchViolations(deviceNumber) {
+            const violationsElement = document.getElementById(`violations_${deviceNumber}`);
+            violationsElement.innerHTML = '<span style="color: var(--text-color);">Loading violations...</span>';
+            
+            try {
+                const response = await fetch(`https://data.cityofnewyork.us/resource/rzpd-6qkc.json?device_number=${deviceNumber}`);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    // Filter for active violations
+                    const activeViolations = data.filter(v => 
+                        v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                        v.violation_status?.toUpperCase() === 'OPEN'
+                    );
+                    
+                    if (activeViolations.length > 0) {
+                        let html = '';
+                        activeViolations.forEach(v => {
+                            html += `
+                                <div style="margin-bottom: 10px; padding: 8px; background: var(--input-bg); border-radius: 4px;">
+                                    <div><strong style="color: var(--header-color);">Violation #:</strong> ${v.violation_number || 'N/A'}</div>
+                                    <div><strong style="color: var(--header-color);">Status:</strong> ${v.violation_status || 'N/A'}</div>
+                                    <div><strong style="color: var(--header-color);">Date:</strong> ${v.violation_date ? new Date(v.violation_date).toLocaleDateString() : 'N/A'}</div>
+                                    <div><strong style="color: var(--header-color);">Category:</strong> ${v.violation_category || 'N/A'}</div>
+                                    <div><strong style="color: var(--header-color);">Remarks:</strong> ${v.violation_remarks || 'N/A'}</div>
+                                </div>
+                            `;
+                        });
+                        violationsElement.innerHTML = html;
+                    } else {
+                        violationsElement.innerHTML = '<span style="color: var(--text-color);">No active violations found</span>';
+                    }
+                } else {
+                    violationsElement.innerHTML = '<span style="color: var(--text-color);">No violations found</span>';
+                }
+            } catch (error) {
+                violationsElement.innerHTML = '<span style="color: #ff6b6b;">Error loading violations</span>';
+                console.error('Error fetching violations:', error);
+            }
+        }
+
         // Add event listener for Enter key
         document.getElementById('deviceNumber').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
@@ -2412,22 +2634,13 @@
                             return `
                                 <div style="padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid var(--input-border);">
                                     <div><strong style="color: var(--header-color);">Device #:</strong> ${device.device_number}</div>
-                                    <div><strong style="color: var(--header-color);">Status:</strong> 
-                                        <span style="color: ${
-                                            device.device_status?.toUpperCase() === 'REMOVED' ? '#ff6b6b' : 
-                                            device.device_status?.toUpperCase() === 'DISMANTLED' ? '#ffd700' : 
-                                            'var(--text-color)'
-                                        }">
-                                            ${device.device_status || 'Active'}
-                                        </span>
-                                    </div>
-                                    <div style="margin-top: 5px;">
-                                        <strong style="color: var(--header-color);">Violations:</strong>
-                                        <span style="color: ${violationCount > 0 ? '#ff6b6b' : 'var(--text-color)'}">
-                                            ${violationCount > 0 ? `${violationCount} active` : 'None'}
-                                        </span>
-                                    </div>
+                                    <div><strong style="color: var(--header-color);">Status:</strong> ${device.device_status || 'N/A'}</div>
                                     ${violationCount > 0 ? `
+                                        <div style="margin-top: 5px;">
+                                            <span style="color: #ff6b6b; font-weight: 500;">
+                                                ${violationCount} Active Violation${violationCount !== 1 ? 's' : ''}
+                                            </span>
+                                        </div>
                                         <div style="margin-top: 5px;">
                                             <button 
                                                 onclick="toggleViolations('${device.device_number}')" 
@@ -2435,7 +2648,7 @@
                                                 style="width: 100%; padding: 5px; background: var(--panel-bg); color: var(--text-color); 
                                                        border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
                                                        font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
-                                                <span>Show Details</span>
+                                                <span>Show Violations</span>
                                                 <span class="arrow">▼</span>
                                             </button>
                                             <div id="violations_${device.device_number}" style="display: none; margin-top: 8px; 
@@ -2443,6 +2656,20 @@
                                             </div>
                                         </div>
                                     ` : ''}
+                                    <div style="margin-top: 10px;">
+                                        <button 
+                                            onclick="toggleDeviceDetails('${device.device_number}')" 
+                                            id="detailsBtn_${device.device_number}"
+                                            style="width: 100%; padding: 5px; background: var(--panel-bg); color: var(--text-color); 
+                                                   border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                                   font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
+                                            <span>Show Details</span>
+                                            <span class="arrow">▼</span>
+                                        </button>
+                                        <div id="details_${device.device_number}" style="display: none; margin-top: 8px; 
+                                             padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
+                                        </div>
+                                    </div>
                                 </div>
                             `;
                         }).join('')}
@@ -3646,7 +3873,6 @@
                 alert('No data to export. Please perform a search first.');
                 return;
             }
-
             // Create CSV content
             let csvContent = 'Device Number,BIN,Address,Borough,Type,Status\n';
 
@@ -4083,4 +4309,3 @@
     </div>
 </body>
 </html>
-
