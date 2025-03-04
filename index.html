@@ -1280,6 +1280,85 @@
                 <span style="color: red;">Disclaimer: The DOB NOW page is provided by the New York City Department of Buildings. This embeded page should not be used as an official source for filing and should only be used to quickly look up information related to a building or device.</span>
             </div>
         </div>
+        
+        <!-- Add the violations API data source section -->
+        <div style="max-width: 800px; margin: 20px auto; padding: 20px; background: var(--card-bg); border-radius: 5px; box-shadow: 0 2px 8px var(--card-shadow);">
+            <h3 style="text-align: center; margin-bottom: 20px; color: var(--text-color);">Violations API Information</h3>
+            
+            <div style="text-align: center; margin-bottom: 15px; font-size: 0.9em; color: var(--text-color); opacity: 0.8;">
+                <span>Data source: NYC DOB Safety Violations API</span>
+                <br>
+                <span>Last Updated: <span id="violationsApiLastUpdated">Loading...</span></span>
+                <a href="https://data.cityofnewyork.us/Housing-Development/DOB-Safety-Violations/855j-jady" 
+                   target="_blank" 
+                   style="margin-left: 5px; text-decoration: underline; color: var(--header-color);">
+                    (Source)
+                </a>
+                <div id="violationsDaysSinceUpdate" style="text-align: center; font-size: 0.9em; color: #4CAF50; opacity: 0.8; margin-top: 5px;">
+                    Checking...
+                </div>
+                <script>
+                    // Fetch actual last updated date from NYC Open Data API
+                    (function() {
+                        const datasetId = '855j-jady'; // DOB Safety Violations dataset ID
+                        const metadataUrl = `https://data.cityofnewyork.us/api/views/${datasetId}.json`;
+                        
+                        fetch(metadataUrl)
+                            .then(response => response.json())
+                            .then(data => {
+                                // Extract the last updated date from the metadata
+                                const updateDateStr = data.rowsUpdatedAt ? new Date(data.rowsUpdatedAt * 1000).toLocaleDateString('en-US', { 
+                                    year: 'numeric', 
+                                    month: 'long', 
+                                    day: 'numeric' 
+                                }) : 'Unknown';
+                                
+                                // Update the displayed date
+                                const lastUpdatedElement = document.getElementById('violationsApiLastUpdated');
+                                if (lastUpdatedElement) {
+                                    lastUpdatedElement.textContent = updateDateStr;
+                                }
+                                
+                                // Calculate days since update
+                                const today = new Date();
+                                const updateDate = data.rowsUpdatedAt ? new Date(data.rowsUpdatedAt * 1000) : today;
+                                const timeDiff = today - updateDate;
+                                const daysSinceUpdate = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+                                
+                                const daysSinceElement = document.getElementById('violationsDaysSinceUpdate');
+                                if (daysSinceElement) {
+                                    daysSinceElement.textContent = daysSinceUpdate === 0 ? 'Updated Today' : `Updated ${daysSinceUpdate} days ago`;
+                                    daysSinceElement.style.color = daysSinceUpdate < 14 ? "#4CAF50" : 
+                                                                  daysSinceUpdate < 30 ? "#FFA500" : "#FF6B6B";
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error fetching dataset metadata:', error);
+                                // Fallback to a default behavior on error
+                                const lastUpdatedElement = document.getElementById('violationsApiLastUpdated');
+                                if (lastUpdatedElement && lastUpdatedElement.textContent === 'Loading...') {
+                                    lastUpdatedElement.textContent = 'Unable to fetch update date';
+                                }
+                                
+                                const daysSinceElement = document.getElementById('violationsDaysSinceUpdate');
+                                if (daysSinceElement && daysSinceElement.textContent === 'Checking...') {
+                                    daysSinceElement.textContent = 'Update status unavailable';
+                                    daysSinceElement.style.color = "#FFA500";
+                                }
+                            });
+                    })();
+                </script>
+            </div>
+            
+            <div style="margin-top: 20px; text-align: center;">
+                <p style="color: var(--text-color);">
+                    This website uses the NYC Department of Buildings Safety Violations API to provide up-to-date information about elevator violations.
+                </p>
+                <p style="color: var(--text-color);">
+                    The API provides information about violations issued for elevator devices, including violation numbers, issue dates, statuses, types, and remarks.
+                </p>
+            </div>
+        </div>
     </div>
 
     <div id="datesContent" class="content-section">
@@ -4609,50 +4688,6 @@
         <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">
             <img src="linkedin-icon.svg" alt="LinkedIn" class="social-icon" onerror="this.innerText='LinkedIn'">
         </a>
-    </div>
-
-    <!-- Add the violations API data source section -->
-    <div style="max-width: 800px; margin: 20px auto; padding: 20px; background: var(--card-bg); border-radius: 5px; box-shadow: 0 2px 8px var(--card-shadow);">
-        <h3 style="text-align: center; margin-bottom: 20px; color: var(--text-color);">Violations API Information</h3>
-        
-        <div style="text-align: center; margin-bottom: 15px; font-size: 0.9em; color: var(--text-color); opacity: 0.8;">
-            <span>Data source: NYC DOB Safety Violations API</span>
-            <br>
-            <span>Last Updated: <span id="violationsApiLastUpdated">February 28, 2025</span></span>
-            <a href="https://data.cityofnewyork.us/Housing-Development/DOB-Safety-Violations/855j-jady" 
-               target="_blank" 
-               style="margin-left: 5px; text-decoration: underline; color: var(--header-color);">
-                (Source)
-            </a>
-            <div id="violationsDaysSinceUpdate" style="text-align: center; font-size: 0.9em; color: #4CAF50; opacity: 0.8; margin-top: 5px;">
-                Updated 0 days ago
-            </div>
-            <script>
-                // Calculate initial days since update
-                (function() {
-                    const today = new Date();
-                    const updateDate = new Date("February 28, 2025");
-                    const timeDiff = today - updateDate;
-                    const daysSinceUpdate = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
-                    
-                    const daysSinceElement = document.getElementById('violationsDaysSinceUpdate');
-                    if (daysSinceElement) {
-                        daysSinceElement.textContent = daysSinceUpdate === 0 ? 'Updated Today' : `Updated ${daysSinceUpdate} days ago`;
-                        daysSinceElement.style.color = daysSinceUpdate < 14 ? "#4CAF50" : 
-                                                      daysSinceUpdate < 30 ? "#FFA500" : "#FF6B6B";
-                    }
-                })();
-            </script>
-        </div>
-        
-        <div style="margin-top: 20px; text-align: center;">
-            <p style="color: var(--text-color);">
-                This website uses the NYC Department of Buildings Safety Violations API to provide up-to-date information about elevator violations.
-            </p>
-            <p style="color: var(--text-color);">
-                The API provides information about violations issued for elevator devices, including violation numbers, issue dates, statuses, types, and remarks.
-            </p>
-        </div>
     </div>
 </body>
 </html>
