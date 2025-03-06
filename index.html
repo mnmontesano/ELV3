@@ -2271,15 +2271,27 @@
                                     </button>
                                     <div id="violations_device_violations_${deviceNumber}" style="display: none; margin-top: 8px; 
                                          padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em; max-height: 200px; overflow-y: auto;">
-                                        ${activeViolations.map(v => `
-                                            <div style="margin-bottom: 10px; padding: 10px; background: var(--input-bg); border-radius: 5px;">
-                                                <strong>Violation #:</strong> ${v.violation_number}<br>
-                                                <strong>Issue Date:</strong> ${new Date(v.violation_issue_date).toLocaleDateString()}<br>
-                                                <strong>Status:</strong> ${v.violation_status}<br>
-                                                <strong>Type:</strong> ${v.violation_type || 'N/A'}<br>
-                                                <strong>Remarks:</strong> ${v.violation_remarks || 'N/A'}
-                                            </div>
-                                        `).join('')}
+                                        <div style="margin-bottom: 5px; color: var(--header-color);">
+                                            <strong>Active Violations (${activeViolations.length}):</strong>
+                                        </div>
+                                        <div style="max-height: 200px; overflow-y: auto; padding-right: 5px;">
+                                            ${activeViolations.map(v => {
+                                                const issueDate = v.violation_issue_date ? new Date(v.violation_issue_date).toLocaleDateString() : 'Unknown';
+                                                return `
+                                                    <div style="margin-bottom: 8px; padding: 8px; background: var(--input-bg); 
+                                                         border-radius: 4px; border: 1px solid var(--input-border);">
+                                                        <div><strong style="color: var(--header-color);">Violation #:</strong> ${v.violation_number || 'Unknown'}</div>
+                                                        <div><strong style="color: var(--header-color);">Issued:</strong> ${issueDate}</div>
+                                                        <div><strong style="color: var(--header-color);">Status:</strong> ${v.violation_status || 'Unknown'}</div>
+                                                        <div><strong style="color: var(--header-color);">Type:</strong> ${v.violation_type || 'Not specified'}</div>
+                                                        ${v.violation_remarks ? 
+                                                            `<div style="margin-top: 5px;"><strong style="color: var(--header-color);">Remarks:</strong> 
+                                                                <div style="white-space: pre-wrap; margin-top: 3px;">${v.violation_remarks}</div>
+                                                            </div>` : ''}
+                                                    </div>
+                                                `;
+                                            }).join('')}
+                                        </div>
                                     </div>
                                 </div>
                             ` : ''}
@@ -3309,7 +3321,7 @@
                     </div>
                 `;
             }
-
+            
             // Update the details display to include violations
             deviceDetailsDiv.innerHTML = `
                 <div style="background: #2c2c2c; padding: 20px; border-radius: 5px; margin-top: 20px;">
@@ -3495,8 +3507,8 @@
                         </div>
                         <div style="margin-bottom: 10px;">
                                 <strong style="color: #4a9eff; display: inline-block; width: 120px;">Device Type:</strong> 
-                            <span>${device.device_type || 'N/A'}</span>
-                        </div>
+                                <span>${device.device_type || 'N/A'}</span>
+                            </div>
                         <div style="margin-bottom: 10px;">
                                 <strong style="color: #4a9eff; display: inline-block; width: 120px;">Status:</strong> 
                             <span>${device.device_status || 'N/A'}</span>
@@ -3535,7 +3547,7 @@
                                     </div>
                                 </div>
                             ` : ''}
-                            <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
+                    <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
                                 <strong style="color: #4a9eff; margin-bottom: 10px; display: block;">Inspection History:</strong>
                                 <div style="margin-bottom: 10px;">
                                     <strong style="color: #4a9eff; display: inline-block; width: 120px;">Latest CAT 1:</strong> 
@@ -4728,6 +4740,36 @@
             <img src="linkedin-icon.svg" alt="LinkedIn" class="social-icon" onerror="this.innerText='LinkedIn'">
         </a>
     </div>
+</body>
+</html>
+                    metadata.viewLastModified || 
+                    metadata.createdAt || 
+                    'Unknown';
+
+                // Convert to date object
+                const updateDate = new Date(updateDateString);
+                const now = new Date();
+
+                // Calculate days since update
+                const diffTime = Math.abs(now - updateDate);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                // Format the date
+                const formattedDate = updateDate.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+
+                // Update the element with formatted date and days since update
+                apiLastUpdatedElement.innerHTML = `${formattedDate} <span style="color: #ff6b6b;">(${diffDays} days ago)</span>`;
+                
+            } catch (error) {
+                // If all attempts fail, show error message
+                document.getElementById('apiLastUpdated').textContent = "Unable to determine last update date";
+                console.error('Error fetching API update date:', error);
+            }
+        }
 </body>
 </html>
 
