@@ -4219,15 +4219,11 @@
         // Updated function to also display days since the last update
         async function fetchAPILastUpdateDate() {
             try {
-                // Set the default date based on known information
-                const defaultDate = "February 4, 2025";
+                // Get reference to the element displaying the update date
                 const apiLastUpdatedElement = document.getElementById('apiLastUpdated');
                 
-                // Start with the known date from screenshot
-                apiLastUpdatedElement.textContent = defaultDate;
-                
-                // Calculate and display days since update
-                let updateDate = new Date("February 4, 2025");
+                // Set loading state
+                apiLastUpdatedElement.textContent = "Loading...";
                 
                 // Try to fetch the most current data
                 const response = await fetch('https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$limit=1');
@@ -4237,31 +4233,38 @@
                 
                 // Get the dataset metadata
                 const metadataResponse = await fetch('https://data.cityofnewyork.us/api/views/metadata/e5aq-a4j2.json');
-                if (metadataResponse.ok) {
-                    const metadata = await metadataResponse.json();
-                    
-                    // Look for the update date in different possible locations
-                    let updateDateString = metadata.rowsUpdatedAt || 
-                                          (metadata.customFields && metadata.customFields.last_update) || 
-                                          metadata.dataUpdatedAt ||
-                                          metadata.viewLastModified;
-                    
-                    if (updateDateString) {
-                        updateDate = new Date(updateDateString);
-                        // Only update if we got a valid date
-                        if (!isNaN(updateDate.getTime())) {
-                            const formattedDate = updateDate.toLocaleDateString('en-US', { 
-                                year: 'numeric', 
-                                month: 'long', 
-                                day: 'numeric' 
-                            });
-                            apiLastUpdatedElement.textContent = formattedDate;
-                            console.log("API data last updated:", formattedDate);
-                        }
-                    }
+                if (!metadataResponse.ok) {
+                    throw new Error('Failed to fetch metadata');
                 }
                 
-                // Calculate days since update (whether we got a new date or are using the default)
+                const metadata = await metadataResponse.json();
+                
+                // Look for the update date in different possible locations
+                let updateDateString = metadata.rowsUpdatedAt || 
+                                      (metadata.customFields && metadata.customFields.last_update) || 
+                                      metadata.dataUpdatedAt ||
+                                      metadata.viewLastModified;
+                
+                let updateDate;
+                if (updateDateString) {
+                    updateDate = new Date(updateDateString);
+                    // Only update if we got a valid date
+                    if (!isNaN(updateDate.getTime())) {
+                        const formattedDate = updateDate.toLocaleDateString('en-US', { 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric' 
+                        });
+                        apiLastUpdatedElement.textContent = formattedDate;
+                        console.log("API data last updated:", formattedDate);
+                    } else {
+                        throw new Error('Invalid date format from API');
+                    }
+                } else {
+                    throw new Error('No update date found in metadata');
+                }
+                
+                // Calculate days since update
                 const today = new Date();
                 const timeDiff = today - updateDate;
                 const daysSinceUpdate = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
@@ -4301,30 +4304,67 @@
                 }
             } catch (error) {
                 console.error('Error fetching API update date:', error);
-                // Display days since the default date even if there's an error
-                const today = new Date();
-                const defaultDate = new Date("February 4, 2025");
-                const timeDiff = today - defaultDate;
-                const daysSinceUpdate = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
                 
-                let daysSinceElement = document.getElementById('daysSinceUpdate');
-                if (!daysSinceElement) {
-                    daysSinceElement = document.createElement('div');
-                    daysSinceElement.id = 'daysSinceUpdate';
-                    daysSinceElement.style.textAlign = 'center';
-                    daysSinceElement.style.fontSize = '0.9em';
-                    daysSinceElement.style.color = 'var(--text-color)';
-                    daysSinceElement.style.opacity = '0.8';
-                    daysSinceElement.style.marginTop = '5px';
-                    
-                    const apiLastUpdatedElement = document.getElementById('apiLastUpdated');
-                    const parentElement = apiLastUpdatedElement.parentElement.parentElement;
-                    parentElement.appendChild(daysSinceElement);
+                // If we can't fetch the date, try to fetch from the actual dataset with a fallback
+                try {
+                    const apiResponse = await fetch('https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$query=SELECT%20:created_at,%20:updated_at%20LIMIT%201');
+                    if (apiResponse.ok) {
+                        const apiData = await apiResponse.json();
+                        if (apiData && apiData.length > 0) {
+                            // Try to get the updated_at timestamp from the actual data
+                            let updateTimeString = apiData[0][":updated_at"] || apiData[0][":created_at"];
+                            if (updateTimeString) {
+                                const updateDate = new Date(updateTimeString);
+                                if (!isNaN(updateDate.getTime())) {
+                                    const formattedDate = updateDate.toLocaleDateString('en-US', {
+                                        year: 'numeric',
+                                        month: 'long',
+                                        day: 'numeric'
+                                    });
+                                    
+                                    const apiLastUpdatedElement = document.getElementById('apiLastUpdated');
+                                    apiLastUpdatedElement.textContent = formattedDate;
+                                    
+                                    // Calculate and display days since update
+                                    const today = new Date();
+                                    const timeDiff = today - updateDate;
+                                    const daysSinceUpdate = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+                                    
+                                    let daysSinceElement = document.getElementById('daysSinceUpdate');
+                                    if (!daysSinceElement) {
+                                        daysSinceElement = document.createElement('div');
+                                        daysSinceElement.id = 'daysSinceUpdate';
+                                        daysSinceElement.style.textAlign = 'center';
+                                        daysSinceElement.style.fontSize = '0.9em';
+                                        daysSinceElement.style.color = 'var(--text-color)';
+                                        daysSinceElement.style.opacity = '0.8';
+                                        daysSinceElement.style.marginTop = '5px';
+                                        
+                                        const parentElement = apiLastUpdatedElement.parentElement.parentElement;
+                                        parentElement.appendChild(daysSinceElement);
+                                    }
+                                    
+                                    daysSinceElement.textContent = `Updated ${daysSinceUpdate} days ago`;
+                                    daysSinceElement.style.color = daysSinceUpdate < 14 ? "#4CAF50" : 
+                                                                  daysSinceUpdate < 30 ? "#FFA500" : "#FF6B6B";
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                } catch (fallbackError) {
+                    console.error('Fallback fetch also failed:', fallbackError);
                 }
                 
-                daysSinceElement.textContent = `Updated ${daysSinceUpdate} days ago`;
-                daysSinceElement.style.color = daysSinceUpdate < 14 ? "#4CAF50" : 
-                                              daysSinceUpdate < 30 ? "#FFA500" : "#FF6B6B";
+                // If all else fails, display an error message
+                const apiLastUpdatedElement = document.getElementById('apiLastUpdated');
+                apiLastUpdatedElement.textContent = "Unable to fetch update date";
+                
+                // Remove the days since update element if it exists
+                const daysSinceElement = document.getElementById('daysSinceUpdate');
+                if (daysSinceElement) {
+                    daysSinceElement.parentElement.removeChild(daysSinceElement);
+                }
             }
         }
 
@@ -4372,7 +4412,6 @@
         document.getElementById('quickLookupOverlay').addEventListener('click', function() {
             toggleQuickLookup();
         });
-
         // Add these new functions for the quick lookup panel
         document.getElementById('quickNumInput').addEventListener('input', function(e) {
             let result = numberToWord(e.target.value);
@@ -4691,4 +4730,5 @@
     </div>
 </body>
 </html>
+
 
