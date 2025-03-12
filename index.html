@@ -2585,6 +2585,7 @@
                 violationsElement.innerHTML = '<span style="color: #ff6b6b;">Error loading violations</span>';
                 console.error('Error fetching violations:', error);
             }
+
         }
 
         // Add event listener for Enter key
@@ -2692,6 +2693,16 @@
                                                border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
                                                font-size: 0.9em; display: flex; align-items: center; gap: 5px; width: 240px;">
                                         <span id="violationsFilterText">Show Only Devices with Violations</span>
+                                    </button>
+                                    
+                                    <button 
+                                        onclick="toggleAllViolations()" 
+                                        id="toggleAllViolationsBtn"
+                                        data-showing="false"
+                                        style="padding: 8px 12px; background: var(--panel-bg); color: var(--text-color); 
+                                               border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                               font-size: 0.9em; width: 180px;">
+                                        Show All Violations
                                     </button>
                                     
                                     <div style="display: flex; align-items: center; gap: 5px;">
@@ -4622,7 +4633,18 @@
             if (defaultTab === 'violations') {
                 fetchViolationsAPILastUpdateDate();
             }
+            
+            // Update API data on page load
+            updateAllAPIData();
         });
+
+        // Function to update all API data
+        function updateAllAPIData() {
+            // Update both APIs immediately
+            fetchAPILastUpdateDate();
+            fetchViolationsAPILastUpdateDate();
+            console.log(`API data updated at ${new Date().toLocaleTimeString()}`);
+        }
 
         // Add these new functions for filtering
         function toggleViolationsFilter() {
@@ -4719,6 +4741,61 @@
                 }
             });
         }
+        
+        // Function to toggle all violations (show or hide)
+        function toggleAllViolations() {
+            const toggleButton = document.getElementById('toggleAllViolationsBtn');
+            const isShowing = toggleButton.getAttribute('data-showing') === 'true';
+            
+            // Find all devices with violations
+            const devicesWithViolations = document.querySelectorAll('.device-item[data-has-violations="true"]');
+            
+            if (!isShowing) {
+                // Show all violations
+                devicesWithViolations.forEach(device => {
+                    // Find the violations button within this device item
+                    const violationsButtons = device.querySelectorAll('button');
+                    violationsButtons.forEach(button => {
+                        if (button.querySelector('span') && 
+                            button.querySelector('span').textContent === 'Show Violations' &&
+                            button.id.startsWith('violationsBtn_')) {
+                            // Check if violations are already shown
+                            const arrow = button.querySelector('.arrow');
+                            if (arrow && arrow.textContent === '▼') {
+                                // Only click if violations are not already shown
+                                button.click();
+                            }
+                        }
+                    });
+                });
+                
+                // Update button text and state
+                toggleButton.textContent = 'Hide All Violations';
+                toggleButton.setAttribute('data-showing', 'true');
+            } else {
+                // Hide all violations
+                devicesWithViolations.forEach(device => {
+                    // Find the violations button within this device item
+                    const violationsButtons = device.querySelectorAll('button');
+                    violationsButtons.forEach(button => {
+                        if (button.querySelector('span') && 
+                            button.querySelector('span').textContent === 'Show Violations' &&
+                            button.id.startsWith('violationsBtn_')) {
+                            // Check if violations are already hidden
+                            const arrow = button.querySelector('.arrow');
+                            if (arrow && arrow.textContent === '▲') {
+                                // Only click if violations are currently shown
+                                button.click();
+                            }
+                        }
+                    });
+                });
+                
+                // Update button text and state
+                toggleButton.textContent = 'Show All Violations';
+                toggleButton.setAttribute('data-showing', 'false');
+            }
+        }
     </script>
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
@@ -4730,4 +4807,5 @@
     </div>
 </body>
 </html>
+
 
