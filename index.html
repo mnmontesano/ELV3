@@ -779,8 +779,11 @@
         @media (max-width: 600px) {
             #quickLookupPanel {
                 top: 60px !important;
-                right: 10px !important;
+                right: 0 !important;
+                left: 0 !important;
+                margin: 0 auto !important;
                 max-width: calc(100% - 20px) !important;
+                width: calc(100% - 20px) !important;
                 padding: 15px !important;
             }
             
@@ -799,6 +802,23 @@
                 justify-content: center !important;
                 align-items: center !important;
             }
+            
+            /* Class for centered panel on mobile */
+            .panel-centered-mobile {
+                right: 0 !important;
+                left: 0 !important;
+                margin: 0 auto !important;
+            }
+        }
+        
+        /* Add medium screen size responsiveness */
+        @media (min-width: 601px) and (max-width: 900px) {
+            #quickLookupPanel {
+                width: 300px !important;
+                max-width: calc(100% - 40px) !important;
+                right: 20px !important;
+                left: auto !important;
+            }
         }
         
         /* Ensure all inputs and result boxes use border-box sizing */
@@ -813,6 +833,18 @@
             overflow-wrap: break-word;
             word-break: break-word;
         }
+
+        /* Add transition styles for the overlay and panel */
+        #quickLookupOverlay {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #quickLookupPanel {
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
     </style>
 </head>
 <body>
@@ -820,9 +852,9 @@
     <div id="quickLookupOverlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999;"></div>
 
     <!-- Quick Lookup Panel moved here so it's available for all tabs -->
-    <div style="position: fixed; top: 80px; right: 20px; width: 350px; max-width: calc(100% - 40px); background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px var(--card-shadow); z-index: 1000; display: none;" id="quickLookupPanel">
+    <div style="position: fixed; top: 80px; right: 20px; width: 350px; max-width: calc(100% - 40px); background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px var(--card-shadow); z-index: 1000; display: none; transition: all 0.3s ease; left: auto;" id="quickLookupPanel">
         <button onclick="toggleQuickLookup()" style="position: absolute; right: 10px; top: 10px; background: none; border: none; color: #ff6b6b; font-size: 24px; cursor: pointer; transition: color 0.2s;">×</button>
-        <h3 style="color: var(--text-color); margin-bottom: 15px;">ELV3 Lookup</h3>
+        <h3 style="color: var(--text-color); margin-bottom: 15px; text-align: center;">ELV3 Lookup</h3>
         
         <!-- ELV3 Lookup Fields -->
         <div style="margin-bottom: 15px;">
@@ -1122,7 +1154,7 @@
         
         <!-- Add ELV3 Lookup toggle button -->
         <button onclick="toggleQuickLookup()" 
-                style="position: fixed; top: 20px; right: 20px; z-index: 999; padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                style="position: fixed; top: 20px; right: 20px; z-index: 999; padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: all 0.3s ease;">
             <span class="button-text">ELV3 Lookup</span>
             <svg class="button-icon" style="display: none; width: 20px; height: 20px;" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M12,12V14H7V12H12M15,15V17H7V15H15Z"/>
@@ -1364,7 +1396,7 @@
     <div id="datesContent" class="content-section">
         <!-- Add ELV3 Lookup toggle button for Dates tab -->
         <button onclick="toggleQuickLookup()" 
-                style="position: fixed; top: 20px; right: 20px; z-index: 999; padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                style="position: fixed; top: 20px; right: 20px; z-index: 999; padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: all 0.3s ease;">
             <span class="button-text">ELV3 Lookup</span>
             <svg class="button-icon" style="display: none; width: 20px; height: 20px;" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M12,12V14H7V12H12M15,15V17H7V15H15Z"/>
@@ -4403,6 +4435,23 @@
                 panel.style.display = 'block';
                 overlay.style.display = 'block';
                 
+                // Position panel based on screen width
+                if (window.innerWidth <= 600) {
+                    panel.classList.add('panel-centered-mobile');
+                } else {
+                    panel.classList.remove('panel-centered-mobile');
+                    panel.style.right = '20px';
+                    panel.style.left = 'auto';
+                    panel.style.margin = '0';
+                }
+                
+                // Add a small delay before adding opacity for smooth transition
+                setTimeout(() => {
+                    overlay.style.opacity = '1';
+                    panel.style.opacity = '1';
+                    panel.style.transform = 'translateY(0)';
+                }, 10);
+                
                 // Ensure the panel is visible regardless of which tab is active
                 panel.style.zIndex = '2000'; // Higher than any tab content
                 
@@ -4414,8 +4463,15 @@
                     }
                 });
             } else {
-                panel.style.display = 'none';
-                overlay.style.display = 'none';
+                overlay.style.opacity = '0';
+                panel.style.opacity = '0';
+                panel.style.transform = 'translateY(-20px)';
+                
+                // Wait for transition to complete before hiding
+                setTimeout(() => {
+                    panel.style.display = 'none';
+                    overlay.style.display = 'none';
+                }, 300);
             }
         }
 
@@ -4512,6 +4568,8 @@
         function handleResponsiveELV3Button() {
             const buttonTexts = document.querySelectorAll('.button-text');
             const buttonIcons = document.querySelectorAll('.button-icon');
+            const lookupButton = document.querySelector('button[onclick="toggleQuickLookup()"]');
+            const panel = document.getElementById('quickLookupPanel');
             
             if (window.innerWidth < 600) {
                 buttonTexts.forEach(buttonText => {
@@ -4520,6 +4578,17 @@
                 buttonIcons.forEach(buttonIcon => {
                     buttonIcon.style.display = 'block';
                 });
+                // Make button more compact on mobile
+                if (lookupButton) {
+                    lookupButton.style.padding = '10px';
+                    lookupButton.style.borderRadius = '50%';
+                    lookupButton.style.width = '44px';
+                    lookupButton.style.height = '44px';
+                }
+                // Reposition panel if it's visible
+                if (panel && panel.style.display === 'block') {
+                    panel.classList.add('panel-centered-mobile');
+                }
             } else {
                 buttonTexts.forEach(buttonText => {
                     buttonText.style.display = 'block';
@@ -4527,6 +4596,20 @@
                 buttonIcons.forEach(buttonIcon => {
                     buttonIcon.style.display = 'none';
                 });
+                // Restore button style on desktop
+                if (lookupButton) {
+                    lookupButton.style.padding = '12px 20px';
+                    lookupButton.style.borderRadius = '4px';
+                    lookupButton.style.width = 'auto';
+                    lookupButton.style.height = 'auto';
+                }
+                // Reposition panel if it's visible
+                if (panel && panel.style.display === 'block') {
+                    panel.classList.remove('panel-centered-mobile');
+                    panel.style.right = '20px';
+                    panel.style.left = 'auto';
+                    panel.style.margin = '0';
+                }
             }
         }
         
