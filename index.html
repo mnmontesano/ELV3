@@ -885,6 +885,35 @@
                 style="width: 100%; padding: 12px; background: var(--panel-bg); color: var(--text-color); border: none; border-radius: 4px; cursor: pointer; margin-bottom: 10px; box-sizing: border-box;">
             Clear
         </button>
+                
+        <!-- Device Lookup Section -->
+        <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 15px 0;">
+        <h3 style="color: var(--text-color); margin-bottom: 15px; text-align: center;">Device Lookup</h3>
+        
+        <div style="margin-bottom: 15px;">
+            <input type="text" 
+                   id="quickDeviceNumber" 
+                   placeholder="Enter Device Number"
+                   style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); margin-bottom: 5px; font-size: 14px; box-sizing: border-box;">
+            <button onclick="quickLookupBIN()" 
+                    style="width: 100%; padding: 8px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 5px; font-size: 14px;">
+                Look up Device
+            </button>
+        </div>
+        
+        <div id="quickDeviceResult" style="width: 100%; max-height: 300px; overflow-y: auto; background: var(--result-bg); padding: 8px; border-radius: 4px; margin-bottom: 10px; color: var(--text-color); border: 1px solid var(--input-border); box-sizing: border-box; display: none;"></div>
+        
+        <div style="margin-bottom: 15px; display: none;">
+            <input type="text" 
+                   id="quickBinNumber" 
+                   placeholder="BIN"
+                   style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); margin-bottom: 5px; font-size: 14px; box-sizing: border-box;">
+        </div>
+        
+        <button onclick="quickClearDeviceSearch()" 
+                style="width: 100%; padding: 12px; background: var(--panel-bg); color: var(--text-color); border: none; border-radius: 4px; cursor: pointer; margin-bottom: 10px; box-sizing: border-box;">
+            Clear Device Search
+        </button>
     </div>
 
     <div class="dropdown">
@@ -2239,6 +2268,9 @@
                         v.violation_status?.toUpperCase() === 'OPEN');
                     const violationCount = activeViolations.length;
 
+                    // Fetch detailed device information
+                    const deviceInfo = await fetchDeviceInfo(deviceNumber);
+
                     // Format dates and calculate most recent inspection
                     const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
                     const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
@@ -2258,6 +2290,79 @@
                     const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
                     const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
                     const mostRecentDisplay = mostRecentDate ? mostRecentDate.toLocaleDateString() : 'N/A';
+                    
+                    // Generate device specification HTML if available
+                    const deviceSpecsHTML = deviceInfo ? `
+                        <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
+                            <button onclick="toggleDeviceInfo('deviceInfo_${deviceNumber}')"
+                                    style="width: 100%; padding: 10px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                                <span>Device Information (testing)</span>
+                                <span class="arrow">▼</span>
+                            </button>
+                            <div id="deviceInfo_${deviceNumber}" style="display: none; margin-top: 10px; padding: 10px; background: var(--panel-bg); border-radius: 4px; max-height: 300px; overflow-y: auto;">
+                                ${deviceInfo.elevator_manufacturer ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 160px;">Manufacturer:</strong> 
+                                        <span>${deviceInfo.elevator_manufacturer || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.machine_type ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 160px;">Machine Type:</strong> 
+                                        <span>${deviceInfo.machine_type || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.governor ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 160px;">Governor Type:</strong> 
+                                        <span>${deviceInfo.governor || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.car_buffer_type ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 160px;">Car Buffer Type:</strong> 
+                                        <span>${deviceInfo.car_buffer_type || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.mode_of_operation ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 160px;">Mode Operation:</strong> 
+                                        <span>${deviceInfo.mode_of_operation || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.car_safety_type ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 160px;">Safety Type:</strong> 
+                                        <span>${deviceInfo.car_safety_type || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.fire_emergency_phase ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 160px;">Fireman's Service:</strong> 
+                                        <span>${deviceInfo.fire_emergency_phase || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.working_pressure ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 160px;">Working Pressure:</strong> 
+                                        <span>${deviceInfo.working_pressure || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.controller_manufacturer ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 160px;">Controller Manufacturer:</strong> 
+                                        <span>${deviceInfo.controller_manufacturer || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.elevator_control ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 160px;">Elevator Control:</strong> 
+                                        <span>${deviceInfo.elevator_control || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.elevator_capacity_lbs ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 160px;">Capacity:</strong> 
+                                        <span>${deviceInfo.elevator_capacity_lbs || 'N/A'} lbs</span>
+                                    </div>` : ''}
+                                ${deviceInfo.elevator_speed_fpm ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 160px;">Speed:</strong> 
+                                        <span>${deviceInfo.elevator_speed_fpm || 'N/A'} fpm</span>
+                                    </div>` : ''}
+                            </div>
+                        </div>
+                    ` : '';
                     
                     resultDiv.innerHTML = `
                         <div style="background: var(--input-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
@@ -2352,6 +2457,8 @@
                                     ''}
                             </div>
                             
+                            ${deviceSpecsHTML}
+                            
                             <!-- Add More Info button and dropdown -->
                             <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
                                 <button onclick="toggleMoreInfo('moreInfo_${device.device_number}')"
@@ -2379,6 +2486,21 @@
                 resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up device. Please try again later.</span>';
                 console.error('Error:', error);
                 binInput.value = '';
+            }
+        }
+
+        // Add this function to toggle device information
+        function toggleDeviceInfo(elementId) {
+            const element = document.getElementById(elementId);
+            const button = element.previousElementSibling;
+            const arrow = button.querySelector('.arrow');
+            
+            if (element.style.display === 'none') {
+                element.style.display = 'block';
+                arrow.textContent = '▲';
+            } else {
+                element.style.display = 'none';
+                arrow.textContent = '▼';
             }
         }
 
@@ -3549,7 +3671,7 @@
         // Add this new function to your script section
         async function quickLookupBIN() {
             const deviceNumber = document.getElementById('quickDeviceNumber').value.trim();
-            const resultDiv = document.getElementById('quickBinResult');
+            const resultDiv = document.getElementById('quickDeviceResult');
             const binInput = document.getElementById('quickBinNumber');
             
             if (!deviceNumber) {
@@ -3562,71 +3684,147 @@
             resultDiv.style.display = 'block';
 
             try {
-            const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
-            
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-
-            const data = await response.json();
-            
-            if (data && data.length > 0) {
-                const device = data[0];
-                binInput.value = device.bin || '';
-                if (device.bin) {
-                        quickLookupDevices();
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
+                
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
                 }
 
-                // Fetch violations for this device
-                const violations = await fetchViolations(deviceNumber);
-                const activeViolations = violations.filter(v => 
-                    v.violation_status?.toUpperCase() === 'ACTIVE' || 
-                    v.violation_status?.toUpperCase() === 'OPEN');
-                const violationCount = activeViolations.length;
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    const device = data[0];
+                    binInput.value = device.bin || '';
+                    if (device.bin) {
+                        quickLookupDevices();
+                    }
 
-                // Format dates and calculate most recent inspection
-                const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
-                const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
-                const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
-                
-                // Find most recent date
-                const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
-                const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
-                
-                // Calculate days since most recent inspection
-                const today = new Date();
-                const daysSinceInspection = mostRecentDate ? 
-                    Math.floor((today - mostRecentDate) / (1000 * 60 * 60 * 24)) : null;
-                
-                // Format dates for display
-                const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
-                const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
-                const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
-                const mostRecentDisplay = mostRecentDate ? mostRecentDate.toLocaleDateString() : 'N/A';
-                
-                resultDiv.innerHTML = `
+                    // Fetch violations for this device
+                    const violations = await fetchViolations(deviceNumber);
+                    const activeViolations = violations.filter(v => 
+                        v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                        v.violation_status?.toUpperCase() === 'OPEN');
+                    const violationCount = activeViolations.length;
+
+                    // Fetch detailed device information
+                    const deviceInfo = await fetchDeviceInfo(deviceNumber);
+
+                    // Format dates and calculate most recent inspection
+                    const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                    const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                    const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                    
+                    // Find most recent date
+                    const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                    const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
+                    
+                    // Calculate days since most recent inspection
+                    const today = new Date();
+                    const daysSinceInspection = mostRecentDate ? 
+                        Math.floor((today - mostRecentDate) / (1000 * 60 * 60 * 24)) : null;
+                    
+                    // Format dates for display
+                    const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
+                    const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
+                    const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
+                    const mostRecentDisplay = mostRecentDate ? mostRecentDate.toLocaleDateString() : 'N/A';
+                    
+                    // Generate device specification HTML if available
+                    const deviceSpecsHTML = deviceInfo ? `
+                        <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
+                            <button onclick="toggleDeviceInfo('quickDeviceInfo_${deviceNumber}')"
+                                    style="width: 100%; padding: 10px; background: #2c2c2c; color: #ffffff; border: 1px solid #444; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                                <span>Device Information</span>
+                                <span class="arrow">▼</span>
+                            </button>
+                            <div id="quickDeviceInfo_${deviceNumber}" style="display: none; margin-top: 10px; padding: 10px; background: #2c2c2c; border-radius: 4px; max-height: 300px; overflow-y: auto;">
+                                ${deviceInfo.elevator_manufacturer ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 160px;">Manufacturer:</strong> 
+                                        <span>${deviceInfo.elevator_manufacturer || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.machine_type ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 160px;">Machine Type:</strong> 
+                                        <span>${deviceInfo.machine_type || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.governor ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 160px;">Governor Type:</strong> 
+                                        <span>${deviceInfo.governor || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.car_buffer_type ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 160px;">Car Buffer Type:</strong> 
+                                        <span>${deviceInfo.car_buffer_type || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.mode_of_operation ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 160px;">Mode Operation:</strong> 
+                                        <span>${deviceInfo.mode_of_operation || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.car_safety_type ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 160px;">Safety Type:</strong> 
+                                        <span>${deviceInfo.car_safety_type || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.fire_emergency_phase ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 160px;">Fireman's Service:</strong> 
+                                        <span>${deviceInfo.fire_emergency_phase || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.working_pressure ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 160px;">Working Pressure:</strong> 
+                                        <span>${deviceInfo.working_pressure || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.controller_manufacturer ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 160px;">Controller Manufacturer:</strong> 
+                                        <span>${deviceInfo.controller_manufacturer || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.elevator_control ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 160px;">Elevator Control:</strong> 
+                                        <span>${deviceInfo.elevator_control || 'N/A'}</span>
+                                    </div>` : ''}
+                                ${deviceInfo.elevator_capacity_lbs ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 160px;">Capacity:</strong> 
+                                        <span>${deviceInfo.elevator_capacity_lbs || 'N/A'} lbs</span>
+                                    </div>` : ''}
+                                ${deviceInfo.elevator_speed_fpm ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: #4a9eff; display: inline-block; width: 160px;">Speed:</strong> 
+                                        <span>${deviceInfo.elevator_speed_fpm || 'N/A'} fpm</span>
+                                    </div>` : ''}
+                            </div>
+                        </div>
+                    ` : '';
+                        
+                    resultDiv.innerHTML = `
                         <div style="background: #1c1c1c; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); color: #ffffff; border: 1px solid #333;">
-                        <div style="margin-bottom: 10px;">
+                            <div style="margin-bottom: 10px;">
                                 <strong style="color: #4a9eff; display: inline-block; width: 120px;">BIN:</strong> 
-                            <span>${device.bin || 'N/A'}</span>
-                        </div>
-                        <div style="margin-bottom: 10px;">
+                                <span>${device.bin || 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
                                 <strong style="color: #4a9eff; display: inline-block; width: 120px;">Address:</strong> 
-                            <span>${device.house_number ? device.house_number + ' ' + device.street_name : 'N/A'}</span>
-                        </div>
-                        <div style="margin-bottom: 10px;">
+                                <span>${device.house_number ? device.house_number + ' ' + device.street_name : 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
                                 <strong style="color: #4a9eff; display: inline-block; width: 120px;">Borough:</strong> 
-                            <span>${device.borough || 'N/A'}</span>
-                        </div>
-                        <div style="margin-bottom: 10px;">
+                                <span>${device.borough || 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
                                 <strong style="color: #4a9eff; display: inline-block; width: 120px;">Device Type:</strong> 
-                            <span>${device.device_type || 'N/A'}</span>
-                        </div>
-                        <div style="margin-bottom: 10px;">
+                                <span>${device.device_type || 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
                                 <strong style="color: #4a9eff; display: inline-block; width: 120px;">Status:</strong> 
-                            <span>${device.device_status || 'N/A'}</span>
-                        </div>
-                        <div style="margin-bottom: 10px;">
+                                <span>${device.device_status || 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
                                 <strong style="color: #4a9eff; display: inline-block; width: 120px;">ZIP Code:</strong> 
                                 <span>${device.zip_code || 'N/A'}</span>
                             </div>
@@ -3697,24 +3895,8 @@
                                     ''}
                             </div>
                             
-                            <!-- Add More Info button and dropdown -->
-                            <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
-                                <button onclick="toggleMoreInfo('moreInfo_${device.device_number}')"
-                                        style="width: 100%; padding: 10px; background: #2c2c2c; color: white; border: 1px solid #444; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
-                                    <span>More Info</span>
-                                    <span class="arrow">▼</span>
-                                </button>
-                                <div id="moreInfo_${device.device_number}" style="display: none; margin-top: 10px; padding: 10px; background: #2c2c2c; border-radius: 4px;">
-                                    <div style="margin-bottom: 10px;">
-                                        <strong style="color: #4a9eff; display: inline-block; width: 120px;">Block:</strong> 
-                                        <span>${device.block || 'N/A'}</span>
-                                    </div>
-                                    <div>
-                                        <strong style="color: #4a9eff; display: inline-block; width: 120px;">Lot:</strong> 
-                                        <span>${device.lot || 'N/A'}</span>
-                                    </div>
-                                </div>
-                            </div>
+                            ${deviceSpecsHTML}
+                            
                         </div>`;
                 } else {
                     resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No device found with this number</span>';
@@ -4592,9 +4774,7 @@
         function quickClearDeviceSearch() {
             document.getElementById('quickDeviceNumber').value = '';
             document.getElementById('quickBinNumber').value = '';
-            document.getElementById('quickBinResult').style.display = 'none';
             document.getElementById('quickDeviceResult').style.display = 'none';
-            document.getElementById('binExportButton').style.display = 'none';
         }
 
         // Add this function to fetch violations for all devices by BIN
@@ -5219,6 +5399,23 @@
                 if (buttonText) {
                     buttonText.textContent = 'Show Permit Information';
                 }
+            }
+        }
+
+        // Add this new function to fetch detailed device information from the API
+        async function fetchDeviceInfo(deviceNumber) {
+            try {
+                const response = await fetch(`https://data.cityofnewyork.us/resource/juyv-2jek.json?device_id=${deviceNumber}`);
+                
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const data = await response.json();
+                return data.length > 0 ? data[0] : null;
+            } catch (error) {
+                console.error('Error fetching device info:', error);
+                return null;
             }
         }
     </script>
