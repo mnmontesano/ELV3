@@ -886,7 +886,8 @@
             Clear
         </button>
                 
-        <!-- Device Lookup Section -->
+        <!-- Device Lookup Section - START COMMENT -->
+        <!--
         <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 15px 0;">
         <h3 style="color: var(--text-color); margin-bottom: 15px; text-align: center;">Device Lookup</h3>
         
@@ -914,6 +915,8 @@
                 style="width: 100%; padding: 12px; background: var(--panel-bg); color: var(--text-color); border: none; border-radius: 4px; cursor: pointer; margin-bottom: 10px; box-sizing: border-box;">
             Clear Device Search
         </button>
+        -->
+        <!-- Device Lookup Section - END COMMENT -->
     </div>
 
     <div class="dropdown">
@@ -980,7 +983,7 @@
                     <div id="secondaryNumResult" class="result"></div>
                 </div>
 
-                <button onclick="clearInputs()">Clear</button>
+                <button onclick="clearInputs()" style="color: #ff6b6b; background: var(--panel-bg); border: none; border-radius: 4px; cursor: pointer; display: block; margin: 20px auto; padding: 10px 20px; font-size: 1.2em;">Clear</button>
                 <button onclick="togglePdfViewer()" id="pdfToggleButton">Show PDF</button>
 
                 <div class="image-viewer hidden" id="pdfViewer">
@@ -1278,7 +1281,7 @@
 
             <!-- Add Clear Button -->
             <button onclick="clearLookups()" 
-                    style="display: block; margin: 25px auto 5px; padding: 12px 30px; background: var(--panel-bg); color: var(--text-color); border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                    style="display: block; margin: 25px auto 5px; padding: 12px 30px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
                 Clear All
             </button>
         </div>
@@ -1301,7 +1304,7 @@
                     Look up All Devices
                 </button>
                 <button onclick="clearBulkLookup()" 
-                        style="padding: 12px 20px; background: var(--panel-bg); color: var(--text-color); border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                        style="padding: 12px 20px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
                     Clear
                 </button>
                 <button id="exportButton" 
@@ -1467,7 +1470,7 @@
             <div id="ninetyDayStart" style="margin: 10px 0;"></div>
         </div>
 
-        <button onclick="clearDateInput()">Clear</button>
+        <button onclick="clearDateInput()" style="color: #ff6b6b; background: var(--panel-bg); border: none; border-radius: 4px; cursor: pointer; display: block; margin: 20px auto; padding: 10px 20px; font-size: 1.2em;">Clear</button>
     </div>
 
     <div id="pdfContent" class="content-section">
@@ -2951,13 +2954,15 @@
                     
                     // First display elevators if they exist
                     if (deviceTypes['ELEVATOR']) {
-                        html += generateDeviceTypeSection('ELEVATOR', deviceTypes['ELEVATOR'], violationsByDevice);
+                        const elevatorSection = await generateDeviceTypeSection('ELEVATOR', deviceTypes['ELEVATOR'], violationsByDevice);
+                        html += elevatorSection;
                         delete deviceTypes['ELEVATOR']; // Remove elevators so they're not shown again
                     }
                     
                     // Then display the rest of the device types
                     for (const [type, devices] of Object.entries(deviceTypes)) {
-                        html += generateDeviceTypeSection(type, devices, violationsByDevice);
+                        const deviceSection = await generateDeviceTypeSection(type, devices, violationsByDevice);
+                        html += deviceSection;
                     }
                     
                     html += `</div></div></div>`;
@@ -2976,7 +2981,12 @@
         }
 
         // Helper function to generate HTML for a device type section
-        function generateDeviceTypeSection(type, devices, violationsByDevice = {}) {
+        async function generateDeviceTypeSection(type, devices, violationsByDevice = {}) {
+            // First, fetch all permit data for the devices
+            const devicePermits = await Promise.all(
+                devices.map(device => fetchPermitInfo(device.device_number))
+            );
+
             return `
                 <div class="device-type-section" data-device-type="${type}">
                     <div style="background: var(--panel-bg); padding: 15px; border-radius: 5px; margin-bottom: 15px;">
@@ -2984,13 +2994,17 @@
                             <strong style="color: var(--header-color);">${type} (${devices.length}):</strong>
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 10px;">
-                            ${devices.map(device => {
+                            ${devices.map((device, index) => {
                                 // Get violations for this device
                                 const deviceViolations = violationsByDevice[device.device_number] || [];
                                 const activeViolations = deviceViolations.filter(v => 
                                     v.violation_status?.toUpperCase() === 'ACTIVE' || 
                                     v.violation_status?.toUpperCase() === 'OPEN');
                                 const violationCount = activeViolations.length;
+                                
+                                // Get the pre-fetched permit data
+                                const permitData = devicePermits[index];
+                                const hasPermits = permitData.success && permitData.permits && permitData.permits.length > 0;
                                 
                                 return `
                                     <div class="device-item" data-has-violations="${violationCount > 0}" data-device-type="${type}">
@@ -3032,20 +3046,22 @@
                                                      padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
                                                 </div>
                                             </div>
-                                            <div style="margin-top: 10px;">
-                                                <button 
-                                                    onclick="togglePermitInfo('${device.device_number}')" 
-                                                    id="permitsBtn_${device.device_number}"
-                                                    style="width: 100%; padding: 5px; background: var(--panel-bg); color: var(--text-color); 
-                                                           border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
-                                                           font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
-                                                    <span>Show Permit Information</span>
-                                                    <span class="arrow">▼</span>
-                                                </button>
-                                                <div id="permits_${device.device_number}" style="display: none; margin-top: 8px; 
-                                                     padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
+                                            ${hasPermits ? `
+                                                <div style="margin-top: 10px;">
+                                                    <button 
+                                                        onclick="togglePermitInfo('${device.device_number}')" 
+                                                        id="permitsBtn_${device.device_number}"
+                                                        style="width: 100%; padding: 5px; background: var(--panel-bg); color: var(--text-color); 
+                                                               border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                                               font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
+                                                        <span>Show Permit Information</span>
+                                                        <span class="arrow">▼</span>
+                                                    </button>
+                                                    <div id="permits_${device.device_number}" style="display: none; margin-top: 8px; 
+                                                         padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            ` : ''}
                                         </div>
                                     </div>
                                 `;
