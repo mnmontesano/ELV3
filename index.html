@@ -882,41 +882,14 @@
         </div>
 
         <button onclick="quickClearInputs()" 
-                style="width: 100%; padding: 12px; background: var(--panel-bg); color: var(--text-color); border: none; border-radius: 4px; cursor: pointer; margin-bottom: 10px; box-sizing: border-box;">
+                style="width: 100%; padding: 12px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 10px; box-sizing: border-box;">
             Clear
         </button>
-                
-        <!-- Device Lookup Section - START COMMENT -->
-        <!--
-        <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 15px 0;">
-        <h3 style="color: var(--text-color); margin-bottom: 15px; text-align: center;">Device Lookup</h3>
-        
-        <div style="margin-bottom: 15px;">
-            <input type="text" 
-                   id="quickDeviceNumber" 
-                   placeholder="Enter Device Number"
-                   style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); margin-bottom: 5px; font-size: 14px; box-sizing: border-box;">
-            <button onclick="quickLookupBIN()" 
-                    style="width: 100%; padding: 8px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 5px; font-size: 14px;">
-                Look up Device
-            </button>
+
+        <!-- Add BIN display section -->
+        <div id="quickBinDisplay" style="text-align: center; margin-top: 5px; padding: 8px; background: var(--panel-bg); border-radius: 4px; color: var(--text-color);">
+            <strong>BIN:</strong> <span id="quickBinValue">-</span>
         </div>
-        
-        <div id="quickDeviceResult" style="width: 100%; max-height: 300px; overflow-y: auto; background: var(--result-bg); padding: 8px; border-radius: 4px; margin-bottom: 10px; color: var(--text-color); border: 1px solid var(--input-border); box-sizing: border-box; display: none;"></div>
-        
-        <div style="margin-bottom: 15px; display: none;">
-            <input type="text" 
-                   id="quickBinNumber" 
-                   placeholder="BIN"
-                   style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); margin-bottom: 5px; font-size: 14px; box-sizing: border-box;">
-        </div>
-        
-        <button onclick="quickClearDeviceSearch()" 
-                style="width: 100%; padding: 12px; background: var(--panel-bg); color: var(--text-color); border: none; border-radius: 4px; cursor: pointer; margin-bottom: 10px; box-sizing: border-box;">
-            Clear Device Search
-        </button>
-        -->
-        <!-- Device Lookup Section - END COMMENT -->
     </div>
 
     <div class="dropdown">
@@ -2238,10 +2211,12 @@
             const deviceNumber = document.getElementById('deviceNumber').value.trim();
             const resultDiv = document.getElementById('binResult');
             const binInput = document.getElementById('binNumber');
+            const quickBinValue = document.getElementById('quickBinValue');
             
             if (!deviceNumber) {
                 resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Please enter a device number</span>';
                 resultDiv.style.display = 'block';
+                quickBinValue.textContent = '-';
                 return;
             }
 
@@ -2260,6 +2235,7 @@
                 if (data && data.length > 0) {
                     const device = data[0];
                     binInput.value = device.bin || '';
+                    quickBinValue.textContent = device.bin || '-';
                     if (device.bin) {
                         lookupDevices();
                     }
@@ -2814,6 +2790,28 @@
             }
         });
 
+        // Add input event listener for device number
+        document.getElementById('deviceNumber').addEventListener('input', function(e) {
+            const deviceNumber = e.target.value.trim();
+            const binNumber = document.getElementById('binNumber').value.trim();
+            const quickBinValue = document.getElementById('quickBinValue');
+            
+            if (!deviceNumber && !binNumber) {
+                quickBinValue.textContent = '-';
+            }
+        });
+
+        // Add input event listener for BIN number
+        document.getElementById('binNumber').addEventListener('input', function(e) {
+            const deviceNumber = document.getElementById('deviceNumber').value.trim();
+            const binNumber = e.target.value.trim();
+            const quickBinValue = document.getElementById('quickBinValue');
+            
+            if (!deviceNumber && !binNumber) {
+                quickBinValue.textContent = '-';
+            }
+        });
+
         // Add the new lookupDevices function
         async function lookupDevices() {
             const binNumber = document.getElementById('binNumber').value.trim();
@@ -3218,6 +3216,7 @@
             document.getElementById('binResult').style.display = 'none';
             document.getElementById('deviceResult').style.display = 'none';
             document.getElementById('binExportButton').style.display = 'none';
+            document.getElementById('quickBinValue').textContent = '-'; // Add this line to clear the BIN in ELV3 Lookup
             window.lastBinSearchResults = null;
         }
 
@@ -3296,7 +3295,9 @@
                             <div style="margin-bottom: 10px; padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid var(--input-border);">
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">Device Number:</strong> ${device.device_number}<br>
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">Type:</strong> ${device.device_type || 'N/A'}<br>
-                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Status:</strong> ${device.device_status || 'N/A'}
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Status:</strong> ${device.device_status || 'N/A'}<br>
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Block:</strong> ${device.block || 'N/A'}<br>
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Lot:</strong> ${device.lot || 'N/A'}
                             </div>
                         `;
                     });
@@ -3455,7 +3456,7 @@
             }
 
             // Create CSV content
-            let csvContent = 'Device Number,BIN,Address,Borough,Type,Status\n';
+            let csvContent = 'Device Number,BIN,Address,Borough,Type,Status,Block,Lot\n';
 
             // Add found devices
             for (const [bin, group] of Object.entries(deviceData.binGroups)) {
@@ -3466,7 +3467,9 @@
                         `${device.house_number} ${device.street_name}`,
                         device.borough,
                         device.device_type || 'N/A',
-                        device.device_status || 'N/A'
+                        device.device_status || 'N/A',
+                        device.block || 'N/A',
+                        device.lot || 'N/A'
                     ].map(field => `"${field}"`).join(',');
                     csvContent += row + '\n';
                 });
@@ -3475,7 +3478,7 @@
             // Add not found devices
             if (deviceData.notFound && deviceData.notFound.length > 0) {
                 deviceData.notFound.forEach(deviceNumber => {
-                    csvContent += `"${deviceNumber}","Not Found","N/A","N/A","N/A","N/A"\n`;
+                    csvContent += `"${deviceNumber}","Not Found","N/A","N/A","N/A","N/A","N/A","N/A"\n`;
                 });
             }
 
@@ -3677,10 +3680,27 @@
 
         // Add this function to your JavaScript section
         function clearDeviceSearch() {
-            document.getElementById('deviceNumber').value = '';
-            document.getElementById('binNumber').value = '';
-            document.getElementById('binResult').style.display = 'none';
-            document.getElementById('deviceResult').style.display = 'none';
+            const deviceNumber = document.getElementById('deviceNumber');
+            const binNumber = document.getElementById('binNumber');
+            const quickBinValue = document.getElementById('quickBinValue');
+            
+            // If this was triggered by an X button next to device search
+            if (deviceNumber === document.activeElement || deviceNumber.value) {
+                deviceNumber.value = '';
+                document.getElementById('binResult').style.display = 'none';
+            }
+            
+            // If this was triggered by an X button next to BIN search
+            if (binNumber === document.activeElement || binNumber.value) {
+                binNumber.value = '';
+                document.getElementById('deviceResult').style.display = 'none';
+            }
+            
+            // Clear BIN display if both fields are empty
+            if (!deviceNumber.value && !binNumber.value) {
+                quickBinValue.textContent = '-';
+            }
+            
             document.getElementById('binExportButton').style.display = 'none';
         }
 
@@ -4145,7 +4165,9 @@
                             <div style="margin-bottom: 10px; padding: 10px; background: #1c1c1c; border-radius: 5px;">
                                 <strong style="color: #4a9eff;">Device Number:</strong> ${device.device_number}<br>
                                 <strong style="color: #4a9eff;">Type:</strong> ${device.device_type || 'N/A'}<br>
-                                <strong style="color: #4a9eff;">Status:</strong> ${device.device_status || 'N/A'}
+                                <strong style="color: #4a9eff;">Status:</strong> ${device.device_status || 'N/A'}<br>
+                                <strong style="color: #4a9eff;">Block:</strong> ${device.block || 'N/A'}<br>
+                                <strong style="color: #4a9eff;">Lot:</strong> ${device.lot || 'N/A'}
                             </div>
                         `;
                     });
@@ -4306,7 +4328,7 @@
             }
 
             // Create CSV content
-            let csvContent = 'Device Number,BIN,Address,Borough,Type,Status\n';
+            let csvContent = 'Device Number,BIN,Address,Borough,Type,Status,Block,Lot\n';
 
             // Add found devices
             for (const [bin, group] of Object.entries(deviceData.binGroups)) {
@@ -4317,7 +4339,9 @@
                         `${device.house_number} ${device.street_name}`,
                         device.borough,
                         device.device_type || 'N/A',
-                        device.device_status || 'N/A'
+                        device.device_status || 'N/A',
+                        device.block || 'N/A',
+                        device.lot || 'N/A'
                     ].map(field => `"${field}"`).join(',');
                     csvContent += row + '\n';
                 });
@@ -4326,20 +4350,20 @@
             // Add not found devices
             if (deviceData.notFound && deviceData.notFound.length > 0) {
                 deviceData.notFound.forEach(deviceNumber => {
-                    csvContent += `"${deviceNumber}","Not Found","N/A","N/A","N/A","N/A"\n`;
+                    csvContent += `"${deviceNumber}","Not Found","N/A","N/A","N/A","N/A","N/A","N/A"\n`;
                 });
-                }
+            }
 
-                // Create and trigger download
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement('a');
-                const url = URL.createObjectURL(blob);
-                link.setAttribute('href', url);
+            // Create and trigger download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
             link.setAttribute('download', 'device_lookup_results.csv');
-                link.style.visibility = 'hidden';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
 
         function quickExportBinToCSV() {
@@ -5428,6 +5452,27 @@
                 return null;
             }
         }
+
+        // Add this function to handle the "X" button clicks
+        function handleClearButtonClick(event) {
+            const button = event.target;
+            const deviceNumber = document.getElementById('deviceNumber').value.trim();
+            const binNumber = document.getElementById('binNumber').value.trim();
+            const quickBinValue = document.getElementById('quickBinValue');
+            
+            if (!deviceNumber && !binNumber) {
+                quickBinValue.textContent = '-';
+            }
+        }
+
+        // Add event listeners for the "X" buttons
+        document.addEventListener('DOMContentLoaded', function() {
+            // Find all clear buttons (X buttons) next to the lookup buttons
+            const clearButtons = document.querySelectorAll('button[onclick="clearDeviceSearch()"]');
+            clearButtons.forEach(button => {
+                button.addEventListener('click', handleClearButtonClick);
+            });
+        });
     </script>
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
