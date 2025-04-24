@@ -2347,7 +2347,18 @@
                         <div style="background: var(--input-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">BIN:</strong> 
-                                <span>${device.bin || 'N/A'}</span>
+                                ${device.bin ? `
+                                    <span onclick="copyBinToClipboard('${device.bin}')" 
+                                          title="Click to copy"
+                                          style="cursor: pointer; padding: 4px 8px; border-radius: 4px; 
+                                                 transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
+                                                 border: 1px solid var(--input-border); background: var(--panel-bg);">
+                                        ${device.bin}
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;">
+                                            <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                        </svg>
+                                    </span>
+                                ` : '<span>N/A</span>'}
                             </div>
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">Address:</strong> 
@@ -3842,7 +3853,18 @@
                         <div style="background: #1c1c1c; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); color: #ffffff; border: 1px solid #333;">
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: #4a9eff; display: inline-block; width: 120px;">BIN:</strong> 
-                                <span>${device.bin || 'N/A'}</span>
+                                ${device.bin ? `
+                                    <span onclick="copyBinToClipboard('${device.bin}')" 
+                                          title="Click to copy"
+                                          style="cursor: pointer; padding: 4px 8px; border-radius: 4px; 
+                                                 transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
+                                                 border: 1px solid var(--input-border); background: var(--panel-bg);">
+                                        ${device.bin}
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;">
+                                            <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                        </svg>
+                                    </span>
+                                ` : '<span>N/A</span>'}
                             </div>
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: #4a9eff; display: inline-block; width: 120px;">Address:</strong> 
@@ -5473,6 +5495,45 @@
                 button.addEventListener('click', handleClearButtonClick);
             });
         });
+
+        // Add this new function to handle copying BIN to clipboard
+        async function copyBinToClipboard(bin) {
+            try {
+                await navigator.clipboard.writeText(bin);
+                
+                // Get the span element that was clicked
+                const span = event.target.closest('span');
+                const originalBg = span.style.backgroundColor;
+                const originalColor = span.style.color;
+                const originalBorder = span.style.borderColor;
+                
+                // Show success state
+                span.style.backgroundColor = '#4CAF50';
+                span.style.color = 'white';
+                span.style.borderColor = '#4CAF50';
+                span.title = 'Copied!';
+                
+                // Find the SVG and change its color
+                const svg = span.querySelector('svg');
+                if (svg) {
+                    svg.style.opacity = '1';
+                }
+                
+                // Reset after 2 seconds
+                setTimeout(() => {
+                    span.style.backgroundColor = originalBg;
+                    span.style.color = originalColor;
+                    span.style.borderColor = originalBorder;
+                    span.title = 'Click to copy';
+                    if (svg) {
+                        svg.style.opacity = '0.7';
+                    }
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy BIN:', err);
+                alert('Failed to copy BIN to clipboard');
+            }
+        }
     </script>
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
