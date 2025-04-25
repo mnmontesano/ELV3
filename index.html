@@ -2474,7 +2474,7 @@
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">BIN:</strong> 
                                 ${device.bin ? `
-                                    <span onclick="copyBinToClipboard('${device.bin}')" 
+                                    <span onclick="copyBinToClipboard('${device.bin}', event)" 
                                           title="Click to copy"
                                           style="cursor: pointer; padding: 4px 8px; border-radius: 4px; 
                                                  transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
@@ -3001,6 +3001,31 @@
                          device.device_status.toUpperCase() !== 'DISMANTLED')
                     ).length;
 
+                    // Calculate test eligibility counts
+                    const eligibleDevices = data.filter(device => {
+                        const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                        const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                        const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                        
+                        // Find most recent date
+                        const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                        const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
+                        
+                        return isEligibleForTesting(mostRecentDate);
+                    }).length;
+                    
+                    const notEligibleDevices = data.filter(device => {
+                        const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                        const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                        const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                        
+                        // Find most recent date
+                        const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                        const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
+                        
+                        return !isEligibleForTesting(mostRecentDate);
+                    }).length;
+
                     // Group devices by type
                     const deviceTypes = {};
                     data.forEach(device => {
@@ -3029,6 +3054,11 @@
                                             ${totalActiveViolations > 0 ? totalActiveViolations : 'None'}
                                         </span>
                                     </div>
+                                </div>
+                                <div style="margin-bottom: 10px;">
+                                    <strong style="color: var(--header-color);">Test Eligibility:</strong>
+                                    <span style="margin-left: 10px; color: #4CAF50;">• Ready for Test: ${eligibleDevices}</span>
+                                    <span style="margin-left: 10px; color: #ff6b6b;">• Not Ready: ${notEligibleDevices}</span>
                                 </div>
                                 <span style="margin-left: 20px; color: ${activeDevices > 0 ? '#4CAF50' : 'var(--text-color)'};">• Active Devices: ${activeDevices}</span>
                                 <br>
@@ -4040,7 +4070,7 @@
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: #4a9eff; display: inline-block; width: 120px;">BIN:</strong> 
                                 ${device.bin ? `
-                                    <span onclick="copyBinToClipboard('${device.bin}')" 
+                                    <span onclick="copyBinToClipboard('${device.bin}', event)" 
                                           title="Click to copy"
                                           style="cursor: pointer; padding: 4px 8px; border-radius: 4px; 
                                                  transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
@@ -5684,28 +5714,50 @@
         });
 
         // Add this new function to handle copying BIN to clipboard
-        async function copyBinToClipboard(bin) {
+        async function copyBinToClipboard(bin, event) {
             try {
-                await navigator.clipboard.writeText(bin);
-                
-                // Get the span element that was clicked
-                const span = event.target.closest('span');
+                // Prevent any default behavior
+                if (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+
+                // Get the clicked element
+                const span = event ? event.target.closest('span') : document.querySelector(`span[onclick*="${bin}"]`);
+                if (!span) return;
+
+                // Store original styles
                 const originalBg = span.style.backgroundColor;
                 const originalColor = span.style.color;
                 const originalBorder = span.style.borderColor;
-                
+
+                // Try modern clipboard API first
+                try {
+                    await navigator.clipboard.writeText(bin);
+                } catch (err) {
+                    // Fallback for browsers that don't support clipboard API
+                    const textarea = document.createElement('textarea');
+                    textarea.value = bin;
+                    textarea.style.position = 'fixed';  // Prevent scrolling to bottom
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                }
+
                 // Show success state
                 span.style.backgroundColor = '#4CAF50';
                 span.style.color = 'white';
                 span.style.borderColor = '#4CAF50';
                 span.title = 'Copied!';
-                
+
                 // Find the SVG and change its color
                 const svg = span.querySelector('svg');
                 if (svg) {
                     svg.style.opacity = '1';
                 }
-                
+
                 // Reset after 2 seconds
                 setTimeout(() => {
                     span.style.backgroundColor = originalBg;
