@@ -2111,6 +2111,9 @@
                 return;
             }
             
+            // Clear the custom days input when using preset buttons
+            document.getElementById('customDays').value = '';
+            
             // Store the last calculation type and value
             lastCalculation = { type: 'standard', days: days };
             
@@ -3056,15 +3059,20 @@
                                     </div>
                                 </div>
                                 <div style="margin-bottom: 10px;">
-                                    <strong style="color: var(--header-color);">Test Eligibility:</strong>
-                                    <span style="margin-left: 10px; color: #4CAF50;">• Ready for Test: ${eligibleDevices}</span>
-                                    <span style="margin-left: 10px; color: #ff6b6b;">• Not Ready: ${notEligibleDevices}</span>
+                                    <span style="margin-left: 20px; color: ${activeDevices > 0 ? '#4CAF50' : 'var(--text-color)'};">• Active Devices: ${activeDevices}</span>
+                                    <br>
+                                    <span style="margin-left: 20px; color: ${removedDevices > 0 ? '#ff6b6b' : 'var(--text-color)'};">• Removed Devices: ${removedDevices}</span>
+                                    <br>
+                                    <span style="margin-left: 20px; color: ${dismantledDevices > 0 ? '#ffd700' : 'var(--text-color)'};">• Dismantled Devices: ${dismantledDevices}</span>
+                                    <br>
+                                    <div style="margin-top: 10px;">
+                                        <strong style="color: var(--header-color);">Test Eligibility:</strong>
+                                        <br>
+                                        <span style="margin-left: 20px; color: #4CAF50;">• Ready for Test: ${eligibleDevices}</span>
+                                        <br>
+                                        <span style="margin-left: 20px; color: #ff6b6b;">• Not Ready: ${notEligibleDevices}</span>
+                                    </div>
                                 </div>
-                                <span style="margin-left: 20px; color: ${activeDevices > 0 ? '#4CAF50' : 'var(--text-color)'};">• Active Devices: ${activeDevices}</span>
-                                <br>
-                                <span style="margin-left: 20px; color: ${removedDevices > 0 ? '#ff6b6b' : 'var(--text-color)'};">• Removed Devices: ${removedDevices}</span>
-                                <br>
-                                <span style="margin-left: 20px; color: ${dismantledDevices > 0 ? '#ffd700' : 'var(--text-color)'};">• Dismantled Devices: ${dismantledDevices}</span>
                             </div>
                             <div style="margin-top: 20px; margin-bottom: 15px;">
                                 <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
@@ -3141,7 +3149,7 @@
                     
                     html += `</div></div></div>`;
                     resultDiv.innerHTML = html;
-                } else {
+                        } else {
                     resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No devices found for this BIN number</span>';
                     window.lastBinSearchResults = null;
                     document.getElementById('binExportButton').style.display = 'none';
@@ -3212,7 +3220,10 @@
                                     'PVI' : null;
                                 
                                 return `
-                                    <div class="device-item" data-has-violations="${violationCount > 0}" data-device-type="${type}">
+                                    <div class="device-item" 
+                                         data-has-violations="${violationCount > 0}" 
+                                         data-device-type="${type}"
+                                         data-device-status="${(device.device_status || '').toUpperCase()}">
                                         <div style="padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid var(--input-border);">
                                             <div><strong style="color: var(--header-color);">Device #:</strong> ${device.device_number}</div>
                                             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -3253,13 +3264,13 @@
                                                                font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
                                                         <span>Show Violation Details</span>
                                                         <span class="arrow">▼</span>
-                                                    </button>
+                                    </button>
                                                     <div id="violations_${device.device_number}" style="display: none; margin-top: 8px; 
                                                          padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
                                                     </div>
                                                 </div>
                                             ` : ''}
-                                            <div style="margin-top: 10px;">
+                                <div style="margin-top: 10px;">
                                                 <button onclick="toggleDeviceDetails('${device.device_number}')" 
                                                     id="detailsBtn_${device.device_number}"
                                                     style="width: 100%; padding: 5px; background: var(--panel-bg); color: var(--text-color); 
@@ -3267,11 +3278,11 @@
                                                            font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
                                                     <span>Show Details</span>
                                                     <span class="arrow">▼</span>
-                                                </button>
+                                    </button>
                                                 <div id="details_${device.device_number}" style="display: none; margin-top: 8px; 
                                                      padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
-                                                </div>
-                                            </div>
+                                </div>
+                            </div>
                                             ${hasPermits ? `
                                                 <div style="margin-top: 10px;">
                                                     <button onclick="togglePermitInfo('${device.device_number}')" 
@@ -3496,8 +3507,8 @@
                     }
                 }
 
-                let html = `
-                    <div style="background: var(--input-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
+                    let html = `
+                        <div style="background: var(--input-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
                         <div style="margin-bottom: 15px;">
                             <strong style="color: var(--header-color); display: inline-block; width: 180px;">Total Devices Searched:</strong> 
                             <span>${deviceNumbers.length}</span>
@@ -4247,11 +4258,11 @@
                     // Add back the device grouping code
                     const deviceTypes = {};
                     data.forEach(device => {
-                        const type = device.device_type || 'Unknown';
-                        if (!deviceTypes[type]) {
-                            deviceTypes[type] = [];
-                        }
-                        deviceTypes[type].push(device);
+                            const type = device.device_type || 'Unknown';
+                            if (!deviceTypes[type]) {
+                                deviceTypes[type] = [];
+                            }
+                            deviceTypes[type].push(device);
                     });
 
                     let html = `
@@ -4377,12 +4388,12 @@
                     }
                 }
 
-                let html = `
+                    let html = `
                     <div style="background: #1c1c1c; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); color: #ffffff; border: 1px solid #333;">
                         <div style="margin-bottom: 15px;">
                             <strong style="color: #4a9eff;">Total Devices Searched:</strong> 
                             <span>${deviceNumbers.length}</span>
-                        </div>
+                            </div>
                         <div style="max-height: 600px; overflow-y: auto; padding-right: 10px;">
                 `;
 
