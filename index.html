@@ -2979,16 +2979,6 @@
                     const violationsByDevice = await fetchViolationsForBin(binNumber);
                     window.violationsByDevice = violationsByDevice; // Store for later use
                     
-                    // Calculate total active violations
-                    let totalActiveViolations = 0;
-                    for (const deviceNum in violationsByDevice) {
-                        const deviceViolations = violationsByDevice[deviceNum];
-                        const activeDeviceViolations = deviceViolations.filter(v => 
-                            v.violation_status?.toUpperCase() === 'ACTIVE' || 
-                            v.violation_status?.toUpperCase() === 'OPEN');
-                        totalActiveViolations += activeDeviceViolations.length;
-                    }
-                    
                     const address = `${data[0].house_number} ${data[0].street_name}, ${data[0].borough}`;
                     
                     // Count active, removed, and dismantled devices
@@ -3004,39 +2994,22 @@
                          device.device_status.toUpperCase() !== 'DISMANTLED')
                     ).length;
 
-                    // Calculate test eligibility counts
-                    const eligibleDevices = data.filter(device => {
-                        const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
-                        const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
-                        const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
-                        
-                        // Find most recent date
-                        const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
-                        const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
-                        
-                        return isEligibleForTesting(mostRecentDate);
-                    }).length;
-                    
-                    const notEligibleDevices = data.filter(device => {
-                        const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
-                        const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
-                        const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
-                        
-                        // Find most recent date
-                        const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
-                        const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
-                        
-                        return !isEligibleForTesting(mostRecentDate);
-                    }).length;
-
                     // Group devices by type
                     const deviceTypes = {};
+                    const removedDevicesList = []; // New array for removed devices
+
                     data.forEach(device => {
-                        const type = device.device_type || 'Unknown';
-                        if (!deviceTypes[type]) {
-                            deviceTypes[type] = [];
+                        // Check if device is removed
+                        if (device.device_status && device.device_status.toUpperCase() === 'REMOVED') {
+                            removedDevicesList.push(device);
+                        } else {
+                            // Group non-removed devices by type
+                            const type = device.device_type || 'Unknown';
+                            if (!deviceTypes[type]) {
+                                deviceTypes[type] = [];
+                            }
+                            deviceTypes[type].push(device);
                         }
-                        deviceTypes[type].push(device);
                     });
 
                     let html = `
@@ -3051,12 +3024,6 @@
                                         <strong style="color: var(--header-color);">Total Devices Found:</strong> 
                                         <span>${data.length}</span>
                                     </div>
-                                    <div>
-                                        <strong style="color: var(--header-color);">Total Active Violations:</strong> 
-                                        <span style="color: ${totalActiveViolations > 0 ? '#ff6b6b' : 'var(--text-color)'}">
-                                            ${totalActiveViolations > 0 ? totalActiveViolations : 'None'}
-                                        </span>
-                                    </div>
                                 </div>
                                 <div style="margin-bottom: 10px;">
                                     <span style="margin-left: 20px; color: ${activeDevices > 0 ? '#4CAF50' : 'var(--text-color)'};">• Active Devices: ${activeDevices}</span>
@@ -3064,76 +3031,13 @@
                                     <span style="margin-left: 20px; color: ${removedDevices > 0 ? '#ff6b6b' : 'var(--text-color)'};">• Removed Devices: ${removedDevices}</span>
                                     <br>
                                     <span style="margin-left: 20px; color: ${dismantledDevices > 0 ? '#ffd700' : 'var(--text-color)'};">• Dismantled Devices: ${dismantledDevices}</span>
-                                    <br>
-                                    <div style="margin-top: 10px;">
-                                        <strong style="color: var(--header-color);">Test Eligibility:</strong>
-                                        <br>
-                                        <span style="margin-left: 20px; color: #4CAF50;">• Ready for Test: ${eligibleDevices}</span>
-                                        <br>
-                                        <span style="margin-left: 20px; color: #ff6b6b;">• Not Ready: ${notEligibleDevices}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div style="margin-top: 20px; margin-bottom: 15px;">
-                                <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
-                                    <button 
-                                        onclick="toggleViolationsFilter()" 
-                                        id="violationsFilterBtn"
-                                        data-filtering="false"
-                                        style="padding: 8px 12px; background: var(--panel-bg); color: var(--text-color); 
-                                               border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
-                                               font-size: 0.9em; display: flex; align-items: center; gap: 5px; width: 240px;">
-                                        <span id="violationsFilterText">Show Only Devices with Violations</span>
-                                    </button>
-                                    
-                                    <button 
-                                        onclick="toggleTestEligibilityFilter()" 
-                                        id="testEligibilityFilterBtn"
-                                        data-filter="all"
-                                        style="padding: 8px 12px; background: var(--panel-bg); color: var(--text-color); 
-                                               border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
-                                               font-size: 0.9em; width: 180px;">
-                                        Show Eligible Only
-                                    </button>
-                                    
-                                    <button 
-                                        onclick="toggleAllViolations()" 
-                                        id="toggleAllViolationsBtn"
-                                        data-showing="false"
-                                        style="padding: 8px 12px; background: var(--panel-bg); color: var(--text-color); 
-                                               border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
-                                               font-size: 0.9em; width: 180px;">
-                                        Show All Violations
-                                    </button>
-                                    
-                                    <div style="display: flex; align-items: center; gap: 5px;">
-                                        <label for="deviceTypeFilter" style="color: var(--text-color); font-size: 0.9em;">Filter by Type:</label>
-                                        <select 
-                                            id="deviceTypeFilter" 
-                                            onchange="filterDevicesByType()"
-                                            style="padding: 8px; background: var(--panel-bg); color: var(--text-color); 
-                                                   border: 1px solid var(--input-border); border-radius: 4px; font-size: 0.9em; width: 150px;">
-                                            <option value="all">All Types</option>
-                                            ${Object.keys(deviceTypes).map(type => 
-                                                `<option value="${type}">${type}</option>`
-                                            ).join('')}
-                                        </select>
-                                    </div>
-                                    
-                                    <button 
-                                        onclick="resetFilters()" 
-                                        style="padding: 8px 12px; background: var(--panel-bg); color: var(--text-color); 
-                                               border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
-                                               font-size: 0.9em; width: 120px;">
-                                        Reset Filters
-                                    </button>
                                 </div>
                             </div>
                             <div style="margin-top: 20px;">
                                 <strong style="color: var(--header-color); display: block; margin-bottom: 10px;">Devices by Type:</strong>
                                 <div style="max-height: 600px; overflow-y: auto; padding-right: 10px;" id="deviceTypeSections">
                     `;
-                    
+
                     // First display elevators if they exist
                     if (deviceTypes['ELEVATOR']) {
                         const elevatorSection = await generateDeviceTypeSection('ELEVATOR', deviceTypes['ELEVATOR'], violationsByDevice);
@@ -3146,10 +3050,16 @@
                         const deviceSection = await generateDeviceTypeSection(type, devices, violationsByDevice);
                         html += deviceSection;
                     }
+
+                    // Add the Removed Devices section if there are any
+                    if (removedDevicesList.length > 0) {
+                        const removedSection = await generateDeviceTypeSection('REMOVED DEVICES', removedDevicesList, violationsByDevice);
+                        html += removedSection;
+                    }
                     
                     html += `</div></div></div>`;
                     resultDiv.innerHTML = html;
-                        } else {
+                } else {
                     resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No devices found for this BIN number</span>';
                     window.lastBinSearchResults = null;
                     document.getElementById('binExportButton').style.display = 'none';
@@ -3182,130 +3092,150 @@
             return `
                 <div class="device-type-section" data-device-type="${type}">
                     <div style="background: var(--panel-bg); padding: 15px; border-radius: 5px; margin-bottom: 15px;">
-                        <div style="margin-bottom: 10px; border-bottom: 1px solid var(--input-border); padding-bottom: 10px;">
-                            <strong style="color: var(--header-color);">${type} (${devices.length}):</strong>
-                        </div>
-                        <div style="display: flex; flex-direction: column; gap: 10px;">
-                            ${devices.map((device, index) => {
-                                // Get violations for this device
-                                const deviceViolations = violationsByDevice[device.device_number] || [];
-                                const activeViolations = deviceViolations.filter(v => 
-                                    v.violation_status?.toUpperCase() === 'ACTIVE' || 
-                                    v.violation_status?.toUpperCase() === 'OPEN');
-                                const violationCount = activeViolations.length;
-                                
-                                // Get the pre-fetched permit data
-                                const permitData = devicePermits[index];
-                                const hasPermits = permitData.success && permitData.permits && permitData.permits.length > 0;
+                        <button onclick="toggleDeviceTypeSection('${type}')" 
+                                style="width: 100%; background: none; border: none; color: var(--text-color); 
+                                       cursor: pointer; display: flex; justify-content: space-between; 
+                                       align-items: center; padding: 10px; margin: -10px -10px 10px -10px;
+                                       border-bottom: 1px solid var(--input-border);">
+                            <strong style="color: var(--header-color);">${type} (${devices.length})</strong>
+                            <span class="device-type-arrow" id="arrow_${type}">▼</span>
+                        </button>
+                        <div id="devices_${type}" class="device-list" style="display: block;">
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                ${devices.map((device, index) => {
+                                    // Get violations for this device
+                                    const deviceViolations = violationsByDevice[device.device_number] || [];
+                                    const activeViolations = deviceViolations.filter(v => 
+                                        v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                                        v.violation_status?.toUpperCase() === 'OPEN');
+                                    const violationCount = activeViolations.length;
+                                    
+                                    // Get the pre-fetched permit data
+                                    const permitData = devicePermits[index];
+                                    const hasPermits = permitData.success && permitData.permits && permitData.permits.length > 0;
 
-                                // Calculate most recent inspection date
-                                const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
-                                const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
-                                const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
-                                
-                                // Find most recent date
-                                const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
-                                const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
-                                
-                                // Calculate test eligibility
-                                const isEligible = isEligibleForTesting(mostRecentDate);
-                                const today = new Date();
-                                const daysSinceInspection = mostRecentDate ? 
-                                    Math.floor((today - mostRecentDate) / (1000 * 60 * 60 * 24)) : null;
-                                
-                                // Determine which type of inspection was most recent
-                                const lastInspectionType = mostRecentDate ? 
-                                    mostRecentDate.getTime() === cat1Date?.getTime() ? 'CAT1' :
-                                    mostRecentDate.getTime() === cat5Date?.getTime() ? 'CAT5' :
-                                    'PVI' : null;
-                                
-                                return `
-                                    <div class="device-item" 
-                                         data-has-violations="${violationCount > 0}" 
-                                         data-device-type="${type}"
-                                         data-device-status="${(device.device_status || '').toUpperCase()}">
-                                        <div style="padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid var(--input-border);">
-                                            <div><strong style="color: var(--header-color);">Device #:</strong> ${device.device_number}</div>
-                                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                                <div><strong style="color: var(--header-color);">Status:</strong> ${device.device_status || 'N/A'}</div>
-                                                <div style="display: flex; align-items: center; gap: 8px;">
-                                                    <strong style="color: var(--header-color);">Test Status:</strong>
-                                                    <span data-test-status="${isEligible}" style="padding: 4px 8px; border-radius: 4px; background: ${isEligible ? '#4CAF50' : '#ff6b6b'}; color: white; font-size: 0.9em; display: flex; align-items: center; gap: 4px;">
-                                                        ${isEligible ? 
-                                                            `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                                                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                                                            </svg>Eligible` : 
-                                                            `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                                                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
-                                                            </svg>Not Eligible`}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            ${mostRecentDate ? `
-                                                <div style="margin-top: 5px; font-size: 0.9em; color: ${isEligible ? '#4CAF50' : '#666'};">
+                                    // Calculate most recent inspection date
+                                    const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                                    const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                                    const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                                    
+                                    // Find most recent date
+                                    const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                                    const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
+                                    
+                                    // Calculate test eligibility
+                                    const isEligible = isEligibleForTesting(mostRecentDate);
+                                    const today = new Date();
+                                    const daysSinceInspection = mostRecentDate ? 
+                                        Math.floor((today - mostRecentDate) / (1000 * 60 * 60 * 24)) : null;
+                                    
+                                    // Determine which type of inspection was most recent
+                                    const lastInspectionType = mostRecentDate ? 
+                                        mostRecentDate.getTime() === cat1Date?.getTime() ? 'CAT1' :
+                                        mostRecentDate.getTime() === cat5Date?.getTime() ? 'CAT5' :
+                                        'PVI' : null;
+
+                                    return `
+                                        <div class="device-item" 
+                                             data-has-violations="${violationCount > 0}" 
+                                             data-device-type="${type}"
+                                             data-device-status="${(device.device_status || '').toUpperCase()}">
+                                            <div style="padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid var(--input-border);">
+                                                <div><strong style="color: var(--header-color);">Device #:</strong> ${device.device_number}</div>
+                                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                    <div><strong style="color: var(--header-color);">Status:</strong> ${device.device_status || 'N/A'}</div>
                                                     <div style="display: flex; align-items: center; gap: 8px;">
-                                                        <span>Last Inspection: ${mostRecentDate.toLocaleDateString()}</span>
-                                                        <span style="padding: 2px 6px; background: var(--panel-bg); border-radius: 3px; color: var(--header-color);">${lastInspectionType}</span>
-                                                        <span>• ${daysSinceInspection} days ago</span>
+                                                        <strong style="color: var(--header-color);">Test Status:</strong>
+                                                        <span data-test-status="${isEligible}" style="padding: 4px 8px; border-radius: 4px; background: ${isEligible ? '#4CAF50' : '#ff6b6b'}; color: white; font-size: 0.9em; display: flex; align-items: center; gap: 4px;">
+                                                            ${isEligible ? 
+                                                                `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                                                                </svg>Eligible` : 
+                                                                `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                                                </svg>Not Eligible`}
+                                                        </span>
                                                     </div>
                                                 </div>
-                                            ` : ''}
-                                            ${violationCount > 0 ? `
-                                                <div style="margin-top: 5px;">
-                                                    <span style="color: #ff6b6b; font-weight: 500;">
-                                                        ${violationCount} Active Violation${violationCount !== 1 ? 's' : ''}
-                                                    </span>
-                                                </div>
-                                                <div style="margin-top: 5px;">
-                                                    <button onclick="toggleViolations('${device.device_number}')" 
-                                                        id="violationsBtn_${device.device_number}"
-                                                        style="width: 100%; padding: 5px; background: var(--panel-bg); color: var(--text-color); 
-                                                               border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
-                                                               font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
-                                                        <span>Show Violation Details</span>
-                                                        <span class="arrow">▼</span>
-                                    </button>
-                                                    <div id="violations_${device.device_number}" style="display: none; margin-top: 8px; 
-                                                         padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
+                                                ${mostRecentDate ? `
+                                                    <div style="margin-top: 5px; font-size: 0.9em; color: ${isEligible ? '#4CAF50' : '#666'};">
+                                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                                            <span>Last Inspection: ${mostRecentDate.toLocaleDateString()}</span>
+                                                            <span style="padding: 2px 6px; background: var(--panel-bg); border-radius: 3px; color: var(--header-color);">${lastInspectionType}</span>
+                                                            <span>• ${daysSinceInspection} days ago</span>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ` : ''}
-                                <div style="margin-top: 10px;">
-                                                <button onclick="toggleDeviceDetails('${device.device_number}')" 
-                                                    id="detailsBtn_${device.device_number}"
-                                                    style="width: 100%; padding: 5px; background: var(--panel-bg); color: var(--text-color); 
-                                                           border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
-                                                           font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
-                                                    <span>Show Details</span>
-                                                    <span class="arrow">▼</span>
-                                    </button>
-                                                <div id="details_${device.device_number}" style="display: none; margin-top: 8px; 
-                                                     padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
-                                </div>
-                            </div>
-                                            ${hasPermits ? `
+                                                ` : ''}
+                                                ${violationCount > 0 ? `
+                                                    <div style="margin-top: 5px;">
+                                                        <span style="color: #ff6b6b; font-weight: 500;">
+                                                            ${violationCount} Active Violation${violationCount !== 1 ? 's' : ''}
+                                                        </span>
+                                                    </div>
+                                                    <div style="margin-top: 5px;">
+                                                        <button onclick="toggleViolations('${device.device_number}')" 
+                                                            id="violationsBtn_${device.device_number}"
+                                                            style="width: 100%; padding: 5px; background: var(--panel-bg); color: var(--text-color); 
+                                                                   border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                                                   font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
+                                                            <span>Show Violation Details</span>
+                                                            <span class="arrow">▼</span>
+                                                        </button>
+                                                        <div id="violations_${device.device_number}" style="display: none; margin-top: 8px; 
+                                                             padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
+                                                        </div>
+                                                    </div>
+                                                ` : ''}
                                                 <div style="margin-top: 10px;">
-                                                    <button onclick="togglePermitInfo('${device.device_number}')" 
-                                                        id="permitsBtn_${device.device_number}"
+                                                    <button onclick="toggleDeviceDetails('${device.device_number}')" 
+                                                        id="detailsBtn_${device.device_number}"
                                                         style="width: 100%; padding: 5px; background: var(--panel-bg); color: var(--text-color); 
                                                                border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
                                                                font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
-                                                        <span>Show Permit Information</span>
+                                                        <span>Show Details</span>
                                                         <span class="arrow">▼</span>
                                                     </button>
-                                                    <div id="permits_${device.device_number}" style="display: none; margin-top: 8px; 
+                                                    <div id="details_${device.device_number}" style="display: none; margin-top: 8px; 
                                                          padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
                                                     </div>
                                                 </div>
-                                            ` : ''}
+                                                ${hasPermits ? `
+                                                    <div style="margin-top: 10px;">
+                                                        <button onclick="togglePermitInfo('${device.device_number}')" 
+                                                            id="permitsBtn_${device.device_number}"
+                                                            style="width: 100%; padding: 5px; background: var(--panel-bg); color: var(--text-color); 
+                                                                   border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                                                   font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
+                                                            <span>Show Permit Information</span>
+                                                            <span class="arrow">▼</span>
+                                                        </button>
+                                                        <div id="permits_${device.device_number}" style="display: none; margin-top: 8px; 
+                                                             padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
+                                                        </div>
+                                                    </div>
+                                                ` : ''}
+                                            </div>
                                         </div>
-                                    </div>
-                                `;
-                            }).join('')}
+                                    `;
+                                }).join('')}
+                            </div>
                         </div>
                     </div>
                 </div>
             `;
+        }
+
+        function toggleDeviceTypeSection(type) {
+            const deviceList = document.getElementById(`devices_${type}`);
+            const arrow = document.getElementById(`arrow_${type}`);
+            
+            if (deviceList.style.display === 'none') {
+                deviceList.style.display = 'block';
+                arrow.textContent = '▼';
+            } else {
+                deviceList.style.display = 'none';
+                arrow.textContent = '▶';
+            }
         }
 
         // Add this function to toggle violations display for a device
@@ -3323,58 +3253,8 @@
                 }
                 
                 // Check if this is a pre-rendered violations section (from device search)
-                if (deviceNumber.startsWith('device_violations_') || deviceNumber.startsWith('quick_device_violations_')) {
-                    // The violations are already pre-rendered in the HTML, so we don't need to do anything
-                    return;
-                }
-                
-                // Use pre-fetched violations if available
-                let activeViolations = [];
-                if (window.violationsByDevice && window.violationsByDevice[deviceNumber]) {
-                    const deviceViolations = window.violationsByDevice[deviceNumber];
-                    activeViolations = deviceViolations.filter(v => 
-                        v.violation_status?.toUpperCase() === 'ACTIVE' || 
-                        v.violation_status?.toUpperCase() === 'OPEN');
-                } else {
-                    // Fallback to fetching for this specific device if needed
-                    const violations = await fetchViolations(deviceNumber);
-                    activeViolations = violations.filter(v => 
-                        v.violation_status?.toUpperCase() === 'ACTIVE' || 
-                        v.violation_status?.toUpperCase() === 'OPEN');
-                }
-                
-                if (activeViolations.length > 0) {
-                    let violationsHtml = `
-                        <div style="margin-bottom: 5px; color: var(--header-color);">
-                            <strong>Active Violations (${activeViolations.length}):</strong>
-                        </div>
-                        <div style="max-height: 200px; overflow-y: auto; padding-right: 5px;">
-                    `;
-                    
-                    activeViolations.forEach(v => {
-                        const issueDate = v.violation_issue_date ? new Date(v.violation_issue_date).toLocaleDateString() : 'Unknown';
-                        violationsHtml += `
-                            <div style="margin-bottom: 8px; padding: 8px; background: var(--input-bg); 
-                                 border-radius: 4px; border: 1px solid var(--input-border); box-shadow: 0 1px 2px var(--card-shadow);">
-                                <div><strong style="color: var(--header-color);">Violation #:</strong> ${v.violation_number || 'Unknown'}</div>
-                                <div><strong style="color: var(--header-color);">Issued:</strong> ${issueDate}</div>
-                                <div><strong style="color: var(--header-color);">Type:</strong> ${v.violation_type || 'Not specified'}</div>
-                                ${v.violation_category ? 
-                                    `<div><strong style="color: var(--header-color);">Category:</strong> ${v.violation_category}</div>` : ''}
-                                ${v.violation_severity ? 
-                                    `<div><strong style="color: var(--header-color);">Severity:</strong> ${v.violation_severity}</div>` : ''}
-                                ${v.violation_remarks ? 
-                                    `<div style="margin-top: 5px;"><strong style="color: var(--header-color);">Remarks:</strong> 
-                                        <div style="white-space: pre-wrap; margin-top: 3px;">${v.violation_remarks}</div>
-                                    </div>` : ''}
-                            </div>
-                        `;
-                    });
-                    
-                    violationsHtml += `</div>`;
-                    violationsDiv.innerHTML = violationsHtml;
-                } else {
-                    violationsDiv.innerHTML = `<div style="text-align: center; color: var(--text-color);">No active violations found</div>`;
+                if (violationsDiv.innerHTML.trim() === '') {
+                    fetchViolations(deviceNumber);
                 }
             } else {
                 violationsDiv.style.display = 'none';
