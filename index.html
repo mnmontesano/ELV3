@@ -3006,6 +3006,11 @@
 
                     // Calculate test eligibility counts
                     const eligibleDevices = data.filter(device => {
+                        // Skip removed devices as they don't need testing
+                        if (device.device_status && device.device_status.toUpperCase() === 'REMOVED') {
+                            return false;
+                        }
+                        
                         const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
                         const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
                         const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
@@ -3018,6 +3023,11 @@
                     }).length;
                     
                     const notEligibleDevices = data.filter(device => {
+                        // Skip removed devices as they don't need testing
+                        if (device.device_status && device.device_status.toUpperCase() === 'REMOVED') {
+                            return false;
+                        }
+                        
                         const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
                         const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
                         const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
@@ -3086,15 +3096,18 @@
                                         <span id="violationsFilterText">Show Only Devices with Violations</span>
                                     </button>
                                     
-                                    <button 
-                                        onclick="toggleTestEligibilityFilter()" 
-                                        id="testEligibilityFilterBtn"
-                                        data-filter="all"
-                                        style="padding: 8px 12px; background: var(--panel-bg); color: var(--text-color); 
-                                               border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
-                                               font-size: 0.9em; width: 180px;">
-                                        Show Eligible Only
-                                    </button>
+                                    <div style="display: flex; align-items: center; gap: 5px;">
+                                        <label for="testEligibilityFilter" style="color: var(--text-color); font-size: 0.9em;">Test Eligibility:</label>
+                                        <select 
+                                            id="testEligibilityFilter" 
+                                            onchange="filterByTestEligibility()"
+                                            style="padding: 8px; background: var(--panel-bg); color: var(--text-color); 
+                                                   border: 1px solid var(--input-border); border-radius: 4px; font-size: 0.9em; width: 150px;">
+                                            <option value="all">All Devices</option>
+                                            <option value="eligible">Eligible Only</option>
+                                            <option value="not-eligible">Not Eligible Only</option>
+                                        </select>
+                                    </div>
                                     
                                     <button 
                                         onclick="toggleAllViolations()" 
@@ -3117,8 +3130,11 @@
                                             ${Object.keys(deviceTypes).map(type => 
                                                 `<option value="${type}">${type}</option>`
                                             ).join('')}
+                                            <option value="REMOVED">Removed</option>
                                         </select>
                                     </div>
+                                    
+                                    
                                     
                                     <button 
                                         onclick="resetFilters()" 
@@ -3140,6 +3156,7 @@
                         html += elevatorSection;
                         delete deviceTypes['ELEVATOR']; // Remove elevators so they're not shown again
                     }
+                    
                     
                     // Then display the rest of the device types
                     for (const [type, devices] of Object.entries(deviceTypes)) {
@@ -3199,9 +3216,9 @@
                                 const hasPermits = permitData.success && permitData.permits && permitData.permits.length > 0;
 
                                 // Calculate most recent inspection date
-                                const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
-                                const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
-                                const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                        const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                        const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                        const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
                                 
                                 // Find most recent date
                                 const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
@@ -5860,3 +5877,4 @@
 </body>
 </html>
 
+<script src="device-filter-functions.js"></script>
