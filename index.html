@@ -1478,23 +1478,32 @@
         </div>
         
         <!-- Adding back the buttons -->
-        <div class="date-buttons-group" style="display: flex; justify-content: center; gap: 10px;">
-            <button onclick="calculateDate(30)" style="display: inline-block; margin: 0;">30 Days</button>
-            <button onclick="calculateDate(60)" style="display: inline-block; margin: 0;">60 Days</button>
-            <button onclick="calculateDate(91)" style="display: inline-block; margin: 0;">91 Days</button>
+        <div class="date-buttons-group" style="display: flex; justify-content: center; gap: 10px; align-items: center;">
+            <button id="days30" onclick="calculateDateWithMode(30)" style="display: inline-block; margin: 0;">30 Days</button>
+            <button id="days60" onclick="calculateDateWithMode(60)" style="display: inline-block; margin: 0;">60 Days</button>
+            <button id="days91" onclick="calculateDateWithMode(91)" style="display: inline-block; margin: 0;">91 Days</button>
         </div>
         
         <!-- Adding back the dropdown for small screens -->
         <div class="date-dropdown-group" style="display: none; text-align: center; margin: 10px auto;">
-            <select id="daysSelect" onchange="calculateDate(parseInt(this.value))" style="padding: 8px; width: 200px;">
+            <select id="daysSelect" onchange="calculateDateWithMode(parseInt(this.value))" style="padding: 8px; width: 200px; margin-bottom: 10px;">
                 <option value="">Select Days</option>
                 <option value="30">30 Days</option>
                 <option value="60">60 Days</option>
                 <option value="91">91 Days</option>
             </select>
+            <select id="modeSelect" onchange="toggleDateModeFromDropdown(this.value)" style="padding: 8px; width: 200px;">
+                <option value="positive">Add Days</option>
+                <option value="negative">Subtract Days</option>
+            </select>
         </div>
 
         <div class="input-group" style="margin-top: 20px;">
+            <!-- Mode toggle buttons above custom days input -->
+            <div style="display: flex; justify-content: center; gap: 10px; align-items: center; margin-bottom: 15px;">
+                <button id="negativeToggle" onclick="toggleDateMode('negative')" style="display: inline-block; margin: 0; background-color: #f0f0f0; color: #666; border: 1px solid #ccc; padding: 8px 16px;">Prior</button>
+                <button id="positiveToggle" onclick="toggleDateMode('positive')" style="display: inline-block; margin: 0; background-color: #000; color: #fff; border: 1px solid #000; padding: 8px 16px;">Future</button>
+            </div>
             <input type="number" id="customDays" placeholder="Enter number of days" style="width: 200px;">
             <button onclick="calculateCustomDate()" style="display: inline-block; margin: 10px;">Calculate Custom Days</button>
         </div>
@@ -2102,6 +2111,7 @@
         });
 
         let lastCalculation = null; // Track the last calculation performed
+        let dateMode = 'positive'; // Track whether we're adding or subtracting days ('positive' or 'negative')
 
         function calculateDate(days) {
             const dateStr = document.getElementById('dateInput').value;
@@ -2123,13 +2133,99 @@
             
             const resultDate = new Date(inputDate);
             resultDate.setDate(resultDate.getDate() + days);
-            document.getElementById('dateResult').textContent = days + " days after " + inputDate.toLocaleDateString() + " is " + resultDate.toLocaleDateString();
+            
+            // Handle positive and negative days properly in text output
+            const dayText = days > 0 ? " days after " : " days before ";
+            const absDay = Math.abs(days);
+            
+            document.getElementById('dateResult').textContent = absDay + dayText + inputDate.toLocaleDateString() + " is " + resultDate.toLocaleDateString();
 
             // Spelled-out format using long options
             const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
             const spelledInput = inputDate.toLocaleDateString('en-US', options);
             const spelledResult = resultDate.toLocaleDateString('en-US', options);
             document.getElementById('dateSpelledResult').textContent = "" + spelledInput + " becomes " + spelledResult;
+        }
+
+        // New function to handle mode-based date calculation
+        function calculateDateWithMode(days) {
+            const effectiveDays = dateMode === 'negative' ? -days : days;
+            calculateDate(effectiveDays);
+        }
+
+        // Function to toggle between positive and negative date calculation modes
+        function toggleDateMode(mode) {
+            dateMode = mode;
+            
+            // Update button styles for desktop
+            const negativeToggle = document.getElementById('negativeToggle');
+            const positiveToggle = document.getElementById('positiveToggle');
+            
+            // Get the date buttons to update their text
+            const days30 = document.getElementById('days30');
+            const days60 = document.getElementById('days60');
+            const days91 = document.getElementById('days91');
+            
+            // Get the dropdown options
+            const daysSelect = document.getElementById('daysSelect');
+            const options = daysSelect.options;
+            
+            // Update mobile mode dropdown
+            const modeSelect = document.getElementById('modeSelect');
+            if (modeSelect) {
+                modeSelect.value = mode;
+            }
+            
+            if (mode === 'negative') {
+                // Negative mode active - change button text to "Prior"
+                days30.textContent = '30 Days Prior';
+                days60.textContent = '60 Days Prior';
+                days91.textContent = '91 Days Prior';
+                
+                // Update dropdown options
+                options[1].textContent = '30 Days Prior';
+                options[2].textContent = '60 Days Prior';
+                options[3].textContent = '91 Days Prior';
+                
+                // Update toggle button styles
+                negativeToggle.style.backgroundColor = '#000';
+                negativeToggle.style.color = '#fff';
+                negativeToggle.style.borderColor = '#000';
+                
+                positiveToggle.style.backgroundColor = '#f0f0f0';
+                positiveToggle.style.color = '#666';
+                positiveToggle.style.borderColor = '#ccc';
+            } else {
+                // Positive mode active (default) - revert to original text
+                days30.textContent = '30 Days';
+                days60.textContent = '60 Days';
+                days91.textContent = '91 Days';
+                
+                // Update dropdown options
+                options[1].textContent = '30 Days';
+                options[2].textContent = '60 Days';
+                options[3].textContent = '91 Days';
+                
+                // Update toggle button styles
+                positiveToggle.style.backgroundColor = '#000';
+                positiveToggle.style.color = '#fff';
+                positiveToggle.style.borderColor = '#000';
+                
+                negativeToggle.style.backgroundColor = '#f0f0f0';
+                negativeToggle.style.color = '#666';
+                negativeToggle.style.borderColor = '#ccc';
+            }
+        }
+
+        // Function to handle mode selection from mobile dropdown
+        function toggleDateModeFromDropdown(mode) {
+            toggleDateMode(mode);
+            
+            // If there's already a day value selected, recalculate with the new mode
+            const daysSelect = document.getElementById('daysSelect');
+            if (daysSelect && daysSelect.value && daysSelect.value !== "") {
+                calculateDateWithMode(parseInt(daysSelect.value));
+            }
         }
 
         // Modify the calculateCustomDate function to work with event triggers
