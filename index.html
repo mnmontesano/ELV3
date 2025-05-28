@@ -3135,14 +3135,32 @@
                         return !isEligibleForTesting(mostRecentDate);
                     }).length;
 
-                    // Group devices by type
+                    // Separate devices into active and removed
+                    const activeDevicesData = data.filter(device => 
+                        !device.device_status || device.device_status.toUpperCase() !== 'REMOVED'
+                    );
+                    const removedDevicesData = data.filter(device => 
+                        device.device_status && device.device_status.toUpperCase() === 'REMOVED'
+                    );
+
+                    // Group active devices by type
                     const deviceTypes = {};
-                    data.forEach(device => {
+                    activeDevicesData.forEach(device => {
                         const type = device.device_type || 'Unknown';
                         if (!deviceTypes[type]) {
                             deviceTypes[type] = [];
                         }
                         deviceTypes[type].push(device);
+                    });
+
+                    // Group removed devices by type for the removed section
+                    const removedDeviceTypes = {};
+                    removedDevicesData.forEach(device => {
+                        const type = device.device_type || 'Unknown';
+                        if (!removedDeviceTypes[type]) {
+                            removedDeviceTypes[type] = [];
+                        }
+                        removedDeviceTypes[type].push(device);
                     });
 
                     let html = `
@@ -3242,7 +3260,7 @@
                                 </div>
                             </div>
                             <div style="margin-top: 20px;">
-                                <strong style="color: var(--header-color); display: block; margin-bottom: 10px;">Devices by Type:</strong>
+                                <strong style="color: var(--header-color); display: block; margin-bottom: 10px;">Active Devices by Type:</strong>
                                 <div style="max-height: 600px; overflow-y: auto; padding-right: 10px;" id="deviceTypeSections">
                     `;
                     
@@ -3254,13 +3272,32 @@
                     }
                     
                     
-                    // Then display the rest of the device types
+                    // Then display the rest of the active device types
                     for (const [type, devices] of Object.entries(deviceTypes)) {
                         const deviceSection = await generateDeviceTypeSection(type, devices, violationsByDevice);
                         html += deviceSection;
                     }
-                    
-                    html += `</div></div></div>`;
+
+                    html += `</div>`;
+
+                    // Add removed devices section if there are any
+                    if (removedDevicesData.length > 0) {
+                        html += `
+                            <div style="margin-top: 30px;">
+                                <strong style="color: #ff6b6b; display: block; margin-bottom: 10px;">Removed Devices (${removedDevicesData.length}):</strong>
+                                <div style="max-height: 400px; overflow-y: auto; padding-right: 10px;" id="removedDeviceTypeSections">
+                        `;
+                        
+                        // Display removed devices grouped by their original type
+                        for (const [type, devices] of Object.entries(removedDeviceTypes)) {
+                            const removedSection = await generateRemovedDeviceTypeSection(type, devices, violationsByDevice);
+                            html += removedSection;
+                        }
+                        
+                        html += `</div>`;
+                    }
+
+                                        html += `</div></div>`;
                     resultDiv.innerHTML = html;
                         } else {
                     resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No devices found for this BIN number</span>';
@@ -3283,6 +3320,108 @@
             const timeDiff = today - lastInspection;
             const daysSinceInspection = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
             return daysSinceInspection >= 91;
+        }
+
+        // Add function to generate removed device type section
+        async function generateRemovedDeviceTypeSection(type, devices, violationsByDevice = {}) {
+            // First, fetch all permit data for the devices
+            const devicePermits = await Promise.all(
+                devices.map(device => fetchPermitInfo(device.device_number))
+            );
+
+            return `
+                <div class="device-type-section removed-devices" data-device-type="${type}" data-device-status="REMOVED">
+                    <div style="background: var(--panel-bg); padding: 15px; border-radius: 5px; margin-bottom: 15px; border-left: 4px solid #ff6b6b;">
+                        <div style="margin-bottom: 10px; border-bottom: 1px solid var(--input-border); padding-bottom: 10px;">
+                            <strong style="color: #ff6b6b;">Removed ${type} (${devices.length}):</strong>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            ${devices.map((device, index) => {
+                                // Get violations for this device
+                                const deviceViolations = violationsByDevice[device.device_number] || [];
+                                const activeViolations = deviceViolations.filter(v => 
+                                    v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                                    v.violation_status?.toUpperCase() === 'OPEN');
+                                const violationCount = activeViolations.length;
+                                
+                                // Get the pre-fetched permit data
+                                const permitData = devicePermits[index];
+                                const hasPermits = permitData.success && permitData.permits && permitData.permits.length > 0;
+
+                                return `
+                                    <div class="device-item removed-device" 
+                                         data-has-violations="${violationCount > 0}" 
+                                         data-device-type="${type}"
+                                         data-device-status="REMOVED">
+                                        <div style="padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid #ff6b6b; opacity: 0.8;">
+                                            <div><strong style="color: var(--header-color);">Device #:</strong> ${device.device_number}</div>
+                                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                <div><strong style="color: var(--header-color);">Type:</strong> ${type}</div>
+                                                <div style="display: flex; align-items: center; gap: 8px;">
+                                                    <strong style="color: var(--header-color);">Status:</strong>
+                                                    <span style="padding: 4px 8px; border-radius: 4px; background: #ff6b6b; color: white; font-size: 0.9em; display: flex; align-items: center; gap: 4px;">
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                                        </svg>REMOVED
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            ${violationCount > 0 ? `
+                                                <div style="margin-top: 5px;">
+                                                    <span style="color: #ff6b6b; font-weight: 500;">
+                                                        ${violationCount} Active Violation${violationCount !== 1 ? 's' : ''}
+                                                    </span>
+                                                </div>
+                                                <div style="margin-top: 5px;">
+                                                    <button onclick="toggleViolations('${device.device_number}')" 
+                                                        id="violationsBtn_${device.device_number}"
+                                                        style="width: 100%; padding: 5px; background: var(--panel-bg); color: var(--text-color); 
+                                                               border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                                               font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
+                                                        <span>Show Violation Details</span>
+                                                        <span class="arrow">▼</span>
+                                                    </button>
+                                                    <div id="violations_${device.device_number}" style="display: none; margin-top: 8px; 
+                                                         padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
+                                                    </div>
+                                                </div>
+                                            ` : ''}
+                                            <div style="margin-top: 10px;">
+                                                <button onclick="toggleDeviceDetails('${device.device_number}')" 
+                                                    id="detailsBtn_${device.device_number}"
+                                                    style="width: 100%; padding: 5px; background: var(--panel-bg); color: var(--text-color); 
+                                                           border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                                           font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
+                                                    <span>Show Details</span>
+                                                    <span class="arrow">▼</span>
+                                                </button>
+                                                <div id="details_${device.device_number}" style="display: none; margin-top: 8px; 
+                                                     padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
+                                                </div>
+                                            </div>
+                                            ${hasPermits ? `
+                                                <div style="margin-top: 10px;">
+                                                    <button onclick="togglePermitInfo('${device.device_number}')" 
+                                                        id="permitsBtn_${device.device_number}"
+                                                        style="width: 100%; padding: 5px; background: var(--panel-bg); color: var(--text-color); 
+                                                               border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                                               font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
+                                                        <span>Show Permit Information</span>
+                                                        <span class="arrow">▼</span>
+                                                    </button>
+                                                    <div id="permits_${device.device_number}" style="display: none; margin-top: 8px; 
+                                                         padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
+                                                    </div>
+                                                </div>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
         }
 
         // Update the generateDeviceTypeSection function
@@ -5414,39 +5553,26 @@
         function toggleViolationsFilter() {
             const button = document.getElementById('violationsFilterBtn');
             const buttonText = document.getElementById('violationsFilterText');
-            const deviceItems = document.querySelectorAll('.device-item');
             const isFiltering = button.getAttribute('data-filtering') === 'true';
             
             if (!isFiltering) {
                 // Enable filtering - show only devices with violations
-                deviceItems.forEach(item => {
-                    if (item.getAttribute('data-has-violations') === 'false') {
-                        item.style.display = 'none';
-                    }
-                });
                 button.setAttribute('data-filtering', 'true');
                 buttonText.textContent = 'Show All Devices';
                 button.style.background = '#1a73e8';
                 button.style.color = 'white';
-                // Keep the width consistent
                 button.style.width = '240px';
             } else {
-                // Disable filtering - show all devices (respecting type filter)
-                const typeFilter = document.getElementById('deviceTypeFilter').value;
-                deviceItems.forEach(item => {
-                    if (typeFilter === 'all' || item.getAttribute('data-device-type') === typeFilter) {
-                        item.style.display = '';
-                    }
-                });
+                // Disable filtering - show all devices
                 button.setAttribute('data-filtering', 'false');
                 buttonText.textContent = 'Show Only Devices with Violations';
                 button.style.background = 'var(--panel-bg)';
                 button.style.color = 'var(--text-color)';
-                // Keep the width consistent
                 button.style.width = '240px';
             }
             
-            updateDeviceTypeSectionVisibility();
+            // Re-apply all filters
+            filterDevicesByType();
         }
         
         function filterDevicesByType() {
@@ -5456,14 +5582,27 @@
             
             deviceItems.forEach(item => {
                 const deviceType = item.getAttribute('data-device-type');
+                const deviceStatus = item.getAttribute('data-device-status');
                 const hasViolations = item.getAttribute('data-has-violations') === 'true';
                 
-                if ((typeFilter === 'all' || deviceType === typeFilter) && 
-                    (!violationsFiltering || hasViolations)) {
-                    item.style.display = '';
+                let shouldShow = false;
+                
+                if (typeFilter === 'all') {
+                    shouldShow = true;
+                } else if (typeFilter === 'REMOVED') {
+                    // Show only removed devices regardless of their original type
+                    shouldShow = deviceStatus === 'REMOVED';
                 } else {
-                    item.style.display = 'none';
+                    // Show devices of specific type that are not removed
+                    shouldShow = deviceType === typeFilter && deviceStatus !== 'REMOVED';
                 }
+                
+                // Apply violations filter if active
+                if (shouldShow && violationsFiltering && !hasViolations) {
+                    shouldShow = false;
+                }
+                
+                item.style.display = shouldShow ? '' : 'none';
             });
             
             updateDeviceTypeSectionVisibility();
@@ -5481,6 +5620,12 @@
             // Reset type filter
             document.getElementById('deviceTypeFilter').value = 'all';
             
+            // Reset test eligibility filter
+            const testEligibilityFilter = document.getElementById('testEligibilityFilter');
+            if (testEligibilityFilter) {
+                testEligibilityFilter.value = 'all';
+            }
+            
             // Show all devices
             document.querySelectorAll('.device-item').forEach(item => {
                 item.style.display = '';
@@ -5490,6 +5635,12 @@
             document.querySelectorAll('.device-type-section').forEach(section => {
                 section.style.display = '';
             });
+            
+            // Show removed devices section if it exists
+            const removedDevicesContainer = document.getElementById('removedDeviceTypeSections');
+            if (removedDevicesContainer && removedDevicesContainer.parentElement) {
+                removedDevicesContainer.parentElement.style.display = '';
+            }
         }
         
         function updateDeviceTypeSectionVisibility() {
@@ -5504,6 +5655,19 @@
                     section.style.display = '';
                 }
             });
+            
+            // Also handle the removed devices section container
+            const removedDevicesContainer = document.getElementById('removedDeviceTypeSections');
+            if (removedDevicesContainer) {
+                const visibleRemovedSections = removedDevicesContainer.querySelectorAll('.device-type-section:not([style*="display: none"])');
+                const removedSectionTitle = removedDevicesContainer.previousElementSibling;
+                
+                if (visibleRemovedSections.length === 0) {
+                    removedDevicesContainer.parentElement.style.display = 'none';
+                } else {
+                    removedDevicesContainer.parentElement.style.display = '';
+                }
+            }
         }
         
         // Function to toggle all violations (show or hide)
