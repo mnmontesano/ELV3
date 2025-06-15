@@ -1004,7 +1004,9 @@
 
         <!-- Add BIN display section -->
         <div id="quickBinDisplay" style="text-align: center; margin-top: 5px; padding: 8px; background: var(--panel-bg); border-radius: 4px; color: var(--text-color);">
-            <strong>BIN:</strong> <span id="quickBinValue">-</span>
+            <strong>BIN:</strong> <span id="quickBinValue" 
+                                      style="padding: 4px 8px; border-radius: 4px; border: 1px solid transparent; transition: all 0.2s ease; position: relative; display: inline-flex; align-items: center; gap: 6px;" 
+                                      onclick="copyBinToClipboard(this.textContent.replace('📋', '').trim(), event)">-</span>
         </div>
 
         <!-- Add Notes section -->
@@ -2505,6 +2507,7 @@
                 resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Please enter a device number</span>';
                 resultDiv.style.display = 'block';
                 quickBinValue.textContent = '-';
+                updateBinDisplayStyle();
                 return;
             }
 
@@ -2524,6 +2527,7 @@
                     const device = data[0];
                     binInput.value = device.bin || '';
                     quickBinValue.textContent = device.bin || '-';
+                    updateBinDisplayStyle();
                     if (device.bin) {
                         lookupDevices();
                     }
@@ -3118,6 +3122,7 @@
             
             if (!deviceNumber && !binNumber) {
                 quickBinValue.textContent = '-';
+                updateBinDisplayStyle();
             }
         });
 
@@ -3129,6 +3134,7 @@
             
             if (!deviceNumber && !binNumber) {
                 quickBinValue.textContent = '-';
+                updateBinDisplayStyle();
             }
         });
 
@@ -4330,6 +4336,7 @@
             // Clear BIN display if both fields are empty
             if (!deviceNumber.value && !binNumber.value) {
                 quickBinValue.textContent = '-';
+                updateBinDisplayStyle();
             }
             
             document.getElementById('binExportButton').style.display = 'none';
@@ -6151,6 +6158,7 @@
             
             if (!deviceNumber && !binNumber) {
                 quickBinValue.textContent = '-';
+                updateBinDisplayStyle();
             }
         }
 
@@ -6161,7 +6169,53 @@
             clearButtons.forEach(button => {
                 button.addEventListener('click', handleClearButtonClick);
             });
+            
+            // Initialize BIN display styling
+            updateBinDisplayStyle();
         });
+
+        // Function to update BIN display styling based on content
+        function updateBinDisplayStyle() {
+            const binSpan = document.getElementById('quickBinValue');
+            if (binSpan) {
+                const binValue = binSpan.textContent.replace('📋', '').trim();
+                if (binValue && binValue !== '-') {
+                    // BIN is available - make it clickable
+                    binSpan.style.cursor = 'pointer';
+                    binSpan.style.color = '#4a9eff';
+                    binSpan.style.borderColor = '#4a9eff';
+                    binSpan.title = 'Click to copy BIN';
+                    binSpan.style.opacity = '1';
+                    
+                    // Add the copy icon if not already present
+                    if (!binSpan.querySelector('svg')) {
+                        binSpan.innerHTML = `${binValue}<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;"><path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>`;
+                    }
+                    
+                    // Add hover effect
+                    binSpan.addEventListener('mouseenter', function() {
+                        const currentBin = this.textContent.replace('📋', '').trim();
+                        if (currentBin !== '-') {
+                            this.style.backgroundColor = 'rgba(74, 158, 255, 0.1)';
+                        }
+                    });
+                    binSpan.addEventListener('mouseleave', function() {
+                        const currentBin = this.textContent.replace('📋', '').trim();
+                        if (currentBin !== '-') {
+                            this.style.backgroundColor = 'transparent';
+                        }
+                    });
+                } else {
+                    // No BIN available - make it non-clickable
+                    binSpan.style.cursor = 'default';
+                    binSpan.style.color = 'var(--text-color)';
+                    binSpan.style.borderColor = 'transparent';
+                    binSpan.title = '';
+                    binSpan.style.opacity = '0.7';
+                    binSpan.innerHTML = '-'; // Remove any icon
+                }
+            }
+        }
 
         // Add this new function to handle copying BIN to clipboard
         async function copyBinToClipboard(bin, event) {
@@ -6170,6 +6224,11 @@
                 if (event) {
                     event.preventDefault();
                     event.stopPropagation();
+                }
+
+                // Don't copy if BIN is empty or just a dash
+                if (!bin || bin.trim() === '-' || bin.trim() === '') {
+                    return;
                 }
 
                 // Get the clicked element
