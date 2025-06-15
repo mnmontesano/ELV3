@@ -149,6 +149,7 @@
         button[onclick*="clearQuickBulkLookup"]:hover,
         button[onclick*="clearQuickAddressLookup"]:hover,
         button[onclick*="clearDeviceSearch"]:hover,
+        button[onclick*="clearAddressSearch"]:hover,
         button[onclick*="clearQuickNotes"]:hover {
             background-color: #ff6b6b !important;
             color: #ffffff !important;
@@ -193,6 +194,7 @@
             button[onclick*="clearQuickBulkLookup"],
             button[onclick*="clearQuickAddressLookup"],
             button[onclick*="clearDeviceSearch"],
+            button[onclick*="clearAddressSearch"],
             button[onclick*="clearQuickNotes"] {
                 border: none !important;
             }
@@ -1338,6 +1340,43 @@
                     </div>
                 </div>
                 <div id="binResult" class="result" style="margin-top: 15px; display: none; background: var(--result-bg); color: var(--text-color);">
+                    <!-- Results will be displayed here -->
+                </div>
+            </div>
+
+            <!-- Address Search -->
+            <div style="margin-bottom: 25px; margin-top: 20px;">
+                <h4 style="color: var(--text-color); margin-bottom: 10px;">Search by Address:</h4>
+                <div style="padding: 0 5px;">
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <input type="text" 
+                               id="houseNumber" 
+                               placeholder="House Number"
+                               style="width: calc(40% - 5px); padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color);">
+                        <input type="text" 
+                               id="streetName" 
+                               placeholder="Street Name"
+                               oninput="this.value = this.value.toUpperCase()"
+                               style="width: calc(60% - 5px); padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color);">
+                    </div>
+                    <div style="display: flex; justify-content: center; gap: 5px;">
+                        <div style="position: relative; display: inline-flex; align-items: center;">
+                            <button onclick="lookupByAddress()" 
+                                    class="lookup-button"
+                                    style="padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; width: 200px;">
+                                <span class="button-text">Search Address</span>
+                                <svg class="button-icon" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                                </svg>
+                            </button>
+                            <button onclick="clearAddressSearch()" 
+                                    style="padding: 12px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; font-size: 24px; margin-left: 5px; width: 42px; display: flex; align-items: center; justify-content: center; transition: background-color 0.3s ease, color 0.3s ease;">
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div id="addressResult" class="result" style="margin-top: 15px; display: none; background: var(--result-bg); color: var(--text-color);">
                     <!-- Results will be displayed here -->
                 </div>
             </div>
@@ -3850,8 +3889,11 @@
             // Clear input fields
             document.getElementById('deviceNumber').value = '';
             document.getElementById('binNumber').value = '';
+            document.getElementById('houseNumber').value = '';
+            document.getElementById('streetName').value = '';
             document.getElementById('binResult').style.display = 'none';
             document.getElementById('deviceResult').style.display = 'none';
+            document.getElementById('addressResult').style.display = 'none';
             document.getElementById('binExportButton').style.display = 'none';
             document.getElementById('quickBinValue').textContent = '-'; // Add this line to clear the BIN in ELV3 Lookup
             window.lastBinSearchResults = null;
@@ -4340,6 +4382,319 @@
             }
             
             document.getElementById('binExportButton').style.display = 'none';
+        }
+
+        // Add address lookup function
+        async function lookupByAddress() {
+            const houseNumber = document.getElementById('houseNumber').value.trim();
+            const streetName = document.getElementById('streetName').value.trim();
+            const resultDiv = document.getElementById('addressResult');
+            const binInput = document.getElementById('binNumber');
+            const quickBinValue = document.getElementById('quickBinValue');
+            
+            if (!houseNumber || !streetName) {
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Please enter both house number and street name</span>';
+                resultDiv.style.display = 'block';
+                quickBinValue.textContent = '-';
+                updateBinDisplayStyle();
+                return;
+            }
+
+            resultDiv.innerHTML = '<span style="color: var(--text-color);">Looking up address...</span>';
+            resultDiv.style.display = 'block';
+
+            try {
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?house_number=${houseNumber}&street_name=${streetName}`);
+                
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    // If multiple devices found, show all
+                    if (data.length > 1) {
+                        resultDiv.innerHTML = `
+                            <div style="background: var(--input-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
+                                <h4 style="color: var(--header-color); margin-bottom: 15px;">Found ${data.length} devices at ${houseNumber} ${streetName}:</h4>
+                                ${data.map((device, index) => {
+                                    const deviceNumber = device.device_number;
+                                    return `
+                                        <div style="margin-bottom: ${index < data.length - 1 ? '20px' : '0'}; padding: 15px; background: var(--panel-bg); border-radius: 6px; border: 1px solid var(--input-border);">
+                                            <div style="margin-bottom: 10px;">
+                                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Device Number:</strong> 
+                                                <span>${deviceNumber}</span>
+                                            </div>
+                                            <div style="margin-bottom: 10px;">
+                                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">BIN:</strong> 
+                                                ${device.bin ? `
+                                                    <span onclick="copyBinToClipboard('${device.bin}', event)" 
+                                                          title="Click to copy"
+                                                          style="cursor: pointer; padding: 4px 8px; border-radius: 4px; 
+                                                                 transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
+                                                                 border: 1px solid var(--input-border); background: var(--card-bg);">
+                                                        ${device.bin}
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;">
+                                                            <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                                        </svg>
+                                                    </span>
+                                                ` : '<span>N/A</span>'}
+                                            </div>
+                                            <div style="margin-bottom: 10px;">
+                                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Device Type:</strong> 
+                                                <span>${device.device_type || 'N/A'}</span>
+                                            </div>
+                                            <div style="margin-bottom: 10px;">
+                                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Status:</strong> 
+                                                <span>${device.device_status || 'N/A'}</span>
+                                            </div>
+                                            <div>
+                                                <button onclick="loadDeviceDetails('${deviceNumber}')" 
+                                                        style="padding: 8px 16px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
+                                                    Load Full Details
+                                                </button>
+                                            </div>
+                                            <div id="details_${deviceNumber}" style="margin-top: 10px;">
+                                                <!-- Full device details will be loaded here -->
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        `;
+                        
+                        // Set BIN from first device if available
+                        if (data[0].bin) {
+                            binInput.value = data[0].bin;
+                            quickBinValue.textContent = data[0].bin;
+                            updateBinDisplayStyle();
+                        }
+                    } else {
+                        // Single device found - show full details like in lookupBIN
+                        const device = data[0];
+                        binInput.value = device.bin || '';
+                        quickBinValue.textContent = device.bin || '-';
+                        updateBinDisplayStyle();
+                        
+                        // Set device number field and trigger full lookup
+                        document.getElementById('deviceNumber').value = device.device_number;
+                        await lookupBIN();
+                    }
+                } else {
+                    resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No devices found at this address</span>';
+                    binInput.value = '';
+                    quickBinValue.textContent = '-';
+                    updateBinDisplayStyle();
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up address. Please try again later.</span>';
+                console.error('Error:', error);
+                binInput.value = '';
+                quickBinValue.textContent = '-';
+                updateBinDisplayStyle();
+            }
+        }
+
+        // Function to load full device details from the address search results
+        async function loadDeviceDetails(deviceNumber) {
+            const detailsContainer = document.getElementById(`details_${deviceNumber}`);
+            if (!detailsContainer) return;
+
+            detailsContainer.innerHTML = '<span style="color: var(--text-color);">Loading full details...</span>';
+            
+            try {
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
+                
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    const device = data[0];
+
+                    // Fetch violations for this device
+                    const violations = await fetchViolations(deviceNumber);
+                    const activeViolations = violations.filter(v => 
+                        v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                        v.violation_status?.toUpperCase() === 'OPEN');
+                    const violationCount = activeViolations.length;
+
+                    // Fetch detailed device information
+                    const deviceInfo = await fetchDeviceInfo(deviceNumber);
+
+                    // Format dates and calculate most recent inspection
+                    const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                    const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                    const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                    
+                    // Find most recent date
+                    const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                    const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
+                    
+                    // Calculate days since most recent inspection
+                    const today = new Date();
+                    const daysSinceInspection = mostRecentDate ? 
+                        Math.floor((today - mostRecentDate) / (1000 * 60 * 60 * 24)) : null;
+                    
+                    // Format dates for display
+                    const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
+                    const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
+                    const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
+                    const mostRecentDisplay = mostRecentDate ? mostRecentDate.toLocaleDateString() : 'N/A';
+                    
+                    // Check if all dates are the same (CAT 1, CAT 5, PVI, and Latest Inspection)
+                    const allDatesAreSame = cat1Date && cat5Date && pviDate && mostRecentDate &&
+                        cat1Date.getTime() === cat5Date.getTime() &&
+                        cat5Date.getTime() === pviDate.getTime() &&
+                        pviDate.getTime() === mostRecentDate.getTime();
+                    
+                    // Apply red styling if all dates are the same
+                    const dateStyle = allDatesAreSame ? 'color: red; font-weight: bold;' : '';
+                    
+                    // Generate device specification HTML if available
+                    const deviceSpecsHTML = deviceInfo ? `
+                        <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
+                            <button onclick="toggleDeviceInfo('deviceInfo_${deviceNumber}_inline')"
+                                    style="width: 100%; padding: 10px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                                <span>Device Information</span>
+                                <span class="arrow">▼</span>
+                            </button>
+                            <div id="deviceInfo_${deviceNumber}_inline" style="display: none; margin-top: 10px; padding: 10px; background: var(--panel-bg); border-radius: 4px; max-height: 300px; overflow-y: auto;">
+                                ${Object.entries({
+                                    'Manufacturer': deviceInfo.elevator_manufacturer,
+                                    'Machine Type': deviceInfo.machine_type,
+                                    'Governor Type': deviceInfo.governor,
+                                    'Car Buffer Type': deviceInfo.car_buffer_type,
+                                    'Mode Operation': deviceInfo.mode_of_operation,
+                                    'Safety Type': deviceInfo.car_safety_type,
+                                    'Fireman\'s Service': deviceInfo.fire_emergency_phase,
+                                    'Working Pressure': deviceInfo.working_pressure,
+                                    'Controller Manufacturer': deviceInfo.controller_manufacturer,
+                                    'Elevator Control': deviceInfo.elevator_control,
+                                    'Capacity': deviceInfo.elevator_capacity_lbs ? `${deviceInfo.elevator_capacity_lbs} lbs` : null,
+                                    'Speed': deviceInfo.elevator_speed_fpm ? `${deviceInfo.elevator_speed_fpm} fpm` : null
+                                }).filter(([key, value]) => value).map(([key, value]) => `
+                                    <div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 160px;">${key}:</strong> 
+                                        <span>${value}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : '';
+                    
+                    detailsContainer.innerHTML = `
+                        <div style="background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border); margin-top: 15px;">
+                            <h4 style="color: var(--header-color); margin-bottom: 15px; border-bottom: 1px solid var(--input-border); padding-bottom: 10px;">Complete Device Details</h4>
+                            
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Address:</strong> 
+                                <span>${device.house_number ? device.house_number + ' ' + device.street_name : 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Borough:</strong> 
+                                <span>${device.borough || 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">ZIP Code:</strong> 
+                                <span>${device.zip_code || 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Block:</strong> 
+                                <span>${device.block || 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Lot:</strong> 
+                                <span>${device.lot || 'N/A'}</span>
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Violations:</strong> 
+                                <span style="color: ${violationCount > 0 ? '#ff6b6b' : 'var(--text-color)'}">
+                                    ${violationCount > 0 ? `${violationCount} active` : 'None'}
+                                </span>
+                            </div>
+                            ${violationCount > 0 ? `
+                                <div style="margin-bottom: 15px;">
+                                    <button onclick="toggleViolations('device_violations_${deviceNumber}_inline')" 
+                                            id="violationsBtn_device_violations_${deviceNumber}_inline"
+                                            style="width: 100%; padding: 8px; background: var(--panel-bg); color: var(--text-color); 
+                                                   border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                                   font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
+                                        <span>Show Violation Details</span>
+                                        <span class="arrow">▼</span>
+                                    </button>
+                                    <div id="violations_device_violations_${deviceNumber}_inline" style="display: none; margin-top: 8px; 
+                                         padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em; max-height: 200px; overflow-y: auto; border: 1px solid var(--input-border); box-shadow: 0 2px 4px var(--card-shadow);">
+                                        ${activeViolations.map(v => `
+                                            <div style="margin-bottom: 10px; padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid var(--input-border);">
+                                                <strong style="color: var(--header-color);">Violation #:</strong> ${v.violation_number}<br>
+                                                <strong style="color: var(--header-color);">Issue Date:</strong> ${new Date(v.violation_issue_date).toLocaleDateString()}<br>
+                                                <strong style="color: var(--header-color);">Status:</strong> ${v.violation_status}<br>
+                                                <strong style="color: var(--header-color);">Type:</strong> ${v.violation_type || 'N/A'}<br>
+                                                <strong style="color: var(--header-color);">Remarks:</strong> ${v.violation_remarks || 'N/A'}
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                            
+                            <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
+                                <strong style="color: var(--header-color); margin-bottom: 10px; display: block;">Inspection History:</strong>
+                                <div style="margin-bottom: 10px;">
+                                    <strong style="color: var(--header-color); display: inline-block; width: 120px;">Latest CAT 1:</strong> 
+                                    <span style="${dateStyle}">${cat1Display}</span>
+                                </div>
+                                <div style="margin-bottom: 10px;">
+                                    <strong style="color: var(--header-color); display: inline-block; width: 120px;">Latest CAT 5:</strong> 
+                                    <span style="${dateStyle}">${cat5Display}</span>
+                                </div>
+                                <div style="margin-bottom: 10px;">
+                                    <strong style="color: var(--header-color); display: inline-block; width: 120px;">Latest PVI:</strong> 
+                                    <span style="${dateStyle}">${pviDisplay}</span>
+                                </div>
+                                <div style="margin-bottom: 10px;">
+                                    <strong style="color: var(--header-color); display: inline-block; width: 120px;">Latest Inspection:</strong> 
+                                    <span style="${dateStyle}">${mostRecentDisplay}</span>
+                                    ${mostRecentDate ? 
+                                        `<br><span style="color: #888; margin-left: 120px; font-size: 0.9em;">
+                                            (from ${
+                                                mostRecentDate.getTime() === cat1Date?.getTime() ? 'CAT 1' :
+                                                mostRecentDate.getTime() === cat5Date?.getTime() ? 'CAT 5' :
+                                                'PVI'
+                                            })
+                                        </span>` : 
+                                        ''}
+                                </div>
+                                ${daysSinceInspection !== null ? 
+                                    `<div style="margin-bottom: 10px;">
+                                        <strong style="color: var(--header-color); display: inline-block; width: 120px;">Days Since Last Inspection:</strong> 
+                                        <span style="color: ${daysSinceInspection >= 90 ? '#4CAF50' : '#ff6b6b'}">
+                                            ${daysSinceInspection} days
+                                        </span>
+                                    </div>` : 
+                                    ''}
+                            </div>
+                            
+                            ${deviceSpecsHTML}
+                        </div>
+                    `;
+                } else {
+                    detailsContainer.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Device details not found</span>';
+                }
+            } catch (error) {
+                detailsContainer.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error loading device details. Please try again later.</span>';
+                console.error('Error:', error);
+            }
+        }
+
+        // Clear address search function
+        function clearAddressSearch() {
+            document.getElementById('houseNumber').value = '';
+            document.getElementById('streetName').value = '';
+            document.getElementById('addressResult').style.display = 'none';
         }
 
         // Add this new function to your script section
