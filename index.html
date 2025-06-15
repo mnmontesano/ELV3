@@ -4404,6 +4404,7 @@
             resultDiv.style.display = 'block';
 
             try {
+                // First try exact match
                 const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?house_number=${houseNumber}&street_name=${streetName}`);
                 
                 if (!response.ok) {
@@ -4413,79 +4414,26 @@
                 const data = await response.json();
                 
                 if (data && data.length > 0) {
-                    // If multiple devices found, show all
-                    if (data.length > 1) {
-                        resultDiv.innerHTML = `
-                            <div style="background: var(--input-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
-                                <h4 style="color: var(--header-color); margin-bottom: 15px;">Found ${data.length} devices at ${houseNumber} ${streetName}:</h4>
-                                ${data.map((device, index) => {
-                                    const deviceNumber = device.device_number;
-                                    return `
-                                        <div style="margin-bottom: ${index < data.length - 1 ? '20px' : '0'}; padding: 15px; background: var(--panel-bg); border-radius: 6px; border: 1px solid var(--input-border);">
-                                            <div style="margin-bottom: 10px;">
-                                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Device Number:</strong> 
-                                                <span>${deviceNumber}</span>
-                                            </div>
-                                            <div style="margin-bottom: 10px;">
-                                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">BIN:</strong> 
-                                                ${device.bin ? `
-                                                    <span onclick="copyBinToClipboard('${device.bin}', event)" 
-                                                          title="Click to copy"
-                                                          style="cursor: pointer; padding: 4px 8px; border-radius: 4px; 
-                                                                 transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
-                                                                 border: 1px solid var(--input-border); background: var(--card-bg);">
-                                                        ${device.bin}
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;">
-                                                            <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
-                                                        </svg>
-                                                    </span>
-                                                ` : '<span>N/A</span>'}
-                                            </div>
-                                            <div style="margin-bottom: 10px;">
-                                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Device Type:</strong> 
-                                                <span>${device.device_type || 'N/A'}</span>
-                                            </div>
-                                            <div style="margin-bottom: 10px;">
-                                                <strong style="color: var(--header-color); display: inline-block; width: 120px;">Status:</strong> 
-                                                <span>${device.device_status || 'N/A'}</span>
-                                            </div>
-                                            <div>
-                                                <button onclick="loadDeviceDetails('${deviceNumber}')" 
-                                                        style="padding: 8px 16px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
-                                                    Load Full Details
-                                                </button>
-                                            </div>
-                                            <div id="details_${deviceNumber}" style="margin-top: 10px;">
-                                                <!-- Full device details will be loaded here -->
-                                            </div>
-                                        </div>
-                                    `;
-                                }).join('')}
-                            </div>
-                        `;
+                    // Exact match found - proceed as normal
+                    const binNumber = data[0].bin;
+                    
+                    if (binNumber) {
+                        resultDiv.innerHTML = '<span style="color: var(--text-color);">Found address. Searching for all devices in building...</span>';
                         
-                        // Set BIN from first device if available
-                        if (data[0].bin) {
-                            binInput.value = data[0].bin;
-                            quickBinValue.textContent = data[0].bin;
-                            updateBinDisplayStyle();
-                        }
-                    } else {
-                        // Single device found - show full details like in lookupBIN
-                        const device = data[0];
-                        binInput.value = device.bin || '';
-                        quickBinValue.textContent = device.bin || '-';
+                        binInput.value = binNumber;
+                        quickBinValue.textContent = binNumber;
                         updateBinDisplayStyle();
                         
-                        // Set device number field and trigger full lookup
-                        document.getElementById('deviceNumber').value = device.device_number;
-                        await lookupBIN();
+                        await lookupDevices();
+                        resultDiv.style.display = 'none';
+                    } else {
+                        resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No BIN number found for this address</span>';
                     }
                 } else {
-                    resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No devices found at this address</span>';
-                    binInput.value = '';
-                    quickBinValue.textContent = '-';
-                    updateBinDisplayStyle();
+                    // No exact match found - search for similar addresses
+                    resultDiv.innerHTML = '<span style="color: var(--text-color);">No exact match found. Searching for similar addresses...</span>';
+                    
+                    await searchForSimilarAddresses(houseNumber, streetName, resultDiv, binInput, quickBinValue);
                 }
             } catch (error) {
                 resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up address. Please try again later.</span>';
@@ -4494,6 +4442,122 @@
                 quickBinValue.textContent = '-';
                 updateBinDisplayStyle();
             }
+        }
+
+        // Function to search for similar addresses when exact match fails
+        async function searchForSimilarAddresses(targetHouseNumber, streetName, resultDiv, binInput, quickBinValue) {
+            try {
+                // Search for all addresses on the same street
+                const streetResponse = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?street_name=${streetName}&$limit=1000`);
+                
+                if (!streetResponse.ok) {
+                    throw new Error('Street search failed');
+                }
+
+                const streetData = await streetResponse.json();
+                
+                if (streetData && streetData.length > 0) {
+                    const targetNum = parseInt(targetHouseNumber);
+                    
+                    // Get unique addresses and calculate distance from target
+                    const uniqueAddresses = {};
+                    const deviceCounts = {};
+                    
+                    streetData.forEach(device => {
+                        const houseNum = device.house_number;
+                        const key = `${houseNum}_${device.street_name}`;
+                        
+                        // Count devices per address
+                        if (!deviceCounts[key]) {
+                            deviceCounts[key] = 0;
+                        }
+                        deviceCounts[key]++;
+                        
+                        if (!uniqueAddresses[key] && houseNum) {
+                            const numDiff = Math.abs(parseInt(houseNum) - targetNum);
+                            uniqueAddresses[key] = {
+                                house_number: houseNum,
+                                street_name: device.street_name,
+                                borough: device.borough,
+                                bin: device.bin,
+                                distance: numDiff,
+                                deviceCount: deviceCounts[key]
+                            };
+                        } else if (uniqueAddresses[key]) {
+                            // Update device count for existing address
+                            uniqueAddresses[key].deviceCount = deviceCounts[key];
+                        }
+                    });
+                    
+                    // Sort by distance and get top 10 closest
+                    const suggestions = Object.values(uniqueAddresses)
+                        .filter(addr => addr.distance <= 50) // Only show addresses within 50 numbers
+                        .sort((a, b) => a.distance - b.distance)
+                        .slice(0, 10);
+                    
+                    if (suggestions.length > 0) {
+                        let suggestionsHtml = `
+                            <div style="background: var(--input-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
+                                <h4 style="color: var(--header-color); margin-bottom: 15px;">No exact match for "${targetHouseNumber} ${streetName}"</h4>
+                                <p style="margin-bottom: 15px; color: var(--text-color);">Did you mean one of these addresses?</p>
+                                <div style="display: flex; flex-direction: column; gap: 8px;">
+                        `;
+                        
+                        suggestions.forEach(addr => {
+                            const fullAddress = `${addr.house_number} ${addr.street_name}`;
+                            const deviceText = addr.deviceCount === 1 ? 'device' : 'devices';
+                            suggestionsHtml += `
+                                <div style="padding: 10px; background: var(--panel-bg); border-radius: 4px; border: 1px solid var(--input-border); cursor: pointer; transition: background-color 0.2s ease;"
+                                     onclick="selectSuggestedAddress('${addr.house_number}', '${addr.street_name}')"
+                                     onmouseover="this.style.backgroundColor='rgba(26, 115, 232, 0.1)'"
+                                     onmouseout="this.style.backgroundColor='var(--panel-bg)'">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div style="flex: 1;">
+                                            <strong style="color: var(--header-color);">${fullAddress}</strong>
+                                            ${addr.borough ? `<span style="color: var(--text-color); opacity: 0.8;"> • ${addr.borough}</span>` : ''}
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 15px; font-size: 0.9em;">
+                                            <span style="color: var(--header-color); font-weight: 500;">
+                                                ${addr.deviceCount} ${deviceText}
+                                            </span>
+                                            <span style="color: var(--text-color); opacity: 0.7;">
+                                                ${addr.distance === 0 ? 'Exact match' : `±${addr.distance} numbers`}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        suggestionsHtml += `
+                                </div>
+                                <p style="margin-top: 15px; font-size: 0.9em; color: var(--text-color); opacity: 0.8;">
+                                    Click on any address above to search for devices at that location.
+                                </p>
+                            </div>
+                        `;
+                        
+                        resultDiv.innerHTML = suggestionsHtml;
+                    } else {
+                        resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No similar addresses found on this street</span>';
+                    }
+                } else {
+                    resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No addresses found on this street</span>';
+                }
+            } catch (error) {
+                console.error('Error searching for similar addresses:', error);
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error searching for similar addresses</span>';
+            }
+        }
+
+        // Function to handle clicking on a suggested address
+        async function selectSuggestedAddress(houseNumber, streetName) {
+            // Update the input fields
+            document.getElementById('houseNumber').value = houseNumber;
+            document.getElementById('streetName').value = streetName;
+            
+            // Trigger a new search with the selected address
+            await lookupByAddress();
         }
 
         // Function to load full device details from the address search results
