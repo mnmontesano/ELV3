@@ -132,7 +132,8 @@
         button[onclick*="clearQuickBulkLookup"],
         button[onclick*="clearQuickAddressLookup"],
         button[onclick*="clearDeviceSearch"],
-        button[onclick*="clearQuickNotes"] {
+        button[onclick*="clearQuickNotes"],
+        button[onclick*="clearNotes"] {
             border: none !important;
             transition: background-color 0.3s ease, color 0.3s ease !important;
         }
@@ -150,7 +151,8 @@
         button[onclick*="clearQuickAddressLookup"]:hover,
         button[onclick*="clearDeviceSearch"]:hover,
         button[onclick*="clearAddressSearch"]:hover,
-        button[onclick*="clearQuickNotes"]:hover {
+        button[onclick*="clearQuickNotes"]:hover,
+        button[onclick*="clearNotes"]:hover {
             background-color: #ff6b6b !important;
             color: #ffffff !important;
         }
@@ -195,7 +197,8 @@
             button[onclick*="clearQuickAddressLookup"],
             button[onclick*="clearDeviceSearch"],
             button[onclick*="clearAddressSearch"],
-            button[onclick*="clearQuickNotes"] {
+            button[onclick*="clearQuickNotes"],
+            button[onclick*="clearNotes"] {
                 border: none !important;
             }
         }
@@ -973,7 +976,7 @@
     <div id="quickLookupOverlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999;"></div>
 
     <!-- Quick Lookup Panel moved here so it's available for all tabs -->
-    <div style="position: fixed; top: 80px; right: 20px; width: 350px; max-width: calc(100% - 40px); background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px var(--card-shadow); z-index: 1000; display: none; transition: all 0.3s ease; left: auto;" id="quickLookupPanel">
+    <div style="position: fixed; top: 80px; right: 20px; width: 350px; max-width: calc(100% - 40px); max-height: calc(100vh - 100px); background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px var(--card-shadow); z-index: 1000; display: none; transition: all 0.3s ease; left: auto; overflow-y: auto; overflow-x: hidden;" id="quickLookupPanel">
         <button onclick="toggleQuickLookup()" style="position: absolute; right: 10px; top: 10px; background: none; border: none; color: #ff6b6b; font-size: 24px; cursor: pointer; transition: color 0.2s;">×</button>
         <h3 style="color: var(--text-color); margin-bottom: 15px; text-align: center;">ELV3 Lookup</h3>
         
@@ -1014,16 +1017,91 @@
                                       onclick="copyBinToClipboard(this.textContent.replace('📋', '').trim(), event)">-</span>
         </div>
 
-        <!-- Add Notes section -->
-        <div style="margin-top: 15px;">
-            <h4 style="color: var(--text-color); margin: 0 0 8px 0; font-size: 16px; font-weight: 600; text-align: center;">Notes</h4>
-            <textarea id="quickNotesInput" 
-                      placeholder="Enter your notes here..."
-                      style="width: 100%; height: 100px; padding: 8px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 14px; box-sizing: border-box; resize: vertical; font-family: inherit;"></textarea>
-            <button onclick="clearQuickNotes()" 
-                    style="width: 100%; padding: 8px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; box-sizing: border-box; transition: background-color 0.3s ease, color 0.3s ease;">
-                Clear Notes
+        <!-- Filing Information Section -->
+        <div class="quick-filing-info-container" style="margin: 15px 0;">
+            <button onclick="toggleQuickFilingInfo()" id="quickFilingInfoToggle" style="width: 100%; padding: 12px; background: #404040; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; transition: background-color 0.3s ease;">
+                <span>Filing Information</span>
+                <span id="quickFilingInfoArrow" style="transition: transform 0.3s ease;">▼</span>
             </button>
+            
+            <div id="quickFilingInfoFields" class="quick-filing-info-fields" style="display: none; margin-top: 10px; padding: 15px; background: #404040; border-radius: 5px; border: 1px solid #555555;">
+                <div class="field-group" style="margin: 10px 0;">
+                    <label style="display: block; margin-bottom: 3px; color: white; font-weight: bold; font-size: 12px;">Owner:</label>
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <input type="text" id="quickOwnerInput" placeholder="Enter Owner Name" style="flex: 1; padding: 6px; border: 1px solid #666666; border-radius: 3px; background: #333333; color: white; font-size: 12px;">
+                        <button onclick="copyToClipboard('quickOwnerInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Copy</button>
+                        <button onclick="clearField('quickOwnerInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Clear</button>
+                    </div>
+                </div>
+                
+                <div class="field-group" style="margin: 10px 0;">
+                    <label style="display: block; margin-bottom: 3px; color: white; font-weight: bold; font-size: 12px;">Elevator Company:</label>
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <input type="text" id="quickElevatorCompanyInput" placeholder="Enter Elevator Company" style="flex: 1; padding: 6px; border: 1px solid #666666; border-radius: 3px; background: #333333; color: white; font-size: 12px;">
+                        <button onclick="copyToClipboard('quickElevatorCompanyInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Copy</button>
+                        <button onclick="clearField('quickElevatorCompanyInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Clear</button>
+                    </div>
+                </div>
+                
+                <div class="field-group" style="margin: 10px 0;">
+                    <label style="display: block; margin-bottom: 3px; color: white; font-weight: bold; font-size: 12px;">BIN #:</label>
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <input type="text" id="quickBinInput" placeholder="Enter BIN Number" style="flex: 1; padding: 6px; border: 1px solid #666666; border-radius: 3px; background: #333333; color: white; font-size: 12px;">
+                        <button onclick="copyToClipboard('quickBinInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Copy</button>
+                        <button onclick="clearField('quickBinInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Clear</button>
+                    </div>
+                </div>
+                
+                <div class="field-group" style="margin: 10px 0;">
+                    <label style="display: block; margin-bottom: 3px; color: white; font-weight: bold; font-size: 12px;">Groups:</label>
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <input type="text" id="quickGroupsInput" placeholder="Enter Groups" style="flex: 1; padding: 6px; border: 1px solid #666666; border-radius: 3px; background: #333333; color: white; font-size: 12px;">
+                        <button onclick="copyToClipboard('quickGroupsInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Copy</button>
+                        <button onclick="clearField('quickGroupsInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Clear</button>
+                    </div>
+                </div>
+                
+                <div class="field-group" style="margin: 10px 0;">
+                    <label style="display: block; margin-bottom: 3px; color: white; font-weight: bold; font-size: 12px;">Director/Co-Directors:</label>
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <input type="text" id="quickDirectorsInput" placeholder="Enter Director/Co-Directors" style="flex: 1; padding: 6px; border: 1px solid #666666; border-radius: 3px; background: #333333; color: white; font-size: 12px;">
+                        <button onclick="copyToClipboard('quickDirectorsInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Copy</button>
+                        <button onclick="clearField('quickDirectorsInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Clear</button>
+                    </div>
+                </div>
+                
+                <div class="field-group" style="margin: 10px 0;">
+                    <label style="display: block; margin-bottom: 3px; color: white; font-weight: bold; font-size: 12px;">Additional:</label>
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <input type="text" id="quickAdditionalInput" placeholder="Enter Additional Information" style="flex: 1; padding: 6px; border: 1px solid #666666; border-radius: 3px; background: #333333; color: white; font-size: 12px;">
+                        <button onclick="copyToClipboard('quickAdditionalInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Copy</button>
+                        <button onclick="clearField('quickAdditionalInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Clear</button>
+                    </div>
+                </div>
+                
+                <!-- Clear All Button -->
+                <div style="margin-top: 15px; text-align: center; border-top: 1px solid #555555; padding-top: 10px;">
+                    <button onclick="clearAllQuickFilingInfo()" style="padding: 8px 20px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: bold; transition: background-color 0.3s ease;">Clear All</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Notes section as dropdown -->
+        <div class="quick-notes-container" style="margin-top: 15px;">
+            <button onclick="toggleQuickNotes()" id="quickNotesToggle" style="width: 100%; padding: 12px; background: #404040; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; transition: background-color 0.3s ease;">
+                <span>Notes</span>
+                <span id="quickNotesArrow" style="transition: transform 0.3s ease;">▼</span>
+            </button>
+            
+            <div id="quickNotesFields" class="quick-notes-fields" style="display: none; margin-top: 10px; padding: 15px; background: #404040; border-radius: 5px; border: 1px solid #555555;">
+                <textarea id="quickNotesInput" 
+                          placeholder="Enter your notes here..."
+                          style="width: 100%; height: 100px; padding: 8px; border-radius: 4px; border: 1px solid #666666; background: #333333; color: white; font-size: 12px; box-sizing: border-box; resize: vertical; font-family: inherit;"></textarea>
+                <button onclick="clearQuickNotes()" 
+                        style="width: 100%; padding: 8px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 3px; cursor: pointer; margin-top: 8px; box-sizing: border-box; font-size: 12px; font-weight: bold; transition: background-color 0.3s ease, color 0.3s ease;">
+                    Clear Notes
+                </button>
+            </div>
         </div>
     </div>
 
@@ -1092,6 +1170,76 @@
                 </div>
 
                 <button onclick="clearInputs()" style="color: #ff6b6b; background: var(--panel-bg); border: none; border-radius: 4px; cursor: pointer; display: block; margin: 20px auto; padding: 10px 20px; font-size: 1.2em; transition: background-color 0.3s ease, color 0.3s ease;">Clear</button>
+                
+                <!-- Filing Information Dropdown -->
+                <div class="filing-info-container" style="margin: 30px auto; max-width: 500px;">
+                    <button onclick="toggleFilingInfo()" id="filingInfoToggle" style="width: 100%; padding: 15px; background: #404040; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; transition: background-color 0.3s ease;">
+                        <span>Filing Information</span>
+                        <span id="filingInfoArrow" style="transition: transform 0.3s ease;">▼</span>
+                    </button>
+                    
+                    <div id="filingInfoFields" class="filing-info-fields" style="display: none; margin-top: 15px; padding: 20px; background: #404040; border-radius: 5px; border: 1px solid #555555;">
+                        <div class="field-group" style="margin: 15px 0;">
+                            <label style="display: block; margin-bottom: 5px; color: white; font-weight: bold;">Owner:</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="text" id="ownerInput" placeholder="Enter Owner Name" style="flex: 1; padding: 10px; border: 1px solid #666666; border-radius: 5px; background: #333333; color: white;">
+                                <button onclick="copyToClipboard('ownerInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Copy</button>
+                                <button onclick="clearField('ownerInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Clear</button>
+                            </div>
+                        </div>
+                        
+                        <div class="field-group" style="margin: 15px 0;">
+                            <label style="display: block; margin-bottom: 5px; color: white; font-weight: bold;">Elevator Company:</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="text" id="elevatorCompanyInput" placeholder="Enter Elevator Company" style="flex: 1; padding: 10px; border: 1px solid #666666; border-radius: 5px; background: #333333; color: white;">
+                                <button onclick="copyToClipboard('elevatorCompanyInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Copy</button>
+                                <button onclick="clearField('elevatorCompanyInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Clear</button>
+                            </div>
+                        </div>
+                        
+                        <div class="field-group" style="margin: 15px 0;">
+                            <label style="display: block; margin-bottom: 5px; color: white; font-weight: bold;">BIN #:</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="text" id="binInput" placeholder="Enter BIN Number" style="flex: 1; padding: 10px; border: 1px solid #666666; border-radius: 5px; background: #333333; color: white;">
+                                <button onclick="copyToClipboard('binInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Copy</button>
+                                <button onclick="clearField('binInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Clear</button>
+                            </div>
+                        </div>
+                        
+                        <div class="field-group" style="margin: 15px 0;">
+                            <label style="display: block; margin-bottom: 5px; color: white; font-weight: bold;">Groups:</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="text" id="groupsInput" placeholder="Enter Groups" style="flex: 1; padding: 10px; border: 1px solid #666666; border-radius: 5px; background: #333333; color: white;">
+                                <button onclick="copyToClipboard('groupsInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Copy</button>
+                                <button onclick="clearField('groupsInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Clear</button>
+                            </div>
+                        </div>
+                        
+                        <div class="field-group" style="margin: 15px 0;">
+                            <label style="display: block; margin-bottom: 5px; color: white; font-weight: bold;">Director/Co-Directors:</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="text" id="directorsInput" placeholder="Enter Director/Co-Directors" style="flex: 1; padding: 10px; border: 1px solid #666666; border-radius: 5px; background: #333333; color: white;">
+                                <button onclick="copyToClipboard('directorsInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Copy</button>
+                                <button onclick="clearField('directorsInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Clear</button>
+                            </div>
+                        </div>
+                        
+                        <div class="field-group" style="margin: 15px 0;">
+                            <label style="display: block; margin-bottom: 5px; color: white; font-weight: bold;">Additional:</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="text" id="additionalInput" placeholder="Enter Additional Information" style="flex: 1; padding: 10px; border: 1px solid #666666; border-radius: 5px; background: #333333; color: white;">
+                                <button onclick="copyToClipboard('additionalInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Copy</button>
+                                <button onclick="clearField('additionalInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Clear</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Clear All Button -->
+                        <div style="margin-top: 25px; text-align: center; border-top: 1px solid #555555; padding-top: 15px;">
+                            <button onclick="clearAllFilingInfo()" style="padding: 12px 30px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; transition: background-color 0.3s ease;">Clear All</button>
+                        </div>
+                    </div>
+                </div>
+                
                 <button onclick="togglePdfViewer()" id="pdfToggleButton">Show PDF</button>
 
                 <div class="image-viewer hidden" id="pdfViewer">
@@ -1105,6 +1253,7 @@
                     <h3>Notes</h3>
                     <textarea id="Notes" class="notes-textarea" 
                         placeholder="Enter your notes here..."></textarea>
+                    <button onclick="clearNotes()" style="color: #ff6b6b; background: var(--panel-bg); border: none; border-radius: 4px; cursor: pointer; display: block; margin: 20px auto; padding: 10px 20px; font-size: 1.2em; transition: background-color 0.3s ease, color 0.3s ease;">Clear Notes</button>
                 </div>
             </div>
         </div>
@@ -2102,7 +2251,150 @@
             document.getElementById('numResult').textContent = '';
             document.getElementById('letterResult').textContent = '';
             document.getElementById('secondaryNumResult').textContent = '';
+            
+            // Clear additional fields
+            document.getElementById('ownerInput').value = '';
+            document.getElementById('elevatorCompanyInput').value = '';
+            document.getElementById('binInput').value = '';
+            document.getElementById('groupsInput').value = '';
+            document.getElementById('directorsInput').value = '';
+            document.getElementById('additionalInput').value = '';
+            
             document.getElementById('numInput').focus();
+        }
+
+        // Function to copy text from a specific input field to clipboard
+        function copyToClipboard(inputId) {
+            const inputElement = document.getElementById(inputId);
+            if (inputElement && inputElement.value.trim() !== '') {
+                navigator.clipboard.writeText(inputElement.value).then(function() {
+                    // Visual feedback - briefly change button text and style
+                    const copyButton = event.target;
+                    const originalText = copyButton.innerHTML;
+                    const originalBg = copyButton.style.background;
+                    copyButton.innerHTML = 'Copied!';
+                    copyButton.style.background = '#28a745';
+                    setTimeout(() => {
+                        copyButton.innerHTML = originalText;
+                        copyButton.style.background = originalBg;
+                    }, 1200);
+                }).catch(function(err) {
+                    console.error('Failed to copy text: ', err);
+                    alert('Failed to copy to clipboard');
+                });
+            } else {
+                alert('No text to copy');
+            }
+        }
+
+        // Function to clear a specific input field
+        function clearField(inputId) {
+            const inputElement = document.getElementById(inputId);
+            if (inputElement) {
+                inputElement.value = '';
+                inputElement.focus();
+                
+                // Visual feedback - briefly change button text and style
+                const clearButton = event.target;
+                const originalText = clearButton.innerHTML;
+                const originalBg = clearButton.style.background;
+                clearButton.innerHTML = 'Cleared!';
+                clearButton.style.background = '#dc3545';
+                setTimeout(() => {
+                    clearButton.innerHTML = originalText;
+                    clearButton.style.background = originalBg;
+                }, 1200);
+            }
+        }
+
+        // Function to toggle Filing Information dropdown
+        function toggleFilingInfo() {
+            const fieldsContainer = document.getElementById('filingInfoFields');
+            const arrow = document.getElementById('filingInfoArrow');
+            
+            if (fieldsContainer.style.display === 'none' || fieldsContainer.style.display === '') {
+                fieldsContainer.style.display = 'block';
+                arrow.style.transform = 'rotate(180deg)';
+            } else {
+                fieldsContainer.style.display = 'none';
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // Function to clear all Filing Information fields
+        function clearAllFilingInfo() {
+            const fields = ['ownerInput', 'elevatorCompanyInput', 'binInput', 'groupsInput', 'directorsInput', 'additionalInput'];
+            
+            fields.forEach(fieldId => {
+                const field = document.getElementById(fieldId);
+                if (field) {
+                    field.value = '';
+                    // Clear from localStorage
+                    localStorage.removeItem(fieldId + 'Info');
+                }
+            });
+            
+            // Focus on the first field
+            document.getElementById('ownerInput').focus();
+        }
+
+        // Function to toggle Quick Filing Information dropdown
+        function toggleQuickFilingInfo() {
+            const fieldsContainer = document.getElementById('quickFilingInfoFields');
+            const arrow = document.getElementById('quickFilingInfoArrow');
+            
+            if (fieldsContainer.style.display === 'none' || fieldsContainer.style.display === '') {
+                fieldsContainer.style.display = 'block';
+                arrow.style.transform = 'rotate(180deg)';
+            } else {
+                fieldsContainer.style.display = 'none';
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // Function to clear all Quick Filing Information fields
+        function clearAllQuickFilingInfo() {
+            const fields = ['quickOwnerInput', 'quickElevatorCompanyInput', 'quickBinInput', 'quickGroupsInput', 'quickDirectorsInput', 'quickAdditionalInput'];
+            
+            fields.forEach(fieldId => {
+                const field = document.getElementById(fieldId);
+                if (field) {
+                    field.value = '';
+                    // Clear from localStorage
+                    localStorage.removeItem(fieldId + 'Info');
+                }
+            });
+            
+            // Focus on the first field
+            const firstField = document.getElementById('quickOwnerInput');
+            if (firstField) {
+                firstField.focus();
+            }
+        }
+
+        // Function to toggle Quick Notes dropdown
+        function toggleQuickNotes() {
+            const fieldsContainer = document.getElementById('quickNotesFields');
+            const arrow = document.getElementById('quickNotesArrow');
+            
+            if (fieldsContainer.style.display === 'none' || fieldsContainer.style.display === '') {
+                fieldsContainer.style.display = 'block';
+                arrow.style.transform = 'rotate(180deg)';
+            } else {
+                fieldsContainer.style.display = 'none';
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // Function to clear Notes field
+        function clearNotes() {
+            const notesField = document.getElementById('Notes');
+            if (notesField) {
+                notesField.value = '';
+                // Clear from localStorage
+                localStorage.removeItem('elevatorNotes');
+                notesField.focus();
+            }
         }
 
         function togglePdfViewer() {
@@ -2180,6 +2472,53 @@
             if (savedNotes) {
                 document.getElementById('Notes').value = savedNotes;
             }
+            
+            // Load all saved Filing Information fields
+            const filingFields = [
+                { id: 'ownerInput', key: 'ownerInputInfo' },
+                { id: 'elevatorCompanyInput', key: 'elevatorCompanyInputInfo' },
+                { id: 'binInput', key: 'binInputInfo' },
+                { id: 'groupsInput', key: 'groupsInputInfo' },
+                { id: 'directorsInput', key: 'directorsInputInfo' },
+                { id: 'additionalInput', key: 'additionalInputInfo' }
+            ];
+            
+            filingFields.forEach(field => {
+                const savedValue = localStorage.getItem(field.key);
+                if (savedValue) {
+                    document.getElementById(field.id).value = savedValue;
+                }
+            });
+
+            // Load all saved Quick Filing Information fields
+            const quickFilingFields = [
+                { id: 'quickOwnerInput', key: 'quickOwnerInputInfo' },
+                { id: 'quickElevatorCompanyInput', key: 'quickElevatorCompanyInputInfo' },
+                { id: 'quickBinInput', key: 'quickBinInputInfo' },
+                { id: 'quickGroupsInput', key: 'quickGroupsInputInfo' },
+                { id: 'quickDirectorsInput', key: 'quickDirectorsInputInfo' },
+                { id: 'quickAdditionalInput', key: 'quickAdditionalInputInfo' }
+            ];
+            
+            quickFilingFields.forEach(field => {
+                const savedValue = localStorage.getItem(field.key);
+                if (savedValue) {
+                    const element = document.getElementById(field.id);
+                    if (element) {
+                        element.value = savedValue;
+                    }
+                }
+            });
+
+            // Load saved Quick Notes content
+            const savedQuickNotes = localStorage.getItem('quickNotesContent');
+            if (savedQuickNotes) {
+                const quickNotesElement = document.getElementById('quickNotesInput');
+                if (quickNotesElement) {
+                    quickNotesElement.value = savedQuickNotes;
+                }
+            }
+            
             calculateNinetyDayStart();
 
             // Load default tab if set
@@ -2216,6 +2555,65 @@
         // Save notes when user types
         document.getElementById('Notes').addEventListener('input', function(e) {
             localStorage.setItem('elevatorNotes', e.target.value);
+        });
+
+        // Save all Filing Information fields when user types
+        document.getElementById('ownerInput').addEventListener('input', function(e) {
+            localStorage.setItem('ownerInputInfo', e.target.value);
+        });
+        
+        document.getElementById('elevatorCompanyInput').addEventListener('input', function(e) {
+            localStorage.setItem('elevatorCompanyInputInfo', e.target.value);
+        });
+        
+        document.getElementById('binInput').addEventListener('input', function(e) {
+            localStorage.setItem('binInputInfo', e.target.value);
+        });
+        
+        document.getElementById('groupsInput').addEventListener('input', function(e) {
+            localStorage.setItem('groupsInputInfo', e.target.value);
+        });
+        
+        document.getElementById('directorsInput').addEventListener('input', function(e) {
+            localStorage.setItem('directorsInputInfo', e.target.value);
+        });
+        
+        document.getElementById('additionalInput').addEventListener('input', function(e) {
+            localStorage.setItem('additionalInputInfo', e.target.value);
+        });
+
+        // Add event listeners for Quick Filing Information fields with error handling
+        function addQuickFilingEventListeners() {
+            const quickFilingFields = [
+                { id: 'quickOwnerInput', key: 'quickOwnerInputInfo' },
+                { id: 'quickElevatorCompanyInput', key: 'quickElevatorCompanyInputInfo' },
+                { id: 'quickBinInput', key: 'quickBinInputInfo' },
+                { id: 'quickGroupsInput', key: 'quickGroupsInputInfo' },
+                { id: 'quickDirectorsInput', key: 'quickDirectorsInputInfo' },
+                { id: 'quickAdditionalInput', key: 'quickAdditionalInputInfo' }
+            ];
+
+            quickFilingFields.forEach(field => {
+                const element = document.getElementById(field.id);
+                if (element) {
+                    element.addEventListener('input', function(e) {
+                        localStorage.setItem(field.key, e.target.value);
+                    });
+                }
+            });
+
+            // Add event listener for Quick Notes
+            const quickNotesInput = document.getElementById('quickNotesInput');
+            if (quickNotesInput) {
+                quickNotesInput.addEventListener('input', function(e) {
+                    localStorage.setItem('quickNotesContent', e.target.value);
+                });
+            }
+        }
+
+        // Initialize quick filing event listeners when page loads
+        window.addEventListener('load', function() {
+            addQuickFilingEventListeners();
         });
 
         let lastCalculation = null; // Track the last calculation performed
@@ -5847,6 +6245,9 @@
                 panel.style.display = 'block';
                 overlay.style.display = 'block';
                 
+                // Prevent background scrolling when panel is open
+                document.body.style.overflow = 'hidden';
+                
                 // Position panel based on screen width
                 if (window.innerWidth <= 600) {
                     panel.classList.add('panel-centered-mobile');
@@ -5875,6 +6276,9 @@
                     }
                 });
                 } else {
+                // Restore background scrolling when panel is closed
+                document.body.style.overflow = '';
+                
                 overlay.style.opacity = '0';
                 panel.style.opacity = '0';
                 panel.style.transform = 'translateY(-20px)';
@@ -5890,6 +6294,39 @@
         // Add click handler to close panel when clicking overlay
         document.getElementById('quickLookupOverlay').addEventListener('click', function() {
             toggleQuickLookup();
+        });
+
+        // Add scroll event handling to prevent background scrolling
+        document.addEventListener('DOMContentLoaded', function() {
+            const panel = document.getElementById('quickLookupPanel');
+            
+            if (panel) {
+                // Prevent scroll events from bubbling up to the document
+                panel.addEventListener('wheel', function(e) {
+                    e.stopPropagation();
+                    
+                    // Check if the panel is scrollable and at the boundary
+                    const scrollTop = panel.scrollTop;
+                    const scrollHeight = panel.scrollHeight;
+                    const clientHeight = panel.clientHeight;
+                    
+                    // If scrolling up and already at the top
+                    if (e.deltaY < 0 && scrollTop === 0) {
+                        e.preventDefault();
+                        panel.scrollTop = 0;
+                    }
+                    // If scrolling down and already at the bottom
+                    else if (e.deltaY > 0 && scrollTop + clientHeight >= scrollHeight) {
+                        e.preventDefault();
+                        panel.scrollTop = scrollHeight - clientHeight;
+                    }
+                }, { passive: false });
+                
+                // Handle touch events for mobile
+                panel.addEventListener('touchmove', function(e) {
+                    e.stopPropagation();
+                }, { passive: true });
+            }
         });
         // Add these new functions for the quick lookup panel
         document.getElementById('quickNumInput').addEventListener('input', function(e) {
@@ -5918,8 +6355,13 @@
         }
 
         function clearQuickNotes() {
-            document.getElementById('quickNotesInput').value = '';
-            document.getElementById('quickNotesInput').focus();
+            const notesField = document.getElementById('quickNotesInput');
+            if (notesField) {
+                notesField.value = '';
+                // Clear from localStorage
+                localStorage.removeItem('quickNotesContent');
+                notesField.focus();
+            }
         }
 
         function quickClearDeviceSearch() {
