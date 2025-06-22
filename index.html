@@ -5,971 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vertical Terminal</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <style>
-        /* Add these CSS variables right after the <style> tag */
-        :root {
-            /* Light theme (default) */
-            --bg-color: #ffffff;
-            --text-color: #000000;
-            --card-bg: #f5f5f5;
-            --card-shadow: rgba(0, 0, 0, 0.1);
-            --input-bg: #ffffff;
-            --input-border: #cccccc;
-            --panel-bg: #f0f0f0;
-            --highlight-bg: #e0e0e0;
-            --result-bg: #f5f5f5;
-            --header-color: #333333;
-            --button-bg: #000000;
-            --button-text: #ffffff;
-            --button-hover-bg: #333333;
-        }
-
-        @media (prefers-color-scheme: dark) {
-            :root {
-                /* Dark theme */
-                --bg-color: #1a1a1a;
-                --text-color: #ffffff;
-                --card-bg: #2c2c2c;
-                --card-shadow: rgba(0, 0, 0, 0.5);
-                --input-bg: #1c1c1c;
-                --input-border: #444444;
-                --panel-bg: #333333;
-                --highlight-bg: #3c3c3c;
-                --result-bg: #2c2c2c;
-                --header-color: #4a9eff;
-                --button-bg: #ffffff;
-                --button-text: #000000;
-                --button-hover-bg: #cccccc;
-            }
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        h1 {
-            text-align: center;
-            font-weight: 900;
-            margin: 20px 0;
-        }
-
-        .logo {
-            display: block;
-            margin: 5px auto;
-            max-width: 100px;
-            height: auto;
-        }
-
-        .input-group {
-            margin: 20px auto;
-            max-width: 500px;
-            text-align: center;
-        }
-
-        input {
-            width: 80%;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            margin: 5px auto;
-            display: block;
-        }
-
-        .result {
-            margin: 10px auto;
-            padding: 10px;
-            background-color: #f0f0f0;
-            border-radius: 5px;
-            width: 80%;
-            display: block;
-        }
-
-        button {
-            display: block;
-            margin: 20px auto;
-            padding: 10px 20px;
-            font-size: 1.2em;
-            background-color: #000;
-            color: #fff;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background-color: #333;
-        }
-
-        .image-viewer {
-            width: 100%;
-            height: 80vh;
-            margin: 20px 0;
-        }
-
-        .image-viewer iframe {
-            width: 100%;
-            height: 100%;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        /* Style for all clear buttons including X buttons - light mode only */
-        button[onclick*="clearInputs"],
-        button[onclick*="clearLookups"],
-        button[onclick*="clearBulkLookup"],
-        button[onclick*="clearDateInput"],
-        button[onclick*="quickClearInputs"],
-        button[onclick*="quickClearDeviceSearch"],
-        button[onclick*="clearAddressLookup"],
-        button[onclick*="clearQuickLookups"],
-        button[onclick*="clearQuickBulkLookup"],
-        button[onclick*="clearQuickAddressLookup"],
-        button[onclick*="clearDeviceSearch"],
-        button[onclick*="clearQuickNotes"],
-        button[onclick*="clearNotes"] {
-            border: none !important;
-            transition: background-color 0.3s ease, color 0.3s ease !important;
-        }
-
-        /* Hover effects for clear buttons in light mode */
-        button[onclick*="clearInputs"]:hover,
-        button[onclick*="clearLookups"]:hover,
-        button[onclick*="clearBulkLookup"]:hover,
-        button[onclick*="clearDateInput"]:hover,
-        button[onclick*="quickClearInputs"]:hover,
-        button[onclick*="quickClearDeviceSearch"]:hover,
-        button[onclick*="clearAddressLookup"]:hover,
-        button[onclick*="clearQuickLookups"]:hover,
-        button[onclick*="clearQuickBulkLookup"]:hover,
-        button[onclick*="clearQuickAddressLookup"]:hover,
-        button[onclick*="clearDeviceSearch"]:hover,
-        button[onclick*="clearAddressSearch"]:hover,
-        button[onclick*="clearQuickNotes"]:hover,
-        button[onclick*="clearNotes"]:hover {
-            background-color: #ff6b6b !important;
-            color: #ffffff !important;
-        }
-
-
-
-        @media (prefers-color-scheme: dark) {
-            body {
-                background-color: #1a1a1a;
-                color: #fff;
-            }
-
-            input {
-                background-color: #333;
-                color: #fff;
-                border-color: #666;
-            }
-
-            .result {
-                background-color: #333;
-            }
-
-            button {
-                background-color: #fff;
-                color: #000;
-            }
-
-            button:hover {
-                background-color: #ccc;
-            }
-
-            /* Remove borders from clear buttons in dark mode */
-            button[onclick*="clearInputs"],
-            button[onclick*="clearLookups"],
-            button[onclick*="clearBulkLookup"],
-            button[onclick*="clearDateInput"],
-            button[onclick*="quickClearInputs"],
-            button[onclick*="quickClearDeviceSearch"],
-            button[onclick*="clearAddressLookup"],
-            button[onclick*="clearQuickLookups"],
-            button[onclick*="clearQuickBulkLookup"],
-            button[onclick*="clearQuickAddressLookup"],
-            button[onclick*="clearDeviceSearch"],
-            button[onclick*="clearAddressSearch"],
-            button[onclick*="clearQuickNotes"],
-            button[onclick*="clearNotes"] {
-                border: none !important;
-            }
-        }
-
-        @media (max-width: 600px) {
-            .input-group {
-                width: 90%;
-            }
-            
-            input, .result {
-                width: 90%;
-            }
-
-            .notes-textarea {
-                width: 90%;
-            }
-
-            .date-buttons-group {
-                display: none !important;
-            }
-            .date-dropdown-group {
-                display: block !important;
-            }
-        }
-
-        .feedback-button {
-            margin-top: 40px;
-            margin-bottom: 40px;
-        }
-
-        .notes-container {
-            max-width: 500px;
-            margin: 30px auto;
-            text-align: center;
-        }
-
-        .notes-textarea {
-            width: 80%;
-            height: 100px;
-            padding: 12px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            font-family: inherit;
-            margin: 10px auto;
-            resize: vertical;
-            display: block;
-        }
-
-        @media (prefers-color-scheme: dark) {
-            .notes-textarea {
-                background-color: #333;
-                color: #fff;
-                border-color: #666;
-            }
-        }
-
-        .credit-text {
-            text-align: center;
-            color: #666;  /* grey color */
-            opacity: 0.7;  /* adds transparency */
-            font-size: 0.9em;
-            margin: 20px 0;
-        }
-
-        .social-icons {
-            display: flex;
-            justify-content: center;
-            gap: 20px;  /* space between icons */
-            margin: 15px 0;
-        }
-
-        .social-icon {
-            width: 24px;  /* size of icons */
-            height: 24px;
-            opacity: 0.7;
-            transition: opacity 0.2s;
-        }
-
-        .social-icon:hover {
-            opacity: 1;
-        }
-
-        .dob-viewer {
-            width: 100%;
-            height: 80vh;
-            margin: 20px 0;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            resize: both;
-            overflow: hidden;
-            min-height: 300px;
-            min-width: 300px;
-            max-height: 90vh;
-            max-width: 100%;
-            position: relative;
-        }
-
-        .dob-viewer iframe {
-            width: 150%;
-            height: 150%;
-            border: none;
-            transform: scale(0.67);
-            transform-origin: 0 0;
-        }
-
-        .tab-buttons {
-            display: flex;
-            justify-content: center;
-            gap: 15px;     /* Changed from 2px to 15px for a larger gap */
-            margin: 20px 0;
-        }
-
-        .tab-button {
-            margin: 0;
-            border-radius: 0;
-        }
-
-        .content-section {
-            display: none;
-        }
-
-        .content-section.active {
-            display: block;
-        }
-
-        .disclaimer {
-            text-align: center;
-            font-size: 0.8em;
-            color: #666;
-            margin-top: 10px;
-        }
-
-        /* Show buttons by default; hide dropdown */
-        #tabButtons {
-            display: flex;
-        }
-
-        #tabDropdown {
-            display: none;
-        }
-
-        /* For small screens, hide buttons and show dropdown */
-        @media (max-width: 900px) {
-            #tabButtons {
-                display: none;
-            }
-            #tabDropdown {
-                display: block;
-            }
-            
-            .dropdown {
-                position: static;
-                margin: 10px auto;
-                text-align: center;
-            }
-            
-            .dropdown-button {
-                display: block;
-                margin: 10px auto;
-                width: fit-content;
-            }
-
-            .dropdown-content {
-                position: absolute;
-                left: 50%;
-                transform: translateX(-50%);
-                width: 200px;
-            }
-        }
-
-        .main-container {
-            display: flex;
-            gap: 20px;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        .main-left {
-            flex: 1;
-            min-width: 0;  /* Prevents flex item from overflowing */
-        }
-
-        .reference-panel {
-            width: 350px;  /* Slightly wider to accommodate content */
-            padding: 20px;
-            background-color: #f5f5f5;
-            border-radius: 5px;
-            position: fixed;
-            right: 20px;
-            top: 50%;
-            transform: translateY(-50%);
-            height: 80vh;  /* Set a fixed height */
-            overflow-y: auto;  /* Enable scrolling */
-            display: none;
-            box-shadow: 0 0 10px rgba(0,0,0,0.2);
-            z-index: 1000;
-        }
-
-        .reference-panel ul {
-            padding-left: 20px;
-            margin: 10px 0;
-        }
-
-        .reference-panel li {
-            margin: 5px 0;
-            font-size: 0.9em;
-        }
-
-        .reference-panel h3 {
-            background-color: #f5f5f5;
-            padding: 10px 0;
-            margin: 0;
-            clear: both;
-        }
-
-        @media (prefers-color-scheme: dark) {
-            .reference-panel {
-                background-color: #333;
-                box-shadow: 0 0 10px rgba(255,255,255,0.1);
-            }
-            .reference-panel h3 {
-                background-color: #333;
-            }
-        }
-
-        @media (max-width: 900px) {
-            .reference-panel {
-                width: 90%;
-                max-height: 80vh;
-                left: 50%;
-                transform: translate(-50%, -50%);
-            }
-        }
-
-        .show-reference-mobile {
-            display: none;
-        }
-
-        @media (max-width: 900px) {
-            .show-reference-mobile {
-                display: block;
-                margin: 10px auto;
-            }
-        }
-
-        .toggle-reference {
-            position: fixed;
-            right: 20px;
-            top: 20px;
-            z-index: 1001;
-            padding: 8px 16px;
-            background-color: #000;
-            color: #fff;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-
-        /* Add this media query to adjust button position on smaller screens */
-        @media (max-width: 900px) {
-            .toggle-reference {
-                position: static;  /* Change from fixed to static positioning */
-                display: block;
-                margin: 10px auto;  /* Center the button */
-                width: fit-content;
-            }
-        }
-
-        /* Existing dark mode styles */
-        @media (prefers-color-scheme: dark) {
-            .toggle-reference {
-                background-color: #fff;
-                color: #000;
-            }
-            .toggle-reference:hover {
-                background-color: #ccc;
-            }
-        }
-
-        /* Add these styles to your existing CSS */
-        .reference-panel {
-            /* ... existing styles ... */
-            position: fixed;
-            z-index: 1000;
-        }
-
-        .reference-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: rgba(0, 0, 0, 0.5);
-            display: none;
-            z-index: 999;
-        }
-
-        .close-reference {
-            position: sticky;  /* Change from absolute to sticky */
-            top: 0;
-            right: 10px;
-            background: none;
-            border: none;
-            font-size: 24px;  /* Make it slightly bigger */
-            cursor: pointer;
-            color: #666;
-            padding: 5px 10px;
-            float: right;     /* Add float to position it on the right */
-            z-index: 2;       /* Ensure it's above other content */
-            margin-top: -5px; /* Adjust vertical position */
-        }
-
-        .reference-panel h3 {
-            background-color: #f5f5f5;
-            padding: 10px 0;
-            margin: 0;
-            clear: both;
-        }
-
-        .close-reference:hover {
-            color: #000;
-        }
-
-        @media (prefers-color-scheme: dark) {
-            .reference-panel h3 {
-                background-color: #333;
-            }
-            .close-reference {
-                color: #999;
-            }
-            .close-reference:hover {
-                color: #fff;
-            }
-        }
-
-        .reference-panel ul li[style*="font-weight: bold"] {
-            border-bottom: 1px solid #ccc;
-            padding-bottom: 5px;
-            margin-top: 20px;
-        }
-
-        @media (prefers-color-scheme: dark) {
-            .reference-panel ul li[style*="font-weight: bold"] {
-                border-bottom-color: #666;
-            }
-        }
-
-        .dropdown {
-            position: fixed;  /* Change from absolute to fixed */
-            top: 20px;
-            left: 20px;
-            z-index: 1001;  /* Ensure it stays above other content */
-        }
-
-        /* Add this media query to match Quick Reference button behavior */
-        @media (max-width: 900px) {
-            .dropdown {
-                position: static;  /* Change from fixed to static */
-                margin: 10px auto;
-                text-align: center;
-            }
-            
-            .dropdown-button {
-                display: block;
-                margin: 10px auto;
-                width: fit-content;
-            }
-
-            .dropdown-content {
-                position: absolute;
-                left: 50%;
-                transform: translateX(-50%);
-                width: 200px;
-            }
-        }
-
-        .dropdown-button {
-            background-color: #000;
-            color: #fff;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 1.2em;
-        }
-
-        .dropdown-content {
-            display: none;
-            position: absolute;
-            background-color: #f9f9f9;
-            min-width: 160px;
-            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
-            z-index: 1;
-            border-radius: 5px;
-            margin-top: 5px;
-        }
-
-        .dropdown-content button {
-            width: 100%;
-            padding: 12px 16px;
-            margin: 0;
-            display: block;
-            background: none;
-            color: black;
-            text-align: left;
-            border-radius: 0;
-        }
-
-        .dropdown-content button:hover {
-            background-color: #f1f1f1;
-        }
-
-        .settings-modal {
-            display: none;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            z-index: 1001;
-            width: 300px;
-        }
-
-        @media (prefers-color-scheme: dark) {
-            .dropdown-button {
-                background-color: #fff;
-                color: #000;
-            }
-            .dropdown-content {
-                background-color: #333;
-            }
-            .dropdown-content button {
-                color: white;
-            }
-            .dropdown-content button:hover {
-                background-color: #444;
-            }
-            .settings-modal {
-                background: #333;
-                color: white;
-            }
-        }
-
-        @media (max-width: 600px) {
-            .dropdown {
-                position: static;
-                margin: 20px auto;
-                text-align: center;
-            }
-            .dropdown-content {
-                position: relative;
-                width: 100%;
-                margin: 5px auto;
-            }
-        }
-
-        /* Add a search icon class */
-        .search-icon {
-            display: none;  /* Hidden by default */
-            width: 20px;
-            height: 20px;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/%3E%3C/svg%3E");
-            background-size: contain;
-            background-repeat: no-repeat;
-        }
-
-        /* Add media query for small screens */
-        @media (max-width: 400px) {
-            .lookup-button {
-                width: 40px !important;
-                height: 40px !important;
-                padding: 10px !important;
-                border-radius: 8px !important;
-                display: flex !important;
-                align-items: center;
-                justify-content: center;
-            }
-
-            .lookup-button span {
-                display: none;  /* Hide text */
-            }
-
-            .lookup-button .search-icon {
-                display: block;  /* Show icon */
-            }
-        }
-
-        @media (max-width: 600px) {
-            .button-text {
-                display: none;
-            }
-            .button-icon {
-                display: block !important;
-            }
-            [onclick="toggleQuickLookup()"] {
-                padding: 12px !important;
-                border-radius: 50% !important;
-                width: 48px !important;
-                height: 48px !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-            }
-        }
-
-        /* Update the lookup button styles */
-        .lookup-button {
-            padding: 12px 20px;
-            background: #1a73e8;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            min-width: 200px;  /* Set minimum width for text mode */
-        }
-
-        /* Style for the clear (X) button */
-        button[onclick*="clearDeviceSearch"],
-        button[onclick*="clearAddressSearch"] {
-            padding: 12px;
-            background: #333;
-            color: #ff6b6b;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            width: 48px;
-            height: 48px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            margin-left: 5px;
-        }
-
-        /* Style for the search icon */
-        .button-icon {
-            width: 24px;
-            height: 24px;
-            display: none;  /* Hide icon by default */
-        }
-
-        /* Mobile styles */
-        @media (max-width: 600px) {
-            .lookup-button {
-                width: 48px !important;
-                height: 48px !important;
-                min-width: unset !important;  /* Remove min-width on mobile */
-                padding: 12px !important;
-            }
-
-            .button-text {
-                display: none !important;
-            }
-
-            .button-icon {
-                display: block !important;
-            }
-        }
-
-        /* Add these styles to your existing CSS */
-        .close-reference {
-            color: #ff6b6b !important;
-            transition: color 0.2s;
-        }
-
-        .close-reference:hover {
-            color: #ff3333 !important;
-        }
-
-        #quickLookupPanel button[onclick="toggleQuickLookup()"]:hover {
-            color: #ff3333;
-        }
-
-        /* Add these CSS rules to force light/dark mode on all DOB lookup results */
-        #deviceResult div, 
-        #binResult div,
-        #bulkResult div,
-        #quickDeviceResult div,
-        #quickBinResult div,
-        #quickAddressResult div,
-        #quickBulkResult div {
-            background-color: var(--input-bg) !important;
-            color: var(--text-color) !important;
-            border-color: var(--input-border) !important;
-        }
-
-        #deviceResult [style*="background: #1c1c1c"],
-        #deviceResult [style*="background: #2c2c2c"],
-        #deviceResult [style*="background:#1c1c1c"],
-        #deviceResult [style*="background:#2c2c2c"],
-        #binResult [style*="background: #1c1c1c"],
-        #binResult [style*="background: #2c2c2c"],
-        #bulkResult [style*="background: #1c1c1c"],
-        #bulkResult [style*="background: #2c2c2c"] {
-            background: var(--panel-bg) !important;
-        }
-
-        #deviceResult strong,
-        #binResult strong,
-        #bulkResult strong,
-        #quickDeviceResult strong,
-        #quickBinResult strong,
-        #quickAddressResult strong,
-        #quickBulkResult strong {
-            color: var(--header-color) !important;
-        }
-
-        /* Force buttons inside results to use theme colors */
-        #deviceResult button,
-        #binResult button,
-        #bulkResult button {
-            background-color: var(--panel-bg) !important;
-            color: var(--text-color) !important;
-            border-color: var(--input-border) !important;
-        }
-
-        /* Override any inline styles that might be causing dark backgrounds */
-        [style*="background: #1c1c1c"],
-        [style*="background:#1c1c1c"],
-        [style*="background: #2c2c2c"],
-        [style*="background:#2c2c2c"] {
-            background: var(--input-bg) !important;
-        }
-
-        /* For nested elements with dark backgrounds */
-        [style*="background: #1c1c1c"] div,
-        [style*="background:#1c1c1c"] div,
-        [style*="background: #2c2c2c"] div,
-        [style*="background:#2c2c2c"] div {
-            background: var(--input-bg) !important;
-        }
-
-        /* Add responsive styles for ELV3 Lookup panel */
-        @media (max-width: 600px) {
-            #quickLookupPanel {
-                top: 60px !important;
-                right: 15px !important;
-                left: 15px !important;
-                margin: 0 auto !important;
-                max-width: calc(100% - 60px) !important;
-                width: calc(100% - 60px) !important;
-                padding: 20px !important;
-                border-radius: 16px !important;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
-            }
-            
-            #quickLookupPanel input,
-            #quickLookupPanel div[id$="Result"] {
-                font-size: 16px !important; /* Larger font size for better mobile readability */
-            }
-            
-            /* Make the toggle button more touch-friendly on mobile */
-            button[onclick="toggleQuickLookup()"] {
-                padding: 10px !important;
-                border-radius: 50% !important;
-                width: 44px !important;
-                height: 44px !important;
-                display: flex !important;
-                justify-content: center !important;
-                align-items: center !important;
-            }
-            
-            /* Class for centered panel on mobile */
-            .panel-centered-mobile {
-                right: 0 !important;
-                left: 0 !important;
-                margin: 0 auto !important;
-            }
-        }
-        
-        /* Add medium screen size responsiveness */
-        @media (min-width: 601px) and (max-width: 900px) {
-            #quickLookupPanel {
-                width: 300px !important;
-                max-width: calc(100% - 40px) !important;
-                right: 20px !important;
-                left: auto !important;
-            }
-        }
-        
-        /* Ensure all inputs and result boxes use border-box sizing */
-        #quickLookupPanel input,
-        #quickLookupPanel div[id$="Result"],
-        #quickLookupPanel button {
-            box-sizing: border-box;
-        }
-        
-        /* Ensure text wraps properly in result boxes */
-        #quickLookupPanel div[id$="Result"] {
-            overflow-wrap: break-word;
-            word-break: break-word;
-        }
-
-        /* Add transition styles for the overlay and panel */
-        #quickLookupOverlay {
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        #quickLookupPanel {
-            opacity: 0;
-            transform: translateY(-20px);
-            transition: opacity 0.3s ease, transform 0.3s ease;
-        }
-
-        /* Add these mobile-specific styles in the <style> section */
-        @media (max-width: 600px) {
-            /* Filter buttons adjustments */
-            .filter-buttons-group {
-                flex-direction: column;
-                gap: 8px;
-            }
-            
-            .filter-buttons-group button,
-            .filter-buttons-group div {
-                width: 100% !important;
-            }
-            
-            /* Device listing adjustments */
-            .device-item {
-                margin-bottom: 15px;
-            }
-            
-            /* Make the status and test status stack on mobile */
-            .device-status-container {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 8px;
-            }
-            
-            .device-status-container > div {
-                width: 100%;
-            }
-            
-            /* Adjust the test status badge */
-            .test-status-badge {
-                justify-content: center;
-                margin-top: 5px;
-            }
-            
-            /* Make buttons more touch-friendly */
-            .device-action-button {
-                padding: 12px 5px !important;
-                margin-top: 8px !important;
-            }
-            
-            /* Adjust spacing for better readability */
-            .device-info-section {
-                margin-top: 12px;
-                padding: 12px;
-            }
-            
-            /* Make the filter dropdown full width */
-            #deviceTypeFilter {
-                width: 100% !important;
-            }
-            
-            /* Adjust the device type sections */
-            .device-type-section {
-                margin-bottom: 20px;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <!-- Make sure this is right after the opening <body> tag -->
@@ -1019,86 +55,85 @@
 
         <!-- Filing Information Section -->
         <div class="quick-filing-info-container" style="margin: 15px 0;">
-            <button onclick="toggleQuickFilingInfo()" id="quickFilingInfoToggle" style="width: 100%; padding: 12px; background: #404040; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; transition: background-color 0.3s ease;">
-                <span>Filing Information</span>
-                <span id="quickFilingInfoArrow" style="transition: transform 0.3s ease;">▼</span>
-            </button>
+                    <button onclick="toggleQuickFilingInfo()" id="quickFilingInfoToggle" class="filing-info-toggle">
+            <span>Filing Information</span>
+            <span id="quickFilingInfoArrow" class="filing-info-arrow">▼</span>
+        </button>
             
-            <div id="quickFilingInfoFields" class="quick-filing-info-fields" style="display: none; margin-top: 10px; padding: 15px; background: #404040; border-radius: 5px; border: 1px solid #555555;">
-                <div class="field-group" style="margin: 10px 0;">
-                    <label style="display: block; margin-bottom: 3px; color: white; font-weight: bold; font-size: 12px;">Owner:</label>
-                    <div style="display: flex; gap: 4px; align-items: center;">
-                        <input type="text" id="quickOwnerInput" placeholder="Enter Owner Name" style="flex: 1; padding: 6px; border: 1px solid #666666; border-radius: 3px; background: #333333; color: white; font-size: 12px;">
-                        <button onclick="copyToClipboard('quickOwnerInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Copy</button>
-                        <button onclick="clearField('quickOwnerInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Clear</button>
+            <div id="quickFilingInfoFields" class="filing-info-fields" style="display: none;">
+                <div class="field-group">
+                    <label>Owner:</label>
+                    <div class="field-controls">
+                        <input type="text" id="quickOwnerInput" placeholder="Enter Owner Name">
+                        <button onclick="copyToClipboard('quickOwnerInput')" class="copy-btn">Copy</button>
+                        <button onclick="clearField('quickOwnerInput')" class="clear-btn">Clear</button>
                     </div>
                 </div>
                 
-                <div class="field-group" style="margin: 10px 0;">
-                    <label style="display: block; margin-bottom: 3px; color: white; font-weight: bold; font-size: 12px;">Elevator Company:</label>
-                    <div style="display: flex; gap: 4px; align-items: center;">
-                        <input type="text" id="quickElevatorCompanyInput" placeholder="Enter Elevator Company" style="flex: 1; padding: 6px; border: 1px solid #666666; border-radius: 3px; background: #333333; color: white; font-size: 12px;">
-                        <button onclick="copyToClipboard('quickElevatorCompanyInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Copy</button>
-                        <button onclick="clearField('quickElevatorCompanyInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Clear</button>
+                <div class="field-group">
+                    <label>Elevator Company:</label>
+                    <div class="field-controls">
+                        <input type="text" id="quickElevatorCompanyInput" placeholder="Enter Elevator Company">
+                        <button onclick="copyToClipboard('quickElevatorCompanyInput')" class="copy-btn">Copy</button>
+                        <button onclick="clearField('quickElevatorCompanyInput')" class="clear-btn">Clear</button>
                     </div>
                 </div>
                 
-                <div class="field-group" style="margin: 10px 0;">
-                    <label style="display: block; margin-bottom: 3px; color: white; font-weight: bold; font-size: 12px;">BIN #:</label>
-                    <div style="display: flex; gap: 4px; align-items: center;">
-                        <input type="text" id="quickBinInput" placeholder="Enter BIN Number" style="flex: 1; padding: 6px; border: 1px solid #666666; border-radius: 3px; background: #333333; color: white; font-size: 12px;">
-                        <button onclick="copyToClipboard('quickBinInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Copy</button>
-                        <button onclick="clearField('quickBinInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Clear</button>
+                <div class="field-group">
+                    <label>BIN #:</label>
+                    <div class="field-controls">
+                        <input type="text" id="quickBinInput" placeholder="Enter BIN Number">
+                        <button onclick="copyToClipboard('quickBinInput')" class="copy-btn">Copy</button>
+                        <button onclick="clearField('quickBinInput')" class="clear-btn">Clear</button>
                     </div>
                 </div>
                 
-                <div class="field-group" style="margin: 10px 0;">
-                    <label style="display: block; margin-bottom: 3px; color: white; font-weight: bold; font-size: 12px;">Groups:</label>
-                    <div style="display: flex; gap: 4px; align-items: center;">
-                        <input type="text" id="quickGroupsInput" placeholder="Enter Groups" style="flex: 1; padding: 6px; border: 1px solid #666666; border-radius: 3px; background: #333333; color: white; font-size: 12px;">
-                        <button onclick="copyToClipboard('quickGroupsInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Copy</button>
-                        <button onclick="clearField('quickGroupsInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Clear</button>
+                <div class="field-group">
+                    <label>Groups:</label>
+                    <div class="field-controls">
+                        <input type="text" id="quickGroupsInput" placeholder="Enter Groups">
+                        <button onclick="copyToClipboard('quickGroupsInput')" class="copy-btn">Copy</button>
+                        <button onclick="clearField('quickGroupsInput')" class="clear-btn">Clear</button>
                     </div>
                 </div>
                 
-                <div class="field-group" style="margin: 10px 0;">
-                    <label style="display: block; margin-bottom: 3px; color: white; font-weight: bold; font-size: 12px;">Director/Co-Directors:</label>
-                    <div style="display: flex; gap: 4px; align-items: center;">
-                        <input type="text" id="quickDirectorsInput" placeholder="Enter Director/Co-Directors" style="flex: 1; padding: 6px; border: 1px solid #666666; border-radius: 3px; background: #333333; color: white; font-size: 12px;">
-                        <button onclick="copyToClipboard('quickDirectorsInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Copy</button>
-                        <button onclick="clearField('quickDirectorsInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Clear</button>
+                <div class="field-group">
+                    <label>Director/Co-Directors:</label>
+                    <div class="field-controls">
+                        <input type="text" id="quickDirectorsInput" placeholder="Enter Director/Co-Directors">
+                        <button onclick="copyToClipboard('quickDirectorsInput')" class="copy-btn">Copy</button>
+                        <button onclick="clearField('quickDirectorsInput')" class="clear-btn">Clear</button>
                     </div>
                 </div>
                 
-                <div class="field-group" style="margin: 10px 0;">
-                    <label style="display: block; margin-bottom: 3px; color: white; font-weight: bold; font-size: 12px;">Additional:</label>
-                    <div style="display: flex; gap: 4px; align-items: center;">
-                        <input type="text" id="quickAdditionalInput" placeholder="Enter Additional Information" style="flex: 1; padding: 6px; border: 1px solid #666666; border-radius: 3px; background: #333333; color: white; font-size: 12px;">
-                        <button onclick="copyToClipboard('quickAdditionalInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Copy</button>
-                        <button onclick="clearField('quickAdditionalInput')" style="padding: 6px 8px; background: #555555; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; transition: background-color 0.3s ease;">Clear</button>
+                <div class="field-group">
+                    <label>Additional:</label>
+                    <div class="field-controls">
+                        <input type="text" id="quickAdditionalInput" placeholder="Enter Additional Information">
+                        <button onclick="copyToClipboard('quickAdditionalInput')" class="copy-btn">Copy</button>
+                        <button onclick="clearField('quickAdditionalInput')" class="clear-btn">Clear</button>
                     </div>
                 </div>
                 
                 <!-- Clear All Button -->
-                <div style="margin-top: 15px; text-align: center; border-top: 1px solid #555555; padding-top: 10px;">
-                    <button onclick="clearAllQuickFilingInfo()" style="padding: 8px 20px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: bold; transition: background-color 0.3s ease;">Clear All</button>
+                <div class="clear-all-container">
+                    <button onclick="clearAllQuickFilingInfo()" class="clear-all-btn">Clear All</button>
                 </div>
             </div>
         </div>
 
         <!-- Add Notes section as dropdown -->
         <div class="quick-notes-container" style="margin-top: 15px;">
-            <button onclick="toggleQuickNotes()" id="quickNotesToggle" style="width: 100%; padding: 12px; background: #404040; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; transition: background-color 0.3s ease;">
-                <span>Notes</span>
-                <span id="quickNotesArrow" style="transition: transform 0.3s ease;">▼</span>
-            </button>
+                    <button onclick="toggleQuickNotes()" id="quickNotesToggle" class="notes-toggle">
+            <span>Notes</span>
+            <span id="quickNotesArrow" class="notes-arrow">▼</span>
+        </button>
             
-            <div id="quickNotesFields" class="quick-notes-fields" style="display: none; margin-top: 10px; padding: 15px; background: #404040; border-radius: 5px; border: 1px solid #555555;">
+            <div id="quickNotesFields" class="notes-fields" style="display: none;">
                 <textarea id="quickNotesInput" 
                           placeholder="Enter your notes here..."
-                          style="width: 100%; height: 100px; padding: 8px; border-radius: 4px; border: 1px solid #666666; background: #333333; color: white; font-size: 12px; box-sizing: border-box; resize: vertical; font-family: inherit;"></textarea>
-                <button onclick="clearQuickNotes()" 
-                        style="width: 100%; padding: 8px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 3px; cursor: pointer; margin-top: 8px; box-sizing: border-box; font-size: 12px; font-weight: bold; transition: background-color 0.3s ease, color 0.3s ease;">
+                          class="notes-textarea-quick"></textarea>
+                <button onclick="clearQuickNotes()" class="quick-lookup-clear-btn">
                     Clear Notes
                 </button>
             </div>
@@ -1173,69 +208,69 @@
                 
                 <!-- Filing Information Dropdown -->
                 <div class="filing-info-container" style="margin: 30px auto; max-width: 500px;">
-                    <button onclick="toggleFilingInfo()" id="filingInfoToggle" style="width: 100%; padding: 15px; background: #404040; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; transition: background-color 0.3s ease;">
-                        <span>Filing Information</span>
-                        <span id="filingInfoArrow" style="transition: transform 0.3s ease;">▼</span>
-                    </button>
+                            <button onclick="toggleFilingInfo()" id="filingInfoToggle" class="filing-info-toggle">
+            <span>Filing Information</span>
+            <span id="filingInfoArrow" class="filing-info-arrow">▼</span>
+        </button>
                     
-                    <div id="filingInfoFields" class="filing-info-fields" style="display: none; margin-top: 15px; padding: 20px; background: #404040; border-radius: 5px; border: 1px solid #555555;">
-                        <div class="field-group" style="margin: 15px 0;">
-                            <label style="display: block; margin-bottom: 5px; color: white; font-weight: bold;">Owner:</label>
-                            <div style="display: flex; gap: 8px; align-items: center;">
-                                <input type="text" id="ownerInput" placeholder="Enter Owner Name" style="flex: 1; padding: 10px; border: 1px solid #666666; border-radius: 5px; background: #333333; color: white;">
-                                <button onclick="copyToClipboard('ownerInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Copy</button>
-                                <button onclick="clearField('ownerInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Clear</button>
+                    <div id="filingInfoFields" class="filing-info-fields" style="display: none;">
+                        <div class="field-group">
+                            <label>Owner:</label>
+                            <div class="field-controls">
+                                <input type="text" id="ownerInput" placeholder="Enter Owner Name">
+                                <button onclick="copyToClipboard('ownerInput')" class="copy-btn">Copy</button>
+                                <button onclick="clearField('ownerInput')" class="clear-btn">Clear</button>
                             </div>
                         </div>
                         
-                        <div class="field-group" style="margin: 15px 0;">
-                            <label style="display: block; margin-bottom: 5px; color: white; font-weight: bold;">Elevator Company:</label>
-                            <div style="display: flex; gap: 8px; align-items: center;">
-                                <input type="text" id="elevatorCompanyInput" placeholder="Enter Elevator Company" style="flex: 1; padding: 10px; border: 1px solid #666666; border-radius: 5px; background: #333333; color: white;">
-                                <button onclick="copyToClipboard('elevatorCompanyInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Copy</button>
-                                <button onclick="clearField('elevatorCompanyInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Clear</button>
+                        <div class="field-group">
+                            <label>Elevator Company:</label>
+                            <div class="field-controls">
+                                <input type="text" id="elevatorCompanyInput" placeholder="Enter Elevator Company">
+                                <button onclick="copyToClipboard('elevatorCompanyInput')" class="copy-btn">Copy</button>
+                                <button onclick="clearField('elevatorCompanyInput')" class="clear-btn">Clear</button>
                             </div>
                         </div>
                         
-                        <div class="field-group" style="margin: 15px 0;">
-                            <label style="display: block; margin-bottom: 5px; color: white; font-weight: bold;">BIN #:</label>
-                            <div style="display: flex; gap: 8px; align-items: center;">
-                                <input type="text" id="binInput" placeholder="Enter BIN Number" style="flex: 1; padding: 10px; border: 1px solid #666666; border-radius: 5px; background: #333333; color: white;">
-                                <button onclick="copyToClipboard('binInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Copy</button>
-                                <button onclick="clearField('binInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Clear</button>
+                        <div class="field-group">
+                            <label>BIN #:</label>
+                            <div class="field-controls">
+                                <input type="text" id="binInput" placeholder="Enter BIN Number">
+                                <button onclick="copyToClipboard('binInput')" class="copy-btn">Copy</button>
+                                <button onclick="clearField('binInput')" class="clear-btn">Clear</button>
                             </div>
                         </div>
                         
-                        <div class="field-group" style="margin: 15px 0;">
-                            <label style="display: block; margin-bottom: 5px; color: white; font-weight: bold;">Groups:</label>
-                            <div style="display: flex; gap: 8px; align-items: center;">
-                                <input type="text" id="groupsInput" placeholder="Enter Groups" style="flex: 1; padding: 10px; border: 1px solid #666666; border-radius: 5px; background: #333333; color: white;">
-                                <button onclick="copyToClipboard('groupsInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Copy</button>
-                                <button onclick="clearField('groupsInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Clear</button>
+                        <div class="field-group">
+                            <label>Groups:</label>
+                            <div class="field-controls">
+                                <input type="text" id="groupsInput" placeholder="Enter Groups">
+                                <button onclick="copyToClipboard('groupsInput')" class="copy-btn">Copy</button>
+                                <button onclick="clearField('groupsInput')" class="clear-btn">Clear</button>
                             </div>
                         </div>
                         
-                        <div class="field-group" style="margin: 15px 0;">
-                            <label style="display: block; margin-bottom: 5px; color: white; font-weight: bold;">Director/Co-Directors:</label>
-                            <div style="display: flex; gap: 8px; align-items: center;">
-                                <input type="text" id="directorsInput" placeholder="Enter Director/Co-Directors" style="flex: 1; padding: 10px; border: 1px solid #666666; border-radius: 5px; background: #333333; color: white;">
-                                <button onclick="copyToClipboard('directorsInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Copy</button>
-                                <button onclick="clearField('directorsInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Clear</button>
+                        <div class="field-group">
+                            <label>Director/Co-Directors:</label>
+                            <div class="field-controls">
+                                <input type="text" id="directorsInput" placeholder="Enter Director/Co-Directors">
+                                <button onclick="copyToClipboard('directorsInput')" class="copy-btn">Copy</button>
+                                <button onclick="clearField('directorsInput')" class="clear-btn">Clear</button>
                             </div>
                         </div>
                         
-                        <div class="field-group" style="margin: 15px 0;">
-                            <label style="display: block; margin-bottom: 5px; color: white; font-weight: bold;">Additional:</label>
-                            <div style="display: flex; gap: 8px; align-items: center;">
-                                <input type="text" id="additionalInput" placeholder="Enter Additional Information" style="flex: 1; padding: 10px; border: 1px solid #666666; border-radius: 5px; background: #333333; color: white;">
-                                <button onclick="copyToClipboard('additionalInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Copy</button>
-                                <button onclick="clearField('additionalInput')" style="padding: 10px 15px; background: #555555; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; transition: background-color 0.3s ease;">Clear</button>
+                        <div class="field-group">
+                            <label>Additional:</label>
+                            <div class="field-controls">
+                                <input type="text" id="additionalInput" placeholder="Enter Additional Information">
+                                <button onclick="copyToClipboard('additionalInput')" class="copy-btn">Copy</button>
+                                <button onclick="clearField('additionalInput')" class="clear-btn">Clear</button>
                             </div>
                         </div>
                         
                         <!-- Clear All Button -->
-                        <div style="margin-top: 25px; text-align: center; border-top: 1px solid #555555; padding-top: 15px;">
-                            <button onclick="clearAllFilingInfo()" style="padding: 12px 30px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; transition: background-color 0.3s ease;">Clear All</button>
+                        <div class="clear-all-container">
+                            <button onclick="clearAllFilingInfo()" class="clear-all-btn">Clear All</button>
                         </div>
                     </div>
                 </div>
