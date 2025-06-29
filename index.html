@@ -41,10 +41,31 @@
             <div id="quickSecondaryNumResult" style="width: 100%; background: var(--result-bg); padding: 8px; border-radius: 4px; margin-bottom: 10px; color: var(--text-color); min-height: 20px; border: 1px solid var(--input-border); box-sizing: border-box; overflow-wrap: break-word; word-break: break-word;"></div>
         </div>
 
-        <button onclick="quickClearInputs()" 
-                style="width: 100%; padding: 12px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 10px; box-sizing: border-box; transition: background-color 0.3s ease, color 0.3s ease;">
-            Clear
-        </button>
+        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+            <button onclick="quickClearInputs()" 
+                    style="flex: 1; padding: 12px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; box-sizing: border-box; transition: background-color 0.3s ease, color 0.3s ease;">
+                Clear
+            </button>
+            <button onclick="toggleLogModal()" 
+                    style="padding: 12px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; box-sizing: border-box; transition: all 0.3s ease; min-width: 50px; display: flex; align-items: center; justify-content: center;" 
+                    title="View Lookup Log">
+                📋
+            </button>
+        </div>
+
+        <!-- ELV3 Lookup Log Section -->
+        <div id="inlineLogSection" style="display: none; margin: 10px 0; padding: 15px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 8px; max-height: 200px; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin: 0; color: var(--text-color); font-size: 0.9em;">Recent Lookups</h4>
+                <button onclick="clearLogEntries()" 
+                        style="padding: 4px 8px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.8em;">
+                    Clear
+                </button>
+            </div>
+            <div id="inlineLogEntries" style="color: var(--text-color);">
+                <p style="text-align: center; color: #666; font-style: italic; font-size: 0.85em;">No log entries yet.</p>
+            </div>
+        </div>
 
         <!-- Add BIN display section -->
         <div id="quickBinDisplay" style="text-align: center; margin-top: 5px; padding: 8px; background: var(--panel-bg); border-radius: 4px; color: var(--text-color);">
@@ -161,6 +182,8 @@
     </div>
 
     <div id="settingsOverlay" class="reference-overlay"></div>
+
+
 
     <a href="javascript:window.location.reload()">
         <img src="https://github.com/mnmontesano/ELV3/blob/main/ELV3%20Cheat%20Sheet%20Icon.png?raw=true" alt="Logo" class="logo">
@@ -648,31 +671,7 @@
             </div>
         </div>
 
-        <!-- Show DOB NOW button -->
-        <div style="text-align: center; margin: 20px 0;">
-            <button id="showDobNowBtn" onclick="toggleDobNowSection()" style="padding: 12px 24px; font-size: 16px; background-color: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                Show DOB NOW Interface
-            </button>
-        </div>
 
-        <!-- DOB NOW content - initially hidden -->
-        <div id="dobNowSection" style="display: none;">
-            <div style="display: flex; justify-content: center; gap: 10px; margin: 10px auto;">
-                <button onclick="refreshDOB()" style="display: inline-block; margin: 0; padding: 8px 16px;">Refresh DOB Page</button>
-                <button onclick="popoutDOB()" style="display: inline-block; margin: 0; padding: 8px 16px;">Open in New Window</button>
-            </div>
-            <div id="dobWindows">
-                <div class="dob-viewer">
-                    <iframe src="https://a810-dobnow.nyc.gov/publish/Index.html#!/" frameborder="0"></iframe>
-                </div>
-            </div>
-            <button onclick="addDOBWindow()" style="display: block; margin: 10px auto 30px auto; padding: 8px 16px;">
-                <span style="font-size: 20px;">+</span> Add DOB Window
-            </button>
-            <div class="disclaimer" style="margin-top: 20px;">
-                <span style="color: red;">Disclaimer: The DOB NOW page is provided by the New York City Department of Buildings. This embeded page should not be used as an official source for filing and should only be used to quickly look up information related to a building or device.</span>
-            </div>
-        </div>
         
         <!-- Add the violations API data source section -->
         <div style="max-width: 800px; margin: 20px auto; padding: 20px; background: var(--card-bg); border-radius: 5px; box-shadow: 0 2px 8px var(--card-shadow);">
@@ -771,6 +770,7 @@
         
         <!-- Adding back the buttons -->
         <div class="date-buttons-group" style="display: flex; justify-content: center; gap: 10px; align-items: center;">
+            <button id="days10" onclick="calculateDateWithMode(10)" style="display: inline-block; margin: 0;">10 Days</button>
             <button id="days30" onclick="calculateDateWithMode(30)" style="display: inline-block; margin: 0;">30 Days</button>
             <button id="days60" onclick="calculateDateWithMode(60)" style="display: inline-block; margin: 0;">60 Days</button>
             <button id="days91" onclick="calculateDateWithMode(91)" style="display: inline-block; margin: 0;">91 Days</button>
@@ -780,6 +780,7 @@
         <div class="date-dropdown-group" style="display: none; text-align: center; margin: 10px auto;">
             <select id="daysSelect" onchange="calculateDateWithMode(parseInt(this.value))" style="padding: 8px; width: 200px; margin-bottom: 10px;">
                 <option value="">Select Days</option>
+                <option value="10">10 Days</option>
                 <option value="30">30 Days</option>
                 <option value="60">60 Days</option>
                 <option value="91">91 Days</option>
@@ -1839,24 +1840,7 @@
             }
         });
 
-        function refreshDOB() {
-            const iframe = document.querySelector('#dobContent .dob-viewer iframe');
-            if (iframe) {
-                // Reassigning src forces the iframe to reload
-                iframe.src = iframe.src;
-            }
-        }
 
-        function popoutDOB() {
-            window.open('https://a810-dobnow.nyc.gov/publish/Index.html#!/', '_blank', 'width=1200,height=800');
-        }
-
-        function addDOBWindow() {
-            const newWindow = document.createElement('div');
-            newWindow.className = 'dob-viewer';
-            newWindow.innerHTML = '<iframe src="https://a810-dobnow.nyc.gov/publish/Index.html#!/" frameborder="0"></iframe>';
-            document.getElementById('dobWindows').appendChild(newWindow);
-        }
 
         function toggleReference() {
             const panel = document.querySelector('.reference-panel');
@@ -2962,7 +2946,24 @@
                                          data-device-type="${type}"
                                          data-device-status="REMOVED">
                                         <div style="padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid #ff6b6b; opacity: 0.8;">
-                                            <div><strong style="color: var(--header-color);">Device #:</strong> <span style="${deviceNumberStyle}">${device.device_number}</span></div>
+                                            <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                                                <div><strong style="color: var(--header-color);">Device #:</strong> <span style="${deviceNumberStyle}">${device.device_number}</span></div>
+                                                <div style="display: flex; align-items: center; gap: 8px;">
+                                                    <strong style="color: var(--header-color);">BIN:</strong> 
+                                                    ${device.bin ? `
+                                                        <span onclick="copyBinToClipboard('${device.bin}', event)" 
+                                                              title="Click to copy BIN number"
+                                                              style="cursor: pointer; padding: 4px 8px; border-radius: 4px; 
+                                                                     transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
+                                                                     border: 1px solid var(--input-border); background: var(--panel-bg);">
+                                                            ${device.bin}
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;">
+                                                                <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                                            </svg>
+                                                        </span>
+                                                    ` : '<span>N/A</span>'}
+                                                </div>
+                                            </div>
                                             <div style="display: flex; justify-content: space-between; align-items: center;">
                                                 <div><strong style="color: var(--header-color);">Type:</strong> ${type}</div>
                                                 <div style="display: flex; align-items: center; gap: 8px;">
@@ -3093,7 +3094,24 @@
                                          data-device-type="${type}"
                                          data-device-status="${(device.device_status || '').toUpperCase()}">
                                         <div style="padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid var(--input-border);">
-                                            <div style="margin-bottom: 12px;"><strong style="color: var(--header-color);">Device #:</strong> <span style="${deviceNumberStyle}">${device.device_number}</span></div>
+                                            <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                                                <div><strong style="color: var(--header-color);">Device #:</strong> <span style="${deviceNumberStyle}">${device.device_number}</span></div>
+                                                <div style="display: flex; align-items: center; gap: 8px;">
+                                                    <strong style="color: var(--header-color);">BIN:</strong> 
+                                                    ${device.bin ? `
+                                                        <span onclick="copyBinToClipboard('${device.bin}', event)" 
+                                                              title="Click to copy BIN number"
+                                                              style="cursor: pointer; padding: 4px 8px; border-radius: 4px; 
+                                                                     transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
+                                                                     border: 1px solid var(--input-border); background: var(--panel-bg);">
+                                                            ${device.bin}
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;">
+                                                                <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                                            </svg>
+                                                        </span>
+                                                    ` : '<span>N/A</span>'}
+                                                </div>
+                                            </div>
                                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                                                 <div><strong style="color: var(--header-color);">Status:</strong> ${device.device_status || 'N/A'}</div>
                                                 <div style="display: flex; align-items: center; gap: 8px;">
@@ -5307,7 +5325,7 @@
                         document.body.appendChild(panel);
                     }
                 });
-                } else {
+            } else {
                 // Restore background scrolling when panel is closed
                 document.body.style.overflow = '';
                 
@@ -5377,13 +5395,32 @@
         });
 
         function quickClearInputs() {
-            document.getElementById('quickNumInput').value = '';
-            document.getElementById('quickLetterInput').value = '';
-            document.getElementById('quickSecondaryNumInput').value = '';
-            document.getElementById('quickNumResult').textContent = '';
-            document.getElementById('quickLetterResult').textContent = '';
-            document.getElementById('quickSecondaryNumResult').textContent = '';
-            document.getElementById('quickNumInput').focus();
+            const numInput = document.getElementById('quickNumInput');
+            const letterInput = document.getElementById('quickLetterInput');
+            const secondaryNumInput = document.getElementById('quickSecondaryNumInput');
+            const numResult = document.getElementById('quickNumResult');
+            const letterResult = document.getElementById('quickLetterResult');
+            const secondaryNumResult = document.getElementById('quickSecondaryNumResult');
+            
+            // Capture input and result values BEFORE clearing
+            const numValue = numInput.value;
+            const letterValue = letterInput.value;
+            const secondaryNumValue = secondaryNumInput.value;
+            const numResultValue = numResult.textContent;
+            const letterResultValue = letterResult.textContent;
+            const secondaryNumResultValue = secondaryNumResult.textContent;
+            
+            // Save to log before clearing
+            saveToLogWithResults(numValue, letterValue, secondaryNumValue, numResultValue, letterResultValue, secondaryNumResultValue);
+            
+            // Now clear everything
+            numInput.value = '';
+            letterInput.value = '';
+            secondaryNumInput.value = '';
+            numResult.textContent = '';
+            letterResult.textContent = '';
+            secondaryNumResult.textContent = '';
+            numInput.focus();
         }
 
         function clearQuickNotes() {
@@ -5508,19 +5545,7 @@
         // Run on window resize
         window.addEventListener('resize', handleResponsiveELV3Button);
 
-        // Toggle DOB NOW section
-        function toggleDobNowSection() {
-            const dobNowSection = document.getElementById('dobNowSection');
-            const showDobNowBtn = document.getElementById('showDobNowBtn');
-            
-            if (dobNowSection.style.display === 'none') {
-                dobNowSection.style.display = 'block';
-                showDobNowBtn.textContent = 'Hide DOB NOW Interface';
-            } else {
-                dobNowSection.style.display = 'none';
-                showDobNowBtn.textContent = 'Show DOB NOW Interface';
-            }
-        }
+
 
         // Function to fetch the last update date for the violations API
         async function fetchViolationsAPILastUpdateDate() {
@@ -6250,6 +6275,105 @@
             
             updateDeviceTypeSectionVisibility();
         }
+
+        // ELV3 Lookup Log Functions
+        function saveToLogWithResults(numValue, letterValue, secondaryNumValue, numResult, letterResult, secondaryNumResult) {
+            // Only save if there was actual content to log
+            if (!numValue && !letterValue && !secondaryNumValue && !numResult && !letterResult && !secondaryNumResult) {
+                return;
+            }
+            
+            // Create log entry
+            const logEntry = {
+                timestamp: new Date().toLocaleString(),
+                inputs: {
+                    partNumber: numValue || '',
+                    violatingCondition: letterValue || '',
+                    suggestedRemedy: secondaryNumValue || ''
+                },
+                outputs: {
+                    partNumberResult: numResult || '',
+                    violatingConditionResult: letterResult || '',
+                    suggestedRemedyResult: secondaryNumResult || ''
+                }
+            };
+            
+            // Get existing log entries
+            let logEntries = JSON.parse(localStorage.getItem('elv3LookupLog') || '[]');
+            
+            // Add new entry to the beginning of the array
+            logEntries.unshift(logEntry);
+            
+            // Keep only the last 50 entries to prevent excessive storage
+            if (logEntries.length > 50) {
+                logEntries = logEntries.slice(0, 50);
+            }
+            
+            // Save back to localStorage
+            localStorage.setItem('elv3LookupLog', JSON.stringify(logEntries));
+            
+            // If the log section is currently visible, refresh it immediately
+            const logSection = document.getElementById('inlineLogSection');
+            if (logSection && logSection.style.display === 'block') {
+                displayInlineLogEntries();
+            }
+        }
+
+        function toggleLogModal() {
+            const logSection = document.getElementById('inlineLogSection');
+            
+            if (logSection.style.display === 'none' || logSection.style.display === '') {
+                displayInlineLogEntries();
+                logSection.style.display = 'block';
+            } else {
+                logSection.style.display = 'none';
+            }
+        }
+
+        function displayInlineLogEntries() {
+            const logEntries = JSON.parse(localStorage.getItem('elv3LookupLog') || '[]');
+            const logContainer = document.getElementById('inlineLogEntries');
+            
+            if (logEntries.length === 0) {
+                logContainer.innerHTML = '<p style="text-align: center; color: #666; font-style: italic; font-size: 0.85em;">No log entries yet.</p>';
+                return;
+            }
+            
+            let html = '';
+            // Show only the last 5 entries for inline display
+            const recentEntries = logEntries.slice(0, 5);
+            recentEntries.forEach((entry, index) => {
+                html += `
+                    <div style="margin-bottom: 12px; padding: 10px; border: 1px solid var(--input-border); border-radius: 6px; background: var(--panel-bg);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <strong style="color: var(--text-color); font-size: 0.8em;">Entry #${logEntries.length - index}</strong>
+                            <span style="color: #666; font-size: 0.7em;">${entry.timestamp}</span>
+                        </div>
+                        
+                        <div style="font-size: 0.75em; line-height: 1.3;">
+                            ${entry.inputs.partNumber ? `<div><strong>Input:</strong> ${entry.inputs.partNumber} → <em>${entry.outputs.partNumberResult}</em></div>` : ''}
+                            ${entry.inputs.violatingCondition ? `<div><strong>Condition:</strong> ${entry.inputs.violatingCondition} → <em>${entry.outputs.violatingConditionResult}</em></div>` : ''}
+                            ${entry.inputs.suggestedRemedy ? `<div><strong>Remedy:</strong> ${entry.inputs.suggestedRemedy} → <em>${entry.outputs.suggestedRemedyResult}</em></div>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            if (logEntries.length > 5) {
+                html += `<p style="text-align: center; color: #666; font-style: italic; font-size: 0.75em;">Showing 5 most recent entries (${logEntries.length} total)</p>`;
+            }
+            
+            logContainer.innerHTML = html;
+        }
+
+        function clearLogEntries() {
+            if (confirm('Are you sure you want to clear all log entries? This action cannot be undone.')) {
+                localStorage.removeItem('elv3LookupLog');
+                displayInlineLogEntries(); // Refresh the inline display
+            }
+        }
+
+
     </script>
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
