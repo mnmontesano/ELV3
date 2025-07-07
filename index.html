@@ -79,6 +79,28 @@
                                       style="padding: 4px 8px; border-radius: 4px; border: 1px solid transparent; transition: all 0.2s ease; position: relative; display: inline-flex; align-items: center; gap: 6px;" 
                                       onclick="copyBinToClipboard(this.textContent.replace('📋', '').trim(), event)">-</span>
         </div>
+        
+        <!-- Device Number Search Dropdown -->
+        <div style="margin-top: 10px;">
+            <button onclick="toggleDeviceSearch()" 
+                    style="width: 100%; padding: 8px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; transition: all 0.3s ease;"
+                    title="Search Device Number">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                </svg>
+                <span>Device Search</span>
+                <span id="deviceSearchArrow" style="margin-left: auto;">▼</span>
+            </button>
+            
+            <div id="deviceSearchFields" style="display: none; margin-top: 5px; padding: 10px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 4px;">
+                <input type="text" 
+                       id="quickDeviceInput" 
+                       placeholder="Enter Device Number"
+                       oninput="this.value = this.value.toUpperCase(); updateMainDeviceField(this.value); searchDeviceInLookup(this.value);"
+                       style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 14px; box-sizing: border-box; margin-bottom: 5px;">
+                <div id="quickDeviceResult" style="width: 100%; background: var(--result-bg); padding: 8px; border-radius: 4px; color: var(--text-color); min-height: 20px; border: 1px solid var(--input-border); box-sizing: border-box; overflow-wrap: break-word; word-break: break-word; font-size: 12px; display: none;"></div>
+            </div>
+        </div>
 
         <!-- Filing Information Section -->
         <div class="quick-filing-info-container" style="margin: 15px 0;">
@@ -184,7 +206,7 @@
             <option value="pdf">PDF Terminal</option>
         </select>
         <button onclick="saveSettings()">Save</button>
-        <button onclick="closeSettings()" style="background-color: #666;">Cancel</button>
+        <button onclick="closeSettings()" style="background-color: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; padding: 10px 20px; font-size: 1.2em; transition: background-color 0.3s ease, color 0.3s ease;">Cancel</button>
     </div>
 
     <div id="settingsOverlay" class="reference-overlay"></div>
@@ -233,7 +255,34 @@
                     <div id="secondaryNumResult" class="result"></div>
                 </div>
 
-                <button onclick="clearInputs()" style="color: #ff6b6b; background: var(--panel-bg); border: none; border-radius: 4px; cursor: pointer; display: block; margin: 20px auto; padding: 10px 20px; font-size: 1.2em; transition: background-color 0.3s ease, color 0.3s ease;">Clear</button>
+                <div style="display: flex; justify-content: center; align-items: center; gap: 10px; margin: 20px auto; width: fit-content;">
+                    <button onclick="clearInputs()" style="color: #ff6b6b; background: var(--panel-bg); border: none; border-radius: 4px; cursor: pointer; padding: 10px 20px; font-size: 1.2em; transition: background-color 0.3s ease, color 0.3s ease;">Clear</button>
+                    <button onclick="toggleMainLogModal()" 
+                            style="padding: 10px 20px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; box-sizing: border-box; transition: all 0.3s ease; font-size: 1.2em; display: flex; align-items: center; justify-content: center;" 
+                            title="View Lookup Log">
+                        📋
+                    </button>
+                </div>
+                
+                <!-- Main Tab Log Section -->
+                <div id="mainLogSection" style="display: none; margin: 10px 0; padding: 15px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 8px; max-height: 80vh; min-height: 100px; overflow-y: auto; resize: vertical;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h4 style="margin: 0; color: var(--text-color); font-size: 1.1em;">Recent Lookups</h4>
+                        <button onclick="clearMainLogEntries()" 
+                                style="padding: 4px 8px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
+                            Clear
+                        </button>
+                    </div>
+                    <div id="mainLogEntries" style="color: var(--text-color);">
+                        <p style="text-align: center; color: #666; font-style: italic; font-size: 0.85em;">No log entries yet.</p>
+                    </div>
+                    <!-- Resize handle indicator -->
+                    <div class="resize-handle" style="text-align: center; margin-top: 10px; color: #999; font-size: 12px; cursor: ns-resize; user-select: none;">
+                        <span style="display: inline-block; border-top: 2px solid #ccc; width: 30px; margin: 0 2px;"></span>
+                        <span style="display: inline-block; border-top: 2px solid #ccc; width: 30px; margin: 0 2px;"></span>
+                        <span style="display: inline-block; border-top: 2px solid #ccc; width: 30px; margin: 0 2px;"></span>
+                    </div>
+                </div>
                 
                 <!-- Filing Information Dropdown -->
                 <div class="filing-info-container" style="margin: 30px auto; max-width: 500px;">
@@ -537,7 +586,7 @@
                     <input type="text" 
                            id="deviceNumber" 
                            placeholder="Enter Device Number"
-                           oninput="this.value = this.value.toUpperCase()"
+                           oninput="if(this.value !== '') { this.value = this.value.toUpperCase(); }"
                            style="width: calc(100% - 10px); padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); margin-bottom: 10px;">
                     <div style="display: flex; justify-content: center; gap: 5px;">
                         <div style="position: relative; display: inline-flex; align-items: center;">
@@ -1287,6 +1336,18 @@
         });
 
         function clearInputs() {
+            // Capture current values before clearing
+            const numValue = document.getElementById('numInput').value;
+            const letterValue = document.getElementById('letterInput').value;
+            const secondaryNumValue = document.getElementById('secondaryNumInput').value;
+            const numResult = document.getElementById('numResult').textContent;
+            const letterResult = document.getElementById('letterResult').textContent;
+            const secondaryNumResult = document.getElementById('secondaryNumResult').textContent;
+            
+            // Save to history before clearing
+            saveToMainLogWithResults(numValue, letterValue, secondaryNumValue, numResult, letterResult, secondaryNumResult);
+            
+            // Clear the inputs and results
             document.getElementById('numInput').value = '';
             document.getElementById('letterInput').value = '';
             document.getElementById('secondaryNumInput').value = '';
@@ -1854,13 +1915,29 @@
             const button = document.querySelector('.toggle-reference');
             
             if (panel.style.display === 'block') {
-                panel.style.display = 'none';
-                overlay.style.display = 'none';
+                // Closing animation
+                overlay.style.opacity = '0';
+                panel.style.opacity = '0';
+                panel.style.transform = 'translateY(-50%) translateY(-20px)';
                 button.textContent = 'ELV3 Reference';
+                
+                // Wait for transition to complete before hiding
+                setTimeout(() => {
+                    panel.style.display = 'none';
+                    overlay.style.display = 'none';
+                }, 300);
             } else {
+                // Opening animation
                 panel.style.display = 'block';
                 overlay.style.display = 'block';
                 button.textContent = 'Hide Reference';
+                
+                // Small delay to ensure display is set before animating
+                setTimeout(() => {
+                    overlay.style.opacity = '1';
+                    panel.style.opacity = '1';
+                    panel.style.transform = 'translateY(-50%) translateY(0)';
+                }, 10);
             }
             
             event.stopPropagation();
@@ -3840,28 +3917,47 @@
             const deviceNumber = document.getElementById('deviceNumber');
             const binNumber = document.getElementById('binNumber');
             const quickBinValue = document.getElementById('quickBinValue');
+            const quickDeviceInput = document.getElementById('quickDeviceInput');
             
-            // If this was triggered by an X button next to device search
-            if (deviceNumber === document.activeElement || deviceNumber.value) {
+            // Force clear all device-related fields with explicit empty values
+            if (deviceNumber) {
                 deviceNumber.value = '';
-                document.getElementById('binResult').style.display = 'none';
-                // Show address search section when device number is cleared
-                toggleAddressSearchVisibility('');
+                // Force trigger input event to clear any cached values
+                deviceNumber.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            
+            if (quickDeviceInput) {
+                quickDeviceInput.value = '';
             }
             
             // If this was triggered by an X button next to BIN search
-            if (binNumber === document.activeElement || binNumber.value) {
+            if (binNumber && (binNumber === document.activeElement || binNumber.value)) {
                 binNumber.value = '';
                 document.getElementById('deviceResult').style.display = 'none';
             }
             
-            // Clear BIN display if both fields are empty
-            if (!deviceNumber.value && !binNumber.value) {
-                quickBinValue.textContent = '-';
-                updateBinDisplayStyle();
+            // Clear all result displays
+            document.getElementById('binResult').style.display = 'none';
+            const quickDeviceResult = document.getElementById('quickDeviceResult');
+            if (quickDeviceResult) {
+                quickDeviceResult.style.display = 'none';
             }
             
+            // Clear BIN display
+            quickBinValue.textContent = '-';
+            updateBinDisplayStyle();
+            
+            // Hide export button
             document.getElementById('binExportButton').style.display = 'none';
+            
+            // Show address search section when device number is cleared
+            toggleAddressSearchVisibility('');
+            
+            // Small delay to ensure all clearing operations complete
+            setTimeout(() => {
+                if (deviceNumber) deviceNumber.value = '';
+                if (quickDeviceInput) quickDeviceInput.value = '';
+            }, 10);
         }
 
         // Add address lookup function
@@ -6376,6 +6472,196 @@
             if (confirm('Are you sure you want to clear all log entries? This action cannot be undone.')) {
                 localStorage.removeItem('elv3LookupLog');
                 displayInlineLogEntries(); // Refresh the inline display
+            }
+        }
+
+        // Main tab history functions
+        function saveToMainLogWithResults(numValue, letterValue, secondaryNumValue, numResult, letterResult, secondaryNumResult) {
+            // Only save if there was actual content to log
+            if (!numValue && !letterValue && !secondaryNumValue && !numResult && !letterResult && !secondaryNumResult) {
+                return;
+            }
+            
+            // Create log entry
+            const logEntry = {
+                timestamp: new Date().toLocaleString(),
+                inputs: {
+                    partNumber: numValue || '',
+                    violatingCondition: letterValue || '',
+                    suggestedRemedy: secondaryNumValue || ''
+                },
+                outputs: {
+                    partNumberResult: numResult || '',
+                    violatingConditionResult: letterResult || '',
+                    suggestedRemedyResult: secondaryNumResult || ''
+                }
+            };
+            
+            // Get existing log entries
+            let logEntries = JSON.parse(localStorage.getItem('elv3MainTabLog') || '[]');
+            
+            // Add new entry to the beginning of the array
+            logEntries.unshift(logEntry);
+            
+            // Keep only the last 50 entries to prevent excessive storage
+            if (logEntries.length > 50) {
+                logEntries = logEntries.slice(0, 50);
+            }
+            
+            // Save back to localStorage
+            localStorage.setItem('elv3MainTabLog', JSON.stringify(logEntries));
+            
+            // If the log section is currently visible, refresh it immediately
+            const logSection = document.getElementById('mainLogSection');
+            if (logSection && logSection.style.display === 'block') {
+                displayMainLogEntries();
+            }
+        }
+
+        function toggleMainLogModal() {
+            const logSection = document.getElementById('mainLogSection');
+            
+            if (logSection.style.display === 'none' || logSection.style.display === '') {
+                displayMainLogEntries();
+                logSection.style.display = 'block';
+            } else {
+                logSection.style.display = 'none';
+            }
+        }
+
+        function displayMainLogEntries() {
+            const logEntries = JSON.parse(localStorage.getItem('elv3MainTabLog') || '[]');
+            const logContainer = document.getElementById('mainLogEntries');
+            
+            if (logEntries.length === 0) {
+                logContainer.innerHTML = '<p style="text-align: center; color: #666; font-style: italic; font-size: 1em;">No log entries yet.</p>';
+                return;
+            }
+            
+            let html = '';
+            // Show only the last 5 entries for inline display
+            const recentEntries = logEntries.slice(0, 5);
+            recentEntries.forEach((entry, index) => {
+                html += `
+                    <div style="margin-bottom: 12px; padding: 10px; border: 1px solid var(--input-border); border-radius: 6px; background: var(--panel-bg);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <strong style="color: var(--text-color); font-size: 0.95em;">Entry #${logEntries.length - index}</strong>
+                            <span style="color: #666; font-size: 0.85em;">${entry.timestamp}</span>
+                        </div>
+                        
+                        <div style="font-size: 0.9em; line-height: 1.3;">
+                            ${entry.inputs.partNumber ? `<div><strong>Input:</strong> ${entry.inputs.partNumber} → <em>${entry.outputs.partNumberResult}</em></div>` : ''}
+                            ${entry.inputs.violatingCondition ? `<div><strong>Condition:</strong> ${entry.inputs.violatingCondition} → <em>${entry.outputs.violatingConditionResult}</em></div>` : ''}
+                            ${entry.inputs.suggestedRemedy ? `<div><strong>Remedy:</strong> ${entry.inputs.suggestedRemedy} → <em>${entry.outputs.suggestedRemedyResult}</em></div>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            if (logEntries.length > 5) {
+                html += `<p style="text-align: center; color: #666; font-style: italic; font-size: 0.9em;">Showing 5 most recent entries (${logEntries.length} total)</p>`;
+            }
+            
+            logContainer.innerHTML = html;
+        }
+
+        function clearMainLogEntries() {
+            if (confirm('Are you sure you want to clear all log entries? This action cannot be undone.')) {
+                localStorage.removeItem('elv3MainTabLog');
+                displayMainLogEntries(); // Refresh the inline display
+            }
+        }
+
+        // Device number search functions for ELV3 Lookup panel
+        function updateMainDeviceField(deviceNumber) {
+            // Update the main device number field in DOB tab if we're on DOB tab
+            const deviceInput = document.getElementById('deviceNumber');
+            if (deviceInput && deviceNumber) {
+                deviceInput.value = deviceNumber;
+            }
+        }
+
+        async function searchDeviceInLookup(deviceNumber) {
+            const resultDiv = document.getElementById('quickDeviceResult');
+            const quickBinValue = document.getElementById('quickBinValue');
+            
+            if (!deviceNumber || deviceNumber.trim() === '') {
+                resultDiv.style.display = 'none';
+                quickBinValue.textContent = '-';
+                updateBinDisplayStyle();
+                return;
+            }
+
+            // Show loading state
+            resultDiv.innerHTML = '<span style="color: var(--text-color); font-size: 12px;">Searching device...</span>';
+            resultDiv.style.display = 'block';
+
+            try {
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber.trim()}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.length === 0) {
+                    resultDiv.innerHTML = '<span style="color: #ff6b6b; font-size: 12px;">Device not found</span>';
+                    quickBinValue.textContent = '-';
+                    updateBinDisplayStyle();
+                    return;
+                }
+
+                const device = data[0];
+                const binNumber = device.bin || 'Not available';
+                const address = device.house_number && device.street_name ? 
+                    `${device.house_number} ${device.street_name}` : 'Address not available';
+
+                // Update BIN display
+                quickBinValue.textContent = binNumber;
+                updateBinDisplayStyle();
+
+                // Show device result
+                resultDiv.innerHTML = `
+                    <div style="font-size: 12px; line-height: 1.3;">
+                        <strong>BIN:</strong> ${binNumber}<br>
+                        <strong>Address:</strong> ${address}
+                    </div>
+                `;
+
+                // Also update the main DOB tab BIN field if it exists
+                const mainBinInput = document.getElementById('binNumber');
+                if (mainBinInput && binNumber !== 'Not available') {
+                    mainBinInput.value = binNumber;
+                }
+
+                // Automatically trigger the main DOB search for this device
+                if (typeof lookupBIN === 'function') {
+                    // Small delay to ensure the main device field is updated first
+                    setTimeout(() => {
+                        lookupBIN();
+                    }, 100);
+                }
+
+            } catch (error) {
+                console.error('Error searching device:', error);
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-size: 12px;">Error searching device</span>';
+                quickBinValue.textContent = '-';
+                updateBinDisplayStyle();
+            }
+        }
+
+        // Toggle device search dropdown
+        function toggleDeviceSearch() {
+            const fields = document.getElementById('deviceSearchFields');
+            const arrow = document.getElementById('deviceSearchArrow');
+            
+            if (fields.style.display === 'none' || fields.style.display === '') {
+                fields.style.display = 'block';
+                arrow.textContent = '▲';
+            } else {
+                fields.style.display = 'none';
+                arrow.textContent = '▼';
             }
         }
 
