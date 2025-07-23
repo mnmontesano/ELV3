@@ -911,43 +911,57 @@
         </div>
 
         <script>
-            function toggleExplanation(event) {
-                const explanationDiv = document.getElementById('explanationText');
-                const explanation = event.currentTarget.getAttribute('data-explanation');
+                    function toggleExplanation(event) {
+            const explanationDiv = document.getElementById('explanationText');
+            const explanation = event.currentTarget.getAttribute('data-explanation');
+            
+            if (explanationDiv.style.display === 'none') {
+                explanationDiv.textContent = explanation;
+                explanationDiv.style.display = 'block';
                 
-                if (explanationDiv.style.display === 'none') {
-                    explanationDiv.textContent = explanation;
-                    explanationDiv.style.display = 'block';
-                    
-                    // Position the explanation
-                    const rect = event.currentTarget.getBoundingClientRect();
-                    explanationDiv.style.position = 'relative';
-                    explanationDiv.style.zIndex = '1000';
-                    
-                    // Add animation
-                    explanationDiv.style.opacity = '0';
-                    explanationDiv.style.transform = 'translateY(-10px)';
-                    explanationDiv.style.transition = 'all 0.3s ease';
-                    
-                    // Trigger animation
-                    setTimeout(() => {
-                        explanationDiv.style.opacity = '1';
-                        explanationDiv.style.transform = 'translateY(0)';
-                    }, 10);
-                } else {
-                    // Add fade-out animation
-                    explanationDiv.style.opacity = '0';
-                    explanationDiv.style.transform = 'translateY(-10px)';
-                    
-                    // Hide after animation
-                    setTimeout(() => {
-                        explanationDiv.style.display = 'none';
-                    }, 300);
-                }
+                // Position the explanation
+                const rect = event.currentTarget.getBoundingClientRect();
+                explanationDiv.style.position = 'relative';
+                explanationDiv.style.zIndex = '1000';
                 
-                // Stop event propagation
-                event.stopPropagation();
+                // Add animation
+                explanationDiv.style.opacity = '0';
+                explanationDiv.style.transform = 'translateY(-10px)';
+                explanationDiv.style.transition = 'all 0.3s ease';
+                
+                // Trigger animation
+                setTimeout(() => {
+                    explanationDiv.style.opacity = '1';
+                    explanationDiv.style.transform = 'translateY(0)';
+                }, 10);
+            } else {
+                // Add fade-out animation
+                explanationDiv.style.opacity = '0';
+                explanationDiv.style.transform = 'translateY(-10px)';
+                
+                // Hide after animation
+                setTimeout(() => {
+                    explanationDiv.style.display = 'none';
+                }, 300);
             }
+            
+            // Stop event propagation
+            event.stopPropagation();
+        }
+
+        // Function to toggle Important dropdown
+        function toggleImportantDropdown(deviceNumber) {
+            const dropdown = document.getElementById('important_' + deviceNumber);
+            const arrow = document.querySelector(`[onclick="toggleImportantDropdown('${deviceNumber}')"] .arrow`);
+            
+            if (dropdown.style.display === 'none' || dropdown.style.display === '') {
+                dropdown.style.display = 'block';
+                if (arrow) arrow.style.transform = 'rotate(180deg)';
+            } else {
+                dropdown.style.display = 'none';
+                if (arrow) arrow.style.transform = 'rotate(0deg)';
+            }
+        }
             
             // Close explanation when clicking anywhere else on the page
             document.addEventListener('click', function(event) {
@@ -2330,6 +2344,30 @@
                             
                             ${deviceSpecsHTML}
                             
+                            <!-- Add Important dropdown for red devices -->
+                            ${allDatesAreSame ? `
+                                <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
+                                    <button onclick="toggleImportantDropdown('${device.device_number || deviceNumber}')"
+                                            style="width: 100%; padding: 10px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">
+                                        <span>⚠️ Important</span>
+                                        <span class="arrow">▼</span>
+                                    </button>
+                                    <div id="important_${device.device_number || deviceNumber}" style="display: none; margin-top: 10px; padding: 15px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b;">
+                                        <div style="margin-bottom: 8px;">
+                                            <strong style="color: #ff6b6b;">Data Quality Alert</strong>
+                                        </div>
+                                        <div style="margin-bottom: 8px;">
+                                            This device is highlighted in red because all three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate:
+                                        </div>
+                                        <ul style="margin: 0; padding-left: 20px; font-size: 13px;">
+                                            <li>Data entry issues</li>
+                                            <li>Database synchronization problems</li>
+                                            <li>Records requiring verification</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            ` : ''}
+                            
                             <!-- Add More Info button and dropdown -->
                             <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
                                 <button onclick="toggleMoreInfo('moreInfo_${device.device_number}')"
@@ -3066,7 +3104,9 @@
                                          data-device-status="REMOVED">
                                         <div style="padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid #ff6b6b; opacity: 0.8;">
                                             <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-                                                <div><strong style="color: var(--header-color);">Device #:</strong> <span style="${deviceNumberStyle}">${device.device_number}</span></div>
+                                                <div><strong style="color: var(--header-color);">Device #:</strong> 
+                                                    <span style="${deviceNumberStyle}">${device.device_number}</span>
+                                                </div>
                                                 <div style="display: flex; align-items: center; gap: 8px;">
                                                     <strong style="color: var(--header-color);">BIN:</strong> 
                                                     ${device.bin ? `
@@ -3142,6 +3182,28 @@
                                                     </div>
                                                 </div>
                                             ` : ''}
+                                            ${allDatesAreSame ? `
+                                                <div style="margin-top: 10px;">
+                                                    <button onclick="toggleImportantDropdown('${device.device_number}')"
+                                                            style="width: 100%; padding: 8px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.9em;">
+                                                        <span>⚠️ Important</span>
+                                                        <span class="arrow">▼</span>
+                                                    </button>
+                                                    <div id="important_${device.device_number}" style="display: none; margin-top: 8px; padding: 12px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b; font-size: 0.9em;">
+                                                        <div style="margin-bottom: 8px;">
+                                                            <strong style="color: #ff6b6b;">Data Quality Alert</strong>
+                                                        </div>
+                                                        <div style="margin-bottom: 8px;">
+                                                            This device is highlighted in red because all three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate:
+                                                        </div>
+                                                        <ul style="margin: 0; padding-left: 20px; font-size: 12px;">
+                                                            <li>Data entry issues</li>
+                                                            <li>Database synchronization problems</li>
+                                                            <li>Records requiring verification</li>
+                                                        </ul>
+                                                    </div>
+                                                </div>
+                                            ` : ''}
                                         </div>
                                     </div>
                                 `;
@@ -3214,7 +3276,9 @@
                                          data-device-status="${(device.device_status || '').toUpperCase()}">
                                         <div style="padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid var(--input-border);">
                                             <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-                                                <div><strong style="color: var(--header-color);">Device #:</strong> <span style="${deviceNumberStyle}">${device.device_number}</span></div>
+                                                <div><strong style="color: var(--header-color);">Device #:</strong> 
+                                                    <span style="${deviceNumberStyle}">${device.device_number}</span>
+                                                </div>
                                                 <div style="display: flex; align-items: center; gap: 8px;">
                                                     <strong style="color: var(--header-color);">BIN:</strong> 
                                                     ${device.bin ? `
@@ -3324,6 +3388,28 @@
                                                     </button>
                                                     <div id="permits_${device.device_number}" style="display: none; margin-top: 8px; 
                                                          padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
+                                                    </div>
+                                                </div>
+                                            ` : ''}
+                                            ${allDatesAreSame ? `
+                                                <div style="margin-top: 10px;">
+                                                    <button onclick="toggleImportantDropdown('${device.device_number}')"
+                                                            style="width: 100%; padding: 8px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.9em;">
+                                                        <span>⚠️ Important</span>
+                                                        <span class="arrow">▼</span>
+                                                    </button>
+                                                    <div id="important_${device.device_number}" style="display: none; margin-top: 8px; padding: 12px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b; font-size: 0.9em;">
+                                                        <div style="margin-bottom: 8px;">
+                                                            <strong style="color: #ff6b6b;">Data Quality Alert</strong>
+                                                        </div>
+                                                        <div style="margin-bottom: 8px;">
+                                                            This device is highlighted in red because all three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate:
+                                                        </div>
+                                                        <ul style="margin: 0; padding-left: 20px; font-size: 12px;">
+                                                            <li>Data entry issues</li>
+                                                            <li>Database synchronization problems</li>
+                                                            <li>Records requiring verification</li>
+                                                        </ul>
                                                     </div>
                                                 </div>
                                             ` : ''}
@@ -4634,6 +4720,30 @@
                             </div>
                             
                             ${deviceSpecsHTML}
+                            
+                            <!-- Add Important dropdown for red devices -->
+                            ${allDatesAreSame ? `
+                                <div style="margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
+                                    <button onclick="toggleImportantDropdown('${device.device_number || deviceNumber}')"
+                                            style="width: 100%; padding: 10px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">
+                                        <span>⚠️ Important</span>
+                                        <span class="arrow">▼</span>
+                                    </button>
+                                    <div id="important_${device.device_number || deviceNumber}" style="display: none; margin-top: 10px; padding: 15px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b;">
+                                        <div style="margin-bottom: 8px;">
+                                            <strong style="color: #ff6b6b;">Data Quality Alert</strong>
+                                        </div>
+                                        <div style="margin-bottom: 8px; color: #ffffff;">
+                                            This device is highlighted in red because all three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate:
+                                        </div>
+                                        <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #ffffff;">
+                                            <li>Data entry issues</li>
+                                            <li>Database synchronization problems</li>
+                                            <li>Records requiring verification</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            ` : ''}
                             
                         </div>`;
                 } else {
