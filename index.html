@@ -118,14 +118,14 @@
                            oninput="this.value = this.value.toUpperCase(); updateMainDeviceField(this.value); searchDeviceInLookup(this.value);"
                            style="flex: 1; padding: 8px 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 14px; box-sizing: border-box; height: 40px;">
                     <button onclick="refreshDeviceLookup()"
-                            style="padding: 8px 12px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.3s ease;"
+                            style="padding: 8px 12px; width: 40px; height: 40px; box-sizing: border-box; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.3s ease;"
                             title="Refresh Device Lookup">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
                         </svg>
                     </button>
                     <button onclick="clearDeviceLookup()"
-                            style="padding: 8px 12px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.3s ease;"
+                            style="padding: 8px 12px; width: 40px; height: 40px; box-sizing: border-box; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.3s ease;"
                             title="Clear Device Lookup">
                         ✕
                     </button>
@@ -6734,10 +6734,12 @@
 
         // Device number search functions for ELV3 Lookup panel
         function updateMainDeviceField(deviceNumber) {
-            // Update the main device number field in DOB tab if we're on DOB tab
+            // Update the main device number field in DOB tab if it exists
             const deviceInput = document.getElementById('deviceNumber');
-            if (deviceInput && deviceNumber) {
-                deviceInput.value = deviceNumber;
+            if (deviceInput) {
+                deviceInput.value = deviceNumber || '';
+                // Fire input event so any listeners can react to the change
+                deviceInput.dispatchEvent(new Event('input', { bubbles: true }));
             }
         }
 
@@ -6871,6 +6873,31 @@
                 quickDeviceInput.focus();
                 updateMainDeviceField('');
                 searchDeviceInLookup('');
+
+                // Also clear the main BIN input
+                const mainBinInput = document.getElementById('binNumber');
+                if (mainBinInput) {
+                    mainBinInput.value = '';
+                    mainBinInput.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+
+                // Also clear outputs on the main DOB page for both Device and BIN searches
+                const binResult = document.getElementById('binResult');
+                if (binResult) {
+                    binResult.innerHTML = '';
+                    binResult.style.display = 'none';
+                }
+
+                const deviceResult = document.getElementById('deviceResult');
+                if (deviceResult) {
+                    deviceResult.innerHTML = '';
+                    deviceResult.style.display = 'none';
+                }
+
+                const exportButton = document.getElementById('binExportButton');
+                if (exportButton) {
+                    exportButton.style.display = 'none';
+                }
             }
         }
 
