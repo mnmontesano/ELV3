@@ -22,8 +22,11 @@ function setTheme(theme) {
 }
 
 // Initialize the theme as early as possible
-const savedTheme = localStorage.getItem('theme') || 'system';
-setTheme(savedTheme);
+// Force system theme now that the manual menu has been removed
+try {
+    localStorage.setItem('theme', 'system');
+} catch (e) {}
+setTheme('system');
 
 // Also check when DOM is fully loaded
 document.addEventListener('DOMContentLoaded', function() {
