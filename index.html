@@ -7,27 +7,28 @@
     <link rel="icon" type="image/png" href="logo.png">
     <link rel="stylesheet" href="styles.css">
     
-    <!-- Inline theme detection to prevent flash -->
+    <!-- Inline theme application to prevent flash: always follow system -->
     <script>
         (function() {
-            const savedTheme = localStorage.getItem('theme') || 'system';
             document.documentElement.classList.remove('light-theme', 'dark-theme', 'system-theme');
-            
-            if (savedTheme === 'light') {
-                document.documentElement.classList.add('light-theme');
-            } else if (savedTheme === 'dark') {
-                document.documentElement.classList.add('dark-theme');
-            } else {
-                document.documentElement.classList.add('system-theme');
-            }
+            document.documentElement.classList.add('system-theme');
         })();
     </script>
     
     <script src="theme_script.js"></script>
 </head>
-<body>
+<body data-active-tab="main">
     <!-- Make sure this is right after the opening <body> tag -->
     <div id="quickLookupOverlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999;"></div>
+
+    <!-- Global DOB Now button (visible on all tabs/pages) -->
+    <button id="dobNowBtn" onclick="window.open('https://a810-dobnow.nyc.gov/publish/Index.html#!/', '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes,location=yes')" 
+            style="position: fixed; top: 80px; right: 20px; z-index: 999; padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: all 0.3s ease;">
+        <span class="button-text">DOB Now</span>
+        <svg class="button-icon" style="display: none; width: 20px; height: 20px;" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M14,3V5H17.59L7.76,14.83L9.17,16.24L19,6.41V10H21V3M19,19H5V5H12V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19Z"/>
+        </svg>
+    </button>
 
     <!-- Quick Lookup Panel moved here so it's available for all tabs -->
     <div style="position: fixed; top: 80px; right: 20px; width: 350px; max-width: calc(100% - 40px); max-height: calc(100vh - 100px); background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px var(--card-shadow); z-index: 1000; display: none; transition: all 0.3s ease; left: auto; overflow-y: auto; overflow-x: hidden;" id="quickLookupPanel">
@@ -219,14 +220,20 @@
                 </button>
             </div>
         </div>
-    </div>
 
-    <div class="dropdown">
-        <button onclick="toggleDropdown()" class="dropdown-button">Menu ☰</button>
-        <div id="dropdownContent" class="dropdown-content">
-            <button onclick="openSettings()">Settings</button>
+        <!-- ELV3 Reference section as dropdown inside Quick Lookup Panel -->
+        <div class="quick-reference-container" style="margin-top: 15px;">
+            <button onclick="toggleQuickReference()" id="quickReferenceToggle" class="filing-info-toggle">
+                <span>ELV3 Reference</span>
+                <span id="quickReferenceArrow" class="filing-info-arrow">▼</span>
+            </button>
+            <div id="quickReferenceFields" class="filing-info-fields" style="display: none;">
+                <div id="quickReferenceContent" style="max-height: 60vh; overflow-y: auto; padding: 10px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 8px; color: var(--text-color);"></div>
+            </div>
         </div>
     </div>
+
+    
 
     <div id="settingsModal" class="settings-modal">
         <h3>Settings</h3>
@@ -245,9 +252,7 @@
 
 
 
-    <a href="javascript:window.location.reload()">
-        <img src="https://github.com/mnmontesano/ELV3/blob/main/ELV3%20Cheat%20Sheet%20Icon.png?raw=true" alt="Logo" class="logo">
-    </a>
+    <img src="https://github.com/mnmontesano/ELV3/blob/main/ELV3%20Cheat%20Sheet%20Icon.png?raw=true" alt="Logo" class="logo">
     <h1 id="pageTitle">ELV3 Terminal</h1>
 
     <!-- Button-based Tabs (default for larger screens) -->
@@ -269,7 +274,15 @@
     </div>
 
     <div id="mainContent" class="content-section active">
-        <button class="toggle-reference" onclick="toggleReference()">ELV3 Reference</button>
+        <!-- Add ELV3 Lookup toggle button for Main tab -->
+        <button onclick="toggleQuickLookup()" 
+                style="position: fixed; top: 20px; right: 20px; z-index: 999; padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: all 0.3s ease;">
+            <span class="button-text">ELV3 Lookup</span>
+            <svg class="button-icon" style="display: none; width: 20px; height: 20px;" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M12,12V14H7V12H12M15,15V17H7V15H15Z"/>
+            </svg>
+        </button>
+        
         <div class="main-container">
             <div class="main-left">
                 <div class="input-group">
@@ -595,14 +608,7 @@
             </svg>
         </button>
 
-        <!-- Add DOB Now button -->
-        <button id="dobNowBtn" onclick="window.open('https://a810-dobnow.nyc.gov/publish/Index.html#!/', '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes,location=yes')" 
-                style="position: fixed; top: 80px; right: 20px; z-index: 999; padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: all 0.3s ease;">
-            <span class="button-text">DOB Now</span>
-            <svg class="button-icon" style="display: none; width: 20px; height: 20px;" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M14,3V5H17.59L7.76,14.83L9.17,16.24L19,6.41V10H21V3M19,19H5V5H12V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19Z"/>
-            </svg>
-        </button>
+        
 
         <!-- Replace the Device & BIN Lookup section -->
         <div style="max-width: 800px; margin: 20px auto; padding: 20px; background: var(--card-bg); border-radius: 5px; box-shadow: 0 2px 8px var(--card-shadow);">
@@ -985,6 +991,14 @@
     </div>
 
     <div id="pdfContent" class="content-section">
+        <!-- Add ELV3 Lookup toggle button for PDF tab -->
+        <button onclick="toggleQuickLookup()" 
+                style="position: fixed; top: 20px; right: 20px; z-index: 999; padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: all 0.3s ease;">
+            <span class="button-text">ELV3 Lookup</span>
+            <svg class="button-icon" style="display: none; width: 20px; height: 20px;" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M12,12V14H7V12H12M15,15V17H7V15H15Z"/>
+            </svg>
+        </button>
         <div class="pdf-viewer" style="width: 100%; height: 80vh;">
             <iframe src="DOB ELV3 - CAT.pdf#view=FitH&zoom=100" type="application/pdf" width="100%" height="100%" 
                 onerror="this.innerHTML='<p>PDF failed to load. Please ensure the file exists.</p>'">
@@ -1541,6 +1555,36 @@
             }
         }
 
+        // Function to toggle Quick ELV3 Reference dropdown
+        function toggleQuickReference() {
+            const fieldsContainer = document.getElementById('quickReferenceFields');
+            const arrow = document.getElementById('quickReferenceArrow');
+            
+            if (fieldsContainer.style.display === 'none' || fieldsContainer.style.display === '') {
+                fieldsContainer.style.display = 'block';
+                if (arrow) arrow.style.transform = 'rotate(180deg)';
+            } else {
+                fieldsContainer.style.display = 'none';
+                if (arrow) arrow.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // Populate Quick ELV3 Reference content from the main reference panel
+        document.addEventListener('DOMContentLoaded', function() {
+            const quickRefContent = document.getElementById('quickReferenceContent');
+            const sourcePanel = document.querySelector('.reference-panel');
+            if (quickRefContent && sourcePanel && quickRefContent.childElementCount === 0) {
+                const fragment = document.createDocumentFragment();
+                Array.from(sourcePanel.children).forEach((child) => {
+                    // Skip close button and title
+                    if (child.classList && child.classList.contains('close-reference')) return;
+                    if (child.tagName === 'H3') return;
+                    fragment.appendChild(child.cloneNode(true));
+                });
+                quickRefContent.appendChild(fragment);
+            }
+        });
+
         // Function to clear Notes field
         function clearNotes() {
             const notesField = document.getElementById('Notes');
@@ -1573,6 +1617,9 @@
             if (tabName === 'dob') {
                 fetchAPILastUpdateDate();
             }
+
+            // Tag body with active tab for CSS-driven layout tweaks
+            document.body.setAttribute('data-active-tab', tabName);
         }
 
         function updatePageTitle(tabName) {
@@ -1704,6 +1751,18 @@
                         calculateCustomDate();
                     }
                 });
+            }
+
+            // Ensure body has data-active-tab set based on currently active section
+            if (!document.body.getAttribute('data-active-tab')) {
+                const activeSection = document.querySelector('.content-section.active');
+                if (activeSection && activeSection.id.endsWith('Content')) {
+                    const tabName = activeSection.id.replace('Content', '');
+                    document.body.setAttribute('data-active-tab', tabName);
+                } else {
+                    // Fallback to main
+                    document.body.setAttribute('data-active-tab', 'main');
+                }
             }
         }
 
@@ -2037,10 +2096,7 @@
                  <div style="margin-top: 5px;">(${spelledDate})</div>`;
         }
 
-        function toggleDropdown() {
-            const dropdown = document.getElementById('dropdownContent');
-            dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
-        }
+        // Removed dropdown menu; function no longer needed
 
         function openSettings() {
             const modal = document.getElementById('settingsModal');
