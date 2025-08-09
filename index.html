@@ -587,7 +587,7 @@
         <!-- The quickLookupPanel has been moved outside the tab for access from any tab -->
         
         <!-- Add ELV3 Lookup toggle button -->
-        <button onclick="toggleQuickLookup()" 
+        <button id="dobLookupToggleBtn" onclick="toggleQuickLookup()" 
                 style="position: fixed; top: 20px; right: 20px; z-index: 999; padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: all 0.3s ease;">
             <span class="button-text">ELV3 Lookup</span>
             <svg class="button-icon" style="display: none; width: 20px; height: 20px;" viewBox="0 0 24 24" fill="currentColor">
@@ -596,7 +596,7 @@
         </button>
 
         <!-- Add DOB Now button -->
-        <button onclick="window.open('https://a810-dobnow.nyc.gov/publish/Index.html#!/', '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes,location=yes')" 
+        <button id="dobNowBtn" onclick="window.open('https://a810-dobnow.nyc.gov/publish/Index.html#!/', '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes,location=yes')" 
                 style="position: fixed; top: 80px; right: 20px; z-index: 999; padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: all 0.3s ease;">
             <span class="button-text">DOB Now</span>
             <svg class="button-icon" style="display: none; width: 20px; height: 20px;" viewBox="0 0 24 24" fill="currentColor">
@@ -5552,14 +5552,40 @@
         function toggleQuickLookup() {
             const panel = document.getElementById('quickLookupPanel');
             const overlay = document.getElementById('quickLookupOverlay');
-            
-            if (panel.style.display === 'none' || panel.style.display === '') {
+            const dobContent = document.getElementById('dobContent');
+            const isDOBActive = dobContent && dobContent.classList.contains('active');
+            const dobLookupToggleBtn = document.getElementById('dobLookupToggleBtn');
+            const dobNowBtn = document.getElementById('dobNowBtn');
+
+            const opening = (panel.style.display === 'none' || panel.style.display === '');
+
+            if (opening) {
                 panel.style.display = 'block';
-                overlay.style.display = 'block';
-                
-                // Prevent background scrolling when panel is open
-                document.body.style.overflow = 'hidden';
-                
+
+                // If we're on the DOB tab on a wide screen, shift the page and keep overlay hidden
+                if (isDOBActive && window.innerWidth > 900) {
+                    document.body.classList.add('dob-shifted-for-lookup');
+                    dobContent.classList.add('dob-shifted-for-lookup');
+                    // Use CSS class spacing; clear any inline margins
+                    dobContent.style.marginRight = '';
+                    dobContent.style.marginLeft = '';
+
+                    // Do not block background interaction on DOB layout
+                    overlay.style.display = 'none';
+                    document.body.style.overflow = '';
+                } else {
+                    // Mobile or other tabs: use overlay to focus the panel
+                    overlay.style.display = 'block';
+                    // Prevent background scrolling when overlay is used
+                    document.body.style.overflow = 'hidden';
+                }
+
+                // Hide the floating DOB buttons while panel is open on DOB tab (all sizes)
+                if (isDOBActive) {
+                    if (dobLookupToggleBtn) dobLookupToggleBtn.style.display = 'none';
+                    if (dobNowBtn) dobNowBtn.style.display = 'none';
+                }
+
                 // Position panel based on screen width
                 if (window.innerWidth <= 600) {
                     panel.classList.add('panel-centered-mobile');
@@ -5569,32 +5595,44 @@
                     panel.style.left = 'auto';
                     panel.style.margin = '0';
                 }
-                
+
                 // Add a small delay before adding opacity for smooth transition
                 setTimeout(() => {
-                    overlay.style.opacity = '1';
+                    if (overlay.style.display === 'block') overlay.style.opacity = '1';
                     panel.style.opacity = '1';
                     panel.style.transform = 'translateY(0)';
                 }, 10);
-                
+
                 // Ensure the panel is visible regardless of which tab is active
-                panel.style.zIndex = '2000'; // Higher than any tab content
-                
+                panel.style.zIndex = '2000';
+
                 // Bring the panel to the front of all content sections
                 document.querySelectorAll('.content-section').forEach(section => {
                     if (panel.parentElement === section) {
-                        // If the panel is inside this section, move it to the body
                         document.body.appendChild(panel);
                     }
                 });
             } else {
+                // Closing
+                if (isDOBActive) {
+                    document.body.classList.remove('dob-shifted-for-lookup');
+                    if (dobContent) dobContent.classList.remove('dob-shifted-for-lookup');
+                    if (dobContent) {
+                        dobContent.style.marginRight = '';
+                        dobContent.style.marginLeft = '';
+                    }
+                }
+                // Show the floating DOB buttons again
+                if (dobLookupToggleBtn) dobLookupToggleBtn.style.display = '';
+                if (dobNowBtn) dobNowBtn.style.display = '';
+
                 // Restore background scrolling when panel is closed
                 document.body.style.overflow = '';
-                
+
                 overlay.style.opacity = '0';
                 panel.style.opacity = '0';
                 panel.style.transform = 'translateY(-20px)';
-                
+
                 // Wait for transition to complete before hiding
                 setTimeout(() => {
                     panel.style.display = 'none';
@@ -5758,6 +5796,11 @@
             const buttonIcons = document.querySelectorAll('.button-icon');
             const lookupButton = document.querySelector('button[onclick="toggleQuickLookup()"]');
             const panel = document.getElementById('quickLookupPanel');
+            const dobContent = document.getElementById('dobContent');
+            const dobLookupToggleBtn = document.getElementById('dobLookupToggleBtn');
+            const dobNowBtn = document.getElementById('dobNowBtn');
+            const isDOBActive = dobContent && dobContent.classList.contains('active');
+            const panelOpen = panel && panel.style.display === 'block';
             
             if (window.innerWidth < 600) {
                 buttonTexts.forEach(buttonText => {
@@ -5776,6 +5819,46 @@
                 // Reposition panel if it's visible
                 if (panel && panel.style.display === 'block') {
                     panel.classList.add('panel-centered-mobile');
+                }
+                // Hide DOB buttons if panel open on DOB
+                if (isDOBActive && panelOpen) {
+                    if (dobLookupToggleBtn) dobLookupToggleBtn.style.display = 'none';
+                    if (dobNowBtn) dobNowBtn.style.display = 'none';
+                }
+            } else if (window.innerWidth <= 900) {
+                // Medium screens: remove body/content shift; keep overlay behavior
+                document.body.classList.remove('dob-shifted-for-lookup');
+                if (dobContent) dobContent.classList.remove('dob-shifted-for-lookup');
+                if (dobContent) {
+                    dobContent.style.marginRight = '';
+                    dobContent.style.marginLeft = '';
+                }
+                
+                buttonTexts.forEach(buttonText => {
+                    buttonText.style.display = 'block';
+                });
+                buttonIcons.forEach(buttonIcon => {
+                    buttonIcon.style.display = 'none';
+                });
+                if (lookupButton) {
+                    lookupButton.style.padding = '12px 20px';
+                    lookupButton.style.borderRadius = '4px';
+                    lookupButton.style.width = 'auto';
+                    lookupButton.style.height = 'auto';
+                }
+                if (panel && panel.style.display === 'block') {
+                    panel.classList.remove('panel-centered-mobile');
+                    panel.style.right = '20px';
+                    panel.style.left = 'auto';
+                    panel.style.margin = '0';
+                }
+                // Hide DOB buttons if panel open on DOB
+                if (isDOBActive && panelOpen) {
+                    if (dobLookupToggleBtn) dobLookupToggleBtn.style.display = 'none';
+                    if (dobNowBtn) dobNowBtn.style.display = 'none';
+                } else {
+                    if (dobLookupToggleBtn) dobLookupToggleBtn.style.display = '';
+                    if (dobNowBtn) dobNowBtn.style.display = '';
                 }
             } else {
                 buttonTexts.forEach(buttonText => {
@@ -5797,6 +5880,21 @@
                     panel.style.right = '20px';
                     panel.style.left = 'auto';
                     panel.style.margin = '0';
+                }
+                // If panel open on DOB, compute centered margins and hide buttons
+                if (isDOBActive && panelOpen) {
+                    // Ensure inline margins cleared; class drives spacing
+                    dobContent.style.marginRight = '';
+                    dobContent.style.marginLeft = '';
+                    if (dobLookupToggleBtn) dobLookupToggleBtn.style.display = 'none';
+                    if (dobNowBtn) dobNowBtn.style.display = 'none';
+                } else {
+                    if (dobContent) {
+                        dobContent.style.marginRight = '';
+                        dobContent.style.marginLeft = '';
+                    }
+                    if (dobLookupToggleBtn) dobLookupToggleBtn.style.display = '';
+                    if (dobNowBtn) dobNowBtn.style.display = '';
                 }
             }
         }
