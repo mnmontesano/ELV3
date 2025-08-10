@@ -12,8 +12,37 @@
         (function() {
             document.documentElement.classList.remove('light-theme', 'dark-theme', 'system-theme');
             document.documentElement.classList.add('system-theme');
+            // Pre-detect popout to avoid flashing the full UI
+            try {
+                var params = new URLSearchParams(window.location.search);
+                if (params.get('popout') === 'lookup') {
+                    document.documentElement.classList.add('lookup-popout-boot');
+                }
+            } catch (e) {}
         })();
     </script>
+    <style>
+        /* Ensure only the ELV3 Lookup panel shows in popout mode, with minimal flash */
+        html.lookup-popout-boot body { max-width: none !important; margin: 0 !important; padding: 0 !important; }
+        html.lookup-popout-boot body > *:not(#quickLookupPanel) { display: none !important; }
+        html.lookup-popout-boot #quickLookupPanel {
+            display: block !important;
+            position: fixed !important;
+            top: 24px !important;
+            left: 50% !important;
+            right: auto !important;
+            bottom: auto !important;
+            transform: translateX(-50%) !important;
+            width: min(440px, 100% - 32px) !important;
+            max-height: calc(100vh - 48px) !important;
+            overflow-y: auto !important;
+            border-radius: 12px !important;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2) !important;
+            padding: 16px !important;
+            opacity: 1 !important;
+            z-index: 1 !important;
+        }
+    </style>
     
     <script src="theme_script.js"></script>
 </head>
@@ -32,7 +61,8 @@
 
     <!-- Quick Lookup Panel moved here so it's available for all tabs -->
     <div style="position: fixed; top: 80px; right: 20px; width: 350px; max-width: calc(100% - 40px); max-height: calc(100vh - 100px); background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px var(--card-shadow); z-index: 1000; display: none; transition: all 0.3s ease; left: auto; overflow-y: auto; overflow-x: hidden;" id="quickLookupPanel">
-        <button onclick="toggleQuickLookup()" style="position: absolute; right: 10px; top: 10px; background: none; border: none; color: #ff6b6b; font-size: 24px; cursor: pointer; transition: color 0.2s;">×</button>
+        <button onclick="popoutQuickLookup()" title="Open in new window" style="position: absolute; right: 44px; top: 10px; background: none; border: none; color: var(--text-color); font-size: 20px; cursor: pointer; transition: color 0.2s; line-height: 1;" aria-label="Pop out">⤢</button>
+        <button onclick="toggleQuickLookup()" style="position: absolute; right: 10px; top: 10px; background: none; border: none; color: #ff6b6b; font-size: 20px; cursor: pointer; transition: color 0.2s; line-height: 1;">×</button>
         <h3 style="color: var(--text-color); margin-bottom: 15px; text-align: center;">ELV3 Lookup</h3>
         
         <!-- ELV3 Lookup Fields -->
@@ -5700,6 +5730,61 @@
         // Add click handler to close panel when clicking overlay
         document.getElementById('quickLookupOverlay').addEventListener('click', function() {
             toggleQuickLookup();
+        });
+
+        // Open the ELV3 Lookup panel in a dedicated window
+        function popoutQuickLookup() {
+            try {
+                const url = new URL(window.location.href);
+                url.searchParams.set('popout', 'lookup');
+                const features = 'width=440,height=720,resizable=yes,scrollbars=yes';
+                window.open(url.toString(), '_blank', features);
+            } catch (e) {
+                // Fallback if URL API not supported
+                const href = window.location.href + (window.location.search ? '&' : '?') + 'popout=lookup';
+                window.open(href, '_blank', 'width=440,height=720,resizable=yes,scrollbars=yes');
+            }
+        }
+
+        // If opened with popout=lookup, render only the ELV3 Lookup panel full-screen
+        document.addEventListener('DOMContentLoaded', function() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('popout') === 'lookup') {
+                document.body.classList.add('lookup-popout-mode');
+
+                const panel = document.getElementById('quickLookupPanel');
+                const overlay = document.getElementById('quickLookupOverlay');
+
+                if (panel) {
+                    panel.style.display = 'block';
+                    panel.style.opacity = '1';
+                    panel.style.transform = 'none';
+                    panel.style.zIndex = '1';
+
+                    // Make the close button close the window in popout mode
+                    const closeBtn = panel.querySelector('button[onclick="toggleQuickLookup()"]');
+                    if (closeBtn) {
+                        closeBtn.title = 'Close window';
+                        closeBtn.onclick = function() { window.close(); };
+                    }
+                    // Reposition popout icon away from the edge in popout mode and align with X
+                    const popBtn = panel.querySelector('button[onclick="popoutQuickLookup()"]');
+                    if (popBtn) {
+                        popBtn.style.right = '44px';
+                        popBtn.style.top = '10px';
+                        popBtn.style.fontSize = '20px';
+                    }
+                }
+                if (overlay) {
+                    overlay.style.display = 'none';
+                }
+
+                // Hide everything except the panel
+                const hideSelectors = ['.content-section', '#dobNowBtn'];
+                hideSelectors.forEach(sel => {
+                    document.querySelectorAll(sel).forEach(el => { el.style.display = 'none'; });
+                });
+            }
         });
 
         // Add scroll event handling to prevent background scrolling
