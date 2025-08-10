@@ -33,7 +33,7 @@ function openDOBNowDeviceLookup(deviceNumber, binNumber = null) {
                     binNumber: binNumber
                 }, 'https://a810-dobnow.nyc.gov');
             } catch (error) {
-                console.log('Cross-origin communication not available, user will need to search manually');
+                // Cross-origin communication not available, user will need to search manually
             }
         }, 3000);
 
