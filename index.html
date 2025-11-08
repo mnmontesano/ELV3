@@ -3552,12 +3552,75 @@
             `;
         }
 
+        // Helper function to calculate test status for sorting
+        function calculateTestStatusForSorting(device) {
+            const currentYear = new Date().getFullYear();
+            const today = new Date();
+            
+            const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+            const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+            const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+            
+            const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+            const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
+            
+            const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+            
+            let requiresCat5 = false;
+            if (cat5Date) {
+                const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
+                requiresCat5 = yearsSinceCat5 >= 5;
+            }
+            
+            let hasCategoryTestThisYear = false;
+            if (requiresCat5) {
+                hasCategoryTestThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
+            } else {
+                hasCategoryTestThisYear = (cat1Date && cat1Date.getFullYear() === currentYear) || 
+                                          (cat5Date && cat5Date.getFullYear() === currentYear);
+            }
+            
+            const isDismantled = device.device_status && device.device_status.toUpperCase() === 'DISMANTLED';
+            const bothTestsCompleted = hasPVIThisYear && hasCategoryTestThisYear;
+            const cat5NotRequired = !requiresCat5;
+            const dismantledCompleted = isDismantled && hasPVIThisYear;
+            
+            if ((bothTestsCompleted && cat5NotRequired) || dismantledCompleted) {
+                const relevantDate = isDismantled ? pviDate : mostRecentDate;
+                const testYear = relevantDate ? relevantDate.getFullYear() : null;
+                
+                if (testYear === currentYear && today.getFullYear() === currentYear) {
+                    return 'Completed';
+                } else {
+                    const eligibilityDate = isDismantled ? pviDate : mostRecentDate;
+                    return isEligibleForTesting(eligibilityDate) ? 'Eligible' : 'Not Eligible';
+                }
+            } else {
+                return isEligibleForTesting(mostRecentDate) ? 'Eligible' : 'Not Eligible';
+            }
+        }
+
         // Update the generateDeviceTypeSection function
         async function generateDeviceTypeSection(type, devices, violationsByDevice = {}) {
             // First, fetch all permit data for the devices
             const devicePermits = await Promise.all(
                 devices.map(device => fetchPermitInfo(device.device_number))
             );
+
+            // Create array with devices, permits, and status for sorting
+            const devicesWithStatus = devices.map((device, index) => ({
+                device: device,
+                permit: devicePermits[index],
+                status: calculateTestStatusForSorting(device)
+            }));
+
+            // Sort devices: "Not Eligible" first, then "Completed", then others
+            devicesWithStatus.sort((a, b) => {
+                const statusOrder = { 'Not Eligible': 0, 'Completed': 1, 'Eligible': 2 };
+                const orderA = statusOrder[a.status] !== undefined ? statusOrder[a.status] : 3;
+                const orderB = statusOrder[b.status] !== undefined ? statusOrder[b.status] : 3;
+                return orderA - orderB;
+            });
 
             return `
                 <div class="device-type-section" data-device-type="${type}">
@@ -3566,7 +3629,9 @@
                             <strong style="color: var(--header-color);">${type} (${devices.length}):</strong>
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 10px;">
-                            ${devices.map((device, index) => {
+                            ${devicesWithStatus.map((item, index) => {
+                                const device = item.device;
+                                const permitData = item.permit;
                                 // Get violations for this device
                                 const deviceViolations = violationsByDevice[device.device_number] || [];
                                 const activeViolations = deviceViolations.filter(v => 
@@ -3574,8 +3639,7 @@
                                     v.violation_status?.toUpperCase() === 'OPEN');
                                 const violationCount = activeViolations.length;
                                 
-                                // Get the pre-fetched permit data
-                                const permitData = devicePermits[index];
+                                // Get the pre-fetched permit data (already from sorted array)
                                 const hasPermits = permitData.success && permitData.permits && permitData.permits.length > 0;
 
                                 // Calculate most recent inspection date
@@ -3595,9 +3659,93 @@
                                 const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
                                 const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
                                 
-                                // Calculate test eligibility
-                                const isEligible = isEligibleForTesting(mostRecentDate);
+                                // Calculate test status based on new requirements
+                                const currentYear = new Date().getFullYear();
                                 const today = new Date();
+                                
+                                // Check if periodic inspection was done this year
+                                const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+                                
+                                // Check if CAT 5 is required this year
+                                let requiresCat5 = false;
+                                if (cat5Date) {
+                                    const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
+                                    requiresCat5 = yearsSinceCat5 >= 5;
+                                }
+                                // If no CAT 5 date exists, CAT 5 is not required (CAT 1 is acceptable)
+                                
+                                // Determine if a valid category test was completed this year
+                                let hasCategoryTestThisYear = false;
+                                if (requiresCat5) {
+                                    // CAT 5 is required, so only CAT 5 done this year counts
+                                    hasCategoryTestThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
+                                } else {
+                                    // CAT 5 not required, so CAT 1 or CAT 5 done this year counts
+                                    hasCategoryTestThisYear = (cat1Date && cat1Date.getFullYear() === currentYear) || 
+                                                              (cat5Date && cat5Date.getFullYear() === currentYear);
+                                }
+                                
+                                // Check if device is dismantled
+                                const isDismantled = device.device_status && device.device_status.toUpperCase() === 'DISMANTLED';
+                                
+                                // Check if both tests completed and CAT 5 not required
+                                const bothTestsCompleted = hasPVIThisYear && hasCategoryTestThisYear;
+                                const cat5NotRequired = !requiresCat5;
+                                
+                                // For dismantled devices, only PVI is required
+                                const dismantledCompleted = isDismantled && hasPVIThisYear;
+                                
+                                // Determine test status
+                                let testStatus = 'Not Eligible';
+                                let testStatusColor = '#ff6b6b';
+                                let testStatusIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                                            </svg>`;
+                                let isEligible = false;
+                                
+                                // Check for completed status (either both tests for regular devices, or PVI for dismantled)
+                                if ((bothTestsCompleted && cat5NotRequired) || dismantledCompleted) {
+                                    // Check if we're still in the same calendar year as the tests
+                                    // For dismantled devices, use PVI date; for regular devices, use most recent date
+                                    const relevantDate = isDismantled ? pviDate : mostRecentDate;
+                                    const testYear = relevantDate ? relevantDate.getFullYear() : null;
+                                    
+                                    if (testYear === currentYear && today.getFullYear() === currentYear) {
+                                        // Still in the same calendar year as the tests - show "Completed"
+                                        testStatus = 'Completed';
+                                        testStatusColor = '#4CAF50';
+                                        testStatusIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                                                            </svg>`;
+                                    } else {
+                                        // Calendar year has ended - check eligibility based on 91 days rule
+                                        // For dismantled devices, use PVI date; for regular devices, use most recent date
+                                        const eligibilityDate = isDismantled ? pviDate : mostRecentDate;
+                                        isEligible = isEligibleForTesting(eligibilityDate);
+                                        testStatus = isEligible ? 'Eligible' : 'Not Eligible';
+                                        testStatusColor = isEligible ? '#4CAF50' : '#ff6b6b';
+                                        testStatusIcon = isEligible ? 
+                                            `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                                            </svg>` :
+                                            `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                            </svg>`;
+                                    }
+                                } else {
+                                    // Standard eligibility check
+                                    isEligible = isEligibleForTesting(mostRecentDate);
+                                    testStatus = isEligible ? 'Eligible' : 'Not Eligible';
+                                    testStatusColor = isEligible ? '#4CAF50' : '#ff6b6b';
+                                    testStatusIcon = isEligible ? 
+                                        `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                                        </svg>` :
+                                        `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                        </svg>`;
+                                }
+                                
                                 const daysSinceInspection = mostRecentDate ? 
                                     Math.floor((today - mostRecentDate) / (1000 * 60 * 60 * 24)) : null;
                                 
@@ -3637,40 +3785,36 @@
                                                 <div><strong style="color: var(--header-color);">Status:</strong> ${device.device_status || 'N/A'}</div>
                                                 <div style="display: flex; align-items: center; gap: 8px;">
                                                     <strong style="color: var(--header-color);">Test Status:</strong>
-                                                    <span data-test-status="${isEligible}" style="padding: 4px 8px; border-radius: 4px; background: ${isEligible ? '#4CAF50' : '#ff6b6b'}; color: white; font-size: 0.9em; display: flex; align-items: center; gap: 4px;">
-                                                        ${isEligible ? 
-                                                            `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                                                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                                                            </svg>Eligible` : 
-                                                            `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                                                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
-                                                            </svg>Not Eligible`}
+                                                    <span data-test-status="${isEligible}" style="padding: 4px 8px; border-radius: 4px; background: ${testStatusColor}; color: white; font-size: 0.9em; display: flex; align-items: center; gap: 4px;">
+                                                        ${testStatusIcon}${testStatus}
                                                     </span>
                                                 </div>
                                             </div>
                                             ${mostRecentDate ? `
-                                                <div style="margin-top: 12px; margin-bottom: 12px; color: ${isEligible ? '#4CAF50' : '#ff6b6b'};">
+                                                <div style="margin-top: 12px; margin-bottom: 12px; color: ${testStatusColor};">
                                                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                                                         <span>Last Inspection: ${mostRecentDate.toLocaleDateString()}</span>
                                                         <span style="padding: 2px 6px; background: var(--panel-bg); border-radius: 3px; color: var(--header-color);">${lastInspectionType}</span>
                                                         <span>• ${daysSinceInspection} days ago</span>
                                                     </div>
-                                                    <div style="margin-bottom: 8px; color: ${isEligible ? '#4CAF50' : '#ff6b6b'};">
-                                                        ${isEligible ? 
-                                                            `Eligible for testing since: ${new Date(mostRecentDate.getTime() + (91 * 24 * 60 * 60 * 1000)).toLocaleDateString('en-US', { 
-                                                                weekday: 'long',
-                                                                year: 'numeric',
-                                                                month: 'long',
-                                                                day: 'numeric'
-                                                            })}` : 
-                                                            `Will be eligible for testing on: ${new Date(mostRecentDate.getTime() + (91 * 24 * 60 * 60 * 1000)).toLocaleDateString('en-US', { 
-                                                                weekday: 'long',
-                                                                year: 'numeric',
-                                                                month: 'long',
-                                                                day: 'numeric'
-                                                            })}`
-                                                        }
-                                                    </div>
+                                                    ${testStatus !== 'Completed' ? `
+                                                        <div style="margin-bottom: 8px; color: ${testStatusColor};">
+                                                            ${isEligible ? 
+                                                                `Eligible for testing since: ${new Date(mostRecentDate.getTime() + (91 * 24 * 60 * 60 * 1000)).toLocaleDateString('en-US', { 
+                                                                    weekday: 'long',
+                                                                    year: 'numeric',
+                                                                    month: 'long',
+                                                                    day: 'numeric'
+                                                                })}` : 
+                                                                `Will be eligible for testing on: ${new Date(mostRecentDate.getTime() + (91 * 24 * 60 * 60 * 1000)).toLocaleDateString('en-US', { 
+                                                                    weekday: 'long',
+                                                                    year: 'numeric',
+                                                                    month: 'long',
+                                                                    day: 'numeric'
+                                                                })}`
+                                                            }
+                                                        </div>
+                                                    ` : ''}
                                                     ${cat5Date ? `
                                                         <div style="margin-bottom: 8px; color: var(--text-color);">
                                                             Next CAT 5 test required: ${new Date(cat5Date.getTime() + (5 * 365 * 24 * 60 * 60 * 1000)).toLocaleDateString('en-US', { 
