@@ -3983,20 +3983,48 @@
                                                     </div>
                                                     ${testStatus !== 'Completed' ? `
                                                         <div style="margin-bottom: 8px; color: ${testStatusColor};">
-                                                            ${isEligible ? 
-                                                                `Eligible for testing since: ${new Date(mostRecentDate.getTime() + (91 * 24 * 60 * 60 * 1000)).toLocaleDateString('en-US', { 
+                                                            ${(() => {
+                                                                // Determine which test is required next
+                                                                let requiredTest = '';
+                                                                if (isDismantled) {
+                                                                    // For dismantled devices, only PVI is required
+                                                                    requiredTest = !hasPVIThisYear ? 'PVI' : '';
+                                                                } else {
+                                                                    // For regular devices, check what's missing for current year
+                                                                    if (!hasPVIThisYear && !hasCategoryTestThisYear) {
+                                                                        // Both tests missing - determine which category test is needed
+                                                                        requiredTest = requiresCat5 ? 'CAT 5 and PVI' : 'CAT 1 and PVI';
+                                                                    } else if (!hasPVIThisYear) {
+                                                                        // Only PVI missing
+                                                                        requiredTest = 'PVI';
+                                                                    } else if (!hasCategoryTestThisYear) {
+                                                                        // Only category test missing
+                                                                        requiredTest = requiresCat5 ? 'CAT 5' : 'CAT 1';
+                                                                    } else {
+                                                                        // Both tests completed this year, but past calendar year - both required again
+                                                                        // This handles the case where tests were done last year
+                                                                        requiredTest = requiresCat5 ? 'CAT 5 and PVI' : 'CAT 1 and PVI';
+                                                                    }
+                                                                }
+                                                                
+                                                                const eligibilityDate = new Date(mostRecentDate.getTime() + (91 * 24 * 60 * 60 * 1000));
+                                                                const formattedDate = eligibilityDate.toLocaleDateString('en-US', { 
                                                                     weekday: 'long',
                                                                     year: 'numeric',
                                                                     month: 'long',
                                                                     day: 'numeric'
-                                                                })}` : 
-                                                                `Will be eligible for testing on: ${new Date(mostRecentDate.getTime() + (91 * 24 * 60 * 60 * 1000)).toLocaleDateString('en-US', { 
-                                                                    weekday: 'long',
-                                                                    year: 'numeric',
-                                                                    month: 'long',
-                                                                    day: 'numeric'
-                                                                })}`
-                                                            }
+                                                                });
+                                                                
+                                                                if (isEligible) {
+                                                                    return requiredTest ? 
+                                                                        `Eligible for ${requiredTest} testing since: ${formattedDate}` :
+                                                                        `Eligible for testing since: ${formattedDate}`;
+                                                                } else {
+                                                                    return requiredTest ? 
+                                                                        `Will be eligible for ${requiredTest} testing on: ${formattedDate}` :
+                                                                        `Will be eligible for testing on: ${formattedDate}`;
+                                                                }
+                                                            })()}
                                                         </div>
                                                     ` : ''}
                                                     ${cat5Date ? `
