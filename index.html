@@ -3561,6 +3561,15 @@
             const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
             const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
             
+            // Check if all dates are the same (acceptance test indicator)
+            const allDatesAreSame = cat1Date && cat5Date && pviDate &&
+                cat1Date.getTime() === cat5Date.getTime() &&
+                cat5Date.getTime() === pviDate.getTime();
+            
+            // Check if acceptance test was done in a previous year
+            const acceptanceTestInPreviousYear = allDatesAreSame && 
+                cat1Date.getFullYear() < currentYear;
+            
             const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
             const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
             
@@ -3585,13 +3594,33 @@
             const cat5NotRequired = !requiresCat5;
             const dismantledCompleted = isDismantled && hasPVIThisYear;
             
-            if ((bothTestsCompleted && cat5NotRequired) || dismantledCompleted) {
+            // If acceptance test was done in previous year, both tests are required in new year
+            // So we can't show "Completed" unless both tests are done in current year
+            if (acceptanceTestInPreviousYear) {
+                // Both tests must be completed in current year to show "Completed"
+                if (bothTestsCompleted && cat5NotRequired) {
+                    const relevantDate = mostRecentDate;
+                    const testYear = relevantDate ? relevantDate.getFullYear() : null;
+                    
+                    if (testYear === currentYear && today.getFullYear() === currentYear) {
+                        return 'Completed';
+                    } else {
+                        // Calendar year has ended - check eligibility based on 91 days rule
+                        return isEligibleForTesting(mostRecentDate) ? 'Eligible' : 'Not Eligible';
+                    }
+                } else {
+                    // Both tests not completed in current year - check eligibility
+                    return isEligibleForTesting(mostRecentDate) ? 'Eligible' : 'Not Eligible';
+                }
+            } else if ((bothTestsCompleted && cat5NotRequired) || dismantledCompleted) {
                 const relevantDate = isDismantled ? pviDate : mostRecentDate;
                 const testYear = relevantDate ? relevantDate.getFullYear() : null;
                 
+                // Only show "Completed" if tests were done in current year and we're still in current year
                 if (testYear === currentYear && today.getFullYear() === currentYear) {
                     return 'Completed';
                 } else {
+                    // Calendar year has ended - check eligibility based on 91 days rule
                     const eligibilityDate = isDismantled ? pviDate : mostRecentDate;
                     return isEligibleForTesting(eligibilityDate) ? 'Eligible' : 'Not Eligible';
                 }
@@ -3647,7 +3676,7 @@
                         const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
                         const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
                                 
-                                // Check if all dates are the same (CAT 1, CAT 5, and PVI)
+                                // Check if all dates are the same (CAT 1, CAT 5, and PVI) - acceptance test indicator
                                 const allDatesAreSame = cat1Date && cat5Date && pviDate &&
                                     cat1Date.getTime() === cat5Date.getTime() &&
                                     cat5Date.getTime() === pviDate.getTime();
@@ -3662,6 +3691,10 @@
                                 // Calculate test status based on new requirements
                                 const currentYear = new Date().getFullYear();
                                 const today = new Date();
+                                
+                                // Check if acceptance test was done in a previous year
+                                const acceptanceTestInPreviousYear = allDatesAreSame && 
+                                    cat1Date.getFullYear() < currentYear;
                                 
                                 // Check if periodic inspection was done this year
                                 const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
@@ -3703,13 +3736,54 @@
                                                             </svg>`;
                                 let isEligible = false;
                                 
-                                // Check for completed status (either both tests for regular devices, or PVI for dismantled)
-                                if ((bothTestsCompleted && cat5NotRequired) || dismantledCompleted) {
+                                // If acceptance test was done in previous year, both tests are required in new year
+                                // So we can't show "Completed" unless both tests are done in current year
+                                if (acceptanceTestInPreviousYear) {
+                                    // Both tests must be completed in current year to show "Completed"
+                                    if (bothTestsCompleted && cat5NotRequired) {
+                                        const relevantDate = mostRecentDate;
+                                        const testYear = relevantDate ? relevantDate.getFullYear() : null;
+                                        
+                                        if (testYear === currentYear && today.getFullYear() === currentYear) {
+                                            // Still in the same calendar year as the tests - show "Completed"
+                                            testStatus = 'Completed';
+                                            testStatusColor = '#4CAF50';
+                                            testStatusIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                                                                </svg>`;
+                                        } else {
+                                            // Calendar year has ended - check eligibility based on 91 days rule
+                                            isEligible = isEligibleForTesting(mostRecentDate);
+                                            testStatus = isEligible ? 'Eligible' : 'Not Eligible';
+                                            testStatusColor = isEligible ? '#4CAF50' : '#ff6b6b';
+                                            testStatusIcon = isEligible ? 
+                                                `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                                                </svg>` :
+                                                `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                                </svg>`;
+                                        }
+                                    } else {
+                                        // Both tests not completed in current year - check eligibility
+                                        isEligible = isEligibleForTesting(mostRecentDate);
+                                        testStatus = isEligible ? 'Eligible' : 'Not Eligible';
+                                        testStatusColor = isEligible ? '#4CAF50' : '#ff6b6b';
+                                        testStatusIcon = isEligible ? 
+                                            `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                                            </svg>` :
+                                            `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                            </svg>`;
+                                    }
+                                } else if ((bothTestsCompleted && cat5NotRequired) || dismantledCompleted) {
                                     // Check if we're still in the same calendar year as the tests
                                     // For dismantled devices, use PVI date; for regular devices, use most recent date
                                     const relevantDate = isDismantled ? pviDate : mostRecentDate;
                                     const testYear = relevantDate ? relevantDate.getFullYear() : null;
                                     
+                                    // Only show "Completed" if tests were done in current year and we're still in current year
                                     if (testYear === currentYear && today.getFullYear() === currentYear) {
                                         // Still in the same calendar year as the tests - show "Completed"
                                         testStatus = 'Completed';
