@@ -82,6 +82,51 @@ function openDOBNowDeviceLookup(deviceNumber, binNumber = null) {
     }
 }
 
+// Function to open DOB public website with device number lookup
+function openDOBPublicDeviceLookup(deviceNumber) {
+    if (!deviceNumber) {
+        alert('Device number is required for DOB lookup');
+        return;
+    }
+
+    try {
+        // Open DOB BIS (Buildings Information System) device lookup page
+        // This is the public DOB website for device lookups
+        const dobUrl = `https://a810-bisweb.nyc.gov/bisweb/DeviceQueryByNumberServlet?devnum=${encodeURIComponent(deviceNumber)}`;
+        window.open(dobUrl, '_blank');
+    } catch (error) {
+        console.error('DOB public lookup failed:', error);
+        alert('Failed to open DOB public website. Please try again or visit the site manually.');
+    }
+}
+
+// Function to create a DOB public website lookup button
+function createDOBPublicLookupButton(deviceNumber, size = 'small') {
+    if (!deviceNumber) return '';
+    
+    const buttonSize = size === 'large' ? '24px' : '18px';
+    const iconSize = size === 'large' ? '14px' : '12px';
+    const padding = size === 'large' ? '8px 12px' : '6px 8px';
+    
+    // Escape single quotes and other special characters for use in HTML attributes
+    const escapedDeviceNumber = String(deviceNumber).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    
+    return `
+        <button onclick="openDOBPublicDeviceLookup('${escapedDeviceNumber}')" 
+                title="Look up device #${escapedDeviceNumber} on DOB public website"
+                style="background: #28a745; color: white; border: none; border-radius: 4px; 
+                       cursor: pointer; padding: ${padding}; margin-left: 8px; 
+                       display: inline-flex; align-items: center; gap: 4px; 
+                       font-size: 12px; transition: all 0.2s ease; height: ${buttonSize};
+                       white-space: nowrap;">
+            <svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14,3V5H17.59L7.76,14.83L9.17,16.24L19,6.41V10H21V3M19,19H5V5H12V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V12H19V19Z"/>
+            </svg>
+            DOB Site
+        </button>
+    `;
+}
+
 // Function to create a DOB lookup button
 function createDOBLookupButton(deviceNumber, binNumber = null, size = 'small') {
     const buttonSize = size === 'large' ? '24px' : '18px';
