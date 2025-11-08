@@ -3410,12 +3410,11 @@
                                             ${Object.keys(deviceTypes).map(type => 
                                                 `<option value="${type}">${type}</option>`
                                             ).join('')}
-                                            <option value="REMOVED">Removed</option>
                                         </select>
                                     </div>
                                     
                                     <div style="display: flex; align-items: center; gap: 5px;">
-                                        <label for="deviceNumberFilter" style="color: var(--text-color); font-size: 0.9em;">Device #:</label>
+                                        <label for="deviceNumberFilter" style="color: var(--text-color); font-size: 0.9em;">Search:</label>
                                         <input 
                                             type="text" 
                                             id="deviceNumberFilter" 
@@ -3461,8 +3460,21 @@
                     if (removedDevicesData.length > 0) {
                         html += `
                             <div style="margin-top: 30px;">
-                                <strong style="color: #ff6b6b; display: block; margin-bottom: 10px;">Removed Devices (${removedDevicesData.length}):</strong>
-                                <div style="height: 400px; overflow-y: auto; padding-right: 10px; resize: vertical; border: 2px solid var(--input-border); border-radius: 5px; min-height: 200px;" id="removedDeviceTypeSections">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                    <strong style="color: #ff6b6b;">Removed Devices (${removedDevicesData.length}):</strong>
+                                    <button onclick="toggleRemovedDevices()" 
+                                            id="removedDevicesToggleBtn"
+                                            data-showing="false"
+                                            style="padding: 6px 12px; background: var(--input-bg); color: var(--text-color); 
+                                                   border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                                   font-size: 0.9em; transition: all 0.2s ease; display: flex; align-items: center; gap: 6px;">
+                                        <span id="removedDevicesToggleText">Show</span>
+                                        <svg id="removedDevicesToggleIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="transition: transform 0.2s ease;">
+                                            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div id="removedDeviceTypeSections" style="display: none; height: 400px; overflow-y: auto; padding-right: 10px; resize: vertical; border: 2px solid var(--input-border); border-radius: 5px; min-height: 200px;">
                         `;
                         
                         // Display removed devices grouped by their original type
@@ -4149,44 +4161,156 @@
             }
         }
 
-        // Update the exportBinToCSV function to include violations
-        function exportBinToCSV() {
+        // Update the exportBinToCSV function to include all information displayed in the output field
+        async function exportBinToCSV() {
             const data = window.lastBinSearchResults;
             if (!data || data.length === 0) {
                 alert('No data to export. Please perform a search first.');
                 return;
             }
 
-            // Create CSV content with violations column
-            let csvContent = 'Device Number,BIN,Address,Borough,Type,Status,Active Violations\n';
+            // Show loading message
+            const exportButton = document.getElementById('binExportButton');
+            const originalText = exportButton.textContent;
+            exportButton.textContent = 'Exporting...';
+            exportButton.disabled = true;
 
-            // Create an array of promises to fetch violations for each device
-            const promises = data.map(async device => {
-                const violations = await fetchViolations(device.device_number);
-                const activeViolations = violations.filter(v => 
-                    v.violation_status?.toUpperCase() === 'ACTIVE' || 
-                    v.violation_status?.toUpperCase() === 'OPEN');
-                
-                return {
-                    device: device,
-                    violationCount: activeViolations.length,
-                    violationNumbers: activeViolations.map(v => v.violation_number || 'Unknown').join('; ')
-                };
-            });
+            try {
+                // Get building address from first device
+                const buildingAddress = data[0] ? `${data[0].house_number || ''} ${data[0].street_name || ''}, ${data[0].borough || ''}`.trim() : 'N/A';
+                const binNumber = data[0]?.bin || 'N/A';
+                const currentYear = new Date().getFullYear();
 
-            // Process all promises and then create the CSV
-            Promise.all(promises).then(results => {
-                results.forEach(result => {
-                    const device = result.device;
+                // Create CSV header with reordered fields (user requested order first, then others)
+                let csvContent = 'BIN,Device Number,Device Type,Status,Address,Borough,ZIP Code,Block,Lot,' +
+                    `Latest CAT 1,Latest CAT 5,Latest PVI,Category Test ${currentYear},PVI ${currentYear},Test Completion Status,` +
+                    'Building Address,Latest Inspection,' +
+                    'Violation Count,Violation Numbers,Violation Issue Dates,Violation Statuses,Violation Types,Violation Remarks,' +
+                    'Manufacturer,Machine Type,Governor Type,Car Buffer Type,Mode Operation,Safety Type,Fireman Service,Working Pressure,' +
+                    'Controller Manufacturer,Elevator Control,Capacity (lbs),Speed (fpm)\n';
+
+                // Create an array of promises to fetch all data for each device
+                const promises = data.map(async device => {
+                    // Fetch violations
+                    const violations = await fetchViolations(device.device_number);
+                    const activeViolations = violations.filter(v => 
+                        v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                        v.violation_status?.toUpperCase() === 'OPEN');
+                    
+                    // Fetch device info
+                    const deviceInfo = await fetchDeviceInfo(device.device_number);
+                    
+                    // Calculate inspection dates
+                    const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                    const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                    const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                    
+                    // Find most recent date
+                    const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                    const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
+                    
+                    // Format dates for CSV
+                    const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
+                    const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
+                    const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
+                    const mostRecentDisplay = mostRecentDate ? mostRecentDate.toLocaleDateString() : 'N/A';
+                    
+                    // Check test completion status for current year
+                    const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+                    
+                    // Check if category test was done this year
+                    let requiresCat5 = false;
+                    if (cat5Date) {
+                        const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
+                        requiresCat5 = yearsSinceCat5 >= 5;
+                    }
+                    
+                    let hasCategoryTestThisYear = false;
+                    if (requiresCat5) {
+                        hasCategoryTestThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
+                    } else {
+                        hasCategoryTestThisYear = (cat1Date && cat1Date.getFullYear() === currentYear) || 
+                                                  (cat5Date && cat5Date.getFullYear() === currentYear);
+                    }
+                    
+                    // For dismantled devices, only PVI is required
+                    const isDismantled = device.device_status && device.device_status.toUpperCase() === 'DISMANTLED';
+                    let testCompletionStatus = 'N/A';
+                    if (isDismantled) {
+                        testCompletionStatus = hasPVIThisYear ? 'Complete (PVI only required)' : 'Incomplete';
+                    } else {
+                        if (hasPVIThisYear && hasCategoryTestThisYear) {
+                            testCompletionStatus = 'Complete (Both tests)';
+                        } else if (hasPVIThisYear || hasCategoryTestThisYear) {
+                            testCompletionStatus = 'Partial (One test)';
+                        } else {
+                            testCompletionStatus = 'Incomplete';
+                        }
+                    }
+                    
+                    // Format violation details
+                    const violationNumbers = activeViolations.map(v => v.violation_number || 'N/A').join('; ');
+                    const violationIssueDates = activeViolations.map(v => {
+                        const date = v.violation_issue_date || v.violation_date;
+                        return date ? new Date(date).toLocaleDateString() : 'N/A';
+                    }).join('; ');
+                    const violationStatuses = activeViolations.map(v => v.violation_status || 'N/A').join('; ');
+                    const violationTypes = activeViolations.map(v => v.violation_type || 'N/A').join('; ');
+                    const violationRemarks = activeViolations.map(v => (v.violation_remarks || 'N/A').replace(/"/g, '""')).join('; ');
+                    
+                    // Build CSV row in the requested order
                     const row = [
-                        device.device_number,
-                        device.bin,
-                        `${device.house_number} ${device.street_name}`,
-                        device.borough,
+                        // 1-15: User requested order
+                        binNumber,
+                        device.device_number || 'N/A',
                         device.device_type || 'N/A',
                         device.device_status || 'N/A',
-                        `${result.violationCount} (${result.violationNumbers})`
-                    ].map(field => `"${field}"`).join(',');
+                        `${device.house_number || ''} ${device.street_name || ''}`.trim() || 'N/A',
+                        device.borough || 'N/A',
+                        device.zip_code || 'N/A',
+                        device.block || 'N/A',
+                        device.lot || 'N/A',
+                        cat1Display,
+                        cat5Display,
+                        pviDisplay,
+                        hasCategoryTestThisYear ? 'Yes' : 'No',
+                        hasPVIThisYear ? 'Yes' : 'No',
+                        testCompletionStatus,
+                        // Then all other fields
+                        buildingAddress,
+                        mostRecentDisplay,
+                        activeViolations.length,
+                        violationNumbers || 'N/A',
+                        violationIssueDates || 'N/A',
+                        violationStatuses || 'N/A',
+                        violationTypes || 'N/A',
+                        violationRemarks || 'N/A',
+                        deviceInfo?.elevator_manufacturer || 'N/A',
+                        deviceInfo?.machine_type || 'N/A',
+                        deviceInfo?.governor || 'N/A',
+                        deviceInfo?.car_buffer_type || 'N/A',
+                        deviceInfo?.mode_of_operation || 'N/A',
+                        deviceInfo?.car_safety_type || 'N/A',
+                        deviceInfo?.fire_emergency_phase || 'N/A',
+                        deviceInfo?.working_pressure || 'N/A',
+                        deviceInfo?.controller_manufacturer || 'N/A',
+                        deviceInfo?.elevator_control || 'N/A',
+                        deviceInfo?.elevator_capacity_lbs || 'N/A',
+                        deviceInfo?.elevator_speed_fpm || 'N/A'
+                    ].map(field => {
+                        // Escape quotes and wrap in quotes
+                        const fieldStr = String(field || '');
+                        return `"${fieldStr.replace(/"/g, '""')}"`;
+                    }).join(',');
+                    
+                    return row;
+                });
+
+                // Wait for all promises to resolve
+                const rows = await Promise.all(promises);
+                
+                // Add all rows to CSV content
+                rows.forEach(row => {
                     csvContent += row + '\n';
                 });
 
@@ -4195,12 +4319,21 @@
                 const link = document.createElement('a');
                 const url = URL.createObjectURL(blob);
                 link.setAttribute('href', url);
-                link.setAttribute('download', `bin_${data[0].bin}_devices_with_violations.csv`);
+                link.setAttribute('download', `bin_${binNumber}_complete_export_${new Date().toISOString().split('T')[0]}.csv`);
                 link.style.visibility = 'hidden';
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-            });
+                
+                // Restore button
+                exportButton.textContent = originalText;
+                exportButton.disabled = false;
+            } catch (error) {
+                console.error('Error exporting CSV:', error);
+                alert('Error exporting CSV. Please try again.');
+                exportButton.textContent = originalText;
+                exportButton.disabled = false;
+            }
         }
 
         // Add event listener for Enter key on BIN input
@@ -4516,40 +4649,6 @@
             document.body.removeChild(link);
         }
 
-        function exportBinToCSV() {
-            const data = window.lastBinSearchResults;
-            if (!data || data.length === 0) {
-                alert('No data to export. Please perform a search first.');
-                return;
-            }
-
-            // Create CSV content
-            let csvContent = 'Device Number,BIN,Address,Borough,Type,Status\n';
-
-            // Add all devices
-            data.forEach(device => {
-                const row = [
-                    device.device_number,
-                    device.bin,
-                    `${device.house_number} ${device.street_name}`,
-                    device.borough,
-                    device.device_type || 'N/A',
-                    device.device_status || 'N/A'
-                ].map(field => `"${field}"`).join(',');
-                csvContent += row + '\n';
-            });
-
-            // Create and trigger download
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            link.setAttribute('href', url);
-            link.setAttribute('download', `bin_${data[0].bin}_devices.csv`);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
 
         // Add this function to fetch violations
         async function fetchViolations(deviceNumber) {
@@ -6913,6 +7012,39 @@
                 button.setAttribute('data-showing', 'false');
                 listDiv.style.display = 'none';
                 buttonText.textContent = 'Show Devices';
+                button.style.background = 'var(--input-bg)';
+                button.style.color = 'var(--text-color)';
+            }
+        }
+        
+        function toggleRemovedDevices() {
+            const button = document.getElementById('removedDevicesToggleBtn');
+            const listDiv = document.getElementById('removedDeviceTypeSections');
+            const buttonText = document.getElementById('removedDevicesToggleText');
+            const icon = document.getElementById('removedDevicesToggleIcon');
+            
+            if (!button || !listDiv) return;
+            
+            const isShowing = button.getAttribute('data-showing') === 'true';
+            
+            if (!isShowing) {
+                // Show the removed devices
+                button.setAttribute('data-showing', 'true');
+                listDiv.style.display = 'block';
+                buttonText.textContent = 'Hide';
+                if (icon) {
+                    icon.style.transform = 'rotate(180deg)';
+                }
+                button.style.background = '#ff6b6b';
+                button.style.color = '#fff';
+            } else {
+                // Hide the removed devices
+                button.setAttribute('data-showing', 'false');
+                listDiv.style.display = 'none';
+                buttonText.textContent = 'Show';
+                if (icon) {
+                    icon.style.transform = 'rotate(0deg)';
+                }
                 button.style.background = 'var(--input-bg)';
                 button.style.color = 'var(--text-color)';
             }
