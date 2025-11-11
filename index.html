@@ -3386,6 +3386,7 @@
                                             <option value="all">All Devices</option>
                                             <option value="eligible">Eligible Only</option>
                                             <option value="not-eligible">Not Eligible Only</option>
+                                            <option value="completed">Completed</option>
                                         </select>
                                     </div>
                                     
@@ -3965,11 +3966,11 @@
                                                     ` : '<span>N/A</span>'}
                                                 </div>
                                             </div>
-                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                                                 <div><strong style="color: var(--header-color);">Status:</strong> ${device.device_status || 'N/A'}</div>
                                                 <div style="display: flex; align-items: center; gap: 8px;">
                                                     <strong style="color: var(--header-color);">Test Status:</strong>
-                                                    <span data-test-status="${isEligible}" style="padding: 4px 8px; border-radius: 4px; background: ${testStatusColor}; color: white; font-size: 0.9em; display: flex; align-items: center; gap: 4px;">
+                                                    <span data-test-status="${isEligible}" data-test-status-text="${testStatus}" style="padding: 4px 8px; border-radius: 4px; background: ${testStatusColor}; color: white; font-size: 0.9em; display: flex; align-items: center; gap: 4px;">
                                                         ${testStatusIcon}${testStatus}
                                                     </span>
                                                 </div>
@@ -4218,7 +4219,7 @@
                 let csvContent = 'BIN,Device Number,Device Type,Status,Address,Borough,ZIP Code,Block,Lot,' +
                     `Latest CAT 1,Latest CAT 5,Latest PVI,Category Test ${currentYear},PVI ${currentYear},Test Completion Status,` +
                     'Building Address,Latest Inspection,' +
-                    'Violation Count,Violation Numbers,Violation Issue Dates,Violation Statuses,Violation Types,Violation Remarks,' +
+                    'Violation Count,Violation Numbers,Violation Issue Dates,Violation Statuses,Violation Types,Violation Descriptions,' +
                     'Manufacturer,Machine Type,Governor Type,Car Buffer Type,Mode Operation,Safety Type,Fireman Service,Working Pressure,' +
                     'Controller Manufacturer,Elevator Control,Capacity (lbs),Speed (fpm)\n';
 
@@ -4266,10 +4267,16 @@
                                                   (cat5Date && cat5Date.getFullYear() === currentYear);
                     }
                     
-                    // For dismantled devices, only PVI is required
+                    // Check if device is dismantled or removed
                     const isDismantled = device.device_status && device.device_status.toUpperCase() === 'DISMANTLED';
+                    const isRemoved = device.device_status && device.device_status.toUpperCase() === 'REMOVED';
+                    
+                    // For dismantled devices, only PVI is required
+                    // For removed devices, set test completion status to N/A
                     let testCompletionStatus = 'N/A';
-                    if (isDismantled) {
+                    if (isRemoved) {
+                        testCompletionStatus = 'N/A';
+                    } else if (isDismantled) {
                         testCompletionStatus = hasPVIThisYear ? 'Complete (PVI only required)' : 'Incomplete';
                     } else {
                         if (hasPVIThisYear && hasCategoryTestThisYear) {
@@ -4281,6 +4288,18 @@
                         }
                     }
                     
+                    // Set Category Test to N/A for dismantled and removed devices
+                    let categoryTestValue = 'N/A';
+                    if (!isDismantled && !isRemoved) {
+                        categoryTestValue = hasCategoryTestThisYear ? 'Yes' : 'No';
+                    }
+                    
+                    // Set PVI to N/A for removed devices
+                    let pviValue = 'N/A';
+                    if (!isRemoved) {
+                        pviValue = hasPVIThisYear ? 'Yes' : 'No';
+                    }
+                    
                     // Format violation details
                     const violationNumbers = activeViolations.map(v => v.violation_number || 'N/A').join('; ');
                     const violationIssueDates = activeViolations.map(v => {
@@ -4289,7 +4308,11 @@
                     }).join('; ');
                     const violationStatuses = activeViolations.map(v => v.violation_status || 'N/A').join('; ');
                     const violationTypes = activeViolations.map(v => v.violation_type || 'N/A').join('; ');
-                    const violationRemarks = activeViolations.map(v => (v.violation_remarks || 'N/A').replace(/"/g, '""')).join('; ');
+                    // Get violation descriptions (use violation_description if available, otherwise use violation_remarks)
+                    const violationDescriptions = activeViolations.map(v => {
+                        const desc = v.violation_description || v.violation_remarks || 'N/A';
+                        return desc.replace(/"/g, '""');
+                    }).join('; ');
                     
                     // Build CSV row in the requested order
                     const row = [
@@ -4306,8 +4329,8 @@
                         cat1Display,
                         cat5Display,
                         pviDisplay,
-                        hasCategoryTestThisYear ? 'Yes' : 'No',
-                        hasPVIThisYear ? 'Yes' : 'No',
+                        categoryTestValue,
+                        pviValue,
                         testCompletionStatus,
                         // Then all other fields
                         buildingAddress,
@@ -4317,7 +4340,7 @@
                         violationIssueDates || 'N/A',
                         violationStatuses || 'N/A',
                         violationTypes || 'N/A',
-                        violationRemarks || 'N/A',
+                        violationDescriptions || 'N/A',
                         deviceInfo?.elevator_manufacturer || 'N/A',
                         deviceInfo?.machine_type || 'N/A',
                         deviceInfo?.governor || 'N/A',

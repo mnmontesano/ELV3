@@ -42,12 +42,15 @@ function applyAllFilters() {
         // Test eligibility filter check
         const testStatusElement = item.querySelector('[data-test-status]');
         const isEligible = testStatusElement?.getAttribute('data-test-status') === 'true';
+        const testStatusText = testStatusElement?.getAttribute('data-test-status-text') || '';
         let eligibilityMatch = true;
         
         if (eligibilityFilter === 'eligible') {
             eligibilityMatch = isEligible;
         } else if (eligibilityFilter === 'not-eligible') {
             eligibilityMatch = !isEligible;
+        } else if (eligibilityFilter === 'completed') {
+            eligibilityMatch = testStatusText === 'Completed';
         }
         
         // Device number filter check
