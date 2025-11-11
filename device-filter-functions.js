@@ -48,7 +48,8 @@ function applyAllFilters() {
         if (eligibilityFilter === 'eligible') {
             eligibilityMatch = isEligible;
         } else if (eligibilityFilter === 'not-eligible') {
-            eligibilityMatch = !isEligible;
+            // Exclude completed devices from not-eligible filter
+            eligibilityMatch = !isEligible && testStatusText !== 'Completed';
         } else if (eligibilityFilter === 'completed') {
             eligibilityMatch = testStatusText === 'Completed';
         }
