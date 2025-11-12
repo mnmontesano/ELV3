@@ -3089,25 +3089,20 @@
                         // Check if this is a warning device (CAT 1 & PVI done but CAT 5 required and not done)
                         const isWarningDevice = requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear;
                         
-                        // Check if device is eligible
-                        // If CAT 1 & PVI are done this year but CAT 5 is required and not done, don't count as Ready (it's a Warning)
-                        let isEligible = isEligibleForTesting(mostRecentDate);
-                        // Don't mark warning devices as eligible for Ready count - they go in Warning section
-                        
-                        if (isEligible && !isWarningDevice) {
-                            // Check if completed (both tests done this year and still in same calendar year)
-                            if (bothTestsCompleted || dismantledCompleted) {
-                                const relevantDate = isDismantled ? pviDate : mostRecentDate;
-                                const testYear = relevantDate ? relevantDate.getFullYear() : null;
-                                
-                                if (testYear === currentYearForEligibility && todayForEligibility.getFullYear() === currentYearForEligibility) {
-                                    // Device is completed - count as completed but NOT as ready
-                                    eligibleCompletedDevices++;
-                                } else {
-                                    // Device is eligible but not completed - count as ready
-                                    eligibleDevices++;
-                                }
-                            } else {
+                        // Check if device is completed FIRST - if completed, count as Completed regardless of eligibility
+                        if (bothTestsCompleted || dismantledCompleted) {
+                            const relevantDate = isDismantled ? pviDate : mostRecentDate;
+                            const testYear = relevantDate ? relevantDate.getFullYear() : null;
+                            
+                            if (testYear === currentYearForEligibility && todayForEligibility.getFullYear() === currentYearForEligibility) {
+                                // Device is completed - count as completed but NOT as ready (regardless of eligibility)
+                                eligibleCompletedDevices++;
+                            }
+                        } else if (!isWarningDevice) {
+                            // Device is not completed - check eligibility for Ready/Not Ready
+                            let isEligible = isEligibleForTesting(mostRecentDate);
+                            
+                            if (isEligible) {
                                 // Device is eligible but not completed - count as ready
                                 eligibleDevices++;
                             }
@@ -3144,9 +3139,27 @@
                         let hasCategoryTestThisYear = false;
                         if (requiresCat5) {
                             hasCategoryTestThisYear = cat5Date && cat5Date.getFullYear() === currentYearForEligibility;
+                        } else {
+                            hasCategoryTestThisYear = (cat1Date && cat1Date.getFullYear() === currentYearForEligibility) || 
+                                                      (cat5Date && cat5Date.getFullYear() === currentYearForEligibility);
                         }
                         
                         const isWarningDevice = requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear;
+                        
+                        // Check if device is completed
+                        const isDismantled = device.device_status && device.device_status.toUpperCase() === 'DISMANTLED';
+                        const bothTestsCompleted = hasPVIThisYear && hasCategoryTestThisYear;
+                        const dismantledCompleted = isDismantled && hasPVIThisYear;
+                        
+                        // Exclude completed devices from Not Ready count - they're in Completed section
+                        if (bothTestsCompleted || dismantledCompleted) {
+                            const relevantDate = isDismantled ? pviDate : mostRecentDate;
+                            const testYear = relevantDate ? relevantDate.getFullYear() : null;
+                            
+                            if (testYear === currentYearForEligibility && todayForEligibility.getFullYear() === currentYearForEligibility) {
+                                return false; // Device is completed - don't count as Not Ready
+                            }
+                        }
                         
                         // Exclude warning devices from Not Ready count - they're in Warning section
                         if (isWarningDevice) {
