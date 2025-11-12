@@ -3040,10 +3040,18 @@
                     ).length;
 
                     // Calculate test eligibility counts
-                    const eligibleDevices = data.filter(device => {
+                    const currentYearForEligibility = new Date().getFullYear();
+                    const todayForEligibility = new Date();
+                    
+                    // Calculate eligible devices and break down by completion status
+                    // Completed devices should NOT count toward Ready count
+                    let eligibleDevices = 0; // Only non-completed eligible devices
+                    let eligibleCompletedDevices = 0;
+                    
+                    data.forEach(device => {
                         // Skip removed devices as they don't need testing
                         if (device.device_status && device.device_status.toUpperCase() === 'REMOVED') {
-                            return false;
+                            return;
                         }
                         
                         const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
@@ -3054,8 +3062,57 @@
                         const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
                         const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
                         
-                        return isEligibleForTesting(mostRecentDate);
-                    }).length;
+                        // Check if device is completed for the year
+                        const isDismantled = device.device_status && device.device_status.toUpperCase() === 'DISMANTLED';
+                        const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYearForEligibility;
+                        const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYearForEligibility;
+                        
+                        // Check if CAT 5 is required
+                        let requiresCat5 = false;
+                        if (cat5Date) {
+                            const yearsSinceCat5 = currentYearForEligibility - cat5Date.getFullYear();
+                            requiresCat5 = yearsSinceCat5 >= 5;
+                        }
+                        
+                        // Determine if a valid category test was completed this year
+                        let hasCategoryTestThisYear = false;
+                        if (requiresCat5) {
+                            hasCategoryTestThisYear = cat5Date && cat5Date.getFullYear() === currentYearForEligibility;
+                        } else {
+                            hasCategoryTestThisYear = (cat1Date && cat1Date.getFullYear() === currentYearForEligibility) || 
+                                                      (cat5Date && cat5Date.getFullYear() === currentYearForEligibility);
+                        }
+                        
+                        const bothTestsCompleted = hasPVIThisYear && hasCategoryTestThisYear;
+                        const dismantledCompleted = isDismantled && hasPVIThisYear;
+                        
+                        // Check if this is a warning device (CAT 1 & PVI done but CAT 5 required and not done)
+                        const isWarningDevice = requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear;
+                        
+                        // Check if device is eligible
+                        // If CAT 1 & PVI are done this year but CAT 5 is required and not done, don't count as Ready (it's a Warning)
+                        let isEligible = isEligibleForTesting(mostRecentDate);
+                        // Don't mark warning devices as eligible for Ready count - they go in Warning section
+                        
+                        if (isEligible && !isWarningDevice) {
+                            // Check if completed (both tests done this year and still in same calendar year)
+                            if (bothTestsCompleted || dismantledCompleted) {
+                                const relevantDate = isDismantled ? pviDate : mostRecentDate;
+                                const testYear = relevantDate ? relevantDate.getFullYear() : null;
+                                
+                                if (testYear === currentYearForEligibility && todayForEligibility.getFullYear() === currentYearForEligibility) {
+                                    // Device is completed - count as completed but NOT as ready
+                                    eligibleCompletedDevices++;
+                                } else {
+                                    // Device is eligible but not completed - count as ready
+                                    eligibleDevices++;
+                                }
+                            } else {
+                                // Device is eligible but not completed - count as ready
+                                eligibleDevices++;
+                            }
+                        }
+                    });
                     
                     const notEligibleDevices = data.filter(device => {
                         // Skip removed devices as they don't need testing
@@ -3071,7 +3128,32 @@
                         const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
                         const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
                         
-                        return !isEligibleForTesting(mostRecentDate);
+                        // Check if device is eligible based on 91-day rule
+                        let isEligible = isEligibleForTesting(mostRecentDate);
+                        
+                        // Check if this is a warning device (CAT 1 & PVI done but CAT 5 required and not done)
+                        const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYearForEligibility;
+                        const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYearForEligibility;
+                        
+                        let requiresCat5 = false;
+                        if (cat5Date) {
+                            const yearsSinceCat5 = currentYearForEligibility - cat5Date.getFullYear();
+                            requiresCat5 = yearsSinceCat5 >= 5;
+                        }
+                        
+                        let hasCategoryTestThisYear = false;
+                        if (requiresCat5) {
+                            hasCategoryTestThisYear = cat5Date && cat5Date.getFullYear() === currentYearForEligibility;
+                        }
+                        
+                        const isWarningDevice = requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear;
+                        
+                        // Exclude warning devices from Not Ready count - they're in Warning section
+                        if (isWarningDevice) {
+                            return false;
+                        }
+                        
+                        return !isEligible;
                     }).length;
 
                     // Separate devices into active and removed
@@ -3108,9 +3190,11 @@
                     let devicesWithBothTests = 0;
                     let devicesWithOneTest = 0;
                     let devicesWithNoTests = 0;
+                    let devicesWithWarning = 0;
                     const devicesWithOneTestList = []; // Store device info with one test completed
                     const devicesWithBothTestsList = []; // Store device info with both tests completed
                     const devicesWithNoTestsList = []; // Store device info with no tests completed
+                    const devicesWithWarningList = []; // Store device info with CAT 5 required but not done
                     
                     // Get dismantled devices separately
                     const dismantledDevicesData = data.filter(device => 
@@ -3139,7 +3223,7 @@
                         // Determine if a valid category test was completed this year
                         let hasCategoryTestThisYear = false;
                         if (requiresCat5) {
-                            // CAT 5 is required, so only CAT 5 done this year counts
+                            // CAT 5 is required (5+ years since last CAT 5), so only CAT 5 done this year counts
                             hasCategoryTestThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
                         } else {
                             // CAT 5 not required, so CAT 1 or CAT 5 done this year counts
@@ -3147,8 +3231,22 @@
                                                       (cat5Date && cat5Date.getFullYear() === currentYear);
                         }
                         
-                        // Count devices and store device info
-                        if (hasPVIThisYear && hasCategoryTestThisYear) {
+                        // Check if CAT 1 & PVI are done but CAT 5 is required and not done (Warning case)
+                        const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                        if (requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear) {
+                            // CAT 5 is required but not done, even though CAT 1 & PVI were done - add to warning list
+                            devicesWithWarning++;
+                            devicesWithWarningList.push({
+                                device_number: device.device_number,
+                                device_type: device.device_type || 'Unknown',
+                                hasPVI: hasPVIThisYear,
+                                hasCategory: false,
+                                hasCat1: hasCat1ThisYear,
+                                requiresCat5: true,
+                                lastCat5Year: cat5Date ? cat5Date.getFullYear() : null,
+                                isDismantled: false
+                            });
+                        } else if (hasPVIThisYear && hasCategoryTestThisYear) {
                             devicesWithBothTests++;
                             devicesWithBothTestsList.push({
                                 device_number: device.device_number,
@@ -3211,6 +3309,7 @@
                     window.devicesWithOneTestList = devicesWithOneTestList;
                     window.devicesWithBothTestsList = devicesWithBothTestsList;
                     window.devicesWithNoTestsList = devicesWithNoTestsList;
+                    window.devicesWithWarningList = devicesWithWarningList;
 
                     let html = `
                         <div style="background: var(--input-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
@@ -3232,6 +3331,30 @@
                                     </button>
                                 </div>
                                 <div id="testCompletionStatusContent" style="display: none; margin-left: 10px;">
+                                    <div style="margin-bottom: 8px;">
+                                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                            <span style="color: #ff9800;">⚠ Warning (CAT 5 Required): ${devicesWithWarning}</span>
+                                            ${devicesWithWarning > 0 ? `
+                                                <button onclick="toggleWarningList()" 
+                                                        id="warningListBtn"
+                                                        data-showing="false"
+                                                        style="padding: 4px 8px; background: var(--input-bg); color: var(--text-color); 
+                                                               border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                                               font-size: 0.85em; transition: all 0.2s ease;">
+                                                    <span id="warningListText">Show Devices</span>
+                                                </button>
+                                            ` : ''}
+                                        </div>
+                                        <div id="warningDevicesList" style="display: none; margin-top: 10px; padding: 10px; background: var(--input-bg); border-radius: 4px; border: 1px solid var(--input-border); max-height: 300px; overflow-y: auto;">
+                                            <div style="font-size: 0.9em; color: var(--text-color);">
+                                                ${devicesWithWarningList.map(device => {
+                                                    return `<div style="margin-bottom: 5px; padding: 5px;">
+                                                        <strong>Device #${device.device_number}</strong> (${device.device_type}) - CAT 1 & PVI completed, CAT 5 required
+                                                    </div>`;
+                                                }).join('')}
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div style="margin-bottom: 8px;">
                                         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                                             <span style="color: #4CAF50;">✓ Both Tests Completed: ${devicesWithBothTests}</span>
@@ -3358,7 +3481,11 @@
                                     <div style="margin-top: 10px;">
                                         <strong style="color: var(--header-color);">Test Eligibility:</strong>
                                         <br>
-                                        <span style="margin-left: 20px; color: ${eligibleDevices > 0 ? '#4CAF50' : 'var(--text-color)'};">• Ready for Test: ${eligibleDevices}</span>
+                                        <span style="margin-left: 20px; color: ${devicesWithWarning > 0 ? '#ff9800' : 'var(--text-color)'};">• Warning: ${devicesWithWarning}</span>
+                                        <br>
+                                        <span style="margin-left: 20px; color: ${eligibleCompletedDevices > 0 ? '#4CAF50' : 'var(--text-color)'};">• Completed: ${eligibleCompletedDevices}</span>
+                                        <br>
+                                        <span style="margin-left: 20px; color: ${eligibleDevices > 0 ? '#4CAF50' : 'var(--text-color)'};">• Ready: ${eligibleDevices}</span>
                                         <br>
                                         <span style="margin-left: 20px; color: ${notEligibleDevices > 0 ? '#ff6b6b' : 'var(--text-color)'};">• Not Ready: ${notEligibleDevices}</span>
                                     </div>
@@ -3384,8 +3511,8 @@
                                             style="padding: 8px; background: var(--panel-bg); color: var(--text-color); 
                                                    border: 1px solid var(--input-border); border-radius: 4px; font-size: 0.9em; width: 150px;">
                                             <option value="all">All Devices</option>
-                                            <option value="eligible">Eligible Only</option>
-                                            <option value="not-eligible">Not Eligible Only</option>
+                                            <option value="eligible">Ready</option>
+                                            <option value="not-eligible">Not Ready</option>
                                             <option value="completed">Completed</option>
                                         </select>
                                     </div>
@@ -3692,10 +3819,13 @@
                 requiresCat5 = yearsSinceCat5 >= 5;
             }
             
+            // Determine if a valid category test was completed this year
             let hasCategoryTestThisYear = false;
             if (requiresCat5) {
+                // CAT 5 is required (5+ years since last CAT 5), so only CAT 5 done this year counts
                 hasCategoryTestThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
             } else {
+                // CAT 5 not required, so CAT 1 or CAT 5 done this year counts
                 hasCategoryTestThisYear = (cat1Date && cat1Date.getFullYear() === currentYear) || 
                                           (cat5Date && cat5Date.getFullYear() === currentYear);
             }
@@ -3704,12 +3834,18 @@
             const bothTestsCompleted = hasPVIThisYear && hasCategoryTestThisYear;
             const cat5NotRequired = !requiresCat5;
             const dismantledCompleted = isDismantled && hasPVIThisYear;
+            const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+            
+            // Check if CAT 5 is required but not done, and CAT 1 & PVI are done this year
+            if (requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear) {
+                return 'CAT 5 Required';
+            }
             
             // If acceptance test was done in previous year, both tests are required in new year
             // So we can't show "Completed" unless both tests are done in current year
             if (acceptanceTestInPreviousYear) {
                 // Both tests must be completed in current year to show "Completed"
-                if (bothTestsCompleted && cat5NotRequired) {
+                if (bothTestsCompleted) {
                     const relevantDate = mostRecentDate;
                     const testYear = relevantDate ? relevantDate.getFullYear() : null;
                     
@@ -3717,13 +3853,13 @@
                         return 'Completed';
                     } else {
                         // Calendar year has ended - check eligibility based on 91 days rule
-                        return isEligibleForTesting(mostRecentDate) ? 'Eligible' : 'Not Eligible';
+                        return isEligibleForTesting(mostRecentDate) ? 'Ready' : 'Not Ready';
                     }
                 } else {
                     // Both tests not completed in current year - check eligibility
-                    return isEligibleForTesting(mostRecentDate) ? 'Eligible' : 'Not Eligible';
+                    return isEligibleForTesting(mostRecentDate) ? 'Ready' : 'Not Ready';
                 }
-            } else if ((bothTestsCompleted && cat5NotRequired) || dismantledCompleted) {
+            } else if (bothTestsCompleted || dismantledCompleted) {
                 const relevantDate = isDismantled ? pviDate : mostRecentDate;
                 const testYear = relevantDate ? relevantDate.getFullYear() : null;
                 
@@ -3733,10 +3869,10 @@
                 } else {
                     // Calendar year has ended - check eligibility based on 91 days rule
                     const eligibilityDate = isDismantled ? pviDate : mostRecentDate;
-                    return isEligibleForTesting(eligibilityDate) ? 'Eligible' : 'Not Eligible';
+                    return isEligibleForTesting(eligibilityDate) ? 'Ready' : 'Not Ready';
                 }
             } else {
-                return isEligibleForTesting(mostRecentDate) ? 'Eligible' : 'Not Eligible';
+                return isEligibleForTesting(mostRecentDate) ? 'Ready' : 'Not Ready';
             }
         }
 
@@ -3754,9 +3890,9 @@
                 status: calculateTestStatusForSorting(device)
             }));
 
-            // Sort devices: "Not Eligible" first, then "Completed", then others
+            // Sort devices: "CAT 5 Required" first (most important), then "Not Ready", then "Completed", then others
             devicesWithStatus.sort((a, b) => {
-                const statusOrder = { 'Not Eligible': 0, 'Completed': 1, 'Eligible': 2 };
+                const statusOrder = { 'CAT 5 Required': -1, 'Not Ready': 0, 'Completed': 1, 'Ready': 2 };
                 const orderA = statusOrder[a.status] !== undefined ? statusOrder[a.status] : 3;
                 const orderB = statusOrder[b.status] !== undefined ? statusOrder[b.status] : 3;
                 return orderA - orderB;
@@ -3821,7 +3957,7 @@
                                 // Determine if a valid category test was completed this year
                                 let hasCategoryTestThisYear = false;
                                 if (requiresCat5) {
-                                    // CAT 5 is required, so only CAT 5 done this year counts
+                                    // CAT 5 is required (5+ years since last CAT 5), so only CAT 5 done this year counts
                                     hasCategoryTestThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
                                 } else {
                                     // CAT 5 not required, so CAT 1 or CAT 5 done this year counts
@@ -3840,7 +3976,7 @@
                                 const dismantledCompleted = isDismantled && hasPVIThisYear;
                                 
                                 // Determine test status
-                                let testStatus = 'Not Eligible';
+                                let testStatus = 'Not Ready';
                                 let testStatusColor = '#ff6b6b';
                                 let testStatusIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                                                                 <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
@@ -3851,7 +3987,7 @@
                                 // So we can't show "Completed" unless both tests are done in current year
                                 if (acceptanceTestInPreviousYear) {
                                     // Both tests must be completed in current year to show "Completed"
-                                    if (bothTestsCompleted && cat5NotRequired) {
+                                    if (bothTestsCompleted) {
                                         const relevantDate = mostRecentDate;
                                         const testYear = relevantDate ? relevantDate.getFullYear() : null;
                                         
@@ -3865,7 +4001,7 @@
                                         } else {
                                             // Calendar year has ended - check eligibility based on 91 days rule
                                             isEligible = isEligibleForTesting(mostRecentDate);
-                                            testStatus = isEligible ? 'Eligible' : 'Not Eligible';
+                                            testStatus = isEligible ? 'Ready' : 'Not Ready';
                                             testStatusColor = isEligible ? '#4CAF50' : '#ff6b6b';
                                             testStatusIcon = isEligible ? 
                                                 `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
@@ -3877,18 +4013,34 @@
                                         }
                                     } else {
                                         // Both tests not completed in current year - check eligibility
-                                        isEligible = isEligibleForTesting(mostRecentDate);
-                                        testStatus = isEligible ? 'Eligible' : 'Not Eligible';
-                                        testStatusColor = isEligible ? '#4CAF50' : '#ff6b6b';
-                                        testStatusIcon = isEligible ? 
-                                            `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                                            </svg>` :
-                                            `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                        // Check if CAT 5 is required but not done this year
+                                        const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                                        if (requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear) {
+                                            // CAT 5 is required but not done, even though CAT 1 & PVI were done - show warning but still Ready
+                                            testStatus = 'CAT 5 Required';
+                                            testStatusColor = '#ff9800';
+                                            testStatusIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
                                             </svg>`;
+                                            isEligible = true; // Still count as eligible/Ready
+                                        } else {
+                                            isEligible = isEligibleForTesting(mostRecentDate);
+                                            // If CAT 1 & PVI are done this year but CAT 5 is required and not done, still count as eligible (Ready)
+                                            if (!isEligible && hasCat1ThisYear && hasPVIThisYear && requiresCat5 && !hasCategoryTestThisYear) {
+                                                isEligible = true;
+                                            }
+                                            testStatus = isEligible ? 'Ready' : 'Not Ready';
+                                            testStatusColor = isEligible ? '#4CAF50' : '#ff6b6b';
+                                            testStatusIcon = isEligible ? 
+                                                `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                                                </svg>` :
+                                                `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                                </svg>`;
+                                        }
                                     }
-                                } else if ((bothTestsCompleted && cat5NotRequired) || dismantledCompleted) {
+                                } else if (bothTestsCompleted || dismantledCompleted) {
                                     // Check if we're still in the same calendar year as the tests
                                     // For dismantled devices, use PVI date; for regular devices, use most recent date
                                     const relevantDate = isDismantled ? pviDate : mostRecentDate;
@@ -3907,7 +4059,7 @@
                                         // For dismantled devices, use PVI date; for regular devices, use most recent date
                                         const eligibilityDate = isDismantled ? pviDate : mostRecentDate;
                                         isEligible = isEligibleForTesting(eligibilityDate);
-                                        testStatus = isEligible ? 'Eligible' : 'Not Eligible';
+                                        testStatus = isEligible ? 'Ready' : 'Not Ready';
                                         testStatusColor = isEligible ? '#4CAF50' : '#ff6b6b';
                                         testStatusIcon = isEligible ? 
                                             `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
@@ -3918,17 +4070,33 @@
                                             </svg>`;
                                     }
                                 } else {
-                                    // Standard eligibility check
-                                    isEligible = isEligibleForTesting(mostRecentDate);
-                                    testStatus = isEligible ? 'Eligible' : 'Not Eligible';
-                                    testStatusColor = isEligible ? '#4CAF50' : '#ff6b6b';
-                                    testStatusIcon = isEligible ? 
-                                        `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                                        </svg>` :
-                                        `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                    // Check if CAT 5 is required but not done this year
+                                    const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                                    if (requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear) {
+                                        // CAT 5 is required but not done, even though CAT 1 & PVI were done - show warning but still Ready
+                                        testStatus = 'CAT 5 Required';
+                                        testStatusColor = '#ff9800';
+                                        testStatusIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
                                         </svg>`;
+                                        isEligible = true; // Still count as eligible/Ready
+                                    } else {
+                                        // Standard eligibility check
+                                        isEligible = isEligibleForTesting(mostRecentDate);
+                                        // If CAT 1 & PVI are done this year but CAT 5 is required and not done, still count as eligible (Ready)
+                                        if (!isEligible && hasCat1ThisYear && hasPVIThisYear && requiresCat5 && !hasCategoryTestThisYear) {
+                                            isEligible = true;
+                                        }
+                                        testStatus = isEligible ? 'Ready' : 'Not Ready';
+                                        testStatusColor = isEligible ? '#4CAF50' : '#ff6b6b';
+                                        testStatusIcon = isEligible ? 
+                                            `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                                            </svg>` :
+                                            `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                            </svg>`;
+                                    }
                                 }
                                 
                                 const daysSinceInspection = mostRecentDate ? 
@@ -4259,10 +4427,13 @@
                         requiresCat5 = yearsSinceCat5 >= 5;
                     }
                     
+                    // Determine if a valid category test was completed this year
                     let hasCategoryTestThisYear = false;
                     if (requiresCat5) {
+                        // CAT 5 is required (5+ years since last CAT 5), so only CAT 5 done this year counts
                         hasCategoryTestThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
                     } else {
+                        // CAT 5 not required, so CAT 1 or CAT 5 done this year counts
                         hasCategoryTestThisYear = (cat1Date && cat1Date.getFullYear() === currentYear) || 
                                                   (cat5Date && cat5Date.getFullYear() === currentYear);
                     }
@@ -7073,6 +7244,32 @@
             }
         }
         
+        function toggleWarningList() {
+            const button = document.getElementById('warningListBtn');
+            const listDiv = document.getElementById('warningDevicesList');
+            const buttonText = document.getElementById('warningListText');
+            
+            if (!button || !listDiv) return;
+            
+            const isShowing = button.getAttribute('data-showing') === 'true';
+            
+            if (!isShowing) {
+                // Show the list
+                button.setAttribute('data-showing', 'true');
+                listDiv.style.display = 'block';
+                buttonText.textContent = 'Hide Devices';
+                button.style.background = '#ff9800';
+                button.style.color = '#fff';
+            } else {
+                // Hide the list
+                button.setAttribute('data-showing', 'false');
+                listDiv.style.display = 'none';
+                buttonText.textContent = 'Show Devices';
+                button.style.background = 'var(--input-bg)';
+                button.style.color = 'var(--text-color)';
+            }
+        }
+        
         function toggleRemovedDevices() {
             const button = document.getElementById('removedDevicesToggleBtn');
             const listDiv = document.getElementById('removedDeviceTypeSections');
@@ -7169,6 +7366,12 @@
             const oneTestListBtn = document.getElementById('oneTestListBtn');
             if (oneTestListBtn && oneTestListBtn.getAttribute('data-showing') === 'true') {
                 toggleOneTestList();
+            }
+            
+            // Hide warning list if it's showing
+            const warningListBtn = document.getElementById('warningListBtn');
+            if (warningListBtn && warningListBtn.getAttribute('data-showing') === 'true') {
+                toggleWarningList();
             }
             
             // Show all devices
@@ -7695,7 +7898,7 @@
             let newFilter;
             if (currentFilter === 'all') {
                 newFilter = 'eligible';
-                button.textContent = 'Show Not Eligible Only';
+                button.textContent = 'Show Not Ready Only';
                 button.style.background = '#4CAF50';
             } else if (currentFilter === 'eligible') {
                 newFilter = 'not-eligible';
@@ -7703,7 +7906,7 @@
                 button.style.background = '#ff6b6b';
             } else {
                 newFilter = 'all';
-                button.textContent = 'Show Eligible Only';
+                button.textContent = 'Show Ready Only';
                 button.style.background = 'var(--panel-bg)';
             }
             
