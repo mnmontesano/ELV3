@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dismantled Devices List</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #1c1c1c;
+            color: #ffffff;
+        }
+        h1 {
+            color: #4a9eff;
+        }
+        button {
+            background-color: #4a9eff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        button:hover {
+            background-color: #357abd;
+        }
+        button:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-bottom: 20px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .loading {
+            color: #4a9eff;
+        }
+        .error {
+            background-color: #ff6b6b;
+            color: white;
+        }
+        .success {
+            background-color: #4CAF50;
+            color: white;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: #2c2c2c;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #444;
+        }
+        th {
+            background-color: #333;
+            color: #4a9eff;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+        tr:hover {
+            background-color: #3c3c3c;
+        }
+        .export-btn {
+            margin-top: 20px;
+            background-color: #4CAF50;
+        }
+        .export-btn:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Dismantled Devices from NYC DOB API</h1>
+    
+    <button id="fetchBtn" onclick="fetchDismantledDevices()">Fetch Dismantled Devices</button>
+    <button id="exportBtn" class="export-btn" onclick="exportToCSV()" style="display: none;">Export to CSV</button>
+    
+    <div id="status"></div>
+    <div id="results"></div>
+
+    <script>
+        let dismantledDevices = [];
+
+        async function fetchDismantledDevices() {
+            const fetchBtn = document.getElementById('fetchBtn');
+            const statusDiv = document.getElementById('status');
+            const resultsDiv = document.getElementById('results');
+            const exportBtn = document.getElementById('exportBtn');
+            
+            fetchBtn.disabled = true;
+            statusDiv.innerHTML = '<div class="loading">Fetching dismantled devices from API...</div>';
+            resultsDiv.innerHTML = '';
+            
+            try {
+                // Fetch all dismantled devices (using $limit to get more results)
+                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=upper(device_status)='DISMANTLED'&$limit=50000&$order=device_number`;
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                dismantledDevices = data;
+                
+                if (data.length === 0) {
+                    statusDiv.innerHTML = '<div class="error">No dismantled devices found.</div>';
+                    return;
+                }
+                
+                statusDiv.innerHTML = `<div class="success">Found ${data.length} dismantled device(s)</div>`;
+                exportBtn.style.display = 'inline-block';
+                
+                // Display results in a table
+                displayResults(data);
+                
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">Error fetching data: ${error.message}</div>`;
+                console.error('Error:', error);
+            } finally {
+                fetchBtn.disabled = false;
+            }
+        }
+
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('results');
+            
+            if (data.length === 0) {
+                resultsDiv.innerHTML = '<p>No devices found.</p>';
+                return;
+            }
+            
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Device Number</th>
+                            <th>Device Type</th>
+                            <th>Status Date</th>
+                            <th>BIN</th>
+                            <th>Address</th>
+                            <th>Borough</th>
+                            <th>Latest PVI</th>
+                            <th>PVI Year</th>
+                            <th>CAT 1 Year</th>
+                            <th>CAT 5 Year</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            data.forEach(device => {
+                const address = `${device.house_number || ''} ${device.street_name || ''}`.trim();
+                const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection).toLocaleDateString() : 'N/A';
+                const pviYear = device.periodic_report_year || 'N/A';
+                const cat1Year = device.cat1_report_year || 'N/A';
+                const cat5Year = device.cat5_report_year || 'N/A';
+                const statusDate = device.status_date ? new Date(device.status_date).toLocaleDateString() : 'N/A';
+                
+                html += `
+                    <tr>
+                        <td>${device.device_number || 'N/A'}</td>
+                        <td>${device.device_type || 'N/A'}</td>
+                        <td>${statusDate}</td>
+                        <td>${device.bin || 'N/A'}</td>
+                        <td>${address || 'N/A'}</td>
+                        <td>${device.borough || 'N/A'}</td>
+                        <td>${pviDate}</td>
+                        <td>${pviYear}</td>
+                        <td>${cat1Year}</td>
+                        <td>${cat5Year}</td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                    </tbody>
+                </table>
+            `;
+            
+            resultsDiv.innerHTML = html;
+        }
+
+        function exportToCSV() {
+            if (dismantledDevices.length === 0) {
+                alert('No data to export');
+                return;
+            }
+            
+            // Get all unique keys from all devices
+            const allKeys = new Set();
+            dismantledDevices.forEach(device => {
+                Object.keys(device).forEach(key => allKeys.add(key));
+            });
+            
+            const headers = Array.from(allKeys);
+            
+            // Create CSV content
+            let csv = headers.join(',') + '\n';
+            
+            dismantledDevices.forEach(device => {
+                const row = headers.map(header => {
+                    const value = device[header] || '';
+                    // Escape commas and quotes in values
+                    if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+                        return `"${value.replace(/"/g, '""')}"`;
+                    }
+                    return value;
+                });
+                csv += row.join(',') + '\n';
+            });
+            
+            // Download CSV
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `dismantled_devices_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+
+        // Auto-fetch on page load
+        window.onload = function() {
+            fetchDismantledDevices();
+        };
+    </script>
+</body>
+</html>
+

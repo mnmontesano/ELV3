@@ -3064,12 +3064,13 @@
                         
                         // Check if device is completed for the year
                         const isDismantled = device.device_status && device.device_status.toUpperCase() === 'DISMANTLED';
+                        const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
                         const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYearForEligibility;
                         const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYearForEligibility;
                         
-                        // Check if CAT 5 is required
+                        // Check if CAT 5 is required (Dumwaiters do not need CAT 5 testing)
                         let requiresCat5 = false;
-                        if (cat5Date) {
+                        if (!isDumwaiter && cat5Date) {
                             const yearsSinceCat5 = currentYearForEligibility - cat5Date.getFullYear();
                             requiresCat5 = yearsSinceCat5 >= 5;
                         }
@@ -3127,11 +3128,13 @@
                         let isEligible = isEligibleForTesting(mostRecentDate);
                         
                         // Check if this is a warning device (CAT 1 & PVI done but CAT 5 required and not done)
+                        const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
                         const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYearForEligibility;
                         const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYearForEligibility;
                         
+                        // Dumwaiters do not need CAT 5 testing
                         let requiresCat5 = false;
-                        if (cat5Date) {
+                        if (!isDumwaiter && cat5Date) {
                             const yearsSinceCat5 = currentYearForEligibility - cat5Date.getFullYear();
                             requiresCat5 = yearsSinceCat5 >= 5;
                         }
@@ -3227,8 +3230,10 @@
                         
                         // Check if category test was done this year
                         // CAT 5 is only required every 5 years, so check if CAT 5 is required this year
+                        // Dumwaiters do not need CAT 5 testing
+                        const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
                         let requiresCat5 = false;
-                        if (cat5Date) {
+                        if (!isDumwaiter && cat5Date) {
                             const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
                             requiresCat5 = yearsSinceCat5 >= 5;
                         }
@@ -3826,8 +3831,10 @@
             
             const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
             
+            // Dumwaiters do not need CAT 5 testing
+            const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
             let requiresCat5 = false;
-            if (cat5Date) {
+            if (!isDumwaiter && cat5Date) {
                 const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
                 requiresCat5 = yearsSinceCat5 >= 5;
             }
@@ -3903,9 +3910,9 @@
                 status: calculateTestStatusForSorting(device)
             }));
 
-            // Sort devices: "CAT 5 Required" first (most important), then "Not Ready", then "Completed", then others
+            // Sort devices: "CAT 5 Required" first (most important), then "Not Ready", then "Ready", then "Completed"
             devicesWithStatus.sort((a, b) => {
-                const statusOrder = { 'CAT 5 Required': -1, 'Not Ready': 0, 'Completed': 1, 'Ready': 2 };
+                const statusOrder = { 'CAT 5 Required': -1, 'Not Ready': 0, 'Ready': 1, 'Completed': 2 };
                 const orderA = statusOrder[a.status] !== undefined ? statusOrder[a.status] : 3;
                 const orderB = statusOrder[b.status] !== undefined ? statusOrder[b.status] : 3;
                 return orderA - orderB;
@@ -3959,9 +3966,10 @@
                                 // Check if periodic inspection was done this year
                                 const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
                                 
-                                // Check if CAT 5 is required this year
+                                // Check if CAT 5 is required this year (Dumwaiters do not need CAT 5 testing)
+                                const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
                                 let requiresCat5 = false;
-                                if (cat5Date) {
+                                if (!isDumwaiter && cat5Date) {
                                     const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
                                     requiresCat5 = yearsSinceCat5 >= 5;
                                 }
@@ -3998,9 +4006,36 @@
                                 
                                 // If acceptance test was done in previous year, both tests are required in new year
                                 // So we can't show "Completed" unless both tests are done in current year
+                                // Exception: Dismantled devices only need PVI
                                 if (acceptanceTestInPreviousYear) {
-                                    // Both tests must be completed in current year to show "Completed"
-                                    if (bothTestsCompleted) {
+                                    // For dismantled devices, only PVI is required; for regular devices, both tests must be completed
+                                    if (isDismantled && hasPVIThisYear) {
+                                        // Dismantled device with PVI completed this year
+                                        const relevantDate = pviDate;
+                                        const testYear = relevantDate ? relevantDate.getFullYear() : null;
+                                        
+                                        if (testYear === currentYear && today.getFullYear() === currentYear) {
+                                            // Still in the same calendar year as the PVI - show "Completed"
+                                            testStatus = 'Completed';
+                                            testStatusColor = '#4CAF50';
+                                            testStatusIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                                                                </svg>`;
+                                        } else {
+                                            // Calendar year has ended - check eligibility based on 91 days rule
+                                            isEligible = isEligibleForTesting(pviDate);
+                                            testStatus = isEligible ? 'Ready' : 'Not Ready';
+                                            testStatusColor = isEligible ? '#4CAF50' : '#ff6b6b';
+                                            testStatusIcon = isEligible ? 
+                                                `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                                                </svg>` :
+                                                `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                                </svg>`;
+                                        }
+                                    } else if (bothTestsCompleted) {
+                                        // Regular device - both tests must be completed in current year to show "Completed"
                                         const relevantDate = mostRecentDate;
                                         const testYear = relevantDate ? relevantDate.getFullYear() : null;
                                         
@@ -4025,10 +4060,25 @@
                                                 </svg>`;
                                         }
                                     } else {
-                                        // Both tests not completed in current year - check eligibility
-                                        // Check if CAT 5 is required but not done this year
-                                        const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
-                                        if (requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear) {
+                                        // Tests not completed in current year - check eligibility
+                                        // For dismantled devices without PVI, check eligibility based on PVI date
+                                        if (isDismantled && !hasPVIThisYear) {
+                                            // Dismantled device without PVI this year
+                                            const eligibilityDate = pviDate || mostRecentDate;
+                                            isEligible = isEligibleForTesting(eligibilityDate);
+                                            testStatus = isEligible ? 'Ready' : 'Not Ready';
+                                            testStatusColor = isEligible ? '#4CAF50' : '#ff6b6b';
+                                            testStatusIcon = isEligible ? 
+                                                `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                                                </svg>` :
+                                                `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                                </svg>`;
+                                        } else {
+                                            // Regular device - check if CAT 5 is required but not done this year
+                                            const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                                            if (requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear) {
                                             // CAT 5 is required but not done, even though CAT 1 & PVI were done - show warning but still Ready
                                             testStatus = 'CAT 5 Required';
                                             testStatusColor = '#ff9800';
@@ -4051,6 +4101,7 @@
                                                 `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                                                     <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
                                                 </svg>`;
+                                        }
                                         }
                                     }
                                 } else if (bothTestsCompleted || dismantledCompleted) {
@@ -4160,8 +4211,13 @@
                                                 <div style="margin-top: 12px; margin-bottom: 12px; color: ${testStatusColor};">
                                                     ${testStatus === 'Completed' ? `
                                                         <div style="margin-bottom: 8px; color: #4CAF50; font-weight: 500;">
-                                                            ${isDismantled ? 'Test completed for the year' : 'Both test completed for the year'}
+                                                            ${isDismantled ? 'Required test completed for the year' : 'Both test completed for the year'}
                                                         </div>
+                                                        ${isDismantled ? `
+                                                            <div style="margin-bottom: 8px; color: #ffd700; font-size: 0.9em; font-style: italic;">
+                                                                Dismantled devices are required to have a PVI completed for the calendar year. If dismantled device information is contradicting please verify information with the DOB and associated building contacts.
+                                                            </div>
+                                                        ` : ''}
                                                     ` : ''}
                                                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                                                         <span>Last Inspection: ${mostRecentDate.toLocaleDateString()}</span>
@@ -4433,9 +4489,10 @@
                     // Check test completion status for current year
                     const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
                     
-                    // Check if category test was done this year
+                    // Check if category test was done this year (Dumwaiters do not need CAT 5 testing)
+                    const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
                     let requiresCat5 = false;
-                    if (cat5Date) {
+                    if (!isDumwaiter && cat5Date) {
                         const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
                         requiresCat5 = yearsSinceCat5 >= 5;
                     }
