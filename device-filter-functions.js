@@ -21,6 +21,60 @@ function applyAllFilters() {
     const violationsFiltering = document.getElementById('violationsFilterBtn').getAttribute('data-filtering') === 'true';
     const deviceItems = document.querySelectorAll('.device-item');
     
+    // Count devices matching the test eligibility filter specifically
+    let eligibilityCount = 0;
+    deviceItems.forEach(item => {
+        // Skip removed devices - they shouldn't be counted in active device counts
+        const deviceStatus = item.getAttribute('data-device-status');
+        if (deviceStatus && deviceStatus.toUpperCase() === 'REMOVED') {
+            return;
+        }
+        
+        const testStatusElement = item.querySelector('[data-test-status]');
+        if (!testStatusElement) {
+            // If no test status element, skip this device
+            return;
+        }
+        
+        const isEligibleAttr = testStatusElement.getAttribute('data-test-status');
+        const isEligible = isEligibleAttr === 'true' || isEligibleAttr === true;
+        const testStatusText = (testStatusElement.getAttribute('data-test-status-text') || '').trim();
+        let matchesEligibilityFilter = false;
+        
+        if (eligibilityFilter === 'all') {
+            matchesEligibilityFilter = true;
+        } else if (eligibilityFilter === 'eligible') {
+            // Count devices that are eligible (Ready or CAT 5 Required)
+            // Both have isEligible = true
+            matchesEligibilityFilter = isEligible === true;
+        } else if (eligibilityFilter === 'not-eligible') {
+            // Count devices that are not eligible and not completed
+            // Exclude completed devices and eligible devices from not-eligible filter
+            matchesEligibilityFilter = isEligible !== true && testStatusText !== 'Completed';
+        } else if (eligibilityFilter === 'completed') {
+            // Count devices with Completed status
+            matchesEligibilityFilter = testStatusText === 'Completed';
+        }
+        
+        if (matchesEligibilityFilter) {
+            eligibilityCount++;
+        }
+    });
+    
+    // Update the count display
+    const countElement = document.getElementById('testEligibilityCount');
+    if (countElement && eligibilityFilter !== 'all') {
+        const filterLabels = {
+            'eligible': 'Ready',
+            'not-eligible': 'Not Ready',
+            'completed': 'Completed'
+        };
+        const filterLabel = filterLabels[eligibilityFilter] || eligibilityFilter;
+        countElement.textContent = `Showing ${eligibilityCount} ${filterLabel} device${eligibilityCount !== 1 ? 's' : ''}`;
+    } else if (countElement) {
+        countElement.textContent = '';
+    }
+    
     deviceItems.forEach(item => {
         // Type filter check
         const deviceType = item.getAttribute('data-device-type');
@@ -97,6 +151,12 @@ function resetFilters() {
     // Reset device number filter
     if (document.getElementById('deviceNumberFilter')) {
         document.getElementById('deviceNumberFilter').value = '';
+    }
+    
+    // Reset count display
+    const countElement = document.getElementById('testEligibilityCount');
+    if (countElement) {
+        countElement.textContent = '';
     }
     
     // Show all devices
