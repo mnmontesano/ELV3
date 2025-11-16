@@ -168,15 +168,15 @@
         </div>
         <div class="filter-group">
             <label for="limitInput">Limit Results:</label>
-            <input type="number" id="limitInput" value="10000" min="1" max="50000" placeholder="Max 50000">
+            <input type="number" id="limitInput" value="500" min="1" max="50000" placeholder="Max 50000">
         </div>
         <button id="fetchBtn" onclick="fetchDevices()">Fetch Devices</button>
         <button id="exportBtn" class="export-btn" onclick="exportToCSV()" style="display: none;">Export to CSV</button>
     </div>
     
-    <div id="status"></div>
-    <div id="stats" class="stats"></div>
-    <div id="results"></div>
+        <div id="status"></div>
+        <div id="stats" class="stats" style="display: none;"></div>
+        <div id="results" style="display: none;"></div>
 
     <script>
         let allDevices = [];
@@ -192,12 +192,14 @@
             const statusFilter = document.getElementById('statusFilter').value;
             const typeFilter = document.getElementById('typeFilter').value;
             const boroughFilter = document.getElementById('boroughFilter').value;
-            const limit = parseInt(document.getElementById('limitInput').value) || 10000;
+            const limit = parseInt(document.getElementById('limitInput').value) || 500;
             
             fetchBtn.disabled = true;
             statusDiv.innerHTML = '<div class="loading">Fetching devices from API...</div>';
             resultsDiv.innerHTML = '';
+            resultsDiv.style.display = 'none';
             statsDiv.innerHTML = '';
+            statsDiv.style.display = 'none';
             
             try {
                 // Build the query
@@ -236,12 +238,14 @@
                 // Calculate statistics
                 const stats = calculateStats(data);
                 displayStats(stats);
+                statsDiv.style.display = 'flex';
                 
                 statusDiv.innerHTML = `<div class="success">Found ${data.length} device(s) matching your filters</div>`;
                 exportBtn.style.display = 'inline-block';
                 
                 // Display results in a table
                 displayResults(data);
+                resultsDiv.style.display = 'block';
                 
             } catch (error) {
                 statusDiv.innerHTML = `<div class="error">Error fetching data: ${error.message}</div>`;
@@ -427,10 +431,13 @@
             window.URL.revokeObjectURL(url);
         }
 
-        // Auto-fetch on page load (default to All Statuses)
+        // Initialize page - no auto-fetch, wait for user to select filters and click Fetch Devices
         window.onload = function() {
             document.getElementById('statusFilter').value = 'all';
-            fetchDevices();
+            document.getElementById('typeFilter').value = 'all';
+            document.getElementById('boroughFilter').value = 'all';
+            document.getElementById('limitInput').value = '500';
+            // Don't fetch devices automatically - wait for user to click Fetch Devices button
         };
     </script>
 </body>
