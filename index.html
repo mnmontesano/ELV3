@@ -1774,7 +1774,7 @@
         }
 
         function submitFeedback() {
-            window.location.href = "mailto:michaelmontesano@gmail.com?subject=ELV3 Cheat Sheet Feedback";
+            window.location.href = "mailto:michaelmontesano@gmail.com?subject=Vertical Terminal Feedback";
         }
 
         // Add this function to initialize all event listeners
@@ -4324,7 +4324,10 @@
                                                         <span class="arrow">▼</span>
                                     </button>
                                                     <div id="violations_${device.device_number}" style="display: none; margin-top: 8px; 
-                                                         padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;">
+                                                         padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em;
+                                                         overflow-y: auto; overflow-x: hidden; max-height: 80vh; max-width: 100%;
+                                                         position: relative; border: 1px solid var(--input-border); width: 100%;
+                                                         box-sizing: border-box;">
                                                     </div>
                                                 </div>
                                             ` : ''}
@@ -4392,6 +4395,10 @@
             
             if (violationsDiv.style.display === 'none') {
                 violationsDiv.style.display = 'block';
+                // Remove any fixed height to allow auto-expansion
+                violationsDiv.style.height = 'auto';
+                violationsDiv.style.overflowY = 'visible';
+                violationsDiv.style.maxHeight = 'none';
                 arrow.textContent = '▲';
                 if (buttonText) {
                     buttonText.textContent = 'Hide Violation Details';
@@ -4420,10 +4427,10 @@
                 
                 if (activeViolations.length > 0) {
                     let violationsHtml = `
-                        <div style="margin-bottom: 5px; color: var(--header-color);">
+                        <div style="margin-bottom: 8px; color: var(--header-color);">
                             <strong>Active Violations (${activeViolations.length}):</strong>
                         </div>
-                        <div style="max-height: 200px; overflow-y: auto; padding-right: 5px;">
+                        <div style="overflow: visible; padding-right: 5px;">
                     `;
                     
                     activeViolations.forEach(v => {
@@ -4448,6 +4455,16 @@
                     
                     violationsHtml += `</div>`;
                     violationsDiv.innerHTML = violationsHtml;
+                    // After content is loaded, check if we need to enable scrolling
+                    setTimeout(() => {
+                        const rect = violationsDiv.getBoundingClientRect();
+                        const viewportHeight = window.innerHeight;
+                        // If content exceeds 80% of viewport, enable scrolling
+                        if (rect.height > viewportHeight * 0.8) {
+                            violationsDiv.style.maxHeight = '80vh';
+                            violationsDiv.style.overflowY = 'auto';
+                        }
+                    }, 50);
                 } else {
                     violationsDiv.innerHTML = `<div style="text-align: center; color: var(--text-color);">No active violations found</div>`;
                 }
