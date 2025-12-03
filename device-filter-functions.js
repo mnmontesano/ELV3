@@ -8,6 +8,38 @@ function filterByTestEligibility() {
     applyAllFilters();
 }
 
+// Function to set test eligibility filter from status text click
+function setTestEligibilityFilterFromStatus(statusText) {
+    const dropdown = document.getElementById('testEligibilityFilter');
+    if (!dropdown) return;
+    
+    // Map status text to dropdown value
+    let filterValue = 'all';
+    switch(statusText) {
+        case 'Completed':
+            filterValue = 'completed';
+            break;
+        case 'Ready':
+            filterValue = 'eligible';
+            break;
+        case 'Not Ready':
+            filterValue = 'not-eligible';
+            break;
+        case 'CAT 5 Required':
+            // CAT 5 Required is still eligible/ready
+            filterValue = 'eligible';
+            break;
+        default:
+            filterValue = 'all';
+    }
+    
+    // Update dropdown value
+    dropdown.value = filterValue;
+    
+    // Apply the filter
+    filterByTestEligibility();
+}
+
 // New function to filter devices by device number
 function filterByDeviceNumber() {
     applyAllFilters();
@@ -178,4 +210,5 @@ document.addEventListener('DOMContentLoaded', function() {
     window.filterByDeviceNumber = filterByDeviceNumber;
     window.applyAllFilters = applyAllFilters;
     window.resetFilters = resetFilters;
+    window.setTestEligibilityFilterFromStatus = setTestEligibilityFilterFromStatus;
 }); 

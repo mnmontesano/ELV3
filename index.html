@@ -4240,6 +4240,51 @@
                                                             </div>
                                                         ` : ''}
                                                     ` : ''}
+                                                    ${(() => {
+                                                        // Check if device has one test completed but needs another
+                                                        let needsOneMoreTest = false;
+                                                        let missingTest = '';
+                                                        
+                                                        if (isDismantled) {
+                                                            // Dismantled devices only need PVI
+                                                            if (!hasPVIThisYear) {
+                                                                needsOneMoreTest = true;
+                                                                missingTest = 'PVI';
+                                                            }
+                                                        } else {
+                                                            // Regular devices need both PVI and Category test
+                                                            if (hasPVIThisYear && !hasCategoryTestThisYear) {
+                                                                needsOneMoreTest = true;
+                                                                missingTest = requiresCat5 ? 'CAT 5' : 'CAT 1';
+                                                            } else if (!hasPVIThisYear && hasCategoryTestThisYear) {
+                                                                needsOneMoreTest = true;
+                                                                missingTest = 'PVI';
+                                                            }
+                                                        }
+                                                        
+                                                        if (needsOneMoreTest) {
+                                                            // Calculate days remaining in the current year
+                                                            const today = new Date();
+                                                            const endOfYear = new Date(today.getFullYear(), 11, 31, 23, 59, 59, 999);
+                                                            const timeDiff = endOfYear - today;
+                                                            const daysRemaining = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+                                                            
+                                                            // Only show message if 100 days or less remaining
+                                                            if (daysRemaining <= 100) {
+                                                                return `
+                                                                    <div style="margin-bottom: 8px; padding: 8px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800;">
+                                                                        <div style="color: #ff9800; font-weight: 500; margin-bottom: 4px;">
+                                                                            ⚠ One test completed, ${missingTest} still required
+                                                                        </div>
+                                                                        <div style="color: var(--text-color); font-size: 0.9em;">
+                                                                            ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} remaining in ${today.getFullYear()} to complete ${missingTest}
+                                                                        </div>
+                                                                    </div>
+                                                                `;
+                                                            }
+                                                        }
+                                                        return '';
+                                                    })()}
                                                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                                                         <span>Last Inspection: ${mostRecentDate.toLocaleDateString()}</span>
                                                         <span style="padding: 2px 6px; background: var(--panel-bg); border-radius: 3px; color: var(--header-color);">${lastInspectionType}</span>
