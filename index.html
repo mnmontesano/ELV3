@@ -1740,6 +1740,7 @@
             // After switching to the DOB tab, fetch the update date
             if (tabName === 'dob') {
                 fetchAPILastUpdateDate();
+                fetchViolationsAPILastUpdateDate();
                 
                 // Don't apply shift classes when switching to DOB tab - panel will overlay instead
             }
@@ -6870,7 +6871,10 @@
             // Check if we're on the DOB tab initially or when tab changes
             const dobTab = document.getElementById('dobTab');
             if (dobTab) {
-                dobTab.addEventListener('click', fetchAPILastUpdateDate);
+                dobTab.addEventListener('click', function() {
+                    fetchAPILastUpdateDate();
+                    fetchViolationsAPILastUpdateDate();
+                });
             }
             
             // Check if DOB tab is the default tab on load or if DOB content is currently active
@@ -6880,6 +6884,7 @@
             
             if (defaultTab === 'dob' || isDOBActive) {
                 fetchAPILastUpdateDate();
+                fetchViolationsAPILastUpdateDate();
             }
         });
         // Restore the missing functions for ELV3 lookup functionality
@@ -7293,26 +7298,28 @@
         // Function to fetch the last update date for the violations API
         async function fetchViolationsAPILastUpdateDate() {
             try {
-                // Set the default date based on known information
-                const defaultDate = "February 28, 2025";
+                // Get reference to the element displaying the update date
                 const violationsApiLastUpdatedElement = document.getElementById('violationsApiLastUpdated');
+                if (!violationsApiLastUpdatedElement) return;
                 
-                // Start with the known date from screenshot
-                violationsApiLastUpdatedElement.textContent = defaultDate;
+                // Set loading state
+                violationsApiLastUpdatedElement.textContent = "Loading...";
                 
-                // Calculate and display days since update
-                let updateDate = new Date(defaultDate);
-                
-                // Try to fetch the most current data using the correct endpoint format
-                const datasetId = '855j-jady'; // DOB Safety Violations dataset ID
-                const metadataUrl = `https://data.cityofnewyork.us/api/views/${datasetId}.json`;
-                
-                const metadataResponse = await fetch(metadataUrl);
-                if (metadataResponse.ok) {
+                try {
+                    // Get the dataset metadata using the correct endpoint format
+                    const datasetId = '855j-jady'; // DOB Safety Violations dataset ID
+                    const metadataUrl = `https://data.cityofnewyork.us/api/views/${datasetId}.json`;
+                    
+                    const metadataResponse = await fetch(metadataUrl);
+                    if (!metadataResponse.ok) {
+                        throw new Error('Failed to fetch metadata');
+                    }
+                    
                     const metadata = await metadataResponse.json();
                     
                     // Extract the last updated date from the metadata
                     // rowsUpdatedAt is typically a Unix timestamp in seconds, so multiply by 1000
+                    let updateDate;
                     if (metadata.rowsUpdatedAt) {
                         // Handle Unix timestamp (seconds) - multiply by 1000 to get milliseconds
                         updateDate = new Date(metadata.rowsUpdatedAt * 1000);
@@ -7322,6 +7329,8 @@
                     } else if (metadata.viewLastModified) {
                         // Try viewLastModified as fallback
                         updateDate = new Date(metadata.viewLastModified);
+                    } else {
+                        throw new Error('No update date found in metadata');
                     }
                     
                     // Only update if we got a valid date
@@ -7333,68 +7342,54 @@
                         });
                         violationsApiLastUpdatedElement.textContent = formattedDate;
                         console.log("Violations API data last updated:", formattedDate);
+                    } else {
+                        throw new Error('Invalid date format from API');
+                    }
+                    
+                    // Calculate days since update
+                    // Normalize both dates to midnight to compare calendar days, not hours
+                    const today = new Date();
+                    const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                    const updateDateMidnight = new Date(updateDate.getFullYear(), updateDate.getMonth(), updateDate.getDate());
+                    const timeDiff = todayMidnight - updateDateMidnight;
+                    const daysSinceUpdate = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+                    
+                    // Get the days since element
+                    const daysSinceElement = document.getElementById('violationsDaysSinceUpdate');
+                    
+                    if (daysSinceElement) {
+                        // Display appropriate message based on days
+                        if (daysSinceUpdate <= 0) {
+                            daysSinceElement.textContent = "Updated today";
+                            daysSinceElement.style.color = "#4CAF50"; // Green for today
+                        } else if (daysSinceUpdate === 1) {
+                            daysSinceElement.textContent = "Updated 1 day ago";
+                            daysSinceElement.style.color = "#4CAF50"; // Green for 1 day
+                        } else if (daysSinceUpdate < 14) {
+                            daysSinceElement.textContent = `Updated ${daysSinceUpdate} days ago`;
+                            daysSinceElement.style.color = "#4CAF50"; // Green for data less than 14 days old
+                        } else if (daysSinceUpdate < 30) {
+                            daysSinceElement.textContent = `Updated ${daysSinceUpdate} days ago`;
+                            daysSinceElement.style.color = "#FFA500"; // Yellow/Orange for data 14-29 days old
+                        } else {
+                            daysSinceElement.textContent = `Updated ${daysSinceUpdate} days ago`;
+                            daysSinceElement.style.color = "#FF6B6B"; // Red for data 30+ days old
+                        }
+                    }
+                } catch (innerError) {
+                    console.error('Error in primary fetch:', innerError);
+                    
+                    // If we can't fetch the date, show an error message
+                    violationsApiLastUpdatedElement.textContent = "Unable to fetch update date";
+                    
+                    // Remove the days since update element if it exists
+                    const daysSinceElement = document.getElementById('violationsDaysSinceUpdate');
+                    if (daysSinceElement) {
+                        daysSinceElement.parentElement.removeChild(daysSinceElement);
                     }
                 }
-                
-                // Calculate days since update (whether we got a new date or are using the default)
-                // Normalize both dates to midnight to compare calendar days, not hours
-                const today = new Date();
-                const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-                const updateDateMidnight = new Date(updateDate.getFullYear(), updateDate.getMonth(), updateDate.getDate());
-                const timeDiff = todayMidnight - updateDateMidnight;
-                const daysSinceUpdate = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
-                
-                // Get the days since element
-                const daysSinceElement = document.getElementById('violationsDaysSinceUpdate');
-                
-                // Display appropriate message based on days
-                if (daysSinceUpdate <= 0) {
-                    daysSinceElement.textContent = "Updated today";
-                    daysSinceElement.style.color = "#4CAF50"; // Green for today
-                } else if (daysSinceUpdate === 1) {
-                    daysSinceElement.textContent = "Updated 1 day ago";
-                    daysSinceElement.style.color = "#4CAF50"; // Green for 1 day
-                } else if (daysSinceUpdate < 14) {
-                    daysSinceElement.textContent = `Updated ${daysSinceUpdate} days ago`;
-                    daysSinceElement.style.color = "#4CAF50"; // Green for data less than 14 days old
-                } else if (daysSinceUpdate < 30) {
-                    daysSinceElement.textContent = `Updated ${daysSinceUpdate} days ago`;
-                    daysSinceElement.style.color = "#FFA500"; // Yellow/Orange for data 14-29 days old
-                } else {
-                    daysSinceElement.textContent = `Updated ${daysSinceUpdate} days ago`;
-                    daysSinceElement.style.color = "#FF6B6B"; // Red for data 30+ days old
-                }
-            } catch (error) {
-                console.error('Error fetching Violations API update date:', error);
-                // Display days since the default date even if there's an error
-                // Normalize both dates to midnight to compare calendar days, not hours
-                const today = new Date();
-                const defaultDate = new Date("February 28, 2025");
-                const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-                const defaultDateMidnight = new Date(defaultDate.getFullYear(), defaultDate.getMonth(), defaultDate.getDate());
-                const timeDiff = todayMidnight - defaultDateMidnight;
-                const daysSinceUpdate = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
-                
-                // Get the days since element
-                const daysSinceElement = document.getElementById('violationsDaysSinceUpdate');
-                
-                // Display appropriate message based on days
-                if (daysSinceUpdate <= 0) {
-                    daysSinceElement.textContent = "Updated today";
-                    daysSinceElement.style.color = "#4CAF50"; // Green for today
-                } else if (daysSinceUpdate === 1) {
-                    daysSinceElement.textContent = "Updated 1 day ago";
-                    daysSinceElement.style.color = "#4CAF50"; // Green for 1 day
-                } else if (daysSinceUpdate < 14) {
-                    daysSinceElement.textContent = `Updated ${daysSinceUpdate} days ago`;
-                    daysSinceElement.style.color = "#4CAF50"; // Green for data less than 14 days old
-                } else if (daysSinceUpdate < 30) {
-                    daysSinceElement.textContent = `Updated ${daysSinceUpdate} days ago`;
-                    daysSinceElement.style.color = "#FFA500"; // Yellow/Orange for data 14-29 days old
-                } else {
-                    daysSinceElement.textContent = `Updated ${daysSinceUpdate} days ago`;
-                    daysSinceElement.style.color = "#FF6B6B"; // Red for data 30+ days old
-                }
+            } catch (outerError) {
+                console.error('Outer error in fetchViolationsAPILastUpdateDate:', outerError);
             }
         }
 
