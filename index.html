@@ -4800,6 +4800,40 @@
             window.lastBinSearchResults = null;
         }
 
+        // Helper function to update bulk lookup progress indicator
+        function updateBulkProgress(processed, total, deviceTimes) {
+            const progressText = document.getElementById('bulkProgressText');
+            const progressBar = document.getElementById('bulkProgressBar');
+            const progressEstimate = document.getElementById('bulkProgressEstimate');
+            
+            if (!progressText || !progressBar || !progressEstimate) return;
+            
+            const percentage = Math.round((processed / total) * 100);
+            progressBar.style.width = percentage + '%';
+            progressText.textContent = `Processing device ${processed} of ${total}...`;
+            
+            // Calculate estimated time remaining based on average time per device
+            if (deviceTimes.length >= 3) {
+                // Use the last 10 times for a more accurate recent average
+                const recentTimes = deviceTimes.slice(-10);
+                const avgTime = recentTimes.reduce((a, b) => a + b, 0) / recentTimes.length;
+                const remainingDevices = total - processed;
+                const estimatedMs = Math.round(avgTime * remainingDevices);
+                
+                if (estimatedMs > 60000) {
+                    const minutes = Math.floor(estimatedMs / 60000);
+                    const seconds = Math.round((estimatedMs % 60000) / 1000);
+                    progressEstimate.textContent = `Estimated time remaining: ${minutes}m ${seconds}s`;
+                } else if (estimatedMs > 1000) {
+                    progressEstimate.textContent = `Estimated time remaining: ${Math.round(estimatedMs / 1000)}s`;
+                } else {
+                    progressEstimate.textContent = 'Almost done...';
+                }
+            } else {
+                progressEstimate.textContent = 'Calculating estimated time...';
+            }
+        }
+
         // Add these new functions to your script section
         async function lookupBulkDevices() {
             const textarea = document.getElementById('bulkDeviceNumbers');
@@ -4815,16 +4849,37 @@
                 return;
             }
 
-            resultDiv.innerHTML = '<span style="color: var(--text-color);">Looking up devices...</span>';
+            // Create progress indicator HTML
+            resultDiv.innerHTML = `
+                <div id="bulkProgressContainer" style="padding: 20px; background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border);">
+                    <div style="margin-bottom: 15px; text-align: center;">
+                        <span id="bulkProgressText" style="color: var(--text-color); font-weight: 500; font-size: 1.1em;">
+                            Preparing to look up ${deviceNumbers.length} devices...
+                        </span>
+                    </div>
+                    <div style="background: var(--panel-bg); border-radius: 10px; height: 24px; overflow: hidden; border: 1px solid var(--input-border);">
+                        <div id="bulkProgressBar" style="background: linear-gradient(90deg, #1a73e8, #4CAF50); height: 100%; width: 0%; transition: width 0.3s ease; border-radius: 10px;"></div>
+                    </div>
+                    <div style="margin-top: 10px; text-align: center;">
+                        <span id="bulkProgressEstimate" style="color: var(--text-color); font-size: 0.9em; opacity: 0.8;">
+                            Calculating estimated time...
+                        </span>
+                    </div>
+                </div>
+            `;
             resultDiv.style.display = 'block';
 
             try {
                 // Create an object to group devices by BIN
                 const binGroups = {};
                 const notFound = [];
+                let processedCount = 0;
+                const deviceTimes = []; // Track time per device for estimation
 
                 // Look up each device
                 for (const deviceNumber of deviceNumbers) {
+                    const deviceStartTime = Date.now();
+                    
                     const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
                     
                     if (!response.ok) {
@@ -4853,8 +4908,21 @@
                             };
                         }
                         binGroups[bin].devices.push(device);
+                        
+                        processedCount++;
+                        const deviceDuration = Date.now() - deviceStartTime;
+                        deviceTimes.push(deviceDuration);
+                        
+                        // Update progress indicator
+                        updateBulkProgress(processedCount, deviceNumbers.length, deviceTimes);
                     } else {
                         notFound.push(deviceNumber);
+                        processedCount++;
+                        const deviceDuration = Date.now() - deviceStartTime;
+                        deviceTimes.push(deviceDuration);
+                        
+                        // Update progress indicator
+                        updateBulkProgress(processedCount, deviceNumbers.length, deviceTimes);
                     }
                 }
 
