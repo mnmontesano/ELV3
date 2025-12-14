@@ -3335,6 +3335,49 @@
                     window.devicesWithNoTestsList = devicesWithNoTestsList;
                     window.devicesWithWarningList = devicesWithWarningList;
 
+                    // Build device type summary with counts
+                    // Order matches the output: active device types first (in their order), then removed-only types
+                    const deviceTypeSummary = (() => {
+                        const typeCounts = [];
+                        const processedTypes = new Set();
+                        
+                        // Process active device types first (in the order they appear)
+                        Object.keys(deviceTypes).forEach(type => {
+                            const activeCount = deviceTypes[type] ? deviceTypes[type].length : 0;
+                            const removedCount = removedDeviceTypes[type] ? removedDeviceTypes[type].length : 0;
+                            const totalCount = activeCount + removedCount;
+                            
+                            // Format the type name and handle pluralization for elevator
+                            let formattedType = type.charAt(0).toUpperCase() + type.slice(1).toLowerCase();
+                            if (type.toUpperCase() === 'ELEVATOR' && totalCount > 1) {
+                                formattedType = 'Elevators';
+                            }
+                            
+                            let countStr = formattedType + ' (' + activeCount + ' active';
+                            if (removedCount > 0) {
+                                countStr += ', ' + removedCount + ' removed';
+                            }
+                            countStr += ')';
+                            typeCounts.push(countStr);
+                            processedTypes.add(type);
+                        });
+                        
+                        // Add any removed-only device types (types that only exist in removed, not active)
+                        Object.keys(removedDeviceTypes).forEach(type => {
+                            if (!processedTypes.has(type)) {
+                                const removedCount = removedDeviceTypes[type].length;
+                                let formattedType = type.charAt(0).toUpperCase() + type.slice(1).toLowerCase();
+                                if (type.toUpperCase() === 'ELEVATOR' && removedCount > 1) {
+                                    formattedType = 'Elevators';
+                                }
+                                let countStr = formattedType + ' (0 active, ' + removedCount + ' removed)';
+                                typeCounts.push(countStr);
+                            }
+                        });
+                        
+                        return typeCounts.join(', ');
+                    })();
+
                     let html = `
                         <div style="background: var(--input-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
                             <div style="margin-bottom: 20px;">
@@ -3576,7 +3619,18 @@
                                                    border: 1px solid var(--input-border); border-radius: 4px; font-size: 0.9em; width: 150px;">
                                     </div>
                                     
-                                    
+                                    <div style="display: flex; align-items: center; gap: 5px;">
+                                        <label for="dateSortFilter" style="color: var(--text-color); font-size: 0.9em;">Sort by Date:</label>
+                                        <select 
+                                            id="dateSortFilter" 
+                                            onchange="sortByDateTested()"
+                                            style="padding: 8px; background: var(--panel-bg); color: var(--text-color); 
+                                                   border: 1px solid var(--input-border); border-radius: 4px; font-size: 0.9em; width: 150px;">
+                                            <option value="default">Default Order</option>
+                                            <option value="oldest">Oldest First</option>
+                                            <option value="newest">Newest First</option>
+                                        </select>
+                                    </div>
                                     
                                     <button 
                                         onclick="resetFilters()" 
@@ -3589,6 +3643,7 @@
                             </div>
                             <div style="margin-top: 20px;">
                                 <strong style="color: var(--header-color); display: block; margin-bottom: 10px;">Active Devices by Type:</strong>
+                                <div style="color: var(--text-color); font-size: 0.9em; margin-bottom: 10px; margin-left: 5px;">${deviceTypeSummary}</div>
                                 <div id="testEligibilityCount" style="color: var(--text-color); font-size: 0.9em; font-weight: 500; margin-bottom: 10px; margin-left: 5px;"></div>
                                 <div style="height: 600px; overflow-y: auto; padding-right: 10px; resize: vertical; border: 2px solid var(--input-border); border-radius: 5px; min-height: 300px;" id="deviceTypeSections">
                     `;
@@ -4197,7 +4252,8 @@
                                     <div class="device-item" 
                                          data-has-violations="${violationCount > 0}" 
                                          data-device-type="${type}"
-                                         data-device-status="${(device.device_status || '').toUpperCase()}">
+                                         data-device-status="${(device.device_status || '').toUpperCase()}"
+                                         data-original-index="${index}">
                                         <div style="padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid var(--input-border);">
                                             <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
                                                 <div><strong style="color: var(--header-color);">Device #:</strong> 

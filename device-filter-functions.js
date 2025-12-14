@@ -45,13 +45,90 @@ function filterByDeviceNumber() {
     applyAllFilters();
 }
 
+// Function to sort devices by date tested
+function sortByDateTested() {
+    applyAllFilters();
+}
+
+// Helper function to get the most recent test date for a device element
+function getMostRecentDateFromDevice(deviceItem) {
+    // Find the device number to look up in stored results
+    const deviceNumberElement = deviceItem.querySelector('div:first-child');
+    if (!deviceNumberElement) return null;
+    
+    const deviceNumberText = deviceNumberElement.textContent;
+    const deviceNumberMatch = deviceNumberText.match(/Device #:\s*(\S+)/);
+    if (!deviceNumberMatch) return null;
+    
+    const deviceNumber = deviceNumberMatch[1];
+    
+    // Look up the device in the stored results
+    const data = window.lastBinSearchResults;
+    if (!data) return null;
+    
+    const device = data.find(d => d.device_number === deviceNumber);
+    if (!device) return null;
+    
+    // Get all test dates
+    const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+    const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+    const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+    
+    // Find most recent date
+    const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null && !isNaN(date.getTime()));
+    
+    if (dates.length === 0) return null;
+    
+    return new Date(Math.max.apply(null, dates));
+}
+
 // Centralized function to apply all filters together
 function applyAllFilters() {
     const typeFilter = document.getElementById('deviceTypeFilter').value;
     const eligibilityFilter = document.getElementById('testEligibilityFilter') ? document.getElementById('testEligibilityFilter').value : 'all';
     const deviceNumberFilter = document.getElementById('deviceNumberFilter') ? document.getElementById('deviceNumberFilter').value.trim().toUpperCase() : '';
+    const dateSortFilter = document.getElementById('dateSortFilter') ? document.getElementById('dateSortFilter').value : 'default';
     const violationsFiltering = document.getElementById('violationsFilterBtn').getAttribute('data-filtering') === 'true';
     const deviceItems = document.querySelectorAll('.device-item');
+    
+    // Get all device type sections (excluding removed devices)
+    const deviceTypeSections = document.querySelectorAll('.device-type-section:not(.removed-devices)');
+    
+    deviceTypeSections.forEach(section => {
+        const container = section.querySelector('div > div:last-child');
+        if (!container) return;
+        
+        const items = Array.from(container.querySelectorAll('.device-item'));
+        
+        if (dateSortFilter === 'default') {
+            // Sort by original index to restore the order when BIN was first searched
+            items.sort((a, b) => {
+                const indexA = parseInt(a.getAttribute('data-original-index')) || 0;
+                const indexB = parseInt(b.getAttribute('data-original-index')) || 0;
+                return indexA - indexB;
+            });
+        } else {
+            // Sort items by date
+            items.sort((a, b) => {
+                const dateA = getMostRecentDateFromDevice(a);
+                const dateB = getMostRecentDateFromDevice(b);
+                
+                // Handle null dates - put them at the end
+                if (!dateA && !dateB) return 0;
+                if (!dateA) return 1;
+                if (!dateB) return -1;
+                
+                if (dateSortFilter === 'oldest') {
+                    return dateA.getTime() - dateB.getTime(); // Oldest first
+                } else {
+                    return dateB.getTime() - dateA.getTime(); // Newest first
+                }
+            });
+        }
+        
+        // Re-append items in sorted order
+        items.forEach(item => container.appendChild(item));
+    });
     
     // Count devices matching the test eligibility filter specifically
     let eligibilityCount = 0;
@@ -185,6 +262,11 @@ function resetFilters() {
         document.getElementById('deviceNumberFilter').value = '';
     }
     
+    // Reset date sort filter
+    if (document.getElementById('dateSortFilter')) {
+        document.getElementById('dateSortFilter').value = 'default';
+    }
+    
     // Reset count display
     const countElement = document.getElementById('testEligibilityCount');
     if (countElement) {
@@ -208,6 +290,8 @@ document.addEventListener('DOMContentLoaded', function() {
     window.filterDevicesByType = filterDevicesByType;
     window.filterByTestEligibility = filterByTestEligibility;
     window.filterByDeviceNumber = filterByDeviceNumber;
+    window.sortByDateTested = sortByDateTested;
+    window.getMostRecentDateFromDevice = getMostRecentDateFromDevice;
     window.applyAllFilters = applyAllFilters;
     window.resetFilters = resetFilters;
     window.setTestEligibilityFilterFromStatus = setTestEligibilityFilterFromStatus;
