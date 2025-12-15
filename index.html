@@ -2648,6 +2648,53 @@
             }
         }
 
+        // Add this new function to toggle building devices in bulk lookup
+        function toggleBuildingDevices(bin) {
+            const devicesContainer = document.getElementById(`buildingDevices_${bin}`);
+            const arrow = document.getElementById(`buildingArrow_${bin}`);
+            
+            if (devicesContainer.style.display === 'none') {
+                devicesContainer.style.display = 'block';
+                arrow.style.transform = 'rotate(180deg)';
+            } else {
+                devicesContainer.style.display = 'none';
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // Filter function for bulk results search
+        function filterBulkResults(searchTerm) {
+            const term = searchTerm.toUpperCase().trim();
+            
+            // Filter summary table rows
+            const summaryRows = document.querySelectorAll('.summary-row');
+            summaryRows.forEach(row => {
+                const bin = row.dataset.bin || '';
+                const address = row.dataset.address || '';
+                const devices = row.dataset.devices || '';
+                
+                const matches = bin.toUpperCase().includes(term) || 
+                               address.toUpperCase().includes(term) || 
+                               devices.toUpperCase().includes(term);
+                
+                row.style.display = matches ? '' : 'none';
+            });
+            
+            // Filter building cards
+            const buildingCards = document.querySelectorAll('.building-card');
+            buildingCards.forEach(card => {
+                const bin = card.dataset.bin || '';
+                const address = card.dataset.address || '';
+                const devices = card.dataset.devices || '';
+                
+                const matches = bin.toUpperCase().includes(term) || 
+                               address.toUpperCase().includes(term) || 
+                               devices.toUpperCase().includes(term);
+                
+                card.style.display = matches ? '' : 'none';
+            });
+        }
+
         // Add this new function to handle the device details dropdown toggle
         function toggleDeviceDetails(deviceNumber) {
             const detailsElement = document.getElementById(`details_${deviceNumber}`);
@@ -4985,31 +5032,128 @@
                                 <span style="color: var(--text-color);">${deviceNumbers.length}</span>
                             </div>
                         </div>
-                        <div style="max-height: 600px; overflow-y: auto; padding-right: 10px;">
                 `;
 
-                // Display grouped devices
-                for (const [bin, group] of Object.entries(binGroups)) {
-                    html += `
-                        <div style="background: var(--panel-bg); padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid var(--input-border); box-shadow: 0 2px 4px var(--card-shadow);">
-                            <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 2px solid var(--input-border);">
-                                <div style="font-size: 1.1em; margin-bottom: 8px;">
-                                    <strong style="color: var(--header-color); font-size: 1.2em;">BIN:</strong> 
-                                    <span style="font-weight: 600; color: var(--text-color);">${bin}</span>
+                // Generate building summary
+                const buildingCount = Object.keys(binGroups).length;
+                const totalViolationsAll = Object.values(binGroups).reduce((sum, group) => 
+                    sum + group.devices.reduce((dSum, device) => 
+                        dSum + (device.violations ? device.violations.length : 0), 0), 0);
+                const buildingsWithViolations = Object.values(binGroups).filter(group => 
+                    group.devices.some(device => device.violations && device.violations.length > 0)).length;
+
+                // Sort buildings by violations (those with violations first)
+                const sortedBinEntries = Object.entries(binGroups).sort((a, b) => {
+                    const aViolations = a[1].devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0);
+                    const bViolations = b[1].devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0);
+                    return bViolations - aViolations;
+                });
+
+                html += `
+                        <div style="margin-bottom: 20px; padding: 15px; background: var(--panel-bg); border-radius: 8px; border: 1px solid var(--input-border);">
+                            <div style="font-size: 1.1em; font-weight: 600; color: var(--header-color); margin-bottom: 12px;">
+                                Summary
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                                <div style="padding: 12px; background: var(--input-bg); border-radius: 6px; text-align: center; border: 1px solid var(--input-border);">
+                                    <div style="font-size: 1.5em; font-weight: 700; color: var(--header-color);">${buildingCount}</div>
+                                    <div style="font-size: 0.9em; color: var(--text-color);">Buildings</div>
                                 </div>
-                                <div style="margin-bottom: 5px;">
-                                    <strong style="color: var(--header-color);">Address:</strong> 
-                                    <span style="color: var(--text-color);">${group.address}</span>
+                                <div style="padding: 12px; background: var(--input-bg); border-radius: 6px; text-align: center; border: 1px solid var(--input-border);">
+                                    <div style="font-size: 1.5em; font-weight: 700; color: ${totalViolationsAll > 0 ? '#ff6b6b' : '#4CAF50'};">${totalViolationsAll}</div>
+                                    <div style="font-size: 0.9em; color: var(--text-color);">Total Violations</div>
                                 </div>
-                                <div>
-                                    <strong style="color: var(--header-color);">Devices Found:</strong> 
-                                    <span style="color: var(--text-color); font-weight: 600;">${group.devices.length}</span>
+                                <div style="padding: 12px; background: var(--input-bg); border-radius: 6px; text-align: center; border: 1px solid var(--input-border);">
+                                    <div style="font-size: 1.5em; font-weight: 700; color: ${buildingsWithViolations > 0 ? '#ff6b6b' : '#4CAF50'};">${buildingsWithViolations}</div>
+                                    <div style="font-size: 0.9em; color: var(--text-color);">Buildings w/ Violations</div>
                                 </div>
                             </div>
-                            <div style="padding-left: 10px;">
+                            <div style="margin-bottom: 12px;">
+                                <input type="text" 
+                                       id="bulkResultsSearch" 
+                                       placeholder="Search by address, BIN, or device number..." 
+                                       oninput="filterBulkResults(this.value)"
+                                       style="width: 100%; padding: 10px 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 0.95em; box-sizing: border-box;">
+                            </div>
+                            <div style="font-size: 0.95em; font-weight: 600; color: var(--header-color); margin-bottom: 10px;">
+                                Building Breakdown:
+                            </div>
+                            <div style="max-height: 200px; overflow-y: auto;">
+                                <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                                    <thead>
+                                        <tr style="background: var(--input-bg); position: sticky; top: 0;">
+                                            <th style="padding: 8px 10px; text-align: left; color: var(--header-color); border-bottom: 2px solid var(--input-border);">Address</th>
+                                            <th style="padding: 8px 10px; text-align: center; color: var(--header-color); border-bottom: 2px solid var(--input-border);">Devices</th>
+                                            <th style="padding: 8px 10px; text-align: center; color: var(--header-color); border-bottom: 2px solid var(--input-border);">Violations</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="summaryTableBody">
+                                        ${sortedBinEntries
+                                            .map(([bin, group]) => {
+                                                const violations = group.devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0);
+                                                const deviceNumbers = group.devices.map(d => d.device_number).join(' ');
+                                                return `
+                                                    <tr class="summary-row" data-bin="${bin}" data-address="${group.address}" data-devices="${deviceNumbers}" style="border-bottom: 1px solid var(--input-border);">
+                                                        <td style="padding: 8px 10px; color: var(--text-color);">${group.address}</td>
+                                                        <td style="padding: 8px 10px; text-align: center; color: var(--text-color); font-weight: 500;">${group.devices.length}</td>
+                                                        <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: ${violations > 0 ? '#ff6b6b' : '#4CAF50'};">${violations}</td>
+                                                    </tr>
+                                                `;
+                                            }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div id="buildingsContainer" style="max-height: 600px; overflow-y: auto; padding-right: 10px;">
+                `;
+
+                // Display grouped devices (using sorted entries)
+                for (const [bin, group] of sortedBinEntries) {
+                    // Count violations across all devices in this building
+                    const totalViolations = group.devices.reduce((sum, device) => 
+                        sum + (device.violations ? device.violations.length : 0), 0);
+                    const deviceNumbers = group.devices.map(d => d.device_number).join(' ');
+                    
+                    html += `
+                        <div class="building-card" data-bin="${bin}" data-address="${group.address}" data-devices="${deviceNumbers}" style="background: var(--panel-bg); padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid var(--input-border); box-shadow: 0 2px 4px var(--card-shadow);">
+                            <div onclick="toggleBuildingDevices('${bin}')" style="cursor: pointer; padding-bottom: 15px; border-bottom: 2px solid var(--input-border);">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div style="flex: 1;">
+                                        <div style="font-size: 1.1em; margin-bottom: 8px;">
+                                            <strong style="color: var(--header-color); font-size: 1.2em;">BIN:</strong> 
+                                            <span style="font-weight: 600; color: var(--text-color);">${bin}</span>
+                                        </div>
+                                        <div style="margin-bottom: 5px;">
+                                            <strong style="color: var(--header-color);">Address:</strong> 
+                                            <span style="color: var(--text-color);">${group.address}</span>
+                                        </div>
+                                        <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                                            <div>
+                                                <strong style="color: var(--header-color);">Devices:</strong> 
+                                                <span style="color: var(--text-color); font-weight: 600;">${group.devices.length}</span>
+                                            </div>
+                                            <div>
+                                                <strong style="color: var(--header-color);">Active Violations:</strong> 
+                                                <span style="color: ${totalViolations > 0 ? '#ff6b6b' : '#4CAF50'}; font-weight: 600;">${totalViolations}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="buildingArrow_${bin}" style="font-size: 1.5em; color: var(--header-color); transition: transform 0.3s ease; transform: rotate(0deg); margin-left: 15px;">
+                                        ▼
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="buildingDevices_${bin}" style="display: none; padding-left: 10px; margin-top: 15px;">
                     `;
 
-                    group.devices.forEach((device, index) => {
+                    // Sort devices so those with violations appear first
+                    const sortedDevices = [...group.devices].sort((a, b) => {
+                        const aViolations = a.violations ? a.violations.length : 0;
+                        const bViolations = b.violations ? b.violations.length : 0;
+                        return bViolations - aViolations; // Higher violations first
+                    });
+
+                    sortedDevices.forEach((device, index) => {
                         html += `
                             <div style="margin-bottom: 20px; padding: 15px; background: var(--input-bg); border-radius: 6px; border: 1px solid var(--input-border); ${index > 0 ? 'margin-top: 15px;' : ''}">
                                 <div style="margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--input-border);">
@@ -5051,42 +5195,103 @@
                             device.violations.forEach((v, vIndex) => {
                                 const issueDate = v.violation_issue_date || v.violation_date;
                                 const formattedDate = issueDate ? new Date(issueDate).toLocaleDateString() : 'Unknown';
+                                const complianceDate = v.compliance_date ? new Date(v.compliance_date).toLocaleDateString() : null;
+                                const dismissalDate = v.dismissal_date ? new Date(v.dismissal_date).toLocaleDateString() : null;
+                                
+                                // Determine severity color
+                                let severityColor = 'var(--text-color)';
+                                if (v.violation_severity) {
+                                    const severity = v.violation_severity.toUpperCase();
+                                    if (severity.includes('HAZARD') || severity.includes('MAJOR') || severity === 'A') {
+                                        severityColor = '#ff4444';
+                                    } else if (severity.includes('LESS') || severity === 'B' || severity === 'C') {
+                                        severityColor = '#ff9800';
+                                    }
+                                }
+                                
                                 html += `
                                     <div style="margin-bottom: 12px; padding: 12px; background: var(--panel-bg); 
                                          border-radius: 5px; border: 1px solid var(--input-border); border-left: 3px solid #ff9800; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                                            <div>
+                                                <strong style="color: var(--header-color); font-size: 1.05em;">Violation #:</strong> 
+                                                <span style="color: var(--text-color); font-weight: 600; font-size: 1.05em;">${v.violation_number || 'Unknown'}</span>
+                                            </div>
+                                            ${v.violation_severity ? 
+                                                `<span style="padding: 4px 10px; background: ${severityColor}22; color: ${severityColor}; border-radius: 4px; font-weight: 600; font-size: 0.85em; border: 1px solid ${severityColor};">
+                                                    ${v.violation_severity}
+                                                </span>` : ''}
+                                        </div>
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 15px; margin-bottom: 8px;">
                                             <div>
-                                                <strong style="color: var(--header-color);">Violation #:</strong> 
-                                                <span style="color: var(--text-color); font-weight: 600;">${v.violation_number || 'Unknown'}</span>
-                                            </div>
-                                            <div>
-                                                <strong style="color: var(--header-color);">Issued:</strong> 
+                                                <strong style="color: var(--header-color);">Issue Date:</strong> 
                                                 <span style="color: var(--text-color);">${formattedDate}</span>
                                             </div>
                                             <div>
                                                 <strong style="color: var(--header-color);">Status:</strong> 
-                                                <span style="color: var(--text-color);">${v.violation_status || 'N/A'}</span>
+                                                <span style="color: ${v.violation_status?.toUpperCase() === 'ACTIVE' ? '#ff6b6b' : 'var(--text-color)'}; font-weight: 500;">${v.violation_status || 'N/A'}</span>
                                             </div>
                                             ${v.violation_type ? 
                                                 `<div>
                                                     <strong style="color: var(--header-color);">Type:</strong> 
                                                     <span style="color: var(--text-color);">${v.violation_type}</span>
                                                 </div>` : ''}
+                                            ${v.violation_category ? 
+                                                `<div>
+                                                    <strong style="color: var(--header-color);">Category:</strong> 
+                                                    <span style="color: var(--text-color);">${v.violation_category}</span>
+                                                </div>` : ''}
+                                            ${v.ecb_number ? 
+                                                `<div>
+                                                    <strong style="color: var(--header-color);">ECB #:</strong> 
+                                                    <span style="color: var(--text-color);">${v.ecb_number}</span>
+                                                </div>` : ''}
+                                            ${v.isn_dob_bis_extract ? 
+                                                `<div>
+                                                    <strong style="color: var(--header-color);">ISN:</strong> 
+                                                    <span style="color: var(--text-color);">${v.isn_dob_bis_extract}</span>
+                                                </div>` : ''}
                                         </div>
-                                        ${v.violation_category ? 
-                                            `<div style="margin-top: 6px;">
-                                                <strong style="color: var(--header-color);">Category:</strong> 
-                                                <span style="color: var(--text-color);">${v.violation_category}</span>
+                                        ${(complianceDate || dismissalDate || v.respondent) ? 
+                                            `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 15px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--input-border);">
+                                                ${complianceDate ? 
+                                                    `<div>
+                                                        <strong style="color: var(--header-color);">Compliance Date:</strong> 
+                                                        <span style="color: var(--text-color);">${complianceDate}</span>
+                                                    </div>` : ''}
+                                                ${dismissalDate ? 
+                                                    `<div>
+                                                        <strong style="color: var(--header-color);">Dismissal Date:</strong> 
+                                                        <span style="color: #4CAF50;">${dismissalDate}</span>
+                                                    </div>` : ''}
+                                                ${v.respondent ? 
+                                                    `<div style="grid-column: span 2;">
+                                                        <strong style="color: var(--header-color);">Respondent:</strong> 
+                                                        <span style="color: var(--text-color);">${v.respondent}</span>
+                                                    </div>` : ''}
                                             </div>` : ''}
-                                        ${v.violation_severity ? 
-                                            `<div style="margin-top: 6px;">
-                                                <strong style="color: var(--header-color);">Severity:</strong> 
-                                                <span style="color: var(--text-color);">${v.violation_severity}</span>
+                                        ${v.penalty_imposed || v.amount_paid ? 
+                                            `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 15px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--input-border);">
+                                                ${v.penalty_imposed ? 
+                                                    `<div>
+                                                        <strong style="color: var(--header-color);">Penalty Imposed:</strong> 
+                                                        <span style="color: #ff6b6b; font-weight: 500;">$${parseFloat(v.penalty_imposed).toLocaleString()}</span>
+                                                    </div>` : ''}
+                                                ${v.amount_paid ? 
+                                                    `<div>
+                                                        <strong style="color: var(--header-color);">Amount Paid:</strong> 
+                                                        <span style="color: #4CAF50; font-weight: 500;">$${parseFloat(v.amount_paid).toLocaleString()}</span>
+                                                    </div>` : ''}
                                             </div>` : ''}
                                         ${(v.violation_description || v.violation_remarks) ? 
                                             `<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--input-border);">
                                                 <strong style="color: var(--header-color); display: block; margin-bottom: 5px;">Description:</strong> 
                                                 <div style="white-space: pre-wrap; color: var(--text-color); line-height: 1.5; padding: 8px; background: var(--input-bg); border-radius: 4px;">${v.violation_description || v.violation_remarks}</div>
+                                            </div>` : ''}
+                                        ${v.aggravated_level ? 
+                                            `<div style="margin-top: 8px;">
+                                                <strong style="color: var(--header-color);">Aggravated Level:</strong> 
+                                                <span style="color: #ff6b6b; font-weight: 500;">${v.aggravated_level}</span>
                                             </div>` : ''}
                                     </div>
                                 `;
