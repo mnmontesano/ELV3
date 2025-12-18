@@ -2662,6 +2662,40 @@
             }
         }
 
+        // Toggle function for bulk test completion status lists
+        function toggleBulkTestList(listType) {
+            const listIds = {
+                'bothTests': 'bulkBothTestsList',
+                'oneTest': 'bulkOneTestList',
+                'warning': 'bulkWarningList',
+                'noTests': 'bulkNoTestsList',
+                'noTestRequired': 'bulkNoTestRequiredList'
+            };
+            
+            const targetId = listIds[listType];
+            if (!targetId) return;
+            
+            const targetList = document.getElementById(targetId);
+            if (!targetList) return;
+            
+            // Close all other lists first
+            Object.values(listIds).forEach(id => {
+                const list = document.getElementById(id);
+                if (list && id !== targetId) {
+                    list.style.display = 'none';
+                }
+            });
+            
+            // Toggle the target list
+            if (targetList.style.display === 'none' || targetList.style.display === '') {
+                targetList.style.display = 'block';
+                // Smooth scroll to the list
+                targetList.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } else {
+                targetList.style.display = 'none';
+            }
+        }
+
         // Filter function for bulk results search
         function filterBulkResults(searchTerm) {
             const term = searchTerm.toUpperCase().trim();
@@ -5042,6 +5076,111 @@
                 const buildingsWithViolations = Object.values(binGroups).filter(group => 
                     group.devices.some(device => device.violations && device.violations.length > 0)).length;
 
+                // Calculate test completion statistics for the current year
+                const currentYear = new Date().getFullYear();
+                let devicesWithBothTests = 0;
+                let devicesWithOneTest = 0;
+                let devicesWithNoTests = 0;
+                let devicesNoTestRequired = 0;
+                let devicesWithWarning = 0;
+                let totalDevicesFound = 0;
+                
+                // Store device lists for each category
+                const bulkDevicesWithBothTestsList = [];
+                const bulkDevicesWithOneTestList = [];
+                const bulkDevicesWithNoTestsList = [];
+                const bulkDevicesNoTestRequiredList = [];
+                const bulkDevicesWithWarningList = [];
+
+                // Count test completion across all devices
+                Object.values(binGroups).forEach(group => {
+                    group.devices.forEach(device => {
+                        totalDevicesFound++;
+                        const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                        const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                        const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                        
+                        const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+                        const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                        const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
+                        
+                        // Check device type and status
+                        const deviceType = (device.device_type || '').toUpperCase();
+                        const deviceStatus = (device.device_status || '').toUpperCase();
+                        const isDismantled = deviceStatus.includes('DISMANTLED');
+                        const isRemoved = deviceStatus.includes('REMOVED');
+                        const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
+                        
+                        // Removed devices don't require any tests
+                        if (isRemoved) {
+                            devicesNoTestRequired++;
+                            bulkDevicesNoTestRequiredList.push({
+                                device_number: device.device_number,
+                                device_type: device.device_type || 'Unknown',
+                                address: `${device.house_number} ${device.street_name}`,
+                                bin: device.bin
+                            });
+                            return;
+                        }
+                        
+                        // CAT 5 is only required every 5 years (Dumbwaiters don't need CAT 5)
+                        let requiresCat5 = false;
+                        let yearsSinceCat5 = null;
+                        if (!isDumbwaiter && cat5Date) {
+                            yearsSinceCat5 = currentYear - cat5Date.getFullYear();
+                            requiresCat5 = yearsSinceCat5 >= 5;
+                        }
+                        
+                        // Determine if a valid category test was completed this year
+                        let hasCategoryTestThisYear = false;
+                        if (isDismantled) {
+                            // Dismantled devices only need PVI
+                            hasCategoryTestThisYear = true;
+                        } else if (requiresCat5) {
+                            // CAT 5 is required (5+ years since last CAT 5), so only CAT 5 done this year counts
+                            hasCategoryTestThisYear = hasCat5ThisYear;
+                        } else {
+                            // CAT 5 not required, so CAT 1 or CAT 5 done this year counts
+                            hasCategoryTestThisYear = hasCat1ThisYear || hasCat5ThisYear;
+                        }
+                        
+                        // Check for Warning case: CAT 1 & PVI done but CAT 5 required and not done
+                        const isWarningDevice = requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear;
+                        
+                        const bothTestsCompleted = hasPVIThisYear && hasCategoryTestThisYear;
+                        const dismantledCompleted = isDismantled && hasPVIThisYear;
+                        
+                        const deviceInfo = {
+                            device_number: device.device_number,
+                            device_type: device.device_type || 'Unknown',
+                            address: `${device.house_number} ${device.street_name}`,
+                            bin: device.bin,
+                            hasPVI: hasPVIThisYear,
+                            hasCat1: hasCat1ThisYear,
+                            hasCat5: hasCat5ThisYear,
+                            hasCategory: hasCategoryTestThisYear,
+                            isDismantled: isDismantled,
+                            isDumbwaiter: isDumbwaiter,
+                            requiresCat5: requiresCat5,
+                            yearsSinceCat5: yearsSinceCat5
+                        };
+                        
+                        if (isWarningDevice) {
+                            devicesWithWarning++;
+                            bulkDevicesWithWarningList.push(deviceInfo);
+                        } else if (bothTestsCompleted || dismantledCompleted) {
+                            devicesWithBothTests++;
+                            bulkDevicesWithBothTestsList.push(deviceInfo);
+                        } else if (hasPVIThisYear || hasCategoryTestThisYear) {
+                            devicesWithOneTest++;
+                            bulkDevicesWithOneTestList.push(deviceInfo);
+                        } else {
+                            devicesWithNoTests++;
+                            bulkDevicesWithNoTestsList.push(deviceInfo);
+                        }
+                    });
+                });
+
                 // Sort buildings by violations (those with violations first)
                 const sortedBinEntries = Object.entries(binGroups).sort((a, b) => {
                     const aViolations = a[1].devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0);
@@ -5066,6 +5205,117 @@
                                 <div style="padding: 12px; background: var(--input-bg); border-radius: 6px; text-align: center; border: 1px solid var(--input-border);">
                                     <div style="font-size: 1.5em; font-weight: 700; color: ${buildingsWithViolations > 0 ? '#ff6b6b' : '#4CAF50'};">${buildingsWithViolations}</div>
                                     <div style="font-size: 0.9em; color: var(--text-color);">Buildings w/ Violations</div>
+                                </div>
+                            </div>
+                            <div style="margin-bottom: 15px; padding: 15px; background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border);">
+                                <div style="font-size: 1em; font-weight: 600; color: var(--header-color); margin-bottom: 12px;">
+                                    ${currentYear} Test Completion Status <span style="font-size: 0.8em; font-weight: 400; opacity: 0.7;">(click to view devices)</span>
+                                </div>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px;">
+                                    <div onclick="toggleBulkTestList('bothTests')" style="padding: 10px; background: var(--panel-bg); border-radius: 6px; text-align: center; border-left: 3px solid #4CAF50; cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 2px 8px rgba(76,175,80,0.3)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
+                                        <div style="font-size: 1.3em; font-weight: 700; color: #4CAF50;">${devicesWithBothTests}</div>
+                                        <div style="font-size: 0.75em; color: var(--text-color);">✓ All Tests Done</div>
+                                    </div>
+                                    <div onclick="toggleBulkTestList('oneTest')" style="padding: 10px; background: var(--panel-bg); border-radius: 6px; text-align: center; border-left: 3px solid #ffd700; cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 2px 8px rgba(255,215,0,0.3)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
+                                        <div style="font-size: 1.3em; font-weight: 700; color: #ffd700;">${devicesWithOneTest}</div>
+                                        <div style="font-size: 0.75em; color: var(--text-color);">⚠ One Test Done</div>
+                                    </div>
+                                    ${devicesWithWarning > 0 ? `
+                                    <div onclick="toggleBulkTestList('warning')" style="padding: 10px; background: var(--panel-bg); border-radius: 6px; text-align: center; border-left: 3px solid #ff9800; cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 2px 8px rgba(255,152,0,0.3)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
+                                        <div style="font-size: 1.3em; font-weight: 700; color: #ff9800;">${devicesWithWarning}</div>
+                                        <div style="font-size: 0.75em; color: var(--text-color);">⚠ CAT 5 Required</div>
+                                    </div>
+                                    ` : ''}
+                                    <div onclick="toggleBulkTestList('noTests')" style="padding: 10px; background: var(--panel-bg); border-radius: 6px; text-align: center; border-left: 3px solid #ff6b6b; cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 2px 8px rgba(255,107,107,0.3)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
+                                        <div style="font-size: 1.3em; font-weight: 700; color: #ff6b6b;">${devicesWithNoTests}</div>
+                                        <div style="font-size: 0.75em; color: var(--text-color);">✗ No Tests Done</div>
+                                    </div>
+                                    ${devicesNoTestRequired > 0 ? `
+                                    <div onclick="toggleBulkTestList('noTestRequired')" style="padding: 10px; background: var(--panel-bg); border-radius: 6px; text-align: center; border-left: 3px solid #9e9e9e; cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 2px 8px rgba(158,158,158,0.3)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
+                                        <div style="font-size: 1.3em; font-weight: 700; color: #9e9e9e;">${devicesNoTestRequired}</div>
+                                        <div style="font-size: 0.75em; color: var(--text-color);">— No Test Required</div>
+                                    </div>
+                                    ` : ''}
+                                </div>
+                                
+                                <!-- Expandable device lists -->
+                                <div id="bulkBothTestsList" style="display: none; margin-top: 15px; padding: 12px; background: var(--panel-bg); border-radius: 6px; border: 1px solid #4CAF50; max-height: 300px; overflow-y: auto;">
+                                    <div style="font-weight: 600; color: #4CAF50; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                                        <span>✓ All Tests Completed (${devicesWithBothTests})</span>
+                                        <button onclick="toggleBulkTestList('bothTests')" style="background: none; border: none; color: var(--text-color); cursor: pointer; font-size: 1.2em;">×</button>
+                                    </div>
+                                    <div style="font-size: 0.9em; color: var(--text-color);">
+                                        ${bulkDevicesWithBothTestsList.length > 0 ? bulkDevicesWithBothTestsList.map(d => {
+                                            let testInfo = d.isDismantled ? 'PVI completed (Dismantled - PVI only required)' : 'PVI + Category test completed';
+                                            let statusNote = d.isDismantled ? '<span style="color: #ffd700; font-weight: bold;">[DISMANTLED]</span> ' : '';
+                                            return `<div style="margin-bottom: 8px; padding: 8px; background: var(--input-bg); border-radius: 4px; border-left: 2px solid #4CAF50;">
+                                                <strong>Device #${d.device_number}</strong> (${d.device_type}) ${statusNote}<br>
+                                                <span style="font-size: 0.85em; opacity: 0.8;">${d.address} | ${testInfo}</span>
+                                            </div>`;
+                                        }).join('') : '<div style="opacity: 0.7;">No devices in this category</div>'}
+                                    </div>
+                                </div>
+                                
+                                <div id="bulkOneTestList" style="display: none; margin-top: 15px; padding: 12px; background: var(--panel-bg); border-radius: 6px; border: 1px solid #ffd700; max-height: 300px; overflow-y: auto;">
+                                    <div style="font-weight: 600; color: #ffd700; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                                        <span>⚠ One Test Completed (${devicesWithOneTest})</span>
+                                        <button onclick="toggleBulkTestList('oneTest')" style="background: none; border: none; color: var(--text-color); cursor: pointer; font-size: 1.2em;">×</button>
+                                    </div>
+                                    <div style="font-size: 0.9em; color: var(--text-color);">
+                                        ${bulkDevicesWithOneTestList.length > 0 ? bulkDevicesWithOneTestList.map(d => {
+                                            let testInfo = d.hasPVI ? 'PVI completed, Category test pending' : 'Category test completed, PVI pending';
+                                            return `<div style="margin-bottom: 8px; padding: 8px; background: var(--input-bg); border-radius: 4px; border-left: 2px solid #ffd700;">
+                                                <strong>Device #${d.device_number}</strong> (${d.device_type})<br>
+                                                <span style="font-size: 0.85em; opacity: 0.8;">${d.address} | ${testInfo}</span>
+                                            </div>`;
+                                        }).join('') : '<div style="opacity: 0.7;">No devices in this category</div>'}
+                                    </div>
+                                </div>
+                                
+                                <div id="bulkWarningList" style="display: none; margin-top: 15px; padding: 12px; background: var(--panel-bg); border-radius: 6px; border: 1px solid #ff9800; max-height: 300px; overflow-y: auto;">
+                                    <div style="font-weight: 600; color: #ff9800; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                                        <span>⚠ CAT 5 Required (${devicesWithWarning})</span>
+                                        <button onclick="toggleBulkTestList('warning')" style="background: none; border: none; color: var(--text-color); cursor: pointer; font-size: 1.2em;">×</button>
+                                    </div>
+                                    <div style="font-size: 0.9em; color: var(--text-color);">
+                                        ${bulkDevicesWithWarningList.length > 0 ? bulkDevicesWithWarningList.map(d => {
+                                            return `<div style="margin-bottom: 8px; padding: 8px; background: var(--input-bg); border-radius: 4px; border-left: 2px solid #ff9800;">
+                                                <strong>Device #${d.device_number}</strong> (${d.device_type})<br>
+                                                <span style="font-size: 0.85em; opacity: 0.8;">${d.address} | CAT 1 & PVI done, but CAT 5 required (last CAT 5: ${d.yearsSinceCat5} years ago)</span>
+                                            </div>`;
+                                        }).join('') : '<div style="opacity: 0.7;">No devices in this category</div>'}
+                                    </div>
+                                </div>
+                                
+                                <div id="bulkNoTestsList" style="display: none; margin-top: 15px; padding: 12px; background: var(--panel-bg); border-radius: 6px; border: 1px solid #ff6b6b; max-height: 300px; overflow-y: auto;">
+                                    <div style="font-weight: 600; color: #ff6b6b; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                                        <span>✗ No Tests Completed (${devicesWithNoTests})</span>
+                                        <button onclick="toggleBulkTestList('noTests')" style="background: none; border: none; color: var(--text-color); cursor: pointer; font-size: 1.2em;">×</button>
+                                    </div>
+                                    <div style="font-size: 0.9em; color: var(--text-color);">
+                                        ${bulkDevicesWithNoTestsList.length > 0 ? bulkDevicesWithNoTestsList.map(d => {
+                                            let statusNote = d.isDismantled ? '<span style="color: #ffd700; font-weight: bold;">[DISMANTLED]</span> ' : '';
+                                            return `<div style="margin-bottom: 8px; padding: 8px; background: var(--input-bg); border-radius: 4px; border-left: 2px solid #ff6b6b;">
+                                                <strong>Device #${d.device_number}</strong> (${d.device_type}) ${statusNote}<br>
+                                                <span style="font-size: 0.85em; opacity: 0.8;">${d.address} | No tests completed this year</span>
+                                            </div>`;
+                                        }).join('') : '<div style="opacity: 0.7;">No devices in this category</div>'}
+                                    </div>
+                                </div>
+                                
+                                <div id="bulkNoTestRequiredList" style="display: none; margin-top: 15px; padding: 12px; background: var(--panel-bg); border-radius: 6px; border: 1px solid #9e9e9e; max-height: 300px; overflow-y: auto;">
+                                    <div style="font-weight: 600; color: #9e9e9e; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                                        <span>— No Test Required (${devicesNoTestRequired})</span>
+                                        <button onclick="toggleBulkTestList('noTestRequired')" style="background: none; border: none; color: var(--text-color); cursor: pointer; font-size: 1.2em;">×</button>
+                                    </div>
+                                    <div style="font-size: 0.9em; color: var(--text-color);">
+                                        ${bulkDevicesNoTestRequiredList.length > 0 ? bulkDevicesNoTestRequiredList.map(d => {
+                                            return `<div style="margin-bottom: 8px; padding: 8px; background: var(--input-bg); border-radius: 4px; border-left: 2px solid #9e9e9e;">
+                                                <strong>Device #${d.device_number}</strong> (${d.device_type}) <span style="color: #9e9e9e; font-weight: bold;">[REMOVED]</span><br>
+                                                <span style="font-size: 0.85em; opacity: 0.8;">${d.address} | Device removed from service</span>
+                                            </div>`;
+                                        }).join('') : '<div style="opacity: 0.7;">No devices in this category</div>'}
+                                    </div>
                                 </div>
                             </div>
                             <div style="margin-bottom: 12px;">
@@ -5154,11 +5404,103 @@
                     });
 
                     sortedDevices.forEach((device, index) => {
+                        // Calculate test completion status for this device
+                        const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                        const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                        const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                        
+                        const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
+                        const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
+                        const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
+                        
+                        const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+                        const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                        const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
+                        
+                        // Check device type and status
+                        const deviceType = (device.device_type || '').toUpperCase();
+                        const deviceStatus = (device.device_status || '').toUpperCase();
+                        const isDismantled = deviceStatus.includes('DISMANTLED');
+                        const isRemoved = deviceStatus.includes('REMOVED');
+                        const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
+                        const noTestRequired = isRemoved;
+                        
+                        // CAT 5 is only required every 5 years (Dumbwaiters don't need CAT 5)
+                        let requiresCat5 = false;
+                        let yearsSinceCat5 = null;
+                        if (!isDumbwaiter && cat5Date) {
+                            yearsSinceCat5 = currentYear - cat5Date.getFullYear();
+                            requiresCat5 = yearsSinceCat5 >= 5;
+                        }
+                        
+                        // Determine if a valid category test was completed this year
+                        let hasCategoryTestThisYear = false;
+                        let categoryTestNote = '';
+                        if (noTestRequired) {
+                            hasCategoryTestThisYear = true;
+                            categoryTestNote = '';
+                        } else if (isDismantled) {
+                            hasCategoryTestThisYear = true;
+                            categoryTestNote = '(Dismantled - PVI only required)';
+                        } else if (isDumbwaiter) {
+                            // Dumbwaiters don't need CAT 5
+                            hasCategoryTestThisYear = hasCat1ThisYear || hasCat5ThisYear;
+                            categoryTestNote = '(Dumbwaiter - CAT 5 not required)';
+                        } else if (requiresCat5) {
+                            // CAT 5 is required (5+ years since last CAT 5)
+                            hasCategoryTestThisYear = hasCat5ThisYear;
+                            categoryTestNote = `(CAT 5 required - last CAT 5 was ${yearsSinceCat5} years ago)`;
+                        } else {
+                            // CAT 5 not required yet, CAT 1 or CAT 5 counts
+                            hasCategoryTestThisYear = hasCat1ThisYear || hasCat5ThisYear;
+                            if (cat5Date && yearsSinceCat5 !== null) {
+                                categoryTestNote = `(CAT 5 due in ${5 - yearsSinceCat5} year${5 - yearsSinceCat5 !== 1 ? 's' : ''})`;
+                            }
+                        }
+                        
+                        // Check for Warning case: CAT 1 & PVI done but CAT 5 required and not done
+                        const isWarningDevice = requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear;
+                        
+                        const bothTestsCompleted = noTestRequired || (hasPVIThisYear && hasCategoryTestThisYear);
+                        const dismantledCompleted = isDismantled && hasPVIThisYear;
+                        const oneTestCompleted = !noTestRequired && !isWarningDevice && (hasPVIThisYear || hasCategoryTestThisYear) && !bothTestsCompleted && !dismantledCompleted;
+                        
+                        // Determine completion status display
+                        let completionStatus, completionColor, completionIcon;
+                        if (noTestRequired) {
+                            completionStatus = 'No Test Required';
+                            completionColor = '#9e9e9e';
+                            completionIcon = '—';
+                        } else if (isWarningDevice) {
+                            completionStatus = 'CAT 5 Required';
+                            completionColor = '#ff9800';
+                            completionIcon = '⚠';
+                            categoryTestNote = `(CAT 1 & PVI done, but CAT 5 required - last CAT 5 was ${yearsSinceCat5} years ago)`;
+                        } else if (bothTestsCompleted || dismantledCompleted) {
+                            completionStatus = 'All Tests Completed';
+                            completionColor = '#4CAF50';
+                            completionIcon = '✓';
+                        } else if (oneTestCompleted) {
+                            const pendingTest = hasPVIThisYear ? 'Category Test' : 'PVI';
+                            completionStatus = `Pending: ${pendingTest}`;
+                            completionColor = '#ffd700';
+                            completionIcon = '⚠';
+                        } else {
+                            completionStatus = 'No Tests Completed';
+                            completionColor = '#ff6b6b';
+                            completionIcon = '✗';
+                        }
+                        
                         html += `
                             <div style="margin-bottom: 20px; padding: 15px; background: var(--input-bg); border-radius: 6px; border: 1px solid var(--input-border); ${index > 0 ? 'margin-top: 15px;' : ''}">
                                 <div style="margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--input-border);">
-                                    <div style="font-size: 1.05em; margin-bottom: 8px; color: var(--header-color); font-weight: 600;">
-                                        Device #${device.device_number}
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                        <div style="font-size: 1.05em; color: var(--header-color); font-weight: 600;">
+                                            Device #${device.device_number}
+                                        </div>
+                                        <span style="padding: 4px 10px; background: ${completionColor}22; color: ${completionColor}; border-radius: 4px; font-weight: 600; font-size: 0.85em; border: 1px solid ${completionColor};">
+                                            ${completionIcon} ${currentYear}
+                                        </span>
                                     </div>
                                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; margin-top: 8px;">
                                         <div>
@@ -5179,6 +5521,41 @@
                                         </div>
                                     </div>
                                 </div>
+                                ${noTestRequired ? `
+                                <div style="margin-bottom: 12px; padding: 15px; background: var(--panel-bg); border-radius: 6px; border-left: 3px solid ${completionColor}; text-align: center;">
+                                    <div style="font-weight: 600; color: ${completionColor}; font-size: 1.1em;">
+                                        ${completionIcon} No Test Required
+                                    </div>
+                                    <div style="font-size: 0.85em; color: var(--text-color); margin-top: 5px; opacity: 0.8;">
+                                        Device has been removed from service
+                                    </div>
+                                </div>
+                                ` : `
+                                <div style="margin-bottom: 12px; padding: 12px; background: var(--panel-bg); border-radius: 6px; border-left: 3px solid ${completionColor};">
+                                    <div style="font-weight: 600; color: var(--header-color); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                                        <span>${currentYear} Test Status</span>
+                                        <span style="color: ${completionColor}; font-size: 0.9em;">${completionIcon} ${completionStatus}</span>
+                                    </div>
+                                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 0.9em;">
+                                        <div style="text-align: center; padding: 8px; background: var(--input-bg); border-radius: 4px; border: 1px solid ${hasPVIThisYear ? '#4CAF50' : 'var(--input-border)'};">
+                                            <div style="font-weight: 600; color: var(--header-color); margin-bottom: 4px;">PVI</div>
+                                            <div style="color: ${hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${hasPVIThisYear ? '600' : '400'};">${pviDisplay}</div>
+                                            ${hasPVIThisYear ? '<div style="color: #4CAF50; font-size: 0.8em;">✓ Done</div>' : '<div style="color: var(--text-color); opacity: 0.7; font-size: 0.8em;">Pending</div>'}
+                                        </div>
+                                        <div style="text-align: center; padding: 8px; background: var(--input-bg); border-radius: 4px; border: 1px solid ${hasCat1ThisYear ? '#4CAF50' : 'var(--input-border)'};">
+                                            <div style="font-weight: 600; color: var(--header-color); margin-bottom: 4px;">CAT 1</div>
+                                            <div style="color: ${hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${hasCat1ThisYear ? '600' : '400'};">${cat1Display}</div>
+                                            ${hasCat1ThisYear ? '<div style="color: #4CAF50; font-size: 0.8em;">✓ Done</div>' : '<div style="color: var(--text-color); opacity: 0.7; font-size: 0.8em;">-</div>'}
+                                        </div>
+                                        <div style="text-align: center; padding: 8px; background: var(--input-bg); border-radius: 4px; border: 1px solid ${hasCat5ThisYear ? '#4CAF50' : (requiresCat5 && !isDismantled ? '#ff9800' : 'var(--input-border)')};">
+                                            <div style="font-weight: 600; color: var(--header-color); margin-bottom: 4px;">CAT 5</div>
+                                            <div style="color: ${hasCat5ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${hasCat5ThisYear ? '600' : '400'};">${cat5Display}</div>
+                                            ${hasCat5ThisYear ? '<div style="color: #4CAF50; font-size: 0.8em;">✓ Done</div>' : (isDumbwaiter ? '<div style="color: var(--text-color); opacity: 0.7; font-size: 0.8em;">Not Required</div>' : (isDismantled ? '<div style="color: var(--text-color); opacity: 0.7; font-size: 0.8em;">N/A</div>' : (requiresCat5 ? '<div style="color: #ff9800; font-size: 0.8em;">⚠ Required</div>' : '<div style="color: var(--text-color); opacity: 0.7; font-size: 0.8em;">Not Due</div>')))}
+                                        </div>
+                                    </div>
+                                    ${categoryTestNote && !noTestRequired ? `<div style="margin-top: 8px; font-size: 0.85em; color: var(--text-color); opacity: 0.8; text-align: center;">${categoryTestNote}</div>` : ''}
+                                </div>
+                                `}
                         `;
                         
                         // Display violations if any
@@ -5491,8 +5868,10 @@
             }
 
             try {
-                // Create CSV content with violation columns
+                // Create CSV content with violation and test completion columns
+                const currentYear = new Date().getFullYear();
                 let csvContent = 'Device Number,BIN,Address,Borough,Type,Status,Block,Lot,' +
+                    'PVI Date,CAT 1 Date,CAT 5 Date,Test Status,' +
                     'Violation Count,Violation Numbers,Violation Issue Dates,Violation Statuses,Violation Types,Violation Descriptions\n';
 
                 // Create an array of promises to fetch violations for all devices
@@ -5520,6 +5899,67 @@
                                 return desc.replace(/"/g, '""');
                             }).join('; ');
 
+                            // Calculate test completion status
+                            const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                            const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                            const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                            
+                            const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
+                            const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
+                            const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
+                            
+                            const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+                            const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                            const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
+                            
+                            // Check device type and status
+                            const deviceType = (device.device_type || '').toUpperCase();
+                            const deviceStatus = (device.device_status || '').toUpperCase();
+                            const isDismantled = deviceStatus.includes('DISMANTLED');
+                            const isRemoved = deviceStatus.includes('REMOVED');
+                            const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
+                            
+                            // CAT 5 is only required every 5 years (Dumbwaiters don't need CAT 5)
+                            let requiresCat5 = false;
+                            if (!isDumbwaiter && cat5Date) {
+                                const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
+                                requiresCat5 = yearsSinceCat5 >= 5;
+                            }
+                            
+                            // Determine test status
+                            let testStatus;
+                            if (isRemoved) {
+                                testStatus = 'No Test Required';
+                            } else {
+                                let hasCategoryTestThisYear = false;
+                                if (isDismantled) {
+                                    hasCategoryTestThisYear = true;
+                                } else if (requiresCat5) {
+                                    // CAT 5 is required (5+ years since last), so only CAT 5 counts
+                                    hasCategoryTestThisYear = hasCat5ThisYear;
+                                } else {
+                                    // CAT 5 not required, CAT 1 or CAT 5 counts
+                                    hasCategoryTestThisYear = hasCat1ThisYear || hasCat5ThisYear;
+                                }
+                                
+                                // Check for Warning case: CAT 1 & PVI done but CAT 5 required and not done
+                                const isWarningDevice = requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear;
+                                
+                                const bothTestsCompleted = hasPVIThisYear && hasCategoryTestThisYear;
+                                const dismantledCompleted = isDismantled && hasPVIThisYear;
+                                
+                                if (isWarningDevice) {
+                                    testStatus = 'CAT 5 Required (Warning)';
+                                } else if (bothTestsCompleted || dismantledCompleted) {
+                                    testStatus = 'All Tests Completed';
+                                } else if (hasPVIThisYear || hasCategoryTestThisYear) {
+                                    const pendingTest = hasPVIThisYear ? 'Category Test' : 'PVI';
+                                    testStatus = `Pending: ${pendingTest}`;
+                                } else {
+                                    testStatus = 'No Tests Completed';
+                                }
+                            }
+
                             const row = [
                                 device.device_number,
                                 bin,
@@ -5529,6 +5969,10 @@
                                 device.device_status || 'N/A',
                                 device.block || 'N/A',
                                 device.lot || 'N/A',
+                                pviDisplay,
+                                cat1Display,
+                                cat5Display,
+                                testStatus,
                                 activeViolations.length,
                                 violationNumbers || 'N/A',
                                 violationIssueDates || 'N/A',
@@ -5557,7 +6001,7 @@
                 // Add not found devices
                 if (deviceData.notFound && deviceData.notFound.length > 0) {
                     deviceData.notFound.forEach(deviceNumber => {
-                        csvContent += `"${deviceNumber}","Not Found","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A"\n`;
+                        csvContent += `"${deviceNumber}","Not Found","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A","N/A"\n`;
                     });
                 }
 
