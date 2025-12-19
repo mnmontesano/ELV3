@@ -5549,9 +5549,12 @@
                         // CAT 5 is only required every 5 years (Dumbwaiters, Conveyors, Wheelchair Lifts, and Hydraulic elevators don't need CAT 5)
                         let requiresCat5 = false;
                         let yearsSinceCat5 = null;
+                        let nextCat5DueYear = null;
+                        const cat5NotApplicable = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isDismantled || isRemoved;
                         if (!isDumbwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && cat5Date) {
                             yearsSinceCat5 = currentYear - cat5Date.getFullYear();
                             requiresCat5 = yearsSinceCat5 >= 5;
+                            nextCat5DueYear = cat5Date.getFullYear() + 5;
                         }
                         
                         // Determine if all required tests are completed this year
@@ -5707,6 +5710,14 @@
                                         </div>
                                     </div>
                                     ${categoryTestNote && !noTestRequired ? `<div style="margin-top: 8px; font-size: 0.85em; color: var(--text-color); opacity: 0.8; text-align: center;">${categoryTestNote}</div>` : ''}
+                                    ${!cat5NotApplicable ? `
+                                    <div style="margin-top: 10px; padding: 8px 12px; background: var(--input-bg); border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--input-border);">
+                                        <span style="font-weight: 600; color: var(--header-color); font-size: 0.9em;">Next CAT 5 Due:</span>
+                                        <span style="color: ${nextCat5DueYear && nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${nextCat5DueYear && nextCat5DueYear <= currentYear ? '600' : '400'}; font-size: 0.9em;">
+                                            ${nextCat5DueYear ? nextCat5DueYear : (cat5Date ? cat5Date.getFullYear() + 5 : 'No CAT 5 on file')}
+                                        </span>
+                                    </div>
+                                    ` : ''}
                                 </div>
                                 `}
                         `;
@@ -6024,7 +6035,7 @@
                 // Create CSV content with violation and test completion columns
                 const currentYear = new Date().getFullYear();
                 let csvContent = 'Device Number,BIN,Address,Borough,Type,Status,Block,Lot,' +
-                    'PVI Date,CAT 1 Date,CAT 5 Date,Test Status,' +
+                    'PVI Date,CAT 1 Date,CAT 5 Date,Next CAT 5 Due,Test Status,' +
                     'Violation Count,Violation Numbers,Violation Issue Dates,Violation Statuses,Violation Types,Violation Descriptions\n';
 
                 // Create an array of promises to fetch violations for all devices
@@ -6074,12 +6085,19 @@
                             const isConveyor = deviceType.includes('CONVEYOR');
                             const isWheelchairLift = deviceType.includes('WHEELCHAIR');
                             const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                            const cat5NotApplicable = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isDismantled || isRemoved;
                             
                             // CAT 5 is only required every 5 years (Dumbwaiters, Conveyors, Wheelchair Lifts, and Hydraulic elevators don't need CAT 5)
                             let requiresCat5 = false;
+                            let nextCat5Due = 'N/A';
                             if (!isDumbwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && cat5Date) {
                                 const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
                                 requiresCat5 = yearsSinceCat5 >= 5;
+                                nextCat5Due = String(cat5Date.getFullYear() + 5);
+                            } else if (cat5NotApplicable) {
+                                nextCat5Due = 'Not Required';
+                            } else {
+                                nextCat5Due = 'No CAT 5 on file';
                             }
                             
                             // Determine test status
@@ -6143,6 +6161,7 @@
                                 pviDisplay,
                                 cat1Display,
                                 cat5Display,
+                                nextCat5Due,
                                 testStatus,
                                 activeViolations.length,
                                 violationNumbers || 'N/A',
