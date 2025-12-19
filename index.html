@@ -5213,25 +5213,32 @@
                             requiresCat5 = yearsSinceCat5 >= 5;
                         }
                         
-                        // Determine if a valid category test was completed this year
-                        let hasCategoryTestThisYear = false;
+                        // Determine if all required tests are completed this year
+                        // Regular elevators need: PVI + CAT 1 every year, and CAT 5 every 5 years
+                        let allTestsCompleted = false;
                         if (isDismantled) {
                             // Dismantled devices only need PVI
-                            hasCategoryTestThisYear = true;
+                            allTestsCompleted = hasPVIThisYear;
+                        } else if (isConveyor) {
+                            // Conveyors only need CAT 1 (no PVI required)
+                            allTestsCompleted = hasCat1ThisYear;
+                        } else if (isDumbwaiter || isWheelchairLift) {
+                            // Dumbwaiters and Wheelchair Lifts need PVI + CAT 1 (no CAT 5)
+                            allTestsCompleted = hasPVIThisYear && hasCat1ThisYear;
                         } else if (requiresCat5) {
-                            // CAT 5 is required (5+ years since last CAT 5), so only CAT 5 done this year counts
-                            hasCategoryTestThisYear = hasCat5ThisYear;
+                            // Regular elevator with CAT 5 required - need PVI + CAT 1 + CAT 5
+                            allTestsCompleted = hasPVIThisYear && hasCat1ThisYear && hasCat5ThisYear;
                         } else {
-                            // CAT 5 not required, so CAT 1 or CAT 5 done this year counts
-                            hasCategoryTestThisYear = hasCat1ThisYear || hasCat5ThisYear;
+                            // Regular elevator, CAT 5 not required - need PVI + CAT 1
+                            allTestsCompleted = hasPVIThisYear && hasCat1ThisYear;
                         }
                         
                         // Check for Warning case: CAT 1 & PVI done but CAT 5 required and not done
-                        const isWarningDevice = requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear;
+                        const isWarningDevice = requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear;
                         
                         // Conveyors only need CAT 1 testing (no PVI required)
                         const conveyorCompleted = isConveyor && hasCat1ThisYear;
-                        const bothTestsCompleted = hasPVIThisYear && hasCategoryTestThisYear;
+                        const bothTestsCompleted = allTestsCompleted;
                         const dismantledCompleted = isDismantled && hasPVIThisYear;
                         
                         const deviceInfo = {
@@ -5529,39 +5536,46 @@
                             requiresCat5 = yearsSinceCat5 >= 5;
                         }
                         
-                        // Determine if a valid category test was completed this year
-                        let hasCategoryTestThisYear = false;
+                        // Determine if all required tests are completed this year
+                        // Regular elevators need: PVI + CAT 1 every year, and CAT 5 every 5 years
+                        let allTestsCompleted = false;
                         let categoryTestNote = '';
                         if (noTestRequired) {
-                            hasCategoryTestThisYear = true;
+                            allTestsCompleted = true;
                             categoryTestNote = '';
                         } else if (isDismantled) {
-                            hasCategoryTestThisYear = true;
+                            allTestsCompleted = hasPVIThisYear;
                             categoryTestNote = '(Dismantled - PVI only required)';
-                        } else if (isDumbwaiter || isConveyor || isWheelchairLift) {
-                            // Dumbwaiters, Conveyors, and Wheelchair Lifts don't need CAT 5
-                            hasCategoryTestThisYear = hasCat1ThisYear || hasCat5ThisYear;
-                            categoryTestNote = isDumbwaiter ? '(Dumbwaiter - CAT 5 not required)' : (isConveyor ? '(Conveyor - CAT 5 not required)' : '(Wheelchair Lift - CAT 5 not required)');
+                        } else if (isConveyor) {
+                            // Conveyors only need CAT 1 (no PVI required)
+                            allTestsCompleted = hasCat1ThisYear;
+                            categoryTestNote = '(Conveyor - CAT 1 only required)';
+                        } else if (isDumbwaiter || isWheelchairLift) {
+                            // Dumbwaiters and Wheelchair Lifts need PVI + CAT 1 (no CAT 5)
+                            allTestsCompleted = hasPVIThisYear && hasCat1ThisYear;
+                            categoryTestNote = isDumbwaiter ? '(Dumbwaiter - CAT 5 not required)' : '(Wheelchair Lift - CAT 5 not required)';
                         } else if (requiresCat5) {
-                            // CAT 5 is required (5+ years since last CAT 5)
-                            hasCategoryTestThisYear = hasCat5ThisYear;
+                            // Regular elevator with CAT 5 required - need PVI + CAT 1 + CAT 5
+                            allTestsCompleted = hasPVIThisYear && hasCat1ThisYear && hasCat5ThisYear;
                             categoryTestNote = `(CAT 5 required - last CAT 5 was ${yearsSinceCat5} years ago)`;
                         } else {
-                            // CAT 5 not required yet, CAT 1 or CAT 5 counts
-                            hasCategoryTestThisYear = hasCat1ThisYear || hasCat5ThisYear;
+                            // Regular elevator, CAT 5 not required - need PVI + CAT 1
+                            allTestsCompleted = hasPVIThisYear && hasCat1ThisYear;
                             if (cat5Date && yearsSinceCat5 !== null) {
                                 categoryTestNote = `(CAT 5 due in ${5 - yearsSinceCat5} year${5 - yearsSinceCat5 !== 1 ? 's' : ''})`;
                             }
                         }
                         
                         // Check for Warning case: CAT 1 & PVI done but CAT 5 required and not done
-                        const isWarningDevice = requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear;
+                        const isWarningDevice = requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear;
                         
                         // Conveyors only need CAT 1 testing (no PVI required)
                         const conveyorCompleted = isConveyor && hasCat1ThisYear;
-                        const bothTestsCompleted = noTestRequired || (hasPVIThisYear && hasCategoryTestThisYear);
+                        const bothTestsCompleted = allTestsCompleted;
                         const dismantledCompleted = isDismantled && hasPVIThisYear;
-                        const oneTestCompleted = !noTestRequired && !isWarningDevice && !conveyorCompleted && (hasPVIThisYear || hasCategoryTestThisYear) && !bothTestsCompleted && !dismantledCompleted;
+                        // Check if at least one test is done but not all
+                        const someTestsDone = hasPVIThisYear || hasCat1ThisYear || hasCat5ThisYear;
+                        const oneTestCompleted = !noTestRequired && !isWarningDevice && !allTestsCompleted && someTestsDone;
                         
                         // Determine completion status display
                         let completionStatus, completionColor, completionIcon;
@@ -5584,13 +5598,20 @@
                             completionColor = '#4CAF50';
                             completionIcon = '✓';
                         } else if (oneTestCompleted) {
-                            let pendingTest;
+                            // Determine what tests are still needed
+                            let missingTests = [];
                             if (isConveyor) {
-                                // Conveyors only need CAT 1
-                                pendingTest = 'CAT 1';
+                                if (!hasCat1ThisYear) missingTests.push('CAT 1');
+                            } else if (isDumbwaiter || isWheelchairLift) {
+                                if (!hasPVIThisYear) missingTests.push('PVI');
+                                if (!hasCat1ThisYear) missingTests.push('CAT 1');
                             } else {
-                                pendingTest = hasPVIThisYear ? 'Category Test' : 'PVI';
+                                // Regular elevator
+                                if (!hasPVIThisYear) missingTests.push('PVI');
+                                if (!hasCat1ThisYear) missingTests.push('CAT 1');
+                                if (requiresCat5 && !hasCat5ThisYear) missingTests.push('CAT 5');
                             }
+                            const pendingTest = missingTests.join(' & ');
                             completionStatus = `Pending: ${pendingTest}`;
                             completionColor = '#ffd700';
                             completionIcon = '⚠';
@@ -6047,37 +6068,45 @@
                             if (isRemoved) {
                                 testStatus = 'No Test Required';
                             } else {
-                                let hasCategoryTestThisYear = false;
+                                // Determine if all required tests are completed this year
+                                let allTestsCompleted = false;
                                 if (isDismantled) {
-                                    hasCategoryTestThisYear = true;
+                                    allTestsCompleted = hasPVIThisYear;
+                                } else if (isConveyor) {
+                                    allTestsCompleted = hasCat1ThisYear;
+                                } else if (isDumbwaiter || isWheelchairLift) {
+                                    allTestsCompleted = hasPVIThisYear && hasCat1ThisYear;
                                 } else if (requiresCat5) {
-                                    // CAT 5 is required (5+ years since last), so only CAT 5 counts
-                                    hasCategoryTestThisYear = hasCat5ThisYear;
+                                    allTestsCompleted = hasPVIThisYear && hasCat1ThisYear && hasCat5ThisYear;
                                 } else {
-                                    // CAT 5 not required, CAT 1 or CAT 5 counts
-                                    hasCategoryTestThisYear = hasCat1ThisYear || hasCat5ThisYear;
+                                    allTestsCompleted = hasPVIThisYear && hasCat1ThisYear;
                                 }
                                 
                                 // Check for Warning case: CAT 1 & PVI done but CAT 5 required and not done
-                                const isWarningDevice = requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear;
+                                const isWarningDevice = requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear;
                                 
-                                // Conveyors only need CAT 1 testing (no PVI required)
-                                const conveyorCompleted = isConveyor && hasCat1ThisYear;
-                                const bothTestsCompleted = hasPVIThisYear && hasCategoryTestThisYear;
-                                const dismantledCompleted = isDismantled && hasPVIThisYear;
+                                const someTestsDone = hasPVIThisYear || hasCat1ThisYear || hasCat5ThisYear;
                                 
-                                if (conveyorCompleted) {
+                                if (isConveyor && hasCat1ThisYear) {
                                     testStatus = 'Testing Completed';
                                 } else if (isWarningDevice) {
                                     testStatus = 'CAT 5 Required (Warning)';
-                                } else if (bothTestsCompleted || dismantledCompleted) {
+                                } else if (allTestsCompleted) {
                                     testStatus = 'All Tests Completed';
-                                } else if (isConveyor && !hasCat1ThisYear) {
-                                    // Conveyor without CAT 1 - pending CAT 1 only
-                                    testStatus = 'Pending: CAT 1';
-                                } else if (hasPVIThisYear || hasCategoryTestThisYear) {
-                                    const pendingTest = hasPVIThisYear ? 'Category Test' : 'PVI';
-                                    testStatus = `Pending: ${pendingTest}`;
+                                } else if (someTestsDone) {
+                                    // Determine what tests are still needed
+                                    let missingTests = [];
+                                    if (isConveyor) {
+                                        if (!hasCat1ThisYear) missingTests.push('CAT 1');
+                                    } else if (isDumbwaiter || isWheelchairLift) {
+                                        if (!hasPVIThisYear) missingTests.push('PVI');
+                                        if (!hasCat1ThisYear) missingTests.push('CAT 1');
+                                    } else {
+                                        if (!hasPVIThisYear) missingTests.push('PVI');
+                                        if (!hasCat1ThisYear) missingTests.push('CAT 1');
+                                        if (requiresCat5 && !hasCat5ThisYear) missingTests.push('CAT 5');
+                                    }
+                                    testStatus = `Pending: ${missingTests.join(' & ')}`;
                                 } else {
                                     testStatus = 'No Tests Completed';
                                 }
