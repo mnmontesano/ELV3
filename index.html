@@ -4549,6 +4549,45 @@
                                                         }
                                                         return '';
                                                     })()}
+                                                    ${(() => {
+                                                        // Check if device has missed testing in prior year(s)
+                                                        const lastTestYear = mostRecentDate.getFullYear();
+                                                        const priorYear = currentYear - 1;
+                                                        const yearsMissed = currentYear - lastTestYear - 1; // Years completely missed (excluding current year)
+                                                        
+                                                        // Only show warning if the last test was before the prior year
+                                                        // (meaning they missed testing in the prior year entirely)
+                                                        if (lastTestYear < priorYear) {
+                                                            const missedYears = [];
+                                                            for (let y = lastTestYear + 1; y < currentYear; y++) {
+                                                                missedYears.push(y);
+                                                            }
+                                                            
+                                                            const yearsText = missedYears.length === 1 
+                                                                ? String(missedYears[0]) 
+                                                                : missedYears.slice(0, -1).join(', ') + ' and ' + missedYears.slice(-1);
+                                                            
+                                                            return '<div style="margin-bottom: 8px; padding: 8px; background: rgba(244, 67, 54, 0.1); border-radius: 4px; border: 1px solid #f44336;">' +
+                                                                '<div style="color: #f44336; font-weight: 500; margin-bottom: 4px;">' +
+                                                                    '⚠ TESTING BEHIND SCHEDULE' +
+                                                                '</div>' +
+                                                                '<div style="color: var(--text-color); font-size: 0.9em;">' +
+                                                                    'No tests completed in ' + yearsText + '. Last test was in ' + lastTestYear + '.' +
+                                                                '</div>' +
+                                                            '</div>';
+                                                        } else if (lastTestYear === priorYear && testStatus !== 'Completed') {
+                                                            // Last test was in prior year and current year tests not completed
+                                                            return '<div style="margin-bottom: 8px; padding: 8px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800;">' +
+                                                                '<div style="color: #ff9800; font-weight: 500; margin-bottom: 4px;">' +
+                                                                    '⚠ No tests completed in ' + currentYear +
+                                                                '</div>' +
+                                                                '<div style="color: var(--text-color); font-size: 0.9em;">' +
+                                                                    'Last test was performed in ' + priorYear + '. Testing required for ' + currentYear + '.' +
+                                                                '</div>' +
+                                                            '</div>';
+                                                        }
+                                                        return '';
+                                                    })()}
                                                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                                                         <span>Last Inspection: ${mostRecentDate.toLocaleDateString()}</span>
                                                         <span style="padding: 2px 6px; background: var(--panel-bg); border-radius: 3px; color: var(--header-color);">${lastInspectionType}</span>
