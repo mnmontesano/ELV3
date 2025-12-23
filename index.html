@@ -3142,14 +3142,18 @@
                     updateBinProgress(75, 'Step 3 of 3: Generating results...', 'Building device information...');
                     window.violationsByDevice = violationsByDevice; // Store for later use
                     
-                    // Calculate total active violations
+                    // Calculate total active violations - only for devices in the current device list
                     let totalActiveViolations = 0;
+                    const deviceNumbersInBin = new Set(data.map(d => d.device_number));
                     for (const deviceNum in violationsByDevice) {
-                        const deviceViolations = violationsByDevice[deviceNum];
-                        const activeDeviceViolations = deviceViolations.filter(v => 
-                            v.violation_status?.toUpperCase() === 'ACTIVE' || 
-                            v.violation_status?.toUpperCase() === 'OPEN');
-                        totalActiveViolations += activeDeviceViolations.length;
+                        // Only count violations for devices that are in the current device list
+                        if (deviceNumbersInBin.has(deviceNum)) {
+                            const deviceViolations = violationsByDevice[deviceNum];
+                            const activeDeviceViolations = deviceViolations.filter(v => 
+                                v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                                v.violation_status?.toUpperCase() === 'OPEN');
+                            totalActiveViolations += activeDeviceViolations.length;
+                        }
                     }
                     
                     const address = `${data[0].house_number} ${data[0].street_name}, ${data[0].borough}`;
