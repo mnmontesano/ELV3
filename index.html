@@ -1184,6 +1184,11 @@
     </div>
 
     <script>
+        // Global variables for storing address suggestions state
+        window.savedAddressSuggestions = null;
+        window.cameFromSuggestions = false;
+        window.originalSearchTerms = { houseNumber: '', streetName: '' };
+
         function numberToWord(input) {
             // Convert input to lowercase for case-insensitive comparison
             if (typeof input === 'string') {
@@ -3626,6 +3631,18 @@
 
                     let html = `
                         <div style="background: var(--input-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
+                            ${window.cameFromSuggestions && window.savedAddressSuggestions ? `
+                            <div style="margin-bottom: 15px;">
+                                <button onclick="showPreviousSuggestions()" 
+                                        style="padding: 8px 16px; background: var(--panel-bg); color: var(--header-color); 
+                                               border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                               font-size: 0.9em; display: flex; align-items: center; gap: 8px; transition: all 0.2s ease;"
+                                        onmouseover="this.style.backgroundColor='var(--input-bg)'"
+                                        onmouseout="this.style.backgroundColor='var(--panel-bg)'">
+                                    <span style="font-size: 1.1em;">←</span> Back to Address Suggestions
+                                </button>
+                            </div>
+                            ` : ''}
                             <div style="margin-bottom: 20px;">
                                 <strong style="color: var(--header-color);">Building Address:</strong> 
                                 <span>${address}</span>
@@ -6037,6 +6054,11 @@
             const resultDiv = document.getElementById('addressResult');
             resultDiv.innerHTML = '';
             resultDiv.style.display = 'none';
+            
+            // Clear saved address suggestions state
+            window.savedAddressSuggestions = null;
+            window.cameFromSuggestions = false;
+            window.originalSearchTerms = { houseNumber: '', streetName: '' };
         }
 
         // Add event listener for Enter key
@@ -6536,6 +6558,11 @@
             // Show address search section when device number is cleared
             toggleAddressSearchVisibility('');
             
+            // Clear saved address suggestions state
+            window.savedAddressSuggestions = null;
+            window.cameFromSuggestions = false;
+            window.originalSearchTerms = { houseNumber: '', streetName: '' };
+            
             // Small delay to ensure all clearing operations complete
             setTimeout(() => {
                 if (deviceNumber) deviceNumber.value = '';
@@ -6605,6 +6632,9 @@
 
         // Function to search for similar addresses when exact match fails
         async function searchForSimilarAddresses(targetHouseNumber, streetName, resultDiv, binInput, quickBinValue) {
+            // Reset the cameFromSuggestions flag since we're showing new suggestions
+            window.cameFromSuggestions = false;
+            
             try {
                 // Search for all addresses on the same street
                 const streetResponse = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?street_name=${streetName}&$limit=1000`);
@@ -6696,6 +6726,10 @@
                             </div>
                         `;
                         
+                        // Save the suggestions HTML and original search terms for "Back to Suggestions" feature
+                        window.savedAddressSuggestions = suggestionsHtml;
+                        window.originalSearchTerms = { houseNumber: targetHouseNumber, streetName: streetName };
+                        
                         resultDiv.innerHTML = suggestionsHtml;
                     } else {
                         resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">No similar addresses found on this street</span>';
@@ -6711,12 +6745,45 @@
 
         // Function to handle clicking on a suggested address
         async function selectSuggestedAddress(houseNumber, streetName) {
+            // Set flag to indicate we came from suggestions (for "Back to Suggestions" feature)
+            window.cameFromSuggestions = true;
+            
             // Update the input fields
             document.getElementById('houseNumber').value = houseNumber;
             document.getElementById('streetName').value = streetName;
             
             // Trigger a new search with the selected address
             await lookupByAddress();
+        }
+
+        // Function to go back to the address suggestions list
+        function showPreviousSuggestions() {
+            if (window.savedAddressSuggestions) {
+                const resultDiv = document.getElementById('addressResult');
+                const deviceResultDiv = document.getElementById('deviceResult');
+                
+                // Show the saved suggestions
+                resultDiv.innerHTML = window.savedAddressSuggestions;
+                resultDiv.style.display = 'block';
+                
+                // Hide the device results
+                deviceResultDiv.innerHTML = '';
+                deviceResultDiv.style.display = 'none';
+                
+                // Restore original search terms in the input fields
+                if (window.originalSearchTerms) {
+                    document.getElementById('houseNumber').value = window.originalSearchTerms.houseNumber;
+                    document.getElementById('streetName').value = window.originalSearchTerms.streetName;
+                }
+                
+                // Reset the flag
+                window.cameFromSuggestions = false;
+                
+                // Clear BIN value since we're going back to suggestions
+                document.getElementById('binNumber').value = '';
+                document.getElementById('quickBinValue').textContent = '-';
+                updateBinDisplayStyle();
+            }
         }
 
         // Function to load full device details from the address search results
@@ -6919,6 +6986,11 @@
             document.getElementById('streetName').value = '';
             document.getElementById('addressResult').innerHTML = '';
             document.getElementById('addressResult').style.display = 'none';
+            
+            // Clear saved address suggestions state
+            window.savedAddressSuggestions = null;
+            window.cameFromSuggestions = false;
+            window.originalSearchTerms = { houseNumber: '', streetName: '' };
         }
 
         // Add this new function to your script section
