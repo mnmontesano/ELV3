@@ -801,7 +801,7 @@
                 </button>
             </div>
 
-            <div id="bulkResult" class="result" style="margin-top: 15px; display: none; background: var(--result-bg); color: var(--text-color);">
+            <div id="bulkResult" class="result" style="margin-top: 15px; display: none; background: var(--result-bg); color: var(--text-color); min-height: 100px; overflow-y: auto; resize: vertical; border: 2px solid var(--input-border); border-radius: 8px; padding: 10px;">
                 <!-- Results will be displayed here -->
             </div>
         </div>
@@ -5571,7 +5571,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div id="buildingDevices_${bin}" style="display: none; padding-left: 10px; margin-top: 15px;">
+                            <div id="buildingDevices_${bin}" style="display: none; margin-top: 15px;">
                     `;
 
                     // Sort devices so those with violations appear first
@@ -5581,15 +5581,37 @@
                         return bViolations - aViolations; // Higher violations first
                     });
 
+                    // Excel-style table header
+                    html += `
+                        <div style="overflow-x: auto;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.85em; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;">
+                                <thead>
+                                    <tr style="background: var(--panel-bg); border-bottom: 2px solid var(--input-border);">
+                                        <th style="padding: 10px 8px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Device #</th>
+                                        <th style="padding: 10px 8px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Type</th>
+                                        <th style="padding: 10px 8px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Status</th>
+                                        <th style="padding: 10px 8px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">PVI</th>
+                                        <th style="padding: 10px 8px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">CAT 1</th>
+                                        <th style="padding: 10px 8px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">CAT 5</th>
+                                        <th style="padding: 10px 8px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Next CAT 5</th>
+                                        <th style="padding: 10px 8px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">${currentYear} Status</th>
+                                        <th style="padding: 10px 8px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Ready</th>
+                                        <th style="padding: 10px 8px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Eligible Date</th>
+                                        <th style="padding: 10px 8px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Violations</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                    `;
+
                     sortedDevices.forEach((device, index) => {
                         // Calculate test completion status for this device
                         const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
                         const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
                         const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
                         
-                        const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
-                        const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
-                        const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
+                        const pviDisplay = pviDate ? pviDate.toLocaleDateString() : '—';
+                        const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : '—';
+                        const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : '—';
                         
                         const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
                         const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
@@ -5607,7 +5629,7 @@
                         const isEscalator = deviceType.includes('ESCALATOR');
                         const noTestRequired = isRemoved;
                         
-                        // CAT 5 is only required every 5 years (Dumbwaiters, Conveyors, Wheelchair Lifts, Hydraulic elevators, and Escalators don't need CAT 5)
+                        // CAT 5 requirements
                         let requiresCat5 = false;
                         let yearsSinceCat5 = null;
                         let nextCat5DueYear = null;
@@ -5618,304 +5640,154 @@
                             nextCat5DueYear = cat5Date.getFullYear() + 5;
                         }
                         
-                        // Determine if all required tests are completed this year
-                        // Regular elevators need: PVI + CAT 1 every year, and CAT 5 every 5 years
-                        let allTestsCompleted = false;
-                        let categoryTestNote = '';
-                        if (noTestRequired) {
-                            allTestsCompleted = true;
-                            categoryTestNote = '';
-                        } else if (isDismantled) {
-                            allTestsCompleted = hasPVIThisYear;
-                            categoryTestNote = '(Dismantled - PVI only required)';
-                        } else if (isConveyor) {
-                            // Conveyors only need CAT 1 (no PVI required)
-                            allTestsCompleted = hasCat1ThisYear;
-                            categoryTestNote = '(Conveyor - CAT 1 only required)';
-                        } else if (isDumbwaiter || isWheelchairLift || isHydraulic || isEscalator) {
-                            // Dumbwaiters, Wheelchair Lifts, Hydraulic elevators, and Escalators need PVI + CAT 1 (no CAT 5)
-                            allTestsCompleted = hasPVIThisYear && hasCat1ThisYear;
-                            categoryTestNote = isDumbwaiter ? '(Dumbwaiter - CAT 5 not required)' : (isWheelchairLift ? '(Wheelchair Lift - CAT 5 not required)' : (isHydraulic ? '(Hydraulic - CAT 5 not required)' : '(Escalator - CAT 5 not required)'));
-                        } else if (requiresCat5) {
-                            // Regular elevator with CAT 5 required - need PVI + CAT 1 + CAT 5
-                            allTestsCompleted = hasPVIThisYear && hasCat1ThisYear && hasCat5ThisYear;
-                            categoryTestNote = `(CAT 5 required - last CAT 5 was ${yearsSinceCat5} years ago)`;
-                        } else {
-                            // Regular elevator, CAT 5 not required - need PVI + CAT 1
-                            allTestsCompleted = hasPVIThisYear && hasCat1ThisYear;
-                            if (cat5Date && yearsSinceCat5 !== null) {
-                                categoryTestNote = `(CAT 5 due in ${5 - yearsSinceCat5} year${5 - yearsSinceCat5 !== 1 ? 's' : ''})`;
+                        // Calculate test eligibility based on 91-day rule
+                        const testDates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                        const mostRecentTestDate = testDates.length > 0 ? new Date(Math.max.apply(null, testDates)) : null;
+                        const today = new Date();
+                        let isReadyForTesting = false;
+                        let daysSinceLastTest = null;
+                        let eligibilityDate = null;
+                        let daysUntilEligible = null;
+                        
+                        if (mostRecentTestDate) {
+                            const timeDiff = today - mostRecentTestDate;
+                            daysSinceLastTest = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+                            isReadyForTesting = daysSinceLastTest >= 91;
+                            eligibilityDate = new Date(mostRecentTestDate.getTime() + (91 * 24 * 60 * 60 * 1000));
+                            if (!isReadyForTesting) {
+                                daysUntilEligible = 91 - daysSinceLastTest;
                             }
                         }
                         
-                        // Check for Warning case: CAT 1 & PVI done but CAT 5 required and not done
-                        const isWarningDevice = requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear;
-                        
-                        // Conveyors only need CAT 1 testing (no PVI required)
-                        const conveyorCompleted = isConveyor && hasCat1ThisYear;
-                        const bothTestsCompleted = allTestsCompleted;
-                        const dismantledCompleted = isDismantled && hasPVIThisYear;
-                        // Check if at least one test is done but not all
-                        const someTestsDone = hasPVIThisYear || hasCat1ThisYear || hasCat5ThisYear;
-                        const oneTestCompleted = !noTestRequired && !isWarningDevice && !allTestsCompleted && someTestsDone;
-                        
-                        // Determine completion status display
-                        let completionStatus, completionColor, completionIcon;
+                        // Determine completion status
+                        let completionStatus, completionColor;
                         if (noTestRequired) {
-                            completionStatus = 'No Test Required';
+                            completionStatus = 'N/A';
                             completionColor = '#9e9e9e';
-                            completionIcon = '—';
-                        } else if (conveyorCompleted) {
-                            completionStatus = 'Testing Completed';
+                        } else if (isConveyor && hasCat1ThisYear) {
+                            completionStatus = 'Complete';
                             completionColor = '#4CAF50';
-                            completionIcon = '✓';
-                            categoryTestNote = '(Conveyor - CAT 1 only required)';
-                        } else if (isWarningDevice) {
-                            completionStatus = 'CAT 5 Required';
+                        } else if (isDismantled && hasPVIThisYear) {
+                            completionStatus = 'Complete';
+                            completionColor = '#4CAF50';
+                        } else if (requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear) {
+                            completionStatus = 'CAT 5 Needed';
                             completionColor = '#ff9800';
-                            completionIcon = '⚠';
-                            categoryTestNote = `(CAT 1 & PVI done, but CAT 5 required - last CAT 5 was ${yearsSinceCat5} years ago)`;
-                        } else if (bothTestsCompleted || dismantledCompleted) {
-                            completionStatus = 'All Tests Completed';
+                        } else if ((isDumbwaiter || isWheelchairLift || isHydraulic || isEscalator) && hasPVIThisYear && hasCat1ThisYear) {
+                            completionStatus = 'Complete';
                             completionColor = '#4CAF50';
-                            completionIcon = '✓';
-                        } else if (oneTestCompleted) {
-                            // Determine what tests are still needed
-                            let missingTests = [];
-                            if (isConveyor) {
-                                if (!hasCat1ThisYear) missingTests.push('CAT 1');
-                            } else if (isDumbwaiter || isWheelchairLift || isEscalator) {
-                                if (!hasPVIThisYear) missingTests.push('PVI');
-                                if (!hasCat1ThisYear) missingTests.push('CAT 1');
+                        } else if (!isDumbwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && !isDismantled) {
+                            if (requiresCat5) {
+                                if (hasPVIThisYear && hasCat1ThisYear && hasCat5ThisYear) {
+                                    completionStatus = 'Complete';
+                                    completionColor = '#4CAF50';
+                                } else {
+                                    let missing = [];
+                                    if (!hasPVIThisYear) missing.push('PVI');
+                                    if (!hasCat1ThisYear) missing.push('CAT1');
+                                    if (!hasCat5ThisYear) missing.push('CAT5');
+                                    completionStatus = missing.join('+');
+                                    completionColor = missing.length === 3 ? '#ff6b6b' : '#ffd700';
+                                }
                             } else {
-                                // Regular elevator
-                                if (!hasPVIThisYear) missingTests.push('PVI');
-                                if (!hasCat1ThisYear) missingTests.push('CAT 1');
-                                if (requiresCat5 && !hasCat5ThisYear) missingTests.push('CAT 5');
+                                if (hasPVIThisYear && hasCat1ThisYear) {
+                                    completionStatus = 'Complete';
+                                    completionColor = '#4CAF50';
+                                } else {
+                                    let missing = [];
+                                    if (!hasPVIThisYear) missing.push('PVI');
+                                    if (!hasCat1ThisYear) missing.push('CAT1');
+                                    completionStatus = missing.join('+');
+                                    completionColor = missing.length === 2 ? '#ff6b6b' : '#ffd700';
+                                }
                             }
-                            const pendingTest = missingTests.join(' & ');
-                            completionStatus = `Pending: ${pendingTest}`;
-                            completionColor = '#ffd700';
-                            completionIcon = '⚠';
-                        } else if (isConveyor && !hasCat1ThisYear) {
-                            // Conveyor without CAT 1 - not completed
-                            completionStatus = 'Pending: CAT 1';
-                            completionColor = '#ffd700';
-                            completionIcon = '⚠';
-                        } else {
-                            completionStatus = 'No Tests Completed';
+                        } else if (isDismantled && !hasPVIThisYear) {
+                            completionStatus = 'PVI';
                             completionColor = '#ff6b6b';
-                            completionIcon = '✗';
+                        } else if (isConveyor && !hasCat1ThisYear) {
+                            completionStatus = 'CAT1';
+                            completionColor = '#ff6b6b';
+                        } else {
+                            completionStatus = 'Incomplete';
+                            completionColor = '#ff6b6b';
                         }
+                        
+                        const violationCount = device.violations ? device.violations.length : 0;
+                        const rowBg = index % 2 === 0 ? 'var(--input-bg)' : 'var(--panel-bg)';
+                        const eligibilityDisplay = mostRecentTestDate ? eligibilityDate.toLocaleDateString() : '—';
+                        const nextCat5Display = cat5NotApplicable ? 'N/A' : (nextCat5DueYear ? nextCat5DueYear : (cat5Date ? cat5Date.getFullYear() + 5 : '—'));
                         
                         html += `
-                            <div style="margin-bottom: 20px; padding: 15px; background: var(--input-bg); border-radius: 6px; border: 1px solid var(--input-border); ${index > 0 ? 'margin-top: 15px;' : ''}">
-                                <div style="margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--input-border);">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                                        <div style="font-size: 1.05em; color: var(--header-color); font-weight: 600;">
-                                            Device #${device.device_number}
-                                        </div>
-                                        <span style="padding: 4px 10px; background: ${completionColor}22; color: ${completionColor}; border-radius: 4px; font-weight: 600; font-size: 0.85em; border: 1px solid ${completionColor};">
-                                            ${completionIcon} ${currentYear}
-                                        </span>
-                                    </div>
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; margin-top: 8px;">
-                                        <div>
-                                            <strong style="color: var(--header-color);">Type:</strong> 
-                                            <span style="color: var(--text-color);">${device.device_type || 'N/A'}</span>
-                                        </div>
-                                        <div>
-                                            <strong style="color: var(--header-color);">Status:</strong> 
-                                            <span style="color: var(--text-color);">${device.device_status || 'N/A'}</span>
-                                        </div>
-                                        <div>
-                                            <strong style="color: var(--header-color);">Block:</strong> 
-                                            <span style="color: var(--text-color);">${device.block || 'N/A'}</span>
-                                        </div>
-                                        <div>
-                                            <strong style="color: var(--header-color);">Lot:</strong> 
-                                            <span style="color: var(--text-color);">${device.lot || 'N/A'}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                ${noTestRequired ? `
-                                <div style="margin-bottom: 12px; padding: 15px; background: var(--panel-bg); border-radius: 6px; border-left: 3px solid ${completionColor}; text-align: center;">
-                                    <div style="font-weight: 600; color: ${completionColor}; font-size: 1.1em;">
-                                        ${completionIcon} No Test Required
-                                    </div>
-                                    <div style="font-size: 0.85em; color: var(--text-color); margin-top: 5px; opacity: 0.8;">
-                                        Device has been removed from service
-                                    </div>
-                                </div>
-                                ` : `
-                                <div style="margin-bottom: 12px; padding: 12px; background: var(--panel-bg); border-radius: 6px; border-left: 3px solid ${completionColor};">
-                                    <div style="font-weight: 600; color: var(--header-color); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                                        <span>${currentYear} Test Status</span>
-                                        <span style="color: ${completionColor}; font-size: 0.9em;">${completionIcon} ${completionStatus}</span>
-                                    </div>
-                                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 0.9em;">
-                                        <div style="text-align: center; padding: 8px; background: var(--input-bg); border-radius: 4px; border: 1px solid ${hasPVIThisYear ? '#4CAF50' : 'var(--input-border)'};">
-                                            <div style="font-weight: 600; color: var(--header-color); margin-bottom: 4px;">PVI</div>
-                                            <div style="color: ${hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${hasPVIThisYear ? '600' : '400'};">${pviDisplay}</div>
-                                            ${hasPVIThisYear ? '<div style="color: #4CAF50; font-size: 0.8em;">✓ Done</div>' : '<div style="color: var(--text-color); opacity: 0.7; font-size: 0.8em;">Pending</div>'}
-                                        </div>
-                                        <div style="text-align: center; padding: 8px; background: var(--input-bg); border-radius: 4px; border: 1px solid ${hasCat1ThisYear ? '#4CAF50' : 'var(--input-border)'};">
-                                            <div style="font-weight: 600; color: var(--header-color); margin-bottom: 4px;">CAT 1</div>
-                                            <div style="color: ${hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${hasCat1ThisYear ? '600' : '400'};">${cat1Display}</div>
-                                            ${hasCat1ThisYear ? '<div style="color: #4CAF50; font-size: 0.8em;">✓ Done</div>' : '<div style="color: var(--text-color); opacity: 0.7; font-size: 0.8em;">-</div>'}
-                                        </div>
-                                        <div style="text-align: center; padding: 8px; background: var(--input-bg); border-radius: 4px; border: 1px solid ${hasCat5ThisYear ? '#4CAF50' : (requiresCat5 && !isDismantled ? '#ff9800' : 'var(--input-border)')};">
-                                            <div style="font-weight: 600; color: var(--header-color); margin-bottom: 4px;">CAT 5</div>
-                                            <div style="color: ${hasCat5ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${hasCat5ThisYear ? '600' : '400'};">${cat5Display}</div>
-                                            ${hasCat5ThisYear ? '<div style="color: #4CAF50; font-size: 0.8em;">✓ Done</div>' : ((isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator) ? '<div style="color: var(--text-color); opacity: 0.7; font-size: 0.8em;">Not Required</div>' : (isDismantled ? '<div style="color: var(--text-color); opacity: 0.7; font-size: 0.8em;">N/A</div>' : (requiresCat5 ? '<div style="color: #ff9800; font-size: 0.8em;">⚠ Required</div>' : '<div style="color: var(--text-color); opacity: 0.7; font-size: 0.8em;">Not Due</div>')))}
-                                        </div>
-                                    </div>
-                                    ${categoryTestNote && !noTestRequired ? `<div style="margin-top: 8px; font-size: 0.85em; color: var(--text-color); opacity: 0.8; text-align: center;">${categoryTestNote}</div>` : ''}
-                                    ${!cat5NotApplicable ? `
-                                    <div style="margin-top: 10px; padding: 8px 12px; background: var(--input-bg); border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--input-border);">
-                                        <span style="font-weight: 600; color: var(--header-color); font-size: 0.9em;">Next CAT 5 Due:</span>
-                                        <span style="color: ${nextCat5DueYear && nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${nextCat5DueYear && nextCat5DueYear <= currentYear ? '600' : '400'}; font-size: 0.9em;">
-                                            ${nextCat5DueYear ? nextCat5DueYear : (cat5Date ? cat5Date.getFullYear() + 5 : 'No CAT 5 on file')}
-                                        </span>
-                                    </div>
-                                    ` : ''}
-                                </div>
-                                `}
+                            <tr style="background: ${rowBg};" class="device-row" data-device="${device.device_number}">
+                                <td style="padding: 8px; border: 1px solid var(--input-border); font-weight: 600; color: var(--text-color);">${device.device_number}</td>
+                                <td style="padding: 8px; border: 1px solid var(--input-border); color: var(--text-color); max-width: 150px; overflow: hidden; text-overflow: ellipsis;" title="${device.device_type || 'N/A'}">${device.device_type || 'N/A'}</td>
+                                <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: var(--text-color);">${device.device_status || 'N/A'}</td>
+                                <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${hasPVIThisYear ? '600' : '400'};">${pviDisplay}</td>
+                                <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${hasCat1ThisYear ? '600' : '400'};">${cat1Display}</td>
+                                <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${hasCat5ThisYear ? '#4CAF50' : (requiresCat5 ? '#ff9800' : 'var(--text-color)')}; font-weight: ${hasCat5ThisYear || requiresCat5 ? '600' : '400'};">${cat5Display}</td>
+                                <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${nextCat5DueYear && nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${nextCat5DueYear && nextCat5DueYear <= currentYear ? '600' : '400'};">${nextCat5Display}</td>
+                                <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${completionColor}; font-weight: 600;">${completionStatus}</td>
+                                <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${isReadyForTesting ? '#4CAF50' : '#ff9800'}; font-weight: 600;">${noTestRequired ? 'N/A' : (isReadyForTesting ? 'Yes' : 'No')}</td>
+                                <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: var(--text-color);">${noTestRequired ? 'N/A' : eligibilityDisplay}</td>
+                                <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${violationCount > 0 ? '#ff6b6b' : '#4CAF50'}; font-weight: 600;">${violationCount}</td>
+                            </tr>
                         `;
                         
-                        // Display violations if any
-                        if (device.violations && device.violations.length > 0) {
+                        // Add expandable violation details row if there are violations
+                        if (violationCount > 0) {
                             html += `
-                                <div style="margin-top: 12px;">
-                                    <div style="margin-bottom: 10px; padding: 8px; background: var(--panel-bg); border-radius: 4px; border-left: 3px solid #ff6b6b;">
-                                        <strong style="color: var(--header-color); font-size: 1.05em;">Active Violations: </strong>
-                                        <span style="color: #ff6b6b; font-weight: 600; font-size: 1.05em;">${device.violations.length}</span>
-                                    </div>
-                                    <div style="margin-top: 10px;">
+                                <tr style="background: ${rowBg};">
+                                    <td colspan="11" style="padding: 0; border: 1px solid var(--input-border);">
+                                        <details style="margin: 0;">
+                                            <summary style="padding: 8px 12px; cursor: pointer; color: #ff6b6b; font-weight: 500; font-size: 0.9em;">
+                                                View ${violationCount} violation${violationCount > 1 ? 's' : ''}
+                                            </summary>
+                                            <div style="padding: 10px 15px; background: var(--panel-bg);">
+                                                <table style="width: 100%; border-collapse: collapse; font-size: 0.85em;">
+                                                    <thead>
+                                                        <tr style="background: var(--input-bg);">
+                                                            <th style="padding: 6px 8px; text-align: left; border: 1px solid var(--input-border); color: var(--header-color);">Violation #</th>
+                                                            <th style="padding: 6px 8px; text-align: left; border: 1px solid var(--input-border); color: var(--header-color);">Issue Date</th>
+                                                            <th style="padding: 6px 8px; text-align: left; border: 1px solid var(--input-border); color: var(--header-color);">Severity</th>
+                                                            <th style="padding: 6px 8px; text-align: left; border: 1px solid var(--input-border); color: var(--header-color);">Status</th>
+                                                            <th style="padding: 6px 8px; text-align: left; border: 1px solid var(--input-border); color: var(--header-color);">Description</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
                             `;
                             
-                            device.violations.forEach((v, vIndex) => {
+                            device.violations.forEach(v => {
                                 const issueDate = v.violation_issue_date || v.violation_date;
-                                const formattedDate = issueDate ? new Date(issueDate).toLocaleDateString() : 'Unknown';
-                                const complianceDate = v.compliance_date ? new Date(v.compliance_date).toLocaleDateString() : null;
-                                const dismissalDate = v.dismissal_date ? new Date(v.dismissal_date).toLocaleDateString() : null;
-                                
-                                // Determine severity color
-                                let severityColor = 'var(--text-color)';
-                                if (v.violation_severity) {
-                                    const severity = v.violation_severity.toUpperCase();
-                                    if (severity.includes('HAZARD') || severity.includes('MAJOR') || severity === 'A') {
-                                        severityColor = '#ff4444';
-                                    } else if (severity.includes('LESS') || severity === 'B' || severity === 'C') {
-                                        severityColor = '#ff9800';
-                                    }
-                                }
+                                const formattedDate = issueDate ? new Date(issueDate).toLocaleDateString() : '—';
+                                const description = v.violation_description || v.violation_remarks || '—';
+                                const truncatedDesc = description.length > 100 ? description.substring(0, 100) + '...' : description;
                                 
                                 html += `
-                                    <div style="margin-bottom: 12px; padding: 12px; background: var(--panel-bg); 
-                                         border-radius: 5px; border: 1px solid var(--input-border); border-left: 3px solid #ff9800; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
-                                            <div>
-                                                <strong style="color: var(--header-color); font-size: 1.05em;">Violation #:</strong> 
-                                                <span style="color: var(--text-color); font-weight: 600; font-size: 1.05em;">${v.violation_number || 'Unknown'}</span>
-                                            </div>
-                                            ${v.violation_severity ? 
-                                                `<span style="padding: 4px 10px; background: ${severityColor}22; color: ${severityColor}; border-radius: 4px; font-weight: 600; font-size: 0.85em; border: 1px solid ${severityColor};">
-                                                    ${v.violation_severity}
-                                                </span>` : ''}
-                                        </div>
-                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 15px; margin-bottom: 8px;">
-                                            <div>
-                                                <strong style="color: var(--header-color);">Issue Date:</strong> 
-                                                <span style="color: var(--text-color);">${formattedDate}</span>
-                                            </div>
-                                            <div>
-                                                <strong style="color: var(--header-color);">Status:</strong> 
-                                                <span style="color: ${v.violation_status?.toUpperCase() === 'ACTIVE' ? '#ff6b6b' : 'var(--text-color)'}; font-weight: 500;">${v.violation_status || 'N/A'}</span>
-                                            </div>
-                                            ${v.violation_type ? 
-                                                `<div>
-                                                    <strong style="color: var(--header-color);">Type:</strong> 
-                                                    <span style="color: var(--text-color);">${v.violation_type}</span>
-                                                </div>` : ''}
-                                            ${v.violation_category ? 
-                                                `<div>
-                                                    <strong style="color: var(--header-color);">Category:</strong> 
-                                                    <span style="color: var(--text-color);">${v.violation_category}</span>
-                                                </div>` : ''}
-                                            ${v.ecb_number ? 
-                                                `<div>
-                                                    <strong style="color: var(--header-color);">ECB #:</strong> 
-                                                    <span style="color: var(--text-color);">${v.ecb_number}</span>
-                                                </div>` : ''}
-                                            ${v.isn_dob_bis_extract ? 
-                                                `<div>
-                                                    <strong style="color: var(--header-color);">ISN:</strong> 
-                                                    <span style="color: var(--text-color);">${v.isn_dob_bis_extract}</span>
-                                                </div>` : ''}
-                                        </div>
-                                        ${(complianceDate || dismissalDate || v.respondent) ? 
-                                            `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 15px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--input-border);">
-                                                ${complianceDate ? 
-                                                    `<div>
-                                                        <strong style="color: var(--header-color);">Compliance Date:</strong> 
-                                                        <span style="color: var(--text-color);">${complianceDate}</span>
-                                                    </div>` : ''}
-                                                ${dismissalDate ? 
-                                                    `<div>
-                                                        <strong style="color: var(--header-color);">Dismissal Date:</strong> 
-                                                        <span style="color: #4CAF50;">${dismissalDate}</span>
-                                                    </div>` : ''}
-                                                ${v.respondent ? 
-                                                    `<div style="grid-column: span 2;">
-                                                        <strong style="color: var(--header-color);">Respondent:</strong> 
-                                                        <span style="color: var(--text-color);">${v.respondent}</span>
-                                                    </div>` : ''}
-                                            </div>` : ''}
-                                        ${v.penalty_imposed || v.amount_paid ? 
-                                            `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 15px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--input-border);">
-                                                ${v.penalty_imposed ? 
-                                                    `<div>
-                                                        <strong style="color: var(--header-color);">Penalty Imposed:</strong> 
-                                                        <span style="color: #ff6b6b; font-weight: 500;">$${parseFloat(v.penalty_imposed).toLocaleString()}</span>
-                                                    </div>` : ''}
-                                                ${v.amount_paid ? 
-                                                    `<div>
-                                                        <strong style="color: var(--header-color);">Amount Paid:</strong> 
-                                                        <span style="color: #4CAF50; font-weight: 500;">$${parseFloat(v.amount_paid).toLocaleString()}</span>
-                                                    </div>` : ''}
-                                            </div>` : ''}
-                                        ${(v.violation_description || v.violation_remarks) ? 
-                                            `<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--input-border);">
-                                                <strong style="color: var(--header-color); display: block; margin-bottom: 5px;">Description:</strong> 
-                                                <div style="white-space: pre-wrap; color: var(--text-color); line-height: 1.5; padding: 8px; background: var(--input-bg); border-radius: 4px;">${v.violation_description || v.violation_remarks}</div>
-                                            </div>` : ''}
-                                        ${v.aggravated_level ? 
-                                            `<div style="margin-top: 8px;">
-                                                <strong style="color: var(--header-color);">Aggravated Level:</strong> 
-                                                <span style="color: #ff6b6b; font-weight: 500;">${v.aggravated_level}</span>
-                                            </div>` : ''}
-                                    </div>
+                                    <tr>
+                                        <td style="padding: 6px 8px; border: 1px solid var(--input-border); color: var(--text-color);">${v.violation_number || '—'}</td>
+                                        <td style="padding: 6px 8px; border: 1px solid var(--input-border); color: var(--text-color);">${formattedDate}</td>
+                                        <td style="padding: 6px 8px; border: 1px solid var(--input-border); color: var(--text-color);">${v.violation_severity || '—'}</td>
+                                        <td style="padding: 6px 8px; border: 1px solid var(--input-border); color: ${v.violation_status?.toUpperCase() === 'ACTIVE' ? '#ff6b6b' : 'var(--text-color)'};">${v.violation_status || '—'}</td>
+                                        <td style="padding: 6px 8px; border: 1px solid var(--input-border); color: var(--text-color); max-width: 300px;" title="${description}">${truncatedDesc}</td>
+                                    </tr>
                                 `;
                             });
                             
                             html += `
-                                    </div>
-                                </div>
-                            `;
-                        } else {
-                            html += `
-                                <div style="margin-top: 12px; padding: 10px; background: var(--panel-bg); border-radius: 4px; border-left: 3px solid #4CAF50; text-align: center;">
-                                    <strong style="color: var(--header-color);">Active Violations: </strong>
-                                    <span style="color: #4CAF50; font-weight: 600;">None</span>
-                                </div>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </details>
+                                    </td>
+                                </tr>
                             `;
                         }
-                        
-                        html += `</div>`;
                     });
 
                     html += `
+                                </tbody>
+                            </table>
+                        </div>
                             </div>
                         </div>
                     `;
