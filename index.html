@@ -668,15 +668,24 @@
                            placeholder="Enter Device Number"
                            oninput="if(this.value !== '') { this.value = this.value.toUpperCase(); }"
                            style="width: calc(100% - 10px); padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); margin-bottom: 10px;">
-                    <div style="display: flex; justify-content: center; gap: 5px;">
+                    <div style="display: flex; justify-content: center; gap: 5px; flex-wrap: wrap;">
                         <div style="position: relative; display: inline-flex; align-items: center;">
-                            <button onclick="lookupBIN()" 
+                            <button onclick="resetPreviousYearMode(); lookupBIN()" 
                                     class="lookup-button"
                                     style="padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; width: 200px;">
                                 <span class="button-text">Search Device</span>
                                 <svg class="button-icon" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
                                 </svg>
+                            </button>
+                            <button onclick="lookupBINPreviousYear()" 
+                                    id="previousYearBtn"
+                                    title="View test completion status for previous year"
+                                    style="padding: 12px 16px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-weight: 500; margin-left: 5px; display: flex; align-items: center; gap: 6px; font-size: 0.9em;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.8;">
+                                    <path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/>
+                                </svg>
+                                <span id="previousYearBtnText">Previous Year</span>
                             </button>
                             <button onclick="clearDeviceSearch()" 
                                     style="padding: 12px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; font-size: 24px; margin-left: 5px; width: 42px; display: flex; align-items: center; justify-content: center;">
@@ -1188,6 +1197,9 @@
         window.savedAddressSuggestions = null;
         window.cameFromSuggestions = false;
         window.originalSearchTerms = { houseNumber: '', streetName: '' };
+        
+        // Global variable for previous year view mode
+        window.viewingPreviousYear = false;
 
         function numberToWord(input) {
             // Convert input to lowercase for case-insensitive comparison
@@ -2722,6 +2734,91 @@
             }
         }
 
+        // Function to lookup device with previous year calculations
+        async function lookupBINPreviousYear() {
+            const deviceNumber = document.getElementById('deviceNumber').value.trim();
+            
+            if (!deviceNumber) {
+                const resultDiv = document.getElementById('binResult');
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Please enter a device number first</span>';
+                resultDiv.style.display = 'block';
+                return;
+            }
+            
+            // Set the flag for previous year mode
+            window.viewingPreviousYear = true;
+            
+            // Update button appearance to show it's active
+            const btn = document.getElementById('previousYearBtn');
+            const btnText = document.getElementById('previousYearBtnText');
+            if (btn && btnText) {
+                btn.style.background = '#ff9800';
+                btn.style.color = 'white';
+                btn.style.borderColor = '#ff9800';
+                btnText.textContent = `Viewing ${new Date().getFullYear() - 1}`;
+            }
+            
+            // Run the normal lookup which will use the previous year flag
+            await lookupBIN();
+            
+            // Add a note to indicate previous year view in the device results
+            const deviceResultDiv = document.getElementById('deviceResult');
+            if (deviceResultDiv && deviceResultDiv.innerHTML) {
+                // Insert a banner at the top of the results indicating previous year view
+                const previousYearBanner = `
+                    <div id="previousYearBanner" style="background: linear-gradient(135deg, #ff9800, #f57c00); color: white; padding: 12px 16px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/>
+                            </svg>
+                            <span style="font-weight: 600;">Viewing ${new Date().getFullYear() - 1} Test Completion Status</span>
+                        </div>
+                        <button onclick="returnToCurrentYear()" 
+                                style="padding: 6px 12px; background: white; color: #f57c00; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; font-size: 0.9em;">
+                            Return to ${new Date().getFullYear()}
+                        </button>
+                    </div>
+                `;
+                
+                // Check if banner already exists, if not add it
+                if (!document.getElementById('previousYearBanner')) {
+                    deviceResultDiv.innerHTML = previousYearBanner + deviceResultDiv.innerHTML;
+                }
+            }
+        }
+
+        // Function to return to current year view
+        async function returnToCurrentYear() {
+            // Reset the flag
+            window.viewingPreviousYear = false;
+            
+            // Reset button appearance
+            const btn = document.getElementById('previousYearBtn');
+            const btnText = document.getElementById('previousYearBtnText');
+            if (btn && btnText) {
+                btn.style.background = '';
+                btn.style.color = '';
+                btn.style.borderColor = '';
+                btnText.textContent = 'Previous Year';
+            }
+            
+            // Re-run the lookup with current year
+            await lookupBIN();
+        }
+
+        // Function to reset previous year mode (called when doing a normal search)
+        function resetPreviousYearMode() {
+            window.viewingPreviousYear = false;
+            const btn = document.getElementById('previousYearBtn');
+            const btnText = document.getElementById('previousYearBtnText');
+            if (btn && btnText) {
+                btn.style.background = '';
+                btn.style.color = '';
+                btn.style.borderColor = '';
+                btnText.textContent = 'Previous Year';
+            }
+        }
+
         // Add this function to toggle device information
         function toggleDeviceInfo(elementId) {
             const element = document.getElementById(elementId);
@@ -3276,8 +3373,9 @@
                     ).length;
 
                     // Calculate test eligibility counts
-                    const currentYearForEligibility = new Date().getFullYear();
-                    const todayForEligibility = new Date();
+                    // Use previous year if viewing previous year mode
+                    const currentYearForEligibility = window.viewingPreviousYear ? new Date().getFullYear() - 1 : new Date().getFullYear();
+                    const todayForEligibility = window.viewingPreviousYear ? new Date(new Date().getFullYear() - 1, 11, 31) : new Date();
                     
                     // Calculate eligible devices and break down by completion status
                     // Completed devices should NOT count toward Ready count
@@ -3450,7 +3548,8 @@
 
                     // Count devices with both periodic and category tests completed in current year
                     // Note: currentYear automatically updates each year - no hardcoded year needed
-                    const currentYear = new Date().getFullYear();
+                    // Use previous year if viewing previous year mode
+                    const currentYear = window.viewingPreviousYear ? new Date().getFullYear() - 1 : new Date().getFullYear();
                     let devicesWithBothTests = 0;
                     let devicesWithOneTest = 0;
                     let devicesWithNoTests = 0;
@@ -6576,6 +6675,17 @@
             window.savedAddressSuggestions = null;
             window.cameFromSuggestions = false;
             window.originalSearchTerms = { houseNumber: '', streetName: '' };
+            
+            // Reset previous year viewing mode
+            window.viewingPreviousYear = false;
+            const prevYearBtn = document.getElementById('previousYearBtn');
+            const prevYearBtnText = document.getElementById('previousYearBtnText');
+            if (prevYearBtn && prevYearBtnText) {
+                prevYearBtn.style.background = '';
+                prevYearBtn.style.color = '';
+                prevYearBtn.style.borderColor = '';
+                prevYearBtnText.textContent = 'Previous Year';
+            }
             
             // Small delay to ensure all clearing operations complete
             setTimeout(() => {
