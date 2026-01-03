@@ -3790,9 +3790,23 @@
                             </div>
                             <div style="margin-bottom: 15px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                    <div>
-                                        <strong style="color: var(--header-color);">Total Devices Found:</strong> 
-                                        <span>${data.length}</span>
+                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                        <div>
+                                            <strong style="color: var(--header-color);">Total Devices Found:</strong> 
+                                            <span>${data.length}</span>
+                                        </div>
+                                        <button onclick="copyAllDeviceNumbers()" 
+                                                id="copyAllDevicesBtn"
+                                                style="padding: 6px 12px; background: var(--panel-bg); color: var(--text-color); 
+                                                       border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
+                                                       font-size: 0.85em; display: flex; align-items: center; gap: 6px; transition: all 0.2s ease;"
+                                                onmouseover="this.style.backgroundColor='var(--input-bg)'"
+                                                onmouseout="this.style.backgroundColor='var(--panel-bg)'">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;">
+                                                <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                            </svg>
+                                            <span id="copyAllDevicesBtnText">Copy All Device #s</span>
+                                        </button>
                                     </div>
                                     <div>
                                         <strong style="color: var(--header-color);">Total Active Violations:</strong> 
@@ -9450,6 +9464,69 @@
             } catch (err) {
                 console.error('Failed to copy BIN:', err);
                 alert('Failed to copy BIN to clipboard');
+            }
+        }
+
+        // Function to copy all device numbers from BIN search results
+        async function copyAllDeviceNumbers() {
+            try {
+                const data = window.lastBinSearchResults;
+                if (!data || data.length === 0) {
+                    alert('No devices to copy');
+                    return;
+                }
+
+                // Extract all device numbers
+                const deviceNumbers = data.map(device => device.device_number).filter(num => num);
+                
+                if (deviceNumbers.length === 0) {
+                    alert('No device numbers found');
+                    return;
+                }
+
+                // Join with newlines for easy pasting
+                const deviceNumbersText = deviceNumbers.join('\n');
+
+                // Get the button and text elements
+                const btn = document.getElementById('copyAllDevicesBtn');
+                const btnText = document.getElementById('copyAllDevicesBtnText');
+                
+                // Try modern clipboard API first
+                try {
+                    await navigator.clipboard.writeText(deviceNumbersText);
+                } catch (err) {
+                    // Fallback for browsers that don't support clipboard API
+                    const textarea = document.createElement('textarea');
+                    textarea.value = deviceNumbersText;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                }
+
+                // Show success state
+                if (btn && btnText) {
+                    const originalText = btnText.textContent;
+                    const originalBg = btn.style.backgroundColor;
+                    
+                    btn.style.backgroundColor = '#4CAF50';
+                    btn.style.borderColor = '#4CAF50';
+                    btn.style.color = 'white';
+                    btnText.textContent = `Copied ${deviceNumbers.length} Device #s!`;
+
+                    // Reset after 2 seconds
+                    setTimeout(() => {
+                        btn.style.backgroundColor = '';
+                        btn.style.borderColor = '';
+                        btn.style.color = '';
+                        btnText.textContent = originalText;
+                    }, 2000);
+                }
+            } catch (err) {
+                console.error('Failed to copy device numbers:', err);
+                alert('Failed to copy device numbers to clipboard');
             }
         }
 
