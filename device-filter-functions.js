@@ -82,6 +82,58 @@ function getMostRecentDateFromDevice(deviceItem) {
     return new Date(Math.max.apply(null, dates));
 }
 
+// Function to update the active filter status indicator
+function updateActiveFilterStatus(typeFilter, eligibilityFilter, deviceNumberFilter, violationsFiltering, dateSortFilter) {
+    const statusDiv = document.getElementById('activeFilterStatus');
+    const statusText = document.getElementById('activeFilterText');
+    
+    if (!statusDiv || !statusText) return;
+    
+    // Build list of active filters
+    const activeFilters = [];
+    
+    if (violationsFiltering) {
+        activeFilters.push('Only Devices with Violations');
+    }
+    
+    if (eligibilityFilter !== 'all') {
+        const eligibilityLabels = {
+            'eligible': 'Ready Devices',
+            'not-eligible': 'Not Ready Devices',
+            'completed': 'Completed Devices'
+        };
+        activeFilters.push(eligibilityLabels[eligibilityFilter] || eligibilityFilter);
+    }
+    
+    if (typeFilter !== 'all') {
+        if (typeFilter === 'REMOVED') {
+            activeFilters.push('Removed Devices Only');
+        } else {
+            activeFilters.push(`${typeFilter} Only`);
+        }
+    }
+    
+    if (deviceNumberFilter !== '') {
+        activeFilters.push(`Device # containing "${deviceNumberFilter}"`);
+    }
+    
+    if (dateSortFilter !== 'default') {
+        const sortLabels = {
+            'newest': 'Sorted by Newest First',
+            'oldest': 'Sorted by Oldest First'
+        };
+        activeFilters.push(sortLabels[dateSortFilter] || dateSortFilter);
+    }
+    
+    // Update the status display
+    if (activeFilters.length > 0) {
+        statusDiv.style.display = 'block';
+        statusText.textContent = `You are currently viewing with the "${activeFilters.join('" + "')}" filter${activeFilters.length > 1 ? 's' : ''} on`;
+    } else {
+        statusDiv.style.display = 'none';
+    }
+}
+
 // Centralized function to apply all filters together
 function applyAllFilters() {
     const typeFilter = document.getElementById('deviceTypeFilter').value;
@@ -90,6 +142,9 @@ function applyAllFilters() {
     const dateSortFilter = document.getElementById('dateSortFilter') ? document.getElementById('dateSortFilter').value : 'default';
     const violationsFiltering = document.getElementById('violationsFilterBtn').getAttribute('data-filtering') === 'true';
     const deviceItems = document.querySelectorAll('.device-item');
+    
+    // Update the active filter status indicator
+    updateActiveFilterStatus(typeFilter, eligibilityFilter, deviceNumberFilter, violationsFiltering, dateSortFilter);
     
     // Get all device type sections (excluding removed devices)
     const deviceTypeSections = document.querySelectorAll('.device-type-section:not(.removed-devices)');
@@ -273,6 +328,12 @@ function resetFilters() {
         countElement.textContent = '';
     }
     
+    // Hide the active filter status indicator
+    const statusDiv = document.getElementById('activeFilterStatus');
+    if (statusDiv) {
+        statusDiv.style.display = 'none';
+    }
+    
     // Show all devices
     document.querySelectorAll('.device-item').forEach(item => {
         item.style.display = '';
@@ -295,4 +356,5 @@ document.addEventListener('DOMContentLoaded', function() {
     window.applyAllFilters = applyAllFilters;
     window.resetFilters = resetFilters;
     window.setTestEligibilityFilterFromStatus = setTestEligibilityFilterFromStatus;
+    window.updateActiveFilterStatus = updateActiveFilterStatus;
 }); 
