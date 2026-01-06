@@ -896,6 +896,14 @@
                         <input type="checkbox" class="export-column" value="violationDescriptions" checked style="width: 16px; height: 16px; margin: 0;">
                         <span style="color: var(--text-color); font-size: 0.9em;">Violation Descriptions</span>
                     </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="export-column" value="testingEligibility" checked style="width: 16px; height: 16px; margin: 0;">
+                        <span style="color: var(--text-color); font-size: 0.9em;">Testing Eligibility</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="export-column" value="eligibleDate" checked style="width: 16px; height: 16px; margin: 0;">
+                        <span style="color: var(--text-color); font-size: 0.9em;">Eligible Date</span>
+                    </label>
                 </div>
                 
                 <div style="display: flex; gap: 10px; justify-content: flex-start; padding-top: 15px; border-top: 1px solid var(--input-border);">
@@ -4762,7 +4770,8 @@
                                                                     }
                                                                 }
                                                                 
-                                                                const eligibilityDate = new Date(mostRecentDate.getTime() + (91 * 24 * 60 * 60 * 1000));
+                                                                const eligibilityDate = new Date(mostRecentDate);
+                                                                eligibilityDate.setDate(eligibilityDate.getDate() + 91);
                                                                 const formattedDate = eligibilityDate.toLocaleDateString('en-US', { 
                                                                     weekday: 'long',
                                                                     year: 'numeric',
@@ -5793,7 +5802,8 @@
                             const timeDiff = today - mostRecentTestDate;
                             daysSinceLastTest = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
                             isReadyForTesting = daysSinceLastTest >= 91;
-                            eligibilityDate = new Date(mostRecentTestDate.getTime() + (91 * 24 * 60 * 60 * 1000));
+                            eligibilityDate = new Date(mostRecentTestDate);
+                            eligibilityDate.setDate(eligibilityDate.getDate() + 91);
                             if (!isReadyForTesting) {
                                 daysUntilEligible = 91 - daysSinceLastTest;
                             }
@@ -6124,15 +6134,43 @@
 
         // Add this new function to your script section
         async function exportToCSV() {
+            // Fixed custom column order for CSV export
+            const CSV_COLUMN_ORDER = [
+                'address',
+                'bin',
+                'block',
+                'lot',
+                'borough',
+                'deviceNumber',
+                'status',
+                'type',
+                'cat1Date',
+                'cat5Date',
+                'nextCat5Due',
+                'pviDate',
+                'testingEligibility',
+                'testStatus',
+                'eligibleDate',
+                'violationCount',
+                'violationStatuses',
+                'violationIssueDates',
+                'violationNumbers',
+                'violationTypes',
+                'violationDescriptions'
+            ];
+            
             // Get the stored data from the last search
             const deviceData = window.lastBulkSearchResults;
+            
             if (!deviceData || (!deviceData.binGroups && !deviceData.notFound)) {
                 alert('No data to export. Please perform a search first.');
                 return;
             }
             
-            // Get selected columns
-            const selectedColumns = Array.from(document.querySelectorAll('.export-column:checked')).map(cb => cb.value);
+            // Get selected columns in the custom fixed order
+            const checkedValues = Array.from(document.querySelectorAll('.export-column:checked')).map(cb => cb.value);
+            const selectedColumns = CSV_COLUMN_ORDER.filter(col => checkedValues.includes(col));
+            
             if (selectedColumns.length === 0) {
                 alert('Please select at least one column to export.');
                 return;
@@ -6170,7 +6208,9 @@
                     violationNumbers: 'Violation Numbers',
                     violationIssueDates: 'Violation Issue Dates',
                     violationTypes: 'Violation Types',
-                    violationDescriptions: 'Violation Descriptions'
+                    violationDescriptions: 'Violation Descriptions',
+                    testingEligibility: 'Testing Eligibility',
+                    eligibleDate: 'Eligible Date'
                 };
                 
                 // Create CSV content with selected columns only
@@ -6179,7 +6219,8 @@
 
                 // Create an array of promises to fetch violations for all devices
                 const devicePromises = [];
-                for (const [bin, group] of Object.entries(deviceData.binGroups)) {
+                const binGroups = deviceData.binGroups || {};
+                for (const [bin, group] of Object.entries(binGroups)) {
                     group.devices.forEach(device => {
                         devicePromises.push((async () => {
                             // Fetch violations for this device
@@ -6289,6 +6330,27 @@
                                 }
                             }
 
+                            // Calculate testing eligibility based on 91-day rule
+                            const testDates = [pviDate, cat1Date, cat5Date].filter(date => date !== null);
+                            const mostRecentTestDate = testDates.length > 0 ? new Date(Math.max.apply(null, testDates)) : null;
+                            let testingEligibility = 'N/A';
+                            let eligibleDateDisplay = 'N/A';
+                            
+                            if (isRemoved) {
+                                testingEligibility = 'No Test Required';
+                                eligibleDateDisplay = 'N/A';
+                            } else if (mostRecentTestDate) {
+                                const today = new Date();
+                                const timeDiff = today - mostRecentTestDate;
+                                const daysSinceLastTest = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+                                testingEligibility = daysSinceLastTest >= 91 ? 'Ready' : 'Not Ready';
+                                
+                                // Calculate eligibility date (91 days after most recent test)
+                                const eligibilityDate = new Date(mostRecentTestDate);
+                                eligibilityDate.setDate(eligibilityDate.getDate() + 91);
+                                eligibleDateDisplay = eligibilityDate.toLocaleDateString();
+                            }
+
                             // Build row data object
                             const rowData = {
                                 address: `${device.house_number} ${device.street_name}`,
@@ -6309,7 +6371,9 @@
                                 violationNumbers: violationNumbers || 'N/A',
                                 violationIssueDates: violationIssueDates || 'N/A',
                                 violationTypes: violationTypes || 'N/A',
-                                violationDescriptions: violationDescriptions || 'N/A'
+                                violationDescriptions: violationDescriptions || 'N/A',
+                                testingEligibility: testingEligibility,
+                                eligibleDate: eligibleDateDisplay
                             };
                             
                             // Only include selected columns
@@ -6353,7 +6417,9 @@
                             violationNumbers: 'N/A',
                             violationIssueDates: 'N/A',
                             violationTypes: 'N/A',
-                            violationDescriptions: 'N/A'
+                            violationDescriptions: 'N/A',
+                            testingEligibility: 'N/A',
+                            eligibleDate: 'N/A'
                         };
                         const notFoundRow = selectedColumns.map(col => {
                             const fieldStr = String(notFoundData[col] || '');
@@ -6381,7 +6447,8 @@
                 }
             } catch (error) {
                 console.error('Error exporting CSV:', error);
-                alert('Error exporting CSV. Please try again.');
+                console.error('Error stack:', error.stack);
+                alert('Error exporting CSV: ' + error.message);
                 if (exportButton) {
                     exportButton.textContent = originalText;
                     exportButton.disabled = false;
