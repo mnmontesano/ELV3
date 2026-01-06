@@ -283,7 +283,7 @@
 
 
 
-    <img src="https://github.com/mnmontesano/ELV3/blob/main/ELV3%20Cheat%20Sheet%20Icon.png?raw=true" alt="Logo" class="logo">
+    <img src="ELV3 Cheat Sheet Icon.png" alt="Logo" class="logo">
     <h1 id="pageTitle">ELV3 Terminal</h1>
 
     <!-- Button-based Tabs (default for larger screens) -->
@@ -913,6 +913,18 @@
             </div>
         </div>
 
+        <!-- Bulk Device List Popup Modal -->
+        <div id="bulkDeviceListModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center;">
+            <div style="background: var(--card-bg); border-radius: 12px; padding: 25px; max-width: 1200px; width: 95%; max-height: 85vh; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid var(--input-border); display: flex; flex-direction: column;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid var(--input-border); flex-shrink: 0;">
+                    <h3 id="bulkModalTitle" style="margin: 0; color: var(--header-color); font-size: 1.3em;">Device List</h3>
+                    <button onclick="closeBulkDeviceListModal()" style="background: none; border: none; font-size: 1.8em; cursor: pointer; color: var(--text-color); padding: 0; line-height: 1; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">&times;</button>
+                </div>
+                <div id="bulkModalContent" style="flex: 1; overflow-y: auto; padding-right: 10px;">
+                    <!-- Content will be dynamically populated -->
+                </div>
+            </div>
+        </div>
 
         
         <!-- Add the violations API data source section -->
@@ -2774,39 +2786,332 @@
             }
         }
 
-        // Toggle function for bulk test completion status lists
+        // Global variables to store bulk device lists for modal
+        window.bulkDeviceLists = {
+            bothTests: [],
+            oneTest: [],
+            warning: [],
+            noTests: [],
+            noTestRequired: []
+        };
+
+        // Toggle function for bulk test completion status lists - now shows popup modal
         function toggleBulkTestList(listType) {
-            const listIds = {
-                'bothTests': 'bulkBothTestsList',
-                'oneTest': 'bulkOneTestList',
-                'warning': 'bulkWarningList',
-                'noTests': 'bulkNoTestsList',
-                'noTestRequired': 'bulkNoTestRequiredList'
+            const modal = document.getElementById('bulkDeviceListModal');
+            const modalTitle = document.getElementById('bulkModalTitle');
+            const modalContent = document.getElementById('bulkModalContent');
+            
+            if (!modal || !modalTitle || !modalContent) return;
+            
+            const listConfigs = {
+                'bothTests': {
+                    title: '✓ All Tests Completed',
+                    color: '#4CAF50',
+                    data: window.bulkDeviceLists.bothTests,
+                    groupByBuilding: true,
+                    renderItem: (d) => {
+                        let testInfo = d.isDismantled ? 'PVI done (Dismantled)' : 'PVI + CAT done';
+                        let statusNote = d.isDismantled ? '<span style="color: #ffd700; font-weight: bold;">[DISMANTLED]</span> ' : '';
+                        return `<div style="padding: 10px 12px; background: var(--panel-bg); border-radius: 4px; border-left: 2px solid #4CAF50;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+                                <div>
+                                    <strong style="font-size: 1em;">Device #${d.device_number}</strong> 
+                                    <span style="color: var(--text-color); opacity: 0.8; font-size: 0.9em;">(${d.device_type})</span> ${statusNote}
+                                </div>
+                            </div>
+                            <div style="font-size: 0.8em; margin-top: 6px; opacity: 0.85;">
+                                <span style="color: #4CAF50; font-weight: 600;">✓ ${testInfo}</span>
+                            </div>
+                        </div>`;
+                    }
+                },
+                'oneTest': {
+                    title: '⚠ One Test Completed',
+                    color: '#ffd700',
+                    data: window.bulkDeviceLists.oneTest,
+                    groupByBuilding: true,
+                    renderItem: (d) => {
+                        let testInfo;
+                        if (d.isConveyor) {
+                            testInfo = 'CAT 1 pending';
+                        } else if (d.isDismantled) {
+                            testInfo = 'PVI pending';
+                        } else {
+                            testInfo = d.hasPVI ? 'CAT pending' : 'PVI pending';
+                        }
+                        return `<div style="padding: 10px 12px; background: var(--panel-bg); border-radius: 4px; border-left: 2px solid #ffd700;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+                                <div>
+                                    <strong style="font-size: 1em;">Device #${d.device_number}</strong> 
+                                    <span style="color: var(--text-color); opacity: 0.8; font-size: 0.9em;">(${d.device_type})</span>
+                                </div>
+                            </div>
+                            <div style="font-size: 0.8em; margin-top: 6px; opacity: 0.85;">
+                                <span style="color: #ffd700; font-weight: 600;">⚠ ${testInfo}</span>
+                            </div>
+                        </div>`;
+                    }
+                },
+                'warning': {
+                    title: '⚠ CAT 5 Required',
+                    color: '#ff9800',
+                    data: window.bulkDeviceLists.warning,
+                    groupByBuilding: true,
+                    renderItem: (d) => {
+                        return `<div style="padding: 10px 12px; background: var(--panel-bg); border-radius: 4px; border-left: 2px solid #ff9800;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+                                <div>
+                                    <strong style="font-size: 1em;">Device #${d.device_number}</strong> 
+                                    <span style="color: var(--text-color); opacity: 0.8; font-size: 0.9em;">(${d.device_type})</span>
+                                </div>
+                            </div>
+                            <div style="font-size: 0.8em; margin-top: 6px; opacity: 0.85;">
+                                <span style="color: #ff9800; font-weight: 600;">⚠ CAT 5 required (last: ${d.yearsSinceCat5} years ago)</span>
+                            </div>
+                        </div>`;
+                    }
+                },
+                'noTests': {
+                    title: '✗ No Tests Completed',
+                    color: '#ff6b6b',
+                    data: window.bulkDeviceLists.noTests,
+                    groupByBuilding: true,
+                    renderItem: (d) => {
+                        let statusNote = d.isDismantled ? '<span style="color: #ffd700; font-weight: bold;">[DISMANTLED]</span> ' : '';
+                        return `<div style="padding: 10px 12px; background: var(--panel-bg); border-radius: 4px; border-left: 2px solid #ff6b6b;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+                                <div>
+                                    <strong style="font-size: 1em;">Device #${d.device_number}</strong> 
+                                    <span style="color: var(--text-color); opacity: 0.8; font-size: 0.9em;">(${d.device_type})</span> ${statusNote}
+                                </div>
+                            </div>
+                            <div style="font-size: 0.8em; margin-top: 6px; opacity: 0.85;">
+                                <span style="color: #ff6b6b; font-weight: 600;">✗ No tests done this year</span>
+                            </div>
+                        </div>`;
+                    }
+                },
+                'noTestRequired': {
+                    title: '— No Test Required',
+                    color: '#9e9e9e',
+                    data: window.bulkDeviceLists.noTestRequired,
+                    groupByBuilding: true,
+                    renderItem: (d) => {
+                        return `<div style="padding: 10px 12px; background: var(--panel-bg); border-radius: 4px; border-left: 2px solid #9e9e9e;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+                                <div>
+                                    <strong style="font-size: 1em;">Device #${d.device_number}</strong> 
+                                    <span style="color: var(--text-color); opacity: 0.8; font-size: 0.9em;">(${d.device_type})</span> 
+                                    <span style="color: #9e9e9e; font-weight: bold;">[REMOVED]</span>
+                                </div>
+                            </div>
+                            <div style="font-size: 0.8em; margin-top: 6px; opacity: 0.85;">
+                                <span style="opacity: 0.7;">Device removed from service</span>
+                            </div>
+                        </div>`;
+                    }
+                },
+                'readyToTest': {
+                    title: '✓ Ready to Test',
+                    color: '#4CAF50',
+                    data: window.bulkDeviceLists.readyToTest,
+                    groupByBuilding: true,
+                    renderItem: (d) => {
+                        const lastInspectionStr = d.mostRecentInspection 
+                            ? d.mostRecentInspection.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                            : 'No inspection on file';
+                        return `<div style="padding: 10px 12px; background: var(--panel-bg); border-radius: 4px; border-left: 2px solid #4CAF50;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+                                <div>
+                                    <strong style="font-size: 1em;">Device #${d.device_number}</strong> 
+                                    <span style="color: var(--text-color); opacity: 0.8; font-size: 0.9em;">(${d.device_type})</span>
+                                </div>
+                            </div>
+                            <div style="font-size: 0.8em; margin-top: 6px; opacity: 0.85;">
+                                <span><strong>Last Inspection:</strong> ${lastInspectionStr}</span>
+                                <span style="color: #4CAF50; font-weight: 600; margin-left: 10px;">✓ Eligible now</span>
+                            </div>
+                        </div>`;
+                    }
+                },
+                'notReadyToTest': {
+                    title: '✗ Not Ready Yet',
+                    color: '#ff6b6b',
+                    data: window.bulkDeviceLists.notReadyToTest,
+                    groupByBuilding: true,
+                    sortByEligibleDate: true,
+                    renderItem: (d) => {
+                        const lastInspectionStr = d.mostRecentInspection 
+                            ? d.mostRecentInspection.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                            : 'No inspection on file';
+                        const eligibleDateStr = d.eligibleTestDate 
+                            ? d.eligibleTestDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                            : 'Unknown';
+                        const daysText = d.daysUntilEligible === 1 ? '1 day' : `${d.daysUntilEligible} days`;
+                        return `<div style="padding: 10px 12px; background: var(--panel-bg); border-radius: 4px; border-left: 2px solid #ff6b6b;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+                                <div>
+                                    <strong style="font-size: 1em;">Device #${d.device_number}</strong> 
+                                    <span style="color: var(--text-color); opacity: 0.8; font-size: 0.9em;">(${d.device_type})</span>
+                                </div>
+                            </div>
+                            <div style="font-size: 0.8em; margin-top: 6px; opacity: 0.85;">
+                                <span><strong>Last:</strong> ${lastInspectionStr}</span>
+                                <span style="margin-left: 10px;"><strong>Eligible:</strong> <span style="color: #ff6b6b; font-weight: 600;">${eligibleDateStr}</span></span>
+                                <span style="color: #ff6b6b; font-weight: 600; margin-left: 10px;">⏳ ${daysText}</span>
+                            </div>
+                        </div>`;
+                    }
+                }
             };
             
-            const targetId = listIds[listType];
-            if (!targetId) return;
+            const config = listConfigs[listType];
+            if (!config) return;
             
-            const targetList = document.getElementById(targetId);
-            if (!targetList) return;
+            // Set modal title with count and color
+            modalTitle.innerHTML = `<span style="color: ${config.color};">${config.title}</span> <span style="font-size: 0.85em; opacity: 0.7;">(${config.data.length} devices)</span>`;
             
-            // Close all other lists first
-            Object.values(listIds).forEach(id => {
-                const list = document.getElementById(id);
-                if (list && id !== targetId) {
-                    list.style.display = 'none';
+            // Generate content
+            if (config.data.length > 0) {
+                // Check if we need to group by building
+                if (config.groupByBuilding) {
+                    // Group devices by building address
+                    const buildingGroups = {};
+                    config.data.forEach(device => {
+                        const address = device.buildingAddress || device.address || 'Unknown Address';
+                        if (!buildingGroups[address]) {
+                            buildingGroups[address] = [];
+                        }
+                        buildingGroups[address].push(device);
+                    });
+                    
+                    // Sort devices within each building and determine building sort order
+                    let sortedBuildings;
+                    if (config.sortByEligibleDate) {
+                        // Sort devices within each building by eligible date (soonest first)
+                        Object.keys(buildingGroups).forEach(address => {
+                            buildingGroups[address].sort((a, b) => {
+                                const dateA = a.eligibleTestDate ? a.eligibleTestDate.getTime() : Infinity;
+                                const dateB = b.eligibleTestDate ? b.eligibleTestDate.getTime() : Infinity;
+                                return dateA - dateB;
+                            });
+                        });
+                        
+                        // Sort buildings by their earliest device eligible date (soonest first)
+                        sortedBuildings = Object.entries(buildingGroups).sort((a, b) => {
+                            const earliestA = a[1][0]?.eligibleTestDate ? a[1][0].eligibleTestDate.getTime() : Infinity;
+                            const earliestB = b[1][0]?.eligibleTestDate ? b[1][0].eligibleTestDate.getTime() : Infinity;
+                            return earliestA - earliestB;
+                        });
+                    } else {
+                        // Default: Sort buildings by number of devices (most first)
+                        sortedBuildings = Object.entries(buildingGroups).sort((a, b) => b[1].length - a[1].length);
+                    }
+                    
+                    // Generate unique IDs for this modal session
+                    const modalSessionId = Date.now();
+                    
+                    modalContent.innerHTML = `
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            ${sortedBuildings.map(([address, devices], index) => {
+                                const groupId = `buildingGroup_${modalSessionId}_${index}`;
+                                
+                                // Get earliest eligible date for this building (for sortByEligibleDate display)
+                                let earliestDateDisplay = '';
+                                if (config.sortByEligibleDate && devices[0]?.eligibleTestDate) {
+                                    const earliestDate = devices[0].eligibleTestDate;
+                                    const dateStr = earliestDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                                    const daysUntil = devices[0].daysUntilEligible;
+                                    const daysText = daysUntil === 1 ? '1 day' : `${daysUntil} days`;
+                                    earliestDateDisplay = `<span style="font-size: 0.85em; color: #ff6b6b; margin-left: 8px;">⏳ Next eligible: ${dateStr} (${daysText})</span>`;
+                                }
+                                
+                                return `
+                                    <div style="background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border); overflow: hidden;">
+                                        <div onclick="toggleBuildingGroup('${groupId}')" 
+                                             style="padding: 14px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); transition: background 0.2s;"
+                                             onmouseover="this.style.background='var(--panel-bg)'" 
+                                             onmouseout="this.style.background='var(--input-bg)'">
+                                            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                                <span style="font-size: 1.2em;">📍</span>
+                                                <div>
+                                                    <div style="display: flex; align-items: center; flex-wrap: wrap;">
+                                                        <strong style="font-size: 1.05em; color: ${config.color};">${address}</strong>
+                                                        ${earliestDateDisplay}
+                                                    </div>
+                                                    <div style="font-size: 0.85em; opacity: 0.7; margin-top: 2px;">${devices.length} device${devices.length !== 1 ? 's' : ''}</div>
+                                                </div>
+                                            </div>
+                                            <span id="${groupId}_arrow" style="font-size: 1.2em; transition: transform 0.3s; transform: rotate(0deg);">▼</span>
+                                        </div>
+                                        <div id="${groupId}" style="display: none; padding: 12px; border-top: 1px solid var(--input-border);">
+                                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                                ${devices.map(config.renderItem).join('')}
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    `;
+                } else {
+                    modalContent.innerHTML = `
+                        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 12px;">
+                            ${config.data.map(config.renderItem).join('')}
+                        </div>
+                    `;
                 }
-            });
-            
-            // Toggle the target list
-            if (targetList.style.display === 'none' || targetList.style.display === '') {
-                targetList.style.display = 'block';
-                // Smooth scroll to the list
-                targetList.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             } else {
-                targetList.style.display = 'none';
+                modalContent.innerHTML = '<div style="text-align: center; padding: 40px; opacity: 0.7;">No devices in this category</div>';
+            }
+            
+            // Show modal
+            modal.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+        }
+        
+        // Toggle building group in modal
+        function toggleBuildingGroup(groupId) {
+            const content = document.getElementById(groupId);
+            const arrow = document.getElementById(groupId + '_arrow');
+            if (content && arrow) {
+                if (content.style.display === 'none') {
+                    content.style.display = 'block';
+                    arrow.style.transform = 'rotate(180deg)';
+                } else {
+                    content.style.display = 'none';
+                    arrow.style.transform = 'rotate(0deg)';
+                }
             }
         }
+
+        // Close bulk device list modal
+        function closeBulkDeviceListModal() {
+            const modal = document.getElementById('bulkDeviceListModal');
+            if (modal) {
+                modal.style.display = 'none';
+                document.body.style.overflow = '';
+            }
+        }
+
+        // Close modal when clicking outside
+        document.addEventListener('DOMContentLoaded', function() {
+            const modal = document.getElementById('bulkDeviceListModal');
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) {
+                        closeBulkDeviceListModal();
+                    }
+                });
+            }
+        });
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeBulkDeviceListModal();
+            }
+        });
 
         // Filter function for bulk results search
         function filterBulkResults(searchTerm) {
@@ -5393,6 +5698,12 @@
                 const bulkDevicesWithNoTestsList = [];
                 const bulkDevicesNoTestRequiredList = [];
                 const bulkDevicesWithWarningList = [];
+                
+                // 91-day testing eligibility lists
+                const bulkDevicesReadyToTestList = [];
+                const bulkDevicesNotReadyToTestList = [];
+                let devicesReadyToTest = 0;
+                let devicesNotReadyToTest = 0;
 
                 // Count test completion across all devices
                 Object.values(binGroups).forEach(group => {
@@ -5427,6 +5738,58 @@
                                 bin: device.bin
                             });
                             return;
+                        }
+                        
+                        // Calculate 91-day testing eligibility
+                        // For dismantled devices, only consider PVI date (that's all they need)
+                        // For regular devices, consider all inspection dates
+                        let mostRecentInspection;
+                        if (isDismantled) {
+                            mostRecentInspection = pviDate;
+                        } else {
+                            const allInspectionDates = [pviDate, cat1Date, cat5Date].filter(d => d !== null);
+                            mostRecentInspection = allInspectionDates.length > 0 
+                                ? new Date(Math.max(...allInspectionDates.map(d => d.getTime())))
+                                : null;
+                        }
+                        
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        
+                        let eligibleTestDate = null;
+                        let daysUntilEligible = null;
+                        let isReadyToTest = true;
+                        
+                        if (mostRecentInspection) {
+                            eligibleTestDate = new Date(mostRecentInspection);
+                            eligibleTestDate.setDate(eligibleTestDate.getDate() + 91);
+                            eligibleTestDate.setHours(0, 0, 0, 0);
+                            
+                            const timeDiff = eligibleTestDate.getTime() - today.getTime();
+                            daysUntilEligible = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+                            isReadyToTest = daysUntilEligible <= 0;
+                        }
+                        
+                        const testingEligibilityInfo = {
+                            device_number: device.device_number,
+                            device_type: device.device_type || 'Unknown',
+                            address: `${device.house_number} ${device.street_name}`,
+                            bin: device.bin,
+                            buildingAddress: group.address,
+                            mostRecentInspection: mostRecentInspection,
+                            eligibleTestDate: eligibleTestDate,
+                            daysUntilEligible: daysUntilEligible,
+                            isReadyToTest: isReadyToTest,
+                            isDismantled: isDismantled
+                        };
+                        
+                        // Add all devices to testing eligibility lists (including dismantled - they need PVI)
+                        if (isReadyToTest) {
+                            devicesReadyToTest++;
+                            bulkDevicesReadyToTestList.push(testingEligibilityInfo);
+                        } else {
+                            devicesNotReadyToTest++;
+                            bulkDevicesNotReadyToTestList.push(testingEligibilityInfo);
                         }
                         
                         // CAT 5 is only required every 5 years (Dumbwaiters, Conveyors, Wheelchair Lifts, Hydraulic elevators, and Escalators don't need CAT 5)
@@ -5469,6 +5832,7 @@
                             device_number: device.device_number,
                             device_type: device.device_type || 'Unknown',
                             address: `${device.house_number} ${device.street_name}`,
+                            buildingAddress: group.address,
                             bin: device.bin,
                             hasPVI: hasPVIThisYear,
                             hasCat1: hasCat1ThisYear,
@@ -5500,11 +5864,89 @@
                     });
                 });
 
+                // Store device lists in global variable for modal access
+                window.bulkDeviceLists = {
+                    bothTests: bulkDevicesWithBothTestsList,
+                    oneTest: bulkDevicesWithOneTestList,
+                    warning: bulkDevicesWithWarningList,
+                    noTests: bulkDevicesWithNoTestsList,
+                    noTestRequired: bulkDevicesNoTestRequiredList,
+                    readyToTest: bulkDevicesReadyToTestList,
+                    notReadyToTest: bulkDevicesNotReadyToTestList
+                };
+
                 // Sort buildings by violations (those with violations first)
                 const sortedBinEntries = Object.entries(binGroups).sort((a, b) => {
                     const aViolations = a[1].devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0);
                     const bViolations = b[1].devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0);
                     return bViolations - aViolations;
+                });
+
+                // Pre-calculate ready/not ready for Building Breakdown table sorting
+                const todayForBreakdown = new Date();
+                todayForBreakdown.setHours(0, 0, 0, 0);
+                
+                const buildingBreakdownData = sortedBinEntries.map(([bin, group]) => {
+                    let readyCount = 0;
+                    let notReadyCount = 0;
+                    
+                    group.devices.forEach(device => {
+                        const deviceStatus = (device.device_status || '').toUpperCase();
+                        const isDismantled = deviceStatus.includes('DISMANTLED');
+                        const isRemoved = deviceStatus.includes('REMOVED');
+                        
+                        if (isRemoved) return;
+                        
+                        const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                        const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                        const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                        
+                        let mostRecent;
+                        if (isDismantled) {
+                            mostRecent = pviDate;
+                        } else {
+                            const allDates = [pviDate, cat1Date, cat5Date].filter(d => d !== null);
+                            mostRecent = allDates.length > 0 ? new Date(Math.max(...allDates.map(d => d.getTime()))) : null;
+                        }
+                        
+                        if (mostRecent) {
+                            const eligibleDate = new Date(mostRecent);
+                            eligibleDate.setDate(eligibleDate.getDate() + 91);
+                            eligibleDate.setHours(0, 0, 0, 0);
+                            
+                            if (eligibleDate <= todayForBreakdown) {
+                                readyCount++;
+                            } else {
+                                notReadyCount++;
+                            }
+                        } else {
+                            readyCount++;
+                        }
+                    });
+                    
+                    const violations = group.devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0);
+                    const deviceNumbers = group.devices.map(d => d.device_number).join(' ');
+                    
+                    return { bin, group, readyCount, notReadyCount, violations, deviceNumbers };
+                });
+                
+                // Sort Building Breakdown: All ready first, then some ready, then none ready
+                buildingBreakdownData.sort((a, b) => {
+                    const aAllReady = a.notReadyCount === 0 && a.readyCount > 0;
+                    const bAllReady = b.notReadyCount === 0 && b.readyCount > 0;
+                    const aSomeReady = a.readyCount > 0 && a.notReadyCount > 0;
+                    const bSomeReady = b.readyCount > 0 && b.notReadyCount > 0;
+                    
+                    // Priority: All ready (0) > Some ready (1) > None ready (2)
+                    const aPriority = aAllReady ? 0 : (aSomeReady ? 1 : 2);
+                    const bPriority = bAllReady ? 0 : (bSomeReady ? 1 : 2);
+                    
+                    if (aPriority !== bPriority) {
+                        return aPriority - bPriority;
+                    }
+                    
+                    // Within same priority, sort by ready count descending
+                    return b.readyCount - a.readyCount;
                 });
 
                 html += `
@@ -5556,92 +5998,19 @@
                                     </div>
                                     ` : ''}
                                 </div>
-                                
-                                <!-- Expandable device lists -->
-                                <div id="bulkBothTestsList" style="display: none; margin-top: 15px; padding: 12px; background: var(--panel-bg); border-radius: 6px; border: 1px solid #4CAF50; max-height: 300px; overflow-y: auto;">
-                                    <div style="font-weight: 600; color: #4CAF50; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                                        <span>✓ All Tests Completed (${devicesWithBothTests})</span>
-                                        <button onclick="toggleBulkTestList('bothTests')" style="background: none; border: none; color: var(--text-color); cursor: pointer; font-size: 1.2em;">×</button>
-                                    </div>
-                                    <div style="font-size: 0.9em; color: var(--text-color);">
-                                        ${bulkDevicesWithBothTestsList.length > 0 ? bulkDevicesWithBothTestsList.map(d => {
-                                            let testInfo = d.isDismantled ? 'PVI completed (Dismantled - PVI only required)' : 'PVI + Category test completed';
-                                            let statusNote = d.isDismantled ? '<span style="color: #ffd700; font-weight: bold;">[DISMANTLED]</span> ' : '';
-                                            return `<div style="margin-bottom: 8px; padding: 8px; background: var(--input-bg); border-radius: 4px; border-left: 2px solid #4CAF50;">
-                                                <strong>Device #${d.device_number}</strong> (${d.device_type}) ${statusNote}<br>
-                                                <span style="font-size: 0.85em; opacity: 0.8;">${d.address} | ${testInfo}</span>
-                                            </div>`;
-                                        }).join('') : '<div style="opacity: 0.7;">No devices in this category</div>'}
-                                    </div>
+                            </div>
+                            <div style="margin-top: 15px; padding: 15px; background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border);">
+                                <div style="font-size: 1em; font-weight: 600; color: var(--header-color); margin-bottom: 12px;">
+                                    ${currentYear} Testing Status <span style="font-size: 0.8em; font-weight: 400; opacity: 0.7;">(91-day rule - click to view devices)</span>
                                 </div>
-                                
-                                <div id="bulkOneTestList" style="display: none; margin-top: 15px; padding: 12px; background: var(--panel-bg); border-radius: 6px; border: 1px solid #ffd700; max-height: 300px; overflow-y: auto;">
-                                    <div style="font-weight: 600; color: #ffd700; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                                        <span>⚠ One Test Completed (${devicesWithOneTest})</span>
-                                        <button onclick="toggleBulkTestList('oneTest')" style="background: none; border: none; color: var(--text-color); cursor: pointer; font-size: 1.2em;">×</button>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                                    <div onclick="toggleBulkTestList('readyToTest')" style="padding: 12px; background: var(--panel-bg); border-radius: 6px; text-align: center; border-left: 3px solid #4CAF50; cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 2px 8px rgba(76,175,80,0.3)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
+                                        <div style="font-size: 1.5em; font-weight: 700; color: #4CAF50;">${devicesReadyToTest}</div>
+                                        <div style="font-size: 0.8em; color: var(--text-color);">✓ Ready to Test</div>
                                     </div>
-                                    <div style="font-size: 0.9em; color: var(--text-color);">
-                                        ${bulkDevicesWithOneTestList.length > 0 ? bulkDevicesWithOneTestList.map(d => {
-                                            let testInfo;
-                                            if (d.isConveyor) {
-                                                // Conveyors only need CAT 1, so if they're in this list, CAT 1 is pending
-                                                testInfo = 'CAT 1 pending';
-                                            } else if (d.isDismantled) {
-                                                testInfo = 'PVI pending';
-                                            } else {
-                                                testInfo = d.hasPVI ? 'PVI completed, Category test pending' : 'Category test completed, PVI pending';
-                                            }
-                                            return `<div style="margin-bottom: 8px; padding: 8px; background: var(--input-bg); border-radius: 4px; border-left: 2px solid #ffd700;">
-                                                <strong>Device #${d.device_number}</strong> (${d.device_type})<br>
-                                                <span style="font-size: 0.85em; opacity: 0.8;">${d.address} | ${testInfo}</span>
-                                            </div>`;
-                                        }).join('') : '<div style="opacity: 0.7;">No devices in this category</div>'}
-                                    </div>
-                                </div>
-                                
-                                <div id="bulkWarningList" style="display: none; margin-top: 15px; padding: 12px; background: var(--panel-bg); border-radius: 6px; border: 1px solid #ff9800; max-height: 300px; overflow-y: auto;">
-                                    <div style="font-weight: 600; color: #ff9800; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                                        <span>⚠ CAT 5 Required (${devicesWithWarning})</span>
-                                        <button onclick="toggleBulkTestList('warning')" style="background: none; border: none; color: var(--text-color); cursor: pointer; font-size: 1.2em;">×</button>
-                                    </div>
-                                    <div style="font-size: 0.9em; color: var(--text-color);">
-                                        ${bulkDevicesWithWarningList.length > 0 ? bulkDevicesWithWarningList.map(d => {
-                                            return `<div style="margin-bottom: 8px; padding: 8px; background: var(--input-bg); border-radius: 4px; border-left: 2px solid #ff9800;">
-                                                <strong>Device #${d.device_number}</strong> (${d.device_type})<br>
-                                                <span style="font-size: 0.85em; opacity: 0.8;">${d.address} | CAT 1 & PVI done, but CAT 5 required (last CAT 5: ${d.yearsSinceCat5} years ago)</span>
-                                            </div>`;
-                                        }).join('') : '<div style="opacity: 0.7;">No devices in this category</div>'}
-                                    </div>
-                                </div>
-                                
-                                <div id="bulkNoTestsList" style="display: none; margin-top: 15px; padding: 12px; background: var(--panel-bg); border-radius: 6px; border: 1px solid #ff6b6b; max-height: 300px; overflow-y: auto;">
-                                    <div style="font-weight: 600; color: #ff6b6b; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                                        <span>✗ No Tests Completed (${devicesWithNoTests})</span>
-                                        <button onclick="toggleBulkTestList('noTests')" style="background: none; border: none; color: var(--text-color); cursor: pointer; font-size: 1.2em;">×</button>
-                                    </div>
-                                    <div style="font-size: 0.9em; color: var(--text-color);">
-                                        ${bulkDevicesWithNoTestsList.length > 0 ? bulkDevicesWithNoTestsList.map(d => {
-                                            let statusNote = d.isDismantled ? '<span style="color: #ffd700; font-weight: bold;">[DISMANTLED]</span> ' : '';
-                                            return `<div style="margin-bottom: 8px; padding: 8px; background: var(--input-bg); border-radius: 4px; border-left: 2px solid #ff6b6b;">
-                                                <strong>Device #${d.device_number}</strong> (${d.device_type}) ${statusNote}<br>
-                                                <span style="font-size: 0.85em; opacity: 0.8;">${d.address} | No tests completed this year</span>
-                                            </div>`;
-                                        }).join('') : '<div style="opacity: 0.7;">No devices in this category</div>'}
-                                    </div>
-                                </div>
-                                
-                                <div id="bulkNoTestRequiredList" style="display: none; margin-top: 15px; padding: 12px; background: var(--panel-bg); border-radius: 6px; border: 1px solid #9e9e9e; max-height: 300px; overflow-y: auto;">
-                                    <div style="font-weight: 600; color: #9e9e9e; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                                        <span>— No Test Required (${devicesNoTestRequired})</span>
-                                        <button onclick="toggleBulkTestList('noTestRequired')" style="background: none; border: none; color: var(--text-color); cursor: pointer; font-size: 1.2em;">×</button>
-                                    </div>
-                                    <div style="font-size: 0.9em; color: var(--text-color);">
-                                        ${bulkDevicesNoTestRequiredList.length > 0 ? bulkDevicesNoTestRequiredList.map(d => {
-                                            return `<div style="margin-bottom: 8px; padding: 8px; background: var(--input-bg); border-radius: 4px; border-left: 2px solid #9e9e9e;">
-                                                <strong>Device #${d.device_number}</strong> (${d.device_type}) <span style="color: #9e9e9e; font-weight: bold;">[REMOVED]</span><br>
-                                                <span style="font-size: 0.85em; opacity: 0.8;">${d.address} | Device removed from service</span>
-                                            </div>`;
-                                        }).join('') : '<div style="opacity: 0.7;">No devices in this category</div>'}
+                                    <div onclick="toggleBulkTestList('notReadyToTest')" style="padding: 12px; background: var(--panel-bg); border-radius: 6px; text-align: center; border-left: 3px solid #ff6b6b; cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 2px 8px rgba(255,107,107,0.3)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
+                                        <div style="font-size: 1.5em; font-weight: 700; color: #ff6b6b;">${devicesNotReadyToTest}</div>
+                                        <div style="font-size: 0.8em; color: var(--text-color);">✗ Not Ready Yet</div>
                                     </div>
                                 </div>
                             </div>
@@ -5661,22 +6030,21 @@
                                         <tr style="background: var(--input-bg); position: sticky; top: 0;">
                                             <th style="padding: 8px 10px; text-align: left; color: var(--header-color); border-bottom: 2px solid var(--input-border);">Address</th>
                                             <th style="padding: 8px 10px; text-align: center; color: var(--header-color); border-bottom: 2px solid var(--input-border);">Devices</th>
+                                            <th style="padding: 8px 10px; text-align: center; color: var(--header-color); border-bottom: 2px solid var(--input-border);">Ready</th>
+                                            <th style="padding: 8px 10px; text-align: center; color: var(--header-color); border-bottom: 2px solid var(--input-border);">Not Ready</th>
                                             <th style="padding: 8px 10px; text-align: center; color: var(--header-color); border-bottom: 2px solid var(--input-border);">Violations</th>
                                         </tr>
                                     </thead>
                                     <tbody id="summaryTableBody">
-                                        ${sortedBinEntries
-                                            .map(([bin, group]) => {
-                                                const violations = group.devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0);
-                                                const deviceNumbers = group.devices.map(d => d.device_number).join(' ');
-                                                return `
-                                                    <tr class="summary-row" data-bin="${bin}" data-address="${group.address}" data-devices="${deviceNumbers}" style="border-bottom: 1px solid var(--input-border);">
-                                                        <td style="padding: 8px 10px; color: var(--text-color);">${group.address}</td>
-                                                        <td style="padding: 8px 10px; text-align: center; color: var(--text-color); font-weight: 500;">${group.devices.length}</td>
-                                                        <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: ${violations > 0 ? '#ff6b6b' : '#4CAF50'};">${violations}</td>
-                                                    </tr>
-                                                `;
-                                            }).join('')}
+                                        ${buildingBreakdownData.map(item => `
+                                            <tr class="summary-row" data-bin="${item.bin}" data-address="${item.group.address}" data-devices="${item.deviceNumbers}" style="border-bottom: 1px solid var(--input-border);">
+                                                <td style="padding: 8px 10px; color: var(--text-color);">${item.group.address}</td>
+                                                <td style="padding: 8px 10px; text-align: center; color: var(--text-color); font-weight: 500;">${item.group.devices.length}</td>
+                                                <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: ${item.readyCount > 0 ? '#4CAF50' : 'var(--text-color)'};">${item.readyCount}</td>
+                                                <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: ${item.notReadyCount > 0 ? '#ff6b6b' : 'var(--text-color)'};">${item.notReadyCount}</td>
+                                                <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: ${item.violations > 0 ? '#ff6b6b' : '#4CAF50'};">${item.violations}</td>
+                                            </tr>
+                                        `).join('')}
                                     </tbody>
                                 </table>
                             </div>
@@ -5723,11 +6091,74 @@
                             <div id="buildingDevices_${bin}" style="display: none; margin-top: 15px;">
                     `;
 
-                    // Sort devices so those with violations appear first
+                    // Sort devices: Not ready for testing first, then ready ones
+                    const todayForSort = new Date();
+                    todayForSort.setHours(0, 0, 0, 0);
+                    
                     const sortedDevices = [...group.devices].sort((a, b) => {
+                        // Calculate readiness for device A
+                        const aStatus = (a.device_status || '').toUpperCase();
+                        const aIsDismantled = aStatus.includes('DISMANTLED');
+                        const aIsRemoved = aStatus.includes('REMOVED');
+                        
+                        let aIsReady = true;
+                        if (!aIsRemoved) {
+                            const aPviDate = a.periodic_latest_inspection ? new Date(a.periodic_latest_inspection) : null;
+                            const aCat1Date = a.cat1_latest_report_filed ? new Date(a.cat1_latest_report_filed) : null;
+                            const aCat5Date = a.cat5_latest_report_filed ? new Date(a.cat5_latest_report_filed) : null;
+                            
+                            let aMostRecent;
+                            if (aIsDismantled) {
+                                aMostRecent = aPviDate;
+                            } else {
+                                const aDates = [aPviDate, aCat1Date, aCat5Date].filter(d => d !== null);
+                                aMostRecent = aDates.length > 0 ? new Date(Math.max(...aDates.map(d => d.getTime()))) : null;
+                            }
+                            
+                            if (aMostRecent) {
+                                const aEligible = new Date(aMostRecent);
+                                aEligible.setDate(aEligible.getDate() + 91);
+                                aEligible.setHours(0, 0, 0, 0);
+                                aIsReady = aEligible <= todayForSort;
+                            }
+                        }
+                        
+                        // Calculate readiness for device B
+                        const bStatus = (b.device_status || '').toUpperCase();
+                        const bIsDismantled = bStatus.includes('DISMANTLED');
+                        const bIsRemoved = bStatus.includes('REMOVED');
+                        
+                        let bIsReady = true;
+                        if (!bIsRemoved) {
+                            const bPviDate = b.periodic_latest_inspection ? new Date(b.periodic_latest_inspection) : null;
+                            const bCat1Date = b.cat1_latest_report_filed ? new Date(b.cat1_latest_report_filed) : null;
+                            const bCat5Date = b.cat5_latest_report_filed ? new Date(b.cat5_latest_report_filed) : null;
+                            
+                            let bMostRecent;
+                            if (bIsDismantled) {
+                                bMostRecent = bPviDate;
+                            } else {
+                                const bDates = [bPviDate, bCat1Date, bCat5Date].filter(d => d !== null);
+                                bMostRecent = bDates.length > 0 ? new Date(Math.max(...bDates.map(d => d.getTime()))) : null;
+                            }
+                            
+                            if (bMostRecent) {
+                                const bEligible = new Date(bMostRecent);
+                                bEligible.setDate(bEligible.getDate() + 91);
+                                bEligible.setHours(0, 0, 0, 0);
+                                bIsReady = bEligible <= todayForSort;
+                            }
+                        }
+                        
+                        // Not ready devices first (aIsReady=false should come before aIsReady=true)
+                        if (aIsReady !== bIsReady) {
+                            return aIsReady ? 1 : -1; // Not ready (false) comes first
+                        }
+                        
+                        // Secondary sort by violations
                         const aViolations = a.violations ? a.violations.length : 0;
                         const bViolations = b.violations ? b.violations.length : 0;
-                        return bViolations - aViolations; // Higher violations first
+                        return bViolations - aViolations;
                     });
 
                     // Excel-style table header
