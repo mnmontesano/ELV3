@@ -915,10 +915,15 @@
 
         <!-- Bulk Device List Popup Modal -->
         <div id="bulkDeviceListModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center;">
-            <div style="background: var(--card-bg); border-radius: 12px; padding: 25px; max-width: 1200px; width: 95%; max-height: 85vh; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid var(--input-border); display: flex; flex-direction: column;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid var(--input-border); flex-shrink: 0;">
+            <div style="position: relative; background: var(--card-bg); border-radius: 12px; padding: 25px; max-width: 1200px; width: 95%; max-height: 85vh; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid var(--input-border); display: flex; flex-direction: column;">
+                <!-- Close button at top-right corner of popup window -->
+                <button onclick="closeBulkDeviceListModal()" 
+                        style="position: absolute; top: 2px; right: 15px; background: none; border: none; font-size: 1.8em; cursor: pointer; color: var(--text-color); padding: 0; line-height: 1; transition: color 0.2s, transform 0.2s; z-index: 1;" 
+                        onmouseover="this.style.color='#ff6b6b'; this.style.transform='scale(1.1)';" 
+                        onmouseout="this.style.color='var(--text-color)'; this.style.transform='scale(1)';"
+                        title="Close (Esc)">&times;</button>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid var(--input-border); flex-shrink: 0; padding-right: 50px;">
                     <h3 id="bulkModalTitle" style="margin: 0; color: var(--header-color); font-size: 1.3em;">Device List</h3>
-                    <button onclick="closeBulkDeviceListModal()" style="background: none; border: none; font-size: 1.8em; cursor: pointer; color: var(--text-color); padding: 0; line-height: 1; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.7'" onmouseout="this.style.opacity='1'">&times;</button>
                 </div>
                 <div id="bulkModalContent" style="flex: 1; overflow-y: auto; padding-right: 10px;">
                     <!-- Content will be dynamically populated -->
@@ -2962,14 +2967,331 @@
                             </div>
                         </div>`;
                     }
+                },
+                'allBuildings': {
+                    title: '🏢 All Buildings',
+                    color: 'var(--header-color)',
+                    data: window.bulkDeviceLists.allBuildings || [],
+                    groupByBuilding: false,
+                    isBuildingList: true,
+                    isExpandableBuildingList: true,
+                    renderItem: (b, index) => {
+                        const groupId = `allBuildingsGroup_${Date.now()}_${index}`;
+                        const currentYear = new Date().getFullYear();
+                        
+                        const deviceTableRows = b.devices ? b.devices.map((d, idx) => {
+                            const rowBg = idx % 2 === 0 ? 'var(--input-bg)' : 'var(--panel-bg)';
+                            return `
+                                <tr style="background: ${rowBg};">
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); font-weight: 600; white-space: nowrap;">${d.device_number}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); max-width: 120px; overflow: hidden; text-overflow: ellipsis;" title="${d.device_type}">${d.device_type}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${d.device_status}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasPVIThisYear ? '600' : '400'};">${d.pvi_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasCat1ThisYear ? '600' : '400'};">${d.cat1_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)')}; font-weight: ${d.hasCat5ThisYear || d.requiresCat5 ? '600' : '400'};">${d.cat5_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '600' : '400'};">${d.next_cat5}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.completionColor}; font-weight: 600;">${d.completionStatus}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isReadyColor}; font-weight: 600;">${d.isReady}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${d.eligibleDate}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.violationCount > 0 ? '#ff6b6b' : '#4CAF50'}; font-weight: 600;">${d.violationCount}</td>
+                                </tr>
+                            `;
+                        }).join('') : '<tr><td colspan="11" style="padding: 20px; text-align: center; opacity: 0.7;">No devices found</td></tr>';
+                        
+                        return `<div style="background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border); overflow: hidden;">
+                            <div onclick="toggleBuildingGroup('${groupId}')" 
+                                 style="padding: 14px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); transition: background 0.2s;"
+                                 onmouseover="this.style.background='var(--panel-bg)'" 
+                                 onmouseout="this.style.background='var(--input-bg)'">
+                                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                    <span style="font-size: 1.2em;">🏢</span>
+                                    <div>
+                                        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                            <strong style="font-size: 1.05em;">${b.address}</strong>
+                                            <span style="opacity: 0.7; font-size: 0.9em;">(BIN: ${b.bin})</span>
+                                        </div>
+                                        <div style="font-size: 0.85em; opacity: 0.7; margin-top: 2px; display: flex; gap: 12px;">
+                                            <span>${b.deviceCount} device${b.deviceCount !== 1 ? 's' : ''}</span>
+                                            <span style="color: ${b.violationCount > 0 ? '#ff6b6b' : '#4CAF50'};">${b.violationCount} violation${b.violationCount !== 1 ? 's' : ''}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <span id="${groupId}_arrow" style="font-size: 1.2em; transition: transform 0.3s; transform: rotate(0deg);">▼</span>
+                            </div>
+                            <div id="${groupId}" style="display: none; border-top: 1px solid var(--input-border);">
+                                <div style="max-height: 300px; overflow: auto;">
+                                    <table style="width: 100%; border-collapse: collapse; font-size: 0.8em; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;">
+                                        <thead>
+                                            <tr style="background: var(--panel-bg); position: sticky; top: 0; z-index: 1;">
+                                                <th style="padding: 8px 6px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Device #</th>
+                                                <th style="padding: 8px 6px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Type</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Status</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">PVI</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">CAT 1</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">CAT 5</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Next CAT5</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">${new Date().getFullYear()} Status</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Ready</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Eligible</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Violations</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${deviceTableRows}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>`;
+                    }
+                },
+                'allViolations': {
+                    title: '⚠ Total Violations',
+                    color: '#ff6b6b',
+                    data: window.bulkDeviceLists.allViolations || [],
+                    groupByBuilding: false,
+                    isBuildingList: true,
+                    isExpandableBuildingList: true,
+                    renderItem: (b, index) => {
+                        const groupId = `allViolationsGroup_${Date.now()}_${index}`;
+                        const violationsId = `${groupId}_violations`;
+                        const allDevicesId = `${groupId}_allDevices`;
+                        const currentYear = new Date().getFullYear();
+                        
+                        // Helper function to generate device rows
+                        const generateDeviceRows = (devices) => devices ? devices.map((d, idx) => {
+                            const rowBg = idx % 2 === 0 ? 'var(--input-bg)' : 'var(--panel-bg)';
+                            return `
+                                <tr style="background: ${rowBg};">
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); font-weight: 600; white-space: nowrap;">${d.device_number}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); max-width: 120px; overflow: hidden; text-overflow: ellipsis;" title="${d.device_type}">${d.device_type}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${d.device_status}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasPVIThisYear ? '600' : '400'};">${d.pvi_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasCat1ThisYear ? '600' : '400'};">${d.cat1_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)')}; font-weight: ${d.hasCat5ThisYear || d.requiresCat5 ? '600' : '400'};">${d.cat5_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '600' : '400'};">${d.next_cat5}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.completionColor}; font-weight: 600;">${d.completionStatus}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isReadyColor}; font-weight: 600;">${d.isReady}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${d.eligibleDate}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.violationCount > 0 ? '#ff6b6b' : '#4CAF50'}; font-weight: 600;">${d.violationCount}</td>
+                                </tr>
+                            `;
+                        }).join('') : '<tr><td colspan="11" style="padding: 20px; text-align: center; opacity: 0.7;">No devices found</td></tr>';
+                        
+                        // Generate device rows - devices WITH violations only (default view)
+                        const devicesWithViolationsRows = generateDeviceRows(b.devices);
+                        // Generate device rows - ALL devices in building
+                        const allDeviceTableRows = generateDeviceRows(b.allDevices);
+                        // Count devices without violations
+                        const devicesWithoutViolations = b.deviceCount - b.devicesWithViolations;
+                        
+                        // Generate violation details rows
+                        const violationRows = b.violationDetails ? b.violationDetails.map((v, idx) => {
+                            const rowBg = idx % 2 === 0 ? 'var(--input-bg)' : 'var(--panel-bg)';
+                            const status = (v.violation_status || '').toUpperCase();
+                            const statusColor = status.includes('ACTIVE') || status.includes('OPEN') ? '#ff6b6b' : 
+                                               status.includes('CURED') || status.includes('CLOSED') ? '#4CAF50' : 
+                                               status.includes('DISMISS') ? '#9e9e9e' : 'var(--text-color)';
+                            const issueDate = v.violation_issue_date && v.violation_issue_date !== 'N/A' ? new Date(v.violation_issue_date).toLocaleDateString() : 'N/A';
+                            const remarks = v.violation_remarks || 'No description';
+                            const truncatedRemarks = remarks.length > 150 ? remarks.substring(0, 150) + '...' : remarks;
+                            return `
+                                <tr style="background: ${rowBg};">
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); font-weight: 600; white-space: nowrap;">${v.device_number}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); white-space: nowrap;">${v.violation_number}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; white-space: nowrap;">${issueDate}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${v.violation_severity}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${statusColor}; font-weight: 600;">${v.violation_status}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); font-size: 0.9em;" title="${remarks}">${truncatedRemarks}</td>
+                                </tr>
+                            `;
+                        }).join('') : '<tr><td colspan="6" style="padding: 20px; text-align: center; opacity: 0.7;">No violations found</td></tr>';
+                        
+                        const tableHeader = `
+                            <tr style="background: var(--panel-bg); position: sticky; top: 0; z-index: 1;">
+                                <th style="padding: 8px 6px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Device #</th>
+                                <th style="padding: 8px 6px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Type</th>
+                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Status</th>
+                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">PVI</th>
+                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">CAT 1</th>
+                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">CAT 5</th>
+                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Next CAT5</th>
+                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">${currentYear} Status</th>
+                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Ready</th>
+                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Eligible</th>
+                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Violations</th>
+                            </tr>`;
+                        
+                        return `<div style="background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border); overflow: hidden;">
+                            <div onclick="toggleBuildingGroup('${groupId}')" 
+                                 style="padding: 14px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); transition: background 0.2s; border-left: 4px solid #ff6b6b;"
+                                 onmouseover="this.style.background='var(--panel-bg)'" 
+                                 onmouseout="this.style.background='var(--input-bg)'">
+                                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                    <span style="font-size: 1.2em;">🏢</span>
+                                    <div>
+                                        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                            <strong style="font-size: 1.05em;">${b.address}</strong>
+                                            <span style="opacity: 0.7; font-size: 0.9em;">(BIN: ${b.bin})</span>
+                                        </div>
+                                        <div style="font-size: 0.85em; opacity: 0.7; margin-top: 2px; display: flex; gap: 12px;">
+                                            <span>${b.deviceCount} device${b.deviceCount !== 1 ? 's' : ''}</span>
+                                            <span style="color: #ff6b6b; font-weight: 600;">${b.violationCount} violation${b.violationCount !== 1 ? 's' : ''}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <span id="${groupId}_arrow" style="font-size: 1.2em; transition: transform 0.3s; transform: rotate(0deg);">▼</span>
+                            </div>
+                            <div id="${groupId}" style="display: none; border-top: 1px solid var(--input-border);">
+                                <!-- Devices with Violations Table (default view) -->
+                                <div style="padding: 10px 12px; background: var(--panel-bg); border-bottom: 1px solid var(--input-border);">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                        <span style="font-weight: 600; font-size: 0.9em;">📋 Devices with Violations (${b.devicesWithViolations})</span>
+                                        ${devicesWithoutViolations > 0 ? `
+                                        <button onclick="event.stopPropagation(); toggleAllDevicesView('${allDevicesId}', this);" 
+                                                style="padding: 5px 12px; font-size: 0.8em; background: var(--header-color); color: white; border: none; border-radius: 4px; cursor: pointer; transition: opacity 0.2s;"
+                                                onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                                            Show All Devices (${b.deviceCount})
+                                        </button>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                                <div style="max-height: 300px; overflow: auto;">
+                                    <table style="width: 100%; border-collapse: collapse; font-size: 0.8em; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;">
+                                        <thead>${tableHeader}</thead>
+                                        <tbody>${devicesWithViolationsRows}</tbody>
+                                    </table>
+                                </div>
+                                
+                                <!-- Violation Details Dropdown -->
+                                <div onclick="toggleViolationDetails('${violationsId}')" 
+                                     style="padding: 10px 12px; background: var(--panel-bg); border-top: 1px solid var(--input-border); cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background 0.2s;"
+                                     onmouseover="this.style.background='var(--input-bg)'" 
+                                     onmouseout="this.style.background='var(--panel-bg)'">
+                                    <span style="font-weight: 600; font-size: 0.9em; color: #ff6b6b;">⚠ View Violation Details (${b.violationCount})</span>
+                                    <span id="${violationsId}_arrow" style="font-size: 1em; transition: transform 0.3s; transform: rotate(0deg);">▼</span>
+                                </div>
+                                <div id="${violationsId}" style="display: none; border-top: 1px solid var(--input-border);">
+                                    <div style="max-height: 250px; overflow: auto;">
+                                        <table style="width: 100%; border-collapse: collapse; font-size: 0.8em; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;">
+                                            <thead>
+                                                <tr style="background: var(--panel-bg); position: sticky; top: 0; z-index: 1;">
+                                                    <th style="padding: 8px 6px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Device #</th>
+                                                    <th style="padding: 8px 6px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Violation #</th>
+                                                    <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Issue Date</th>
+                                                    <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Severity</th>
+                                                    <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Status</th>
+                                                    <th style="padding: 8px 6px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border);">Description</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>${violationRows}</tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                
+                                <!-- All Devices Table (hidden by default) -->
+                                <div id="${allDevicesId}" style="display: none;">
+                                    <div style="padding: 10px 12px; background: var(--panel-bg); border-top: 1px solid var(--input-border); border-bottom: 1px solid var(--input-border);">
+                                        <span style="font-weight: 600; font-size: 0.9em;">📋 All Devices in Building (${b.deviceCount})</span>
+                                    </div>
+                                    <div style="max-height: 300px; overflow: auto;">
+                                        <table style="width: 100%; border-collapse: collapse; font-size: 0.8em; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;">
+                                            <thead>${tableHeader}</thead>
+                                            <tbody>${allDeviceTableRows}</tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>`;
+                    }
+                },
+                'buildingsWithViolations': {
+                    title: '🏢 Buildings with Violations',
+                    color: '#ff6b6b',
+                    data: window.bulkDeviceLists.buildingsWithViolations || [],
+                    groupByBuilding: false,
+                    isBuildingList: true,
+                    isExpandableBuildingList: true,
+                    renderItem: (b, index) => {
+                        const groupId = `buildingsWithViolationsGroup_${Date.now()}_${index}`;
+                        const currentYear = new Date().getFullYear();
+                        
+                        const deviceTableRows = b.devices ? b.devices.map((d, idx) => {
+                            const rowBg = idx % 2 === 0 ? 'var(--input-bg)' : 'var(--panel-bg)';
+                            return `
+                                <tr style="background: ${rowBg};">
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); font-weight: 600; white-space: nowrap;">${d.device_number}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); max-width: 120px; overflow: hidden; text-overflow: ellipsis;" title="${d.device_type}">${d.device_type}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${d.device_status}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasPVIThisYear ? '600' : '400'};">${d.pvi_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasCat1ThisYear ? '600' : '400'};">${d.cat1_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)')}; font-weight: ${d.hasCat5ThisYear || d.requiresCat5 ? '600' : '400'};">${d.cat5_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '600' : '400'};">${d.next_cat5}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.completionColor}; font-weight: 600;">${d.completionStatus}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isReadyColor}; font-weight: 600;">${d.isReady}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${d.eligibleDate}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.violationCount > 0 ? '#ff6b6b' : '#4CAF50'}; font-weight: 600;">${d.violationCount}</td>
+                                </tr>
+                            `;
+                        }).join('') : '<tr><td colspan="11" style="padding: 20px; text-align: center; opacity: 0.7;">No devices found</td></tr>';
+                        
+                        return `<div style="background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border); overflow: hidden;">
+                            <div onclick="toggleBuildingGroup('${groupId}')" 
+                                 style="padding: 14px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); transition: background 0.2s; border-left: 4px solid #ff6b6b;"
+                                 onmouseover="this.style.background='var(--panel-bg)'" 
+                                 onmouseout="this.style.background='var(--input-bg)'">
+                                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                    <span style="font-size: 1.2em;">🏢</span>
+                                    <div>
+                                        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                            <strong style="font-size: 1.05em;">${b.address}</strong>
+                                            <span style="opacity: 0.7; font-size: 0.9em;">(BIN: ${b.bin})</span>
+                                        </div>
+                                        <div style="font-size: 0.85em; opacity: 0.7; margin-top: 2px; display: flex; gap: 12px;">
+                                            <span>${b.deviceCount} device${b.deviceCount !== 1 ? 's' : ''}</span>
+                                            <span style="color: #ff6b6b; font-weight: 600;">${b.violationCount} violation${b.violationCount !== 1 ? 's' : ''}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <span id="${groupId}_arrow" style="font-size: 1.2em; transition: transform 0.3s; transform: rotate(0deg);">▼</span>
+                            </div>
+                            <div id="${groupId}" style="display: none; border-top: 1px solid var(--input-border);">
+                                <div style="max-height: 300px; overflow: auto;">
+                                    <table style="width: 100%; border-collapse: collapse; font-size: 0.8em; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;">
+                                        <thead>
+                                            <tr style="background: var(--panel-bg); position: sticky; top: 0; z-index: 1;">
+                                                <th style="padding: 8px 6px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Device #</th>
+                                                <th style="padding: 8px 6px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Type</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Status</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">PVI</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">CAT 1</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">CAT 5</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Next CAT5</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">${new Date().getFullYear()} Status</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Ready</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Eligible</th>
+                                                <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Violations</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${deviceTableRows}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>`;
+                    }
                 }
             };
             
             const config = listConfigs[listType];
             if (!config) return;
             
-            // Set modal title with count and color
-            modalTitle.innerHTML = `<span style="color: ${config.color};">${config.title}</span> <span style="font-size: 0.85em; opacity: 0.7;">(${config.data.length} devices)</span>`;
+            // Set modal title with count and color - use appropriate label for item type
+            let countLabel = 'devices';
+            if (config.isBuildingList) countLabel = 'buildings';
+            else if (config.isViolationList) countLabel = 'violations';
+            modalTitle.innerHTML = `<span style="color: ${config.color};">${config.title}</span> <span style="font-size: 0.85em; opacity: 0.7;">(${config.data.length} ${countLabel})</span>`;
             
             // Generate content
             if (config.data.length > 0) {
@@ -3055,14 +3377,39 @@
                         </div>
                     `;
                 } else {
-                    modalContent.innerHTML = `
-                        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 12px;">
-                            ${config.data.map(config.renderItem).join('')}
-                        </div>
-                    `;
+                    // For expandable building lists, use single column layout and pass index
+                    if (config.isExpandableBuildingList) {
+                        modalContent.innerHTML = `
+                            <div style="margin-bottom: 15px;">
+                                <input type="text" 
+                                       id="buildingModalSearch" 
+                                       placeholder="Search by address, BIN, or device number..." 
+                                       oninput="filterBuildingModalItems(this.value)"
+                                       style="width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 0.95em; box-sizing: border-box;">
+                                <div id="buildingSearchCount" style="font-size: 0.85em; color: var(--text-color); opacity: 0.7; margin-top: 6px;"></div>
+                            </div>
+                            <div id="buildingModalList" style="display: flex; flex-direction: column; gap: 12px;">
+                                ${config.data.map((item, index) => {
+                                    const deviceNumbers = item.devices ? item.devices.map(d => d.device_number).join(' ') : '';
+                                    return `<div class="building-modal-item" data-address="${item.address}" data-bin="${item.bin}" data-devices="${deviceNumbers}">
+                                        ${config.renderItem(item, index)}
+                                    </div>`;
+                                }).join('')}
+                            </div>
+                        `;
+                    } else {
+                        modalContent.innerHTML = `
+                            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 12px;">
+                                ${config.data.map(config.renderItem).join('')}
+                            </div>
+                        `;
+                    }
                 }
             } else {
-                modalContent.innerHTML = '<div style="text-align: center; padding: 40px; opacity: 0.7;">No devices in this category</div>';
+                let emptyLabel = 'devices';
+                if (config.isBuildingList) emptyLabel = 'buildings';
+                else if (config.isViolationList) emptyLabel = 'violations';
+                modalContent.innerHTML = `<div style="text-align: center; padding: 40px; opacity: 0.7;">No ${emptyLabel} in this category</div>`;
             }
             
             // Show modal
@@ -3081,6 +3428,69 @@
                 } else {
                     content.style.display = 'none';
                     arrow.style.transform = 'rotate(0deg)';
+                }
+            }
+        }
+        
+        // Toggle all devices view in Total Violations modal
+        function toggleAllDevicesView(allDevicesId, button) {
+            const allDevicesSection = document.getElementById(allDevicesId);
+            if (allDevicesSection) {
+                if (allDevicesSection.style.display === 'none') {
+                    allDevicesSection.style.display = 'block';
+                    button.textContent = button.textContent.replace('Show', 'Hide');
+                    button.style.background = '#ff6b6b';
+                } else {
+                    allDevicesSection.style.display = 'none';
+                    button.textContent = button.textContent.replace('Hide', 'Show');
+                    button.style.background = 'var(--header-color)';
+                }
+            }
+        }
+        
+        // Toggle violation details dropdown
+        function toggleViolationDetails(violationsId) {
+            const content = document.getElementById(violationsId);
+            const arrow = document.getElementById(violationsId + '_arrow');
+            if (content && arrow) {
+                if (content.style.display === 'none') {
+                    content.style.display = 'block';
+                    arrow.style.transform = 'rotate(180deg)';
+                } else {
+                    content.style.display = 'none';
+                    arrow.style.transform = 'rotate(0deg)';
+                }
+            }
+        }
+        
+        // Filter buildings in the modal
+        function filterBuildingModalItems(searchTerm) {
+            const term = searchTerm.toUpperCase().trim();
+            const items = document.querySelectorAll('.building-modal-item');
+            const countEl = document.getElementById('buildingSearchCount');
+            let visibleCount = 0;
+            const totalCount = items.length;
+            
+            items.forEach(item => {
+                const address = (item.dataset.address || '').toUpperCase();
+                const bin = (item.dataset.bin || '').toUpperCase();
+                const devices = (item.dataset.devices || '').toUpperCase();
+                
+                const matches = term === '' || 
+                               address.includes(term) || 
+                               bin.includes(term) || 
+                               devices.includes(term);
+                
+                item.style.display = matches ? '' : 'none';
+                if (matches) visibleCount++;
+            });
+            
+            // Update count display
+            if (countEl) {
+                if (term === '') {
+                    countEl.textContent = '';
+                } else {
+                    countEl.textContent = `Showing ${visibleCount} of ${totalCount} building${totalCount !== 1 ? 's' : ''}`;
                 }
             }
         }
@@ -3575,9 +3985,9 @@
                     
                     const address = `${data[0].house_number} ${data[0].street_name}, ${data[0].borough}`;
                     
-                    // Count active, removed, and dismantled devices
+                    // Count active, removed, and dismantled devices (DELETED is treated as REMOVED)
                     const removedDevices = data.filter(device => 
-                        device.device_status && device.device_status.toUpperCase() === 'REMOVED'
+                        device.device_status && (device.device_status.toUpperCase() === 'REMOVED' || device.device_status.toUpperCase() === 'DELETED')
                     ).length;
                     const dismantledDevices = data.filter(device => 
                         device.device_status && device.device_status.toUpperCase() === 'DISMANTLED'
@@ -3585,6 +3995,7 @@
                     const activeDevices = data.filter(device => 
                         !device.device_status || 
                         (device.device_status.toUpperCase() !== 'REMOVED' && 
+                         device.device_status.toUpperCase() !== 'DELETED' &&
                          device.device_status.toUpperCase() !== 'DISMANTLED')
                     ).length;
 
@@ -3598,8 +4009,8 @@
                     let eligibleCompletedDevices = 0;
                     
                     data.forEach(device => {
-                        // Skip removed devices as they don't need testing
-                        if (device.device_status && device.device_status.toUpperCase() === 'REMOVED') {
+                        // Skip removed/deleted devices as they don't need testing
+                        if (device.device_status && (device.device_status.toUpperCase() === 'REMOVED' || device.device_status.toUpperCase() === 'DELETED')) {
                             return;
                         }
                         
@@ -3666,8 +4077,8 @@
                     });
                     
                     const notEligibleDevices = data.filter(device => {
-                        // Skip removed devices as they don't need testing
-                        if (device.device_status && device.device_status.toUpperCase() === 'REMOVED') {
+                        // Skip removed/deleted devices as they don't need testing
+                        if (device.device_status && (device.device_status.toUpperCase() === 'REMOVED' || device.device_status.toUpperCase() === 'DELETED')) {
                             return false;
                         }
                         
@@ -3733,12 +4144,12 @@
                         return !isEligible;
                     }).length;
 
-                    // Separate devices into active and removed
+                    // Separate devices into active and removed (DELETED is treated as REMOVED)
                     const activeDevicesData = data.filter(device => 
-                        !device.device_status || device.device_status.toUpperCase() !== 'REMOVED'
+                        !device.device_status || (device.device_status.toUpperCase() !== 'REMOVED' && device.device_status.toUpperCase() !== 'DELETED')
                     );
                     const removedDevicesData = data.filter(device => 
-                        device.device_status && device.device_status.toUpperCase() === 'REMOVED'
+                        device.device_status && (device.device_status.toUpperCase() === 'REMOVED' || device.device_status.toUpperCase() === 'DELETED')
                     );
 
                     // Group active devices by type
@@ -4119,7 +4530,7 @@
                                     <br>
                                     <span style="margin-left: 20px; color: ${dismantledDevices > 0 ? '#ffd700' : 'var(--text-color)'};">• Dismantled Devices: ${dismantledDevices}</span>
                                     <br>
-                                    <span style="margin-left: 20px; color: ${removedDevices > 0 ? '#ff6b6b' : 'var(--text-color)'};">• Removed Devices: ${removedDevices}</span>
+                                    <span style="margin-left: 20px; color: ${removedDevices > 0 ? '#ff6b6b' : 'var(--text-color)'};">• Removed/Deleted Devices: ${removedDevices}</span>
                                     <br>
                                     <div style="margin-top: 10px;">
                                         <strong style="color: var(--header-color);">Test Eligibility:</strong>
@@ -4275,7 +4686,7 @@
                         html += `
                             <div style="margin-top: 30px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                    <strong style="color: #ff6b6b;">Removed Devices (${removedDevicesData.length}):</strong>
+                                    <strong style="color: #ff6b6b;">Removed/Deleted Devices (${removedDevicesData.length}):</strong>
                                     <button onclick="toggleRemovedDevices()" 
                                             id="removedDevicesToggleBtn"
                                             data-showing="false"
@@ -4354,7 +4765,7 @@
                 <div class="device-type-section removed-devices" data-device-type="${type}" data-device-status="REMOVED">
                     <div style="background: var(--panel-bg); padding: 15px; border-radius: 5px; margin-bottom: 15px; border-left: 4px solid #ff6b6b;">
                         <div style="margin-bottom: 10px; border-bottom: 1px solid var(--input-border); padding-bottom: 10px;">
-                            <strong style="color: #ff6b6b;">Removed ${type} (${devices.length}):</strong>
+                            <strong style="color: #ff6b6b;">Removed/Deleted ${type} (${devices.length}):</strong>
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 10px;">
                             ${devices.map((device, index) => {
@@ -4386,7 +4797,7 @@
                                     <div class="device-item removed-device" 
                                          data-has-violations="${violationCount > 0}" 
                                          data-device-type="${type}"
-                                         data-device-status="REMOVED">
+                                         data-device-status="${(device.device_status || 'REMOVED').toUpperCase()}">
                                         <div style="padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid #ff6b6b; opacity: 0.8;">
                                             <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
                                                 <div><strong style="color: var(--header-color);">Device #:</strong> 
@@ -4415,7 +4826,7 @@
                                                     <span style="padding: 4px 8px; border-radius: 4px; background: #ff6b6b; color: white; font-size: 0.9em; display: flex; align-items: center; gap: 4px;">
                                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                                                             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
-                                                        </svg>REMOVED
+                                                        </svg>${(device.device_status || 'REMOVED').toUpperCase()}
                                                     </span>
                                                 </div>
                                             </div>
@@ -5355,13 +5766,13 @@
                                                   (cat5Date && cat5Date.getFullYear() === currentYear);
                     }
                     
-                    // Check if device is dismantled or removed
+                    // Check if device is dismantled or removed (DELETED is treated as REMOVED)
                     const isDismantled = device.device_status && device.device_status.toUpperCase() === 'DISMANTLED';
-                    const isRemoved = device.device_status && device.device_status.toUpperCase() === 'REMOVED';
+                    const isRemoved = device.device_status && (device.device_status.toUpperCase() === 'REMOVED' || device.device_status.toUpperCase() === 'DELETED');
                     
                     // For dismantled devices, only PVI is required
                     // For Conveyors, only CAT 1 is required
-                    // For removed devices, set test completion status to N/A
+                    // For removed/deleted devices, set test completion status to N/A
                     const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
                     let testCompletionStatus = 'N/A';
                     if (isRemoved) {
@@ -5677,14 +6088,280 @@
 
                 // Generate building summary
                 const buildingCount = Object.keys(binGroups).length;
-                const totalViolationsAll = Object.values(binGroups).reduce((sum, group) => 
-                    sum + group.devices.reduce((dSum, device) => 
+                const totalViolationsAll = Object.values(binGroups).reduce((sum, group) =>
+                    sum + group.devices.reduce((dSum, device) =>
                         dSum + (device.violations ? device.violations.length : 0), 0), 0);
-                const buildingsWithViolations = Object.values(binGroups).filter(group => 
+                const buildingsWithViolations = Object.values(binGroups).filter(group =>
                     group.devices.some(device => device.violations && device.violations.length > 0)).length;
-
-                // Calculate test completion statistics for the current year
+                
+                // Create lists for clickable summary items
                 const currentYear = new Date().getFullYear();
+                const allBuildingsList = Object.entries(binGroups).map(([bin, group]) => ({
+                    bin,
+                    address: group.address,
+                    deviceCount: group.devices.length,
+                    violationCount: group.devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0),
+                    devices: group.devices.map(d => {
+                        const pviDate = d.periodic_latest_inspection ? new Date(d.periodic_latest_inspection) : null;
+                        const cat1Date = d.cat1_latest_report_filed ? new Date(d.cat1_latest_report_filed) : null;
+                        const cat5Date = d.cat5_latest_report_filed ? new Date(d.cat5_latest_report_filed) : null;
+                        
+                        const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+                        const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                        const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
+                        
+                        const deviceType = (d.device_type || '').toUpperCase();
+                        const deviceStatus = (d.device_status || '').toUpperCase();
+                        const isDismantled = deviceStatus.includes('DISMANTLED');
+                        const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
+                        const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
+                        const isConveyor = deviceType.includes('CONVEYOR');
+                        const isWheelchairLift = deviceType.includes('WHEELCHAIR');
+                        const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                        const isEscalator = deviceType.includes('ESCALATOR');
+                        const noTestRequired = isRemoved;
+                        
+                        // CAT 5 requirements
+                        let requiresCat5 = false;
+                        let nextCat5DueYear = null;
+                        const cat5NotApplicable = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled || isRemoved;
+                        if (!cat5NotApplicable && cat5Date) {
+                            const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
+                            requiresCat5 = yearsSinceCat5 >= 5;
+                            nextCat5DueYear = cat5Date.getFullYear() + 5;
+                        }
+                        
+                        // Calculate eligibility
+                        const testDates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                        const mostRecentTestDate = testDates.length > 0 ? new Date(Math.max.apply(null, testDates)) : null;
+                        let isReadyForTesting = false;
+                        let eligibilityDate = null;
+                        if (mostRecentTestDate) {
+                            const daysSince = Math.floor((new Date() - mostRecentTestDate) / (1000 * 60 * 60 * 24));
+                            isReadyForTesting = daysSince >= 91;
+                            eligibilityDate = new Date(mostRecentTestDate);
+                            eligibilityDate.setDate(eligibilityDate.getDate() + 91);
+                        }
+                        
+                        // Determine completion status
+                        let completionStatus, completionColor;
+                        if (noTestRequired) {
+                            completionStatus = 'N/A'; completionColor = '#9e9e9e';
+                        } else if (isConveyor && hasCat1ThisYear) {
+                            completionStatus = 'Complete'; completionColor = '#4CAF50';
+                        } else if (isDismantled && hasPVIThisYear) {
+                            completionStatus = 'Complete'; completionColor = '#4CAF50';
+                        } else if (requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear) {
+                            completionStatus = 'CAT 5 Needed'; completionColor = '#ff9800';
+                        } else if ((isDumbwaiter || isWheelchairLift || isHydraulic || isEscalator) && hasPVIThisYear && hasCat1ThisYear) {
+                            completionStatus = 'Complete'; completionColor = '#4CAF50';
+                        } else if (!isDumbwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && !isDismantled) {
+                            if (requiresCat5) {
+                                if (hasPVIThisYear && hasCat1ThisYear && hasCat5ThisYear) {
+                                    completionStatus = 'Complete'; completionColor = '#4CAF50';
+                                } else {
+                                    let missing = [];
+                                    if (!hasPVIThisYear) missing.push('PVI');
+                                    if (!hasCat1ThisYear) missing.push('CAT1');
+                                    if (!hasCat5ThisYear) missing.push('CAT5');
+                                    completionStatus = missing.join('+');
+                                    completionColor = missing.length === 3 ? '#ff6b6b' : '#ffd700';
+                                }
+                            } else {
+                                if (hasPVIThisYear && hasCat1ThisYear) {
+                                    completionStatus = 'Complete'; completionColor = '#4CAF50';
+                                } else {
+                                    let missing = [];
+                                    if (!hasPVIThisYear) missing.push('PVI');
+                                    if (!hasCat1ThisYear) missing.push('CAT1');
+                                    completionStatus = missing.join('+');
+                                    completionColor = missing.length === 2 ? '#ff6b6b' : '#ffd700';
+                                }
+                            }
+                        } else if (isDismantled && !hasPVIThisYear) {
+                            completionStatus = 'PVI'; completionColor = '#ff6b6b';
+                        } else if (isConveyor && !hasCat1ThisYear) {
+                            completionStatus = 'CAT1'; completionColor = '#ff6b6b';
+                        } else {
+                            completionStatus = 'Incomplete'; completionColor = '#ff6b6b';
+                        }
+                        
+                        return {
+                            device_number: d.device_number,
+                            device_type: d.device_type || 'Unknown',
+                            device_status: d.device_status || 'N/A',
+                            violationCount: d.violations ? d.violations.length : 0,
+                            pvi_date: pviDate ? pviDate.toLocaleDateString() : '—',
+                            cat1_date: cat1Date ? cat1Date.toLocaleDateString() : '—',
+                            cat5_date: cat5Date ? cat5Date.toLocaleDateString() : '—',
+                            next_cat5: cat5NotApplicable ? 'N/A' : (nextCat5DueYear ? nextCat5DueYear : '—'),
+                            completionStatus,
+                            completionColor,
+                            isReady: noTestRequired ? 'N/A' : (isReadyForTesting ? 'Yes' : 'No'),
+                            isReadyColor: noTestRequired ? '#9e9e9e' : (isReadyForTesting ? '#4CAF50' : '#ff9800'),
+                            eligibleDate: noTestRequired ? 'N/A' : (eligibilityDate ? eligibilityDate.toLocaleDateString() : '—'),
+                            hasPVIThisYear,
+                            hasCat1ThisYear,
+                            hasCat5ThisYear,
+                            requiresCat5,
+                            nextCat5DueYear
+                        };
+                    })
+                }));
+                
+                // Helper function to calculate device info for lists
+                const calculateDeviceInfo = (d) => {
+                    const pviDate = d.periodic_latest_inspection ? new Date(d.periodic_latest_inspection) : null;
+                    const cat1Date = d.cat1_latest_report_filed ? new Date(d.cat1_latest_report_filed) : null;
+                    const cat5Date = d.cat5_latest_report_filed ? new Date(d.cat5_latest_report_filed) : null;
+                    
+                    const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+                    const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                    const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
+                    
+                    const deviceType = (d.device_type || '').toUpperCase();
+                    const deviceStatus = (d.device_status || '').toUpperCase();
+                    const isDismantled = deviceStatus.includes('DISMANTLED');
+                    const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
+                    const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
+                    const isConveyor = deviceType.includes('CONVEYOR');
+                    const isWheelchairLift = deviceType.includes('WHEELCHAIR');
+                    const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                    const isEscalator = deviceType.includes('ESCALATOR');
+                    const noTestRequired = isRemoved;
+                    
+                    let requiresCat5 = false;
+                    let nextCat5DueYear = null;
+                    const cat5NotApplicable = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled || isRemoved;
+                    if (!cat5NotApplicable && cat5Date) {
+                        const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
+                        requiresCat5 = yearsSinceCat5 >= 5;
+                        nextCat5DueYear = cat5Date.getFullYear() + 5;
+                    }
+                    
+                    const testDates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                    const mostRecentTestDate = testDates.length > 0 ? new Date(Math.max.apply(null, testDates)) : null;
+                    let isReadyForTesting = false;
+                    let eligibilityDate = null;
+                    if (mostRecentTestDate) {
+                        const daysSince = Math.floor((new Date() - mostRecentTestDate) / (1000 * 60 * 60 * 24));
+                        isReadyForTesting = daysSince >= 91;
+                        eligibilityDate = new Date(mostRecentTestDate);
+                        eligibilityDate.setDate(eligibilityDate.getDate() + 91);
+                    }
+                    
+                    let completionStatus, completionColor;
+                    if (noTestRequired) {
+                        completionStatus = 'N/A'; completionColor = '#9e9e9e';
+                    } else if (isConveyor && hasCat1ThisYear) {
+                        completionStatus = 'Complete'; completionColor = '#4CAF50';
+                    } else if (isDismantled && hasPVIThisYear) {
+                        completionStatus = 'Complete'; completionColor = '#4CAF50';
+                    } else if (requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear) {
+                        completionStatus = 'CAT 5 Needed'; completionColor = '#ff9800';
+                    } else if ((isDumbwaiter || isWheelchairLift || isHydraulic || isEscalator) && hasPVIThisYear && hasCat1ThisYear) {
+                        completionStatus = 'Complete'; completionColor = '#4CAF50';
+                    } else if (!isDumbwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && !isDismantled) {
+                        if (requiresCat5) {
+                            if (hasPVIThisYear && hasCat1ThisYear && hasCat5ThisYear) {
+                                completionStatus = 'Complete'; completionColor = '#4CAF50';
+                            } else {
+                                let missing = [];
+                                if (!hasPVIThisYear) missing.push('PVI');
+                                if (!hasCat1ThisYear) missing.push('CAT1');
+                                if (!hasCat5ThisYear) missing.push('CAT5');
+                                completionStatus = missing.join('+');
+                                completionColor = missing.length === 3 ? '#ff6b6b' : '#ffd700';
+                            }
+                        } else {
+                            if (hasPVIThisYear && hasCat1ThisYear) {
+                                completionStatus = 'Complete'; completionColor = '#4CAF50';
+                            } else {
+                                let missing = [];
+                                if (!hasPVIThisYear) missing.push('PVI');
+                                if (!hasCat1ThisYear) missing.push('CAT1');
+                                completionStatus = missing.join('+');
+                                completionColor = missing.length === 2 ? '#ff6b6b' : '#ffd700';
+                            }
+                        }
+                    } else if (isDismantled && !hasPVIThisYear) {
+                        completionStatus = 'PVI'; completionColor = '#ff6b6b';
+                    } else if (isConveyor && !hasCat1ThisYear) {
+                        completionStatus = 'CAT1'; completionColor = '#ff6b6b';
+                    } else {
+                        completionStatus = 'Incomplete'; completionColor = '#ff6b6b';
+                    }
+                    
+                    return {
+                        device_number: d.device_number,
+                        device_type: d.device_type || 'Unknown',
+                        device_status: d.device_status || 'N/A',
+                        violationCount: d.violations ? d.violations.length : 0,
+                        violations: d.violations || [],
+                        pvi_date: pviDate ? pviDate.toLocaleDateString() : '—',
+                        cat1_date: cat1Date ? cat1Date.toLocaleDateString() : '—',
+                        cat5_date: cat5Date ? cat5Date.toLocaleDateString() : '—',
+                        next_cat5: cat5NotApplicable ? 'N/A' : (nextCat5DueYear ? nextCat5DueYear : '—'),
+                        completionStatus,
+                        completionColor,
+                        isReady: noTestRequired ? 'N/A' : (isReadyForTesting ? 'Yes' : 'No'),
+                        isReadyColor: noTestRequired ? '#9e9e9e' : (isReadyForTesting ? '#4CAF50' : '#ff9800'),
+                        eligibleDate: noTestRequired ? 'N/A' : (eligibilityDate ? eligibilityDate.toLocaleDateString() : '—'),
+                        hasPVIThisYear,
+                        hasCat1ThisYear,
+                        hasCat5ThisYear,
+                        requiresCat5,
+                        nextCat5DueYear
+                    };
+                };
+                
+                // All Violations - grouped by building with device details
+                const allViolationsList = Object.entries(binGroups)
+                    .filter(([bin, group]) => group.devices.some(d => d.violations && d.violations.length > 0))
+                    .map(([bin, group]) => {
+                        // Collect all violation details
+                        const violationDetails = [];
+                        group.devices.forEach(device => {
+                            if (device.violations && device.violations.length > 0) {
+                                device.violations.forEach(v => {
+                                    violationDetails.push({
+                                        device_number: device.device_number,
+                                        device_type: device.device_type || 'Unknown',
+                                        violation_number: v.violation_number || 'N/A',
+                                        violation_issue_date: v.violation_issue_date || v.violation_date || v.issue_date || 'N/A',
+                                        violation_severity: v.violation_severity || v.violation_type || v.violation_category || 'N/A',
+                                        violation_status: v.violation_status || 'N/A',
+                                        violation_remarks: v.violation_remarks || v.violation_description || v.description || 'No description'
+                                    });
+                                });
+                            }
+                        });
+                        
+                        return {
+                            bin,
+                            address: group.address,
+                            deviceCount: group.devices.length,
+                            violationCount: group.devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0),
+                            devicesWithViolations: group.devices.filter(d => d.violations && d.violations.length > 0).length,
+                            devices: group.devices.filter(d => d.violations && d.violations.length > 0).map(calculateDeviceInfo),
+                            allDevices: group.devices.map(calculateDeviceInfo),
+                            violationDetails: violationDetails
+                        };
+                    });
+                
+                // Buildings with Violations - same format with full device info
+                const buildingsWithViolationsList = Object.entries(binGroups)
+                    .filter(([bin, group]) => group.devices.some(d => d.violations && d.violations.length > 0))
+                    .map(([bin, group]) => ({
+                        bin,
+                        address: group.address,
+                        deviceCount: group.devices.length,
+                        violationCount: group.devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0),
+                        devicesWithViolations: group.devices.filter(d => d.violations && d.violations.length > 0).length,
+                        devices: group.devices.map(calculateDeviceInfo)
+                    }));
+
+                // Calculate test completion statistics for the current year (currentYear already declared above)
                 let devicesWithBothTests = 0;
                 let devicesWithOneTest = 0;
                 let devicesWithNoTests = 0;
@@ -5717,18 +6394,18 @@
                         const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
                         const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
                         
-                        // Check device type and status
+                        // Check device type and status (DELETED is treated as REMOVED)
                         const deviceType = (device.device_type || '').toUpperCase();
                         const deviceStatus = (device.device_status || '').toUpperCase();
                         const isDismantled = deviceStatus.includes('DISMANTLED');
-                        const isRemoved = deviceStatus.includes('REMOVED');
+                        const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                         const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                         const isConveyor = deviceType.includes('CONVEYOR');
                         const isWheelchairLift = deviceType.includes('WHEELCHAIR');
                         const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
                         const isEscalator = deviceType.includes('ESCALATOR');
                         
-                        // Removed devices don't require any tests
+                        // Removed/deleted devices don't require any tests
                         if (isRemoved) {
                             devicesNoTestRequired++;
                             bulkDevicesNoTestRequiredList.push({
@@ -5872,7 +6549,10 @@
                     noTests: bulkDevicesWithNoTestsList,
                     noTestRequired: bulkDevicesNoTestRequiredList,
                     readyToTest: bulkDevicesReadyToTestList,
-                    notReadyToTest: bulkDevicesNotReadyToTestList
+                    notReadyToTest: bulkDevicesNotReadyToTestList,
+                    allBuildings: allBuildingsList,
+                    allViolations: allViolationsList,
+                    buildingsWithViolations: buildingsWithViolationsList
                 };
 
                 // Sort buildings by violations (those with violations first)
@@ -5893,7 +6573,7 @@
                     group.devices.forEach(device => {
                         const deviceStatus = (device.device_status || '').toUpperCase();
                         const isDismantled = deviceStatus.includes('DISMANTLED');
-                        const isRemoved = deviceStatus.includes('REMOVED');
+                        const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                         
                         if (isRemoved) return;
                         
@@ -5955,15 +6635,15 @@
                                 Summary
                             </div>
                             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 15px;">
-                                <div style="padding: 12px; background: var(--input-bg); border-radius: 6px; text-align: center; border: 1px solid var(--input-border);">
+                                <div onclick="toggleBulkTestList('allBuildings')" style="padding: 12px; background: var(--input-bg); border-radius: 6px; text-align: center; border: 1px solid var(--input-border); cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.2)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
                                     <div style="font-size: 1.5em; font-weight: 700; color: var(--header-color);">${buildingCount}</div>
                                     <div style="font-size: 0.9em; color: var(--text-color);">Buildings</div>
                                 </div>
-                                <div style="padding: 12px; background: var(--input-bg); border-radius: 6px; text-align: center; border: 1px solid var(--input-border);">
+                                <div onclick="toggleBulkTestList('allViolations')" style="padding: 12px; background: var(--input-bg); border-radius: 6px; text-align: center; border: 1px solid var(--input-border); cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 2px 8px rgba(255,107,107,0.3)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
                                     <div style="font-size: 1.5em; font-weight: 700; color: ${totalViolationsAll > 0 ? '#ff6b6b' : '#4CAF50'};">${totalViolationsAll}</div>
                                     <div style="font-size: 0.9em; color: var(--text-color);">Total Violations</div>
                                 </div>
-                                <div style="padding: 12px; background: var(--input-bg); border-radius: 6px; text-align: center; border: 1px solid var(--input-border);">
+                                <div onclick="toggleBulkTestList('buildingsWithViolations')" style="padding: 12px; background: var(--input-bg); border-radius: 6px; text-align: center; border: 1px solid var(--input-border); cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 2px 8px rgba(255,107,107,0.3)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
                                     <div style="font-size: 1.5em; font-weight: 700; color: ${buildingsWithViolations > 0 ? '#ff6b6b' : '#4CAF50'};">${buildingsWithViolations}</div>
                                     <div style="font-size: 0.9em; color: var(--text-color);">Buildings w/ Violations</div>
                                 </div>
@@ -6067,12 +6747,12 @@
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div style="flex: 1;">
                                         <div style="font-size: 1.1em; margin-bottom: 8px;">
-                                            <strong style="color: var(--header-color); font-size: 1.2em;">BIN:</strong> 
-                                            <span style="font-weight: 600; color: var(--text-color);">${bin}</span>
+                                            <strong style="color: var(--header-color); font-size: 1.2em;">Address:</strong> 
+                                            <span style="font-weight: 600; color: var(--text-color);">${group.address}</span>
                                         </div>
                                         <div style="margin-bottom: 5px;">
-                                            <strong style="color: var(--header-color);">Address:</strong> 
-                                            <span style="color: var(--text-color);">${group.address}</span>
+                                            <strong style="color: var(--header-color);">BIN:</strong> 
+                                            <span style="color: var(--text-color);">${bin}</span>
                                         </div>
                                         <div style="display: flex; gap: 20px; flex-wrap: wrap;">
                                             <div>
@@ -6098,10 +6778,10 @@
                     todayForSort.setHours(0, 0, 0, 0);
                     
                     const sortedDevices = [...group.devices].sort((a, b) => {
-                        // Calculate readiness for device A
+                        // Calculate readiness for device A (DELETED is treated as REMOVED)
                         const aStatus = (a.device_status || '').toUpperCase();
                         const aIsDismantled = aStatus.includes('DISMANTLED');
-                        const aIsRemoved = aStatus.includes('REMOVED');
+                        const aIsRemoved = aStatus.includes('REMOVED') || aStatus.includes('DELETED');
                         
                         let aIsReady = true;
                         if (!aIsRemoved) {
@@ -6125,10 +6805,10 @@
                             }
                         }
                         
-                        // Calculate readiness for device B
+                        // Calculate readiness for device B (DELETED is treated as REMOVED)
                         const bStatus = (b.device_status || '').toUpperCase();
                         const bIsDismantled = bStatus.includes('DISMANTLED');
-                        const bIsRemoved = bStatus.includes('REMOVED');
+                        const bIsRemoved = bStatus.includes('REMOVED') || bStatus.includes('DELETED');
                         
                         let bIsReady = true;
                         if (!bIsRemoved) {
@@ -6199,11 +6879,11 @@
                         const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
                         const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
                         
-                        // Check device type and status
+                        // Check device type and status (DELETED is treated as REMOVED)
                         const deviceType = (device.device_type || '').toUpperCase();
                         const deviceStatus = (device.device_status || '').toUpperCase();
                         const isDismantled = deviceStatus.includes('DISMANTLED');
-                        const isRemoved = deviceStatus.includes('REMOVED');
+                        const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                         const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                         const isConveyor = deviceType.includes('CONVEYOR');
                         const isWheelchairLift = deviceType.includes('WHEELCHAIR');
@@ -6689,11 +7369,11 @@
                             const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
                             const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
                             
-                            // Check device type and status
+                            // Check device type and status (DELETED is treated as REMOVED)
                             const deviceType = (device.device_type || '').toUpperCase();
                             const deviceStatus = (device.device_status || '').toUpperCase();
                             const isDismantled = deviceStatus.includes('DISMANTLED');
-                            const isRemoved = deviceStatus.includes('REMOVED');
+                            const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                             const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                             const isConveyor = deviceType.includes('CONVEYOR');
                             const isWheelchairLift = deviceType.includes('WHEELCHAIR');
@@ -7849,9 +8529,9 @@
                     
                     const address = `${data[0].house_number} ${data[0].street_name}, ${data[0].borough}`;
                     
-                    // Count active, removed, and dismantled devices
+                    // Count active, removed, and dismantled devices (DELETED is treated as REMOVED)
                     const removedDevices = data.filter(device => 
-                        device.device_status && device.device_status.toUpperCase() === 'REMOVED'
+                        device.device_status && (device.device_status.toUpperCase() === 'REMOVED' || device.device_status.toUpperCase() === 'DELETED')
                     ).length;
                     const dismantledDevices = data.filter(device => 
                         device.device_status && device.device_status.toUpperCase() === 'DISMANTLED'
@@ -7859,6 +8539,7 @@
                     const activeDevices = data.filter(device => 
                         !device.device_status || 
                         (device.device_status.toUpperCase() !== 'REMOVED' && 
+                         device.device_status.toUpperCase() !== 'DELETED' &&
                          device.device_status.toUpperCase() !== 'DISMANTLED')
                     ).length;
 
@@ -7895,7 +8576,7 @@
                                 <br>
                                 <span style="margin-left: 20px; color: ${dismantledDevices > 0 ? '#ffd700' : 'var(--text-color)'};">• Dismantled Devices: ${dismantledDevices}</span>
                                 <br>
-                                <span style="margin-left: 20px; color: ${removedDevices > 0 ? '#ff6b6b' : 'var(--text-color)'};">• Removed Devices: ${removedDevices}</span>
+                                <span style="margin-left: 20px; color: ${removedDevices > 0 ? '#ff6b6b' : 'var(--text-color)'};">• Removed/Deleted Devices: ${removedDevices}</span>
                             </div>
                             <div style="margin-top: 20px;">
                                 <strong style="color: #4a9eff; display: block; margin-bottom: 10px;">Devices by Type:</strong>
@@ -9248,11 +9929,11 @@
                 if (typeFilter === 'all') {
                     shouldShow = true;
                 } else if (typeFilter === 'REMOVED') {
-                    // Show only removed devices regardless of their original type
-                    shouldShow = deviceStatus === 'REMOVED';
+                    // Show only removed/deleted devices regardless of their original type
+                    shouldShow = deviceStatus === 'REMOVED' || deviceStatus === 'DELETED';
                 } else {
-                    // Show devices of specific type that are not removed
-                    shouldShow = deviceType === typeFilter && deviceStatus !== 'REMOVED';
+                    // Show devices of specific type that are not removed/deleted
+                    shouldShow = deviceType === typeFilter && deviceStatus !== 'REMOVED' && deviceStatus !== 'DELETED';
                 }
                 
                 // Apply violations filter if active

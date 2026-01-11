@@ -107,7 +107,7 @@ function updateActiveFilterStatus(typeFilter, eligibilityFilter, deviceNumberFil
     
     if (typeFilter !== 'all') {
         if (typeFilter === 'REMOVED') {
-            activeFilters.push('Removed Devices Only');
+            activeFilters.push('Removed/Deleted Devices Only');
         } else {
             activeFilters.push(`${typeFilter} Only`);
         }
@@ -188,9 +188,9 @@ function applyAllFilters() {
     // Count devices matching the test eligibility filter specifically
     let eligibilityCount = 0;
     deviceItems.forEach(item => {
-        // Skip removed devices - they shouldn't be counted in active device counts
+        // Skip removed/deleted devices - they shouldn't be counted in active device counts
         const deviceStatus = item.getAttribute('data-device-status');
-        if (deviceStatus && deviceStatus.toUpperCase() === 'REMOVED') {
+        if (deviceStatus && (deviceStatus.toUpperCase() === 'REMOVED' || deviceStatus.toUpperCase() === 'DELETED')) {
             return;
         }
         
@@ -248,7 +248,8 @@ function applyAllFilters() {
         if (typeFilter === 'all') {
             typeMatch = true;
         } else if (typeFilter === 'REMOVED') {
-            typeMatch = deviceStatus === 'REMOVED';
+            // DELETED devices are also treated as REMOVED
+            typeMatch = deviceStatus === 'REMOVED' || deviceStatus === 'DELETED';
         } else {
             typeMatch = deviceType === typeFilter;
         }
