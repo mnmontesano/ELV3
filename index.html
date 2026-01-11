@@ -2919,53 +2919,140 @@
                 'readyToTest': {
                     title: '✓ Ready to Test',
                     color: '#4CAF50',
-                    data: window.bulkDeviceLists.readyToTest,
+                    // Combine ready devices with not-ready devices from the same buildings
+                    getData: () => {
+                        const readyDevices = window.bulkDeviceLists.readyToTest || [];
+                        const notReadyDevices = window.bulkDeviceLists.notReadyToTest || [];
+                        
+                        // Get all building addresses that have at least one ready device
+                        const readyBuildingAddresses = new Set();
+                        readyDevices.forEach(d => {
+                            const address = d.buildingAddress || d.address || 'Unknown Address';
+                            readyBuildingAddresses.add(address);
+                        });
+                        
+                        // Get not-ready devices from the same buildings
+                        const notReadyFromSameBuildings = notReadyDevices.filter(d => {
+                            const address = d.buildingAddress || d.address || 'Unknown Address';
+                            return readyBuildingAddresses.has(address);
+                        });
+                        
+                        // Combine both lists
+                        return [...readyDevices, ...notReadyFromSameBuildings];
+                    },
+                    get data() { return this.getData(); },
                     groupByBuilding: true,
+                    showNotReadyAtTop: true,
                     renderItem: (d) => {
                         const lastInspectionStr = d.mostRecentInspection 
                             ? d.mostRecentInspection.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                             : 'No inspection on file';
-                        return `<div style="padding: 10px 12px; background: var(--panel-bg); border-radius: 4px; border-left: 2px solid #4CAF50;">
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
-                                <div>
-                                    <strong style="font-size: 1em;">Device #${d.device_number}</strong> 
-                                    <span style="color: var(--text-color); opacity: 0.8; font-size: 0.9em;">(${d.device_type})</span>
+                        
+                        // Check if device is ready or not ready
+                        if (d.isReadyToTest) {
+                            return `<div style="padding: 10px 12px; background: var(--panel-bg); border-radius: 4px; border-left: 2px solid #4CAF50;">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+                                    <div>
+                                        <strong style="font-size: 1em;">Device #${d.device_number}</strong> 
+                                        <span style="color: var(--text-color); opacity: 0.8; font-size: 0.9em;">(${d.device_type})</span>
+                                    </div>
                                 </div>
-                            </div>
-                            <div style="font-size: 0.8em; margin-top: 6px; opacity: 0.85;">
-                                <span><strong>Last Inspection:</strong> ${lastInspectionStr}</span>
-                                <span style="color: #4CAF50; font-weight: 600; margin-left: 10px;">✓ Eligible now</span>
-                            </div>
-                        </div>`;
+                                <div style="font-size: 0.8em; margin-top: 6px; opacity: 0.85;">
+                                    <span><strong>Last Inspection:</strong> ${lastInspectionStr}</span>
+                                    <span style="color: #4CAF50; font-weight: 600; margin-left: 10px;">✓ Eligible now</span>
+                                </div>
+                            </div>`;
+                        } else {
+                            // Not ready device - show at top with special styling
+                            const eligibleDateStr = d.eligibleTestDate 
+                                ? d.eligibleTestDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                : 'Unknown';
+                            const daysText = d.daysUntilEligible === 1 ? '1 day' : `${d.daysUntilEligible} days`;
+                            return `<div style="padding: 10px 12px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border-left: 2px solid #ff6b6b;">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+                                    <div>
+                                        <strong style="font-size: 1em;">Device #${d.device_number}</strong> 
+                                        <span style="color: var(--text-color); opacity: 0.8; font-size: 0.9em;">(${d.device_type})</span>
+                                        <span style="color: #ff6b6b; font-weight: 600; font-size: 0.85em; margin-left: 8px;">⏳ NOT READY YET</span>
+                                    </div>
+                                </div>
+                                <div style="font-size: 0.8em; margin-top: 6px; opacity: 0.85;">
+                                    <span><strong>Last:</strong> ${lastInspectionStr}</span>
+                                    <span style="margin-left: 10px;"><strong>Eligible:</strong> <span style="color: #ff6b6b; font-weight: 600;">${eligibleDateStr}</span></span>
+                                    <span style="color: #ff6b6b; font-weight: 600; margin-left: 10px;">(${daysText})</span>
+                                </div>
+                            </div>`;
+                        }
                     }
                 },
                 'notReadyToTest': {
                     title: '✗ Not Ready Yet',
                     color: '#ff6b6b',
-                    data: window.bulkDeviceLists.notReadyToTest,
+                    // Combine not-ready devices with ready devices from the same buildings
+                    getData: () => {
+                        const readyDevices = window.bulkDeviceLists.readyToTest || [];
+                        const notReadyDevices = window.bulkDeviceLists.notReadyToTest || [];
+                        
+                        // Get all building addresses that have at least one not-ready device
+                        const notReadyBuildingAddresses = new Set();
+                        notReadyDevices.forEach(d => {
+                            const address = d.buildingAddress || d.address || 'Unknown Address';
+                            notReadyBuildingAddresses.add(address);
+                        });
+                        
+                        // Get ready devices from the same buildings
+                        const readyFromSameBuildings = readyDevices.filter(d => {
+                            const address = d.buildingAddress || d.address || 'Unknown Address';
+                            return notReadyBuildingAddresses.has(address);
+                        });
+                        
+                        // Combine both lists
+                        return [...notReadyDevices, ...readyFromSameBuildings];
+                    },
+                    get data() { return this.getData(); },
                     groupByBuilding: true,
                     sortByEligibleDate: true,
+                    showReadyAtBottom: true,
                     renderItem: (d) => {
                         const lastInspectionStr = d.mostRecentInspection 
                             ? d.mostRecentInspection.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                             : 'No inspection on file';
-                        const eligibleDateStr = d.eligibleTestDate 
-                            ? d.eligibleTestDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                            : 'Unknown';
-                        const daysText = d.daysUntilEligible === 1 ? '1 day' : `${d.daysUntilEligible} days`;
-                        return `<div style="padding: 10px 12px; background: var(--panel-bg); border-radius: 4px; border-left: 2px solid #ff6b6b;">
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
-                                <div>
-                                    <strong style="font-size: 1em;">Device #${d.device_number}</strong> 
-                                    <span style="color: var(--text-color); opacity: 0.8; font-size: 0.9em;">(${d.device_type})</span>
+                        
+                        // Check if device is ready or not ready
+                        if (!d.isReadyToTest) {
+                            const eligibleDateStr = d.eligibleTestDate 
+                                ? d.eligibleTestDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                : 'Unknown';
+                            const daysText = d.daysUntilEligible === 1 ? '1 day' : `${d.daysUntilEligible} days`;
+                            return `<div style="padding: 10px 12px; background: var(--panel-bg); border-radius: 4px; border-left: 2px solid #ff6b6b;">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+                                    <div>
+                                        <strong style="font-size: 1em;">Device #${d.device_number}</strong> 
+                                        <span style="color: var(--text-color); opacity: 0.8; font-size: 0.9em;">(${d.device_type})</span>
+                                    </div>
                                 </div>
-                            </div>
-                            <div style="font-size: 0.8em; margin-top: 6px; opacity: 0.85;">
-                                <span><strong>Last:</strong> ${lastInspectionStr}</span>
-                                <span style="margin-left: 10px;"><strong>Eligible:</strong> <span style="color: #ff6b6b; font-weight: 600;">${eligibleDateStr}</span></span>
-                                <span style="color: #ff6b6b; font-weight: 600; margin-left: 10px;">⏳ ${daysText}</span>
-                            </div>
-                        </div>`;
+                                <div style="font-size: 0.8em; margin-top: 6px; opacity: 0.85;">
+                                    <span><strong>Last:</strong> ${lastInspectionStr}</span>
+                                    <span style="margin-left: 10px;"><strong>Eligible:</strong> <span style="color: #ff6b6b; font-weight: 600;">${eligibleDateStr}</span></span>
+                                    <span style="color: #ff6b6b; font-weight: 600; margin-left: 10px;">⏳ ${daysText}</span>
+                                </div>
+                            </div>`;
+                        } else {
+                            // Ready device - show at bottom with green styling
+                            return `<div style="padding: 10px 12px; background: rgba(76, 175, 80, 0.1); border-radius: 4px; border-left: 2px solid #4CAF50;">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
+                                    <div>
+                                        <strong style="font-size: 1em;">Device #${d.device_number}</strong> 
+                                        <span style="color: var(--text-color); opacity: 0.8; font-size: 0.9em;">(${d.device_type})</span>
+                                        <span style="color: #4CAF50; font-weight: 600; font-size: 0.85em; margin-left: 8px;">✓ READY TO TEST</span>
+                                    </div>
+                                </div>
+                                <div style="font-size: 0.8em; margin-top: 6px; opacity: 0.85;">
+                                    <span><strong>Last Inspection:</strong> ${lastInspectionStr}</span>
+                                    <span style="color: #4CAF50; font-weight: 600; margin-left: 10px;">✓ Eligible now</span>
+                                </div>
+                            </div>`;
+                        }
                     }
                 },
                 'allBuildings': {
@@ -3055,11 +3142,10 @@
                     renderItem: (b, index) => {
                         const groupId = `allViolationsGroup_${Date.now()}_${index}`;
                         const violationsId = `${groupId}_violations`;
-                        const allDevicesId = `${groupId}_allDevices`;
                         const currentYear = new Date().getFullYear();
                         
-                        // Helper function to generate device rows
-                        const generateDeviceRows = (devices) => devices ? devices.map((d, idx) => {
+                        // Generate device rows - show ALL devices in the building
+                        const deviceTableRows = b.allDevices ? b.allDevices.map((d, idx) => {
                             const rowBg = idx % 2 === 0 ? 'var(--input-bg)' : 'var(--panel-bg)';
                             return `
                                 <tr style="background: ${rowBg};">
@@ -3078,13 +3164,6 @@
                             `;
                         }).join('') : '<tr><td colspan="11" style="padding: 20px; text-align: center; opacity: 0.7;">No devices found</td></tr>';
                         
-                        // Generate device rows - devices WITH violations only (default view)
-                        const devicesWithViolationsRows = generateDeviceRows(b.devices);
-                        // Generate device rows - ALL devices in building
-                        const allDeviceTableRows = generateDeviceRows(b.allDevices);
-                        // Count devices without violations
-                        const devicesWithoutViolations = b.deviceCount - b.devicesWithViolations;
-                        
                         // Generate violation details rows
                         const violationRows = b.violationDetails ? b.violationDetails.map((v, idx) => {
                             const rowBg = idx % 2 === 0 ? 'var(--input-bg)' : 'var(--panel-bg)';
@@ -3097,15 +3176,14 @@
                             const truncatedRemarks = remarks.length > 150 ? remarks.substring(0, 150) + '...' : remarks;
                             return `
                                 <tr style="background: ${rowBg};">
-                                    <td style="padding: 8px; border: 1px solid var(--input-border); font-weight: 600; white-space: nowrap;">${v.device_number}</td>
-                                    <td style="padding: 8px; border: 1px solid var(--input-border); white-space: nowrap;">${v.violation_number}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); font-weight: 600; white-space: nowrap;">${v.violation_number}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; white-space: nowrap;">${issueDate}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${v.violation_severity}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${statusColor}; font-weight: 600;">${v.violation_status}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); font-size: 0.9em;" title="${remarks}">${truncatedRemarks}</td>
                                 </tr>
                             `;
-                        }).join('') : '<tr><td colspan="6" style="padding: 20px; text-align: center; opacity: 0.7;">No violations found</td></tr>';
+                        }).join('') : '<tr><td colspan="5" style="padding: 20px; text-align: center; opacity: 0.7;">No violations found</td></tr>';
                         
                         const tableHeader = `
                             <tr style="background: var(--panel-bg); position: sticky; top: 0; z-index: 1;">
@@ -3143,23 +3221,14 @@
                                 <span id="${groupId}_arrow" style="font-size: 1.2em; transition: transform 0.3s; transform: rotate(0deg);">▼</span>
                             </div>
                             <div id="${groupId}" style="display: none; border-top: 1px solid var(--input-border);">
-                                <!-- Devices with Violations Table (default view) -->
+                                <!-- All Devices Table -->
                                 <div style="padding: 10px 12px; background: var(--panel-bg); border-bottom: 1px solid var(--input-border);">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                                        <span style="font-weight: 600; font-size: 0.9em;">📋 Devices with Violations (${b.devicesWithViolations})</span>
-                                        ${devicesWithoutViolations > 0 ? `
-                                        <button onclick="event.stopPropagation(); toggleAllDevicesView('${allDevicesId}', this);" 
-                                                style="padding: 5px 12px; font-size: 0.8em; background: var(--header-color); color: white; border: none; border-radius: 4px; cursor: pointer; transition: opacity 0.2s;"
-                                                onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-                                            Show All Devices (${b.deviceCount})
-                                        </button>
-                                        ` : ''}
-                                    </div>
+                                    <span style="font-weight: 600; font-size: 0.9em;">📋 All Devices (${b.deviceCount})</span>
                                 </div>
                                 <div style="max-height: 300px; overflow: auto;">
                                     <table style="width: 100%; border-collapse: collapse; font-size: 0.8em; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;">
                                         <thead>${tableHeader}</thead>
-                                        <tbody>${devicesWithViolationsRows}</tbody>
+                                        <tbody>${deviceTableRows}</tbody>
                                     </table>
                                 </div>
                                 
@@ -3176,7 +3245,6 @@
                                         <table style="width: 100%; border-collapse: collapse; font-size: 0.8em; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;">
                                             <thead>
                                                 <tr style="background: var(--panel-bg); position: sticky; top: 0; z-index: 1;">
-                                                    <th style="padding: 8px 6px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Device #</th>
                                                     <th style="padding: 8px 6px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Violation #</th>
                                                     <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Issue Date</th>
                                                     <th style="padding: 8px 6px; text-align: center; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;">Severity</th>
@@ -3185,19 +3253,6 @@
                                                 </tr>
                                             </thead>
                                             <tbody>${violationRows}</tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                                
-                                <!-- All Devices Table (hidden by default) -->
-                                <div id="${allDevicesId}" style="display: none;">
-                                    <div style="padding: 10px 12px; background: var(--panel-bg); border-top: 1px solid var(--input-border); border-bottom: 1px solid var(--input-border);">
-                                        <span style="font-weight: 600; font-size: 0.9em;">📋 All Devices in Building (${b.deviceCount})</span>
-                                    </div>
-                                    <div style="max-height: 300px; overflow: auto;">
-                                        <table style="width: 100%; border-collapse: collapse; font-size: 0.8em; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;">
-                                            <thead>${tableHeader}</thead>
-                                            <tbody>${allDeviceTableRows}</tbody>
                                         </table>
                                     </div>
                                 </div>
@@ -3291,7 +3346,21 @@
             let countLabel = 'devices';
             if (config.isBuildingList) countLabel = 'buildings';
             else if (config.isViolationList) countLabel = 'violations';
-            modalTitle.innerHTML = `<span style="color: ${config.color};">${config.title}</span> <span style="font-size: 0.85em; opacity: 0.7;">(${config.data.length} ${countLabel})</span>`;
+            
+            // For readyToTest and notReadyToTest, show both ready and not-ready counts
+            let titleCountDisplay = `(${config.data.length} ${countLabel})`;
+            if (config.showNotReadyAtTop || config.showReadyAtBottom) {
+                const readyCount = config.data.filter(d => d.isReadyToTest).length;
+                const notReadyCount = config.data.filter(d => !d.isReadyToTest).length;
+                if (readyCount > 0 && notReadyCount > 0) {
+                    titleCountDisplay = `(<span style="color: #ff6b6b;">${notReadyCount} not ready</span> + <span style="color: #4CAF50;">${readyCount} ready</span> in these buildings)`;
+                } else if (notReadyCount > 0) {
+                    titleCountDisplay = `(${notReadyCount} devices)`;
+                } else {
+                    titleCountDisplay = `(${readyCount} devices)`;
+                }
+            }
+            modalTitle.innerHTML = `<span style="color: ${config.color};">${config.title}</span> <span style="font-size: 0.85em; opacity: 0.7;">${titleCountDisplay}</span>`;
             
             // Generate content
             if (config.data.length > 0) {
@@ -3309,7 +3378,38 @@
                     
                     // Sort devices within each building and determine building sort order
                     let sortedBuildings;
-                    if (config.sortByEligibleDate) {
+                    if (config.sortByEligibleDate && config.showReadyAtBottom) {
+                        // For Not Ready Yet: Sort devices with not-ready first (by eligible date), then ready at bottom
+                        Object.keys(buildingGroups).forEach(address => {
+                            buildingGroups[address].sort((a, b) => {
+                                // Not ready devices should come first
+                                if (!a.isReadyToTest && b.isReadyToTest) return -1;
+                                if (a.isReadyToTest && !b.isReadyToTest) return 1;
+                                // Among not-ready devices, sort by eligible date (soonest first)
+                                if (!a.isReadyToTest && !b.isReadyToTest) {
+                                    const dateA = a.eligibleTestDate ? a.eligibleTestDate.getTime() : Infinity;
+                                    const dateB = b.eligibleTestDate ? b.eligibleTestDate.getTime() : Infinity;
+                                    return dateA - dateB;
+                                }
+                                return 0;
+                            });
+                        });
+                        
+                        // Sort buildings: buildings with ready devices first, then by earliest eligible date
+                        sortedBuildings = Object.entries(buildingGroups).sort((a, b) => {
+                            const readyA = a[1].filter(d => d.isReadyToTest).length;
+                            const readyB = b[1].filter(d => d.isReadyToTest).length;
+                            // Buildings with ready devices come first
+                            if (readyA > 0 && readyB === 0) return -1;
+                            if (readyA === 0 && readyB > 0) return 1;
+                            // Then sort by earliest eligible date for not-ready devices
+                            const notReadyA = a[1].filter(d => !d.isReadyToTest);
+                            const notReadyB = b[1].filter(d => !d.isReadyToTest);
+                            const earliestA = notReadyA[0]?.eligibleTestDate ? notReadyA[0].eligibleTestDate.getTime() : Infinity;
+                            const earliestB = notReadyB[0]?.eligibleTestDate ? notReadyB[0].eligibleTestDate.getTime() : Infinity;
+                            return earliestA - earliestB;
+                        });
+                    } else if (config.sortByEligibleDate) {
                         // Sort devices within each building by eligible date (soonest first)
                         Object.keys(buildingGroups).forEach(address => {
                             buildingGroups[address].sort((a, b) => {
@@ -3325,6 +3425,38 @@
                             const earliestB = b[1][0]?.eligibleTestDate ? b[1][0].eligibleTestDate.getTime() : Infinity;
                             return earliestA - earliestB;
                         });
+                    } else if (config.showNotReadyAtTop) {
+                        // Sort devices: not-ready devices first (sorted by eligible date), then ready devices
+                        Object.keys(buildingGroups).forEach(address => {
+                            buildingGroups[address].sort((a, b) => {
+                                // Not ready devices should come first
+                                if (!a.isReadyToTest && b.isReadyToTest) return -1;
+                                if (a.isReadyToTest && !b.isReadyToTest) return 1;
+                                // Among not-ready devices, sort by eligible date (soonest first)
+                                if (!a.isReadyToTest && !b.isReadyToTest) {
+                                    const dateA = a.eligibleTestDate ? a.eligibleTestDate.getTime() : Infinity;
+                                    const dateB = b.eligibleTestDate ? b.eligibleTestDate.getTime() : Infinity;
+                                    return dateA - dateB;
+                                }
+                                return 0;
+                            });
+                        });
+                        // Sort buildings: buildings with not-ready devices first, then by earliest eligible date
+                        sortedBuildings = Object.entries(buildingGroups).sort((a, b) => {
+                            const notReadyA = a[1].filter(d => !d.isReadyToTest).length;
+                            const notReadyB = b[1].filter(d => !d.isReadyToTest).length;
+                            // Buildings with not-ready devices come first
+                            if (notReadyA > 0 && notReadyB === 0) return -1;
+                            if (notReadyA === 0 && notReadyB > 0) return 1;
+                            // Among buildings with not-ready devices, sort by earliest eligible date
+                            if (notReadyA > 0 && notReadyB > 0) {
+                                const earliestA = a[1].find(d => !d.isReadyToTest)?.eligibleTestDate?.getTime() || Infinity;
+                                const earliestB = b[1].find(d => !d.isReadyToTest)?.eligibleTestDate?.getTime() || Infinity;
+                                return earliestA - earliestB;
+                            }
+                            // Among all-ready buildings, sort by device count (most first)
+                            return b[1].length - a[1].length;
+                        });
                     } else {
                         // Default: Sort buildings by number of devices (most first)
                         sortedBuildings = Object.entries(buildingGroups).sort((a, b) => b[1].length - a[1].length);
@@ -3333,10 +3465,51 @@
                     // Generate unique IDs for this modal session
                     const modalSessionId = Date.now();
                     
+                    // Calculate counts for filter display
+                    let filterHTML = '';
+                    if (config.showNotReadyAtTop) {
+                        const buildingsWithNotReady = sortedBuildings.filter(([addr, devs]) => devs.some(d => !d.isReadyToTest)).length;
+                        const buildingsAllReady = sortedBuildings.filter(([addr, devs]) => devs.every(d => d.isReadyToTest)).length;
+                        filterHTML = `
+                            <div style="margin-bottom: 15px; padding: 12px; background: var(--panel-bg); border-radius: 8px; border: 1px solid var(--input-border);">
+                                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                                    <label style="font-weight: 600; color: var(--header-color);">Filter Buildings:</label>
+                                    <select id="readyToTestBuildingFilter" onchange="filterReadyToTestBuildings(this.value)" 
+                                            style="padding: 8px 12px; border-radius: 6px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 0.95em; cursor: pointer;">
+                                        <option value="all">All Buildings (${sortedBuildings.length})</option>
+                                        <option value="has-not-ready">Has Not Ready Devices (${buildingsWithNotReady})</option>
+                                        <option value="all-ready">All Devices Ready (${buildingsAllReady})</option>
+                                    </select>
+                                    <span id="readyToTestFilterCount" style="font-size: 0.9em; color: var(--text-color); opacity: 0.7;"></span>
+                                </div>
+                            </div>
+                        `;
+                    } else if (config.showReadyAtBottom) {
+                        const buildingsWithReady = sortedBuildings.filter(([addr, devs]) => devs.some(d => d.isReadyToTest)).length;
+                        const buildingsAllNotReady = sortedBuildings.filter(([addr, devs]) => devs.every(d => !d.isReadyToTest)).length;
+                        filterHTML = `
+                            <div style="margin-bottom: 15px; padding: 12px; background: var(--panel-bg); border-radius: 8px; border: 1px solid var(--input-border);">
+                                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                                    <label style="font-weight: 600; color: var(--header-color);">Filter Buildings:</label>
+                                    <select id="readyToTestBuildingFilter" onchange="filterReadyToTestBuildings(this.value)" 
+                                            style="padding: 8px 12px; border-radius: 6px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 0.95em; cursor: pointer;">
+                                        <option value="all">All Buildings (${sortedBuildings.length})</option>
+                                        <option value="has-ready">Has Ready Devices (${buildingsWithReady})</option>
+                                        <option value="all-not-ready">All Devices Not Ready (${buildingsAllNotReady})</option>
+                                    </select>
+                                    <span id="readyToTestFilterCount" style="font-size: 0.9em; color: var(--text-color); opacity: 0.7;"></span>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
                     modalContent.innerHTML = `
-                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                        ${filterHTML}
+                        <div id="readyToTestBuildingsList" style="display: flex; flex-direction: column; gap: 12px;">
                             ${sortedBuildings.map(([address, devices], index) => {
                                 const groupId = `buildingGroup_${modalSessionId}_${index}`;
+                                const hasNotReady = devices.some(d => !d.isReadyToTest);
+                                const isAllReady = devices.every(d => d.isReadyToTest);
                                 
                                 // Get earliest eligible date for this building (for sortByEligibleDate display)
                                 let earliestDateDisplay = '';
@@ -3348,8 +3521,34 @@
                                     earliestDateDisplay = `<span style="font-size: 0.85em; color: #ff6b6b; margin-left: 8px;">⏳ Next eligible: ${dateStr} (${daysText})</span>`;
                                 }
                                 
+                                // For showNotReadyAtTop or showReadyAtBottom, show earliest not-ready device date
+                                if ((config.showNotReadyAtTop || config.showReadyAtBottom) && hasNotReady) {
+                                    const notReadyDevices = devices.filter(d => !d.isReadyToTest);
+                                    if (notReadyDevices[0]?.eligibleTestDate) {
+                                        const earliestDate = notReadyDevices[0].eligibleTestDate;
+                                        const dateStr = earliestDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                                        const daysUntil = notReadyDevices[0].daysUntilEligible;
+                                        const daysText = daysUntil === 1 ? '1 day' : `${daysUntil} days`;
+                                        earliestDateDisplay = `<span style="font-size: 0.85em; color: #ff6b6b; margin-left: 8px;">⏳ Next eligible: ${dateStr} (${daysText})</span>`;
+                                    }
+                                }
+                                
+                                // Calculate device count display - show breakdown for showNotReadyAtTop and showReadyAtBottom lists
+                                let deviceCountDisplay = `${devices.length} device${devices.length !== 1 ? 's' : ''}`;
+                                if (config.showNotReadyAtTop || config.showReadyAtBottom) {
+                                    const readyCount = devices.filter(d => d.isReadyToTest).length;
+                                    const notReadyCount = devices.filter(d => !d.isReadyToTest).length;
+                                    deviceCountDisplay = `<strong>Total Devices:</strong> ${devices.length}`;
+                                    if (readyCount > 0 && notReadyCount > 0) {
+                                        deviceCountDisplay += ` <span style="margin-left: 8px;">(<span style="color: #ff6b6b;">${notReadyCount} not ready</span>, <span style="color: #4CAF50;">${readyCount} ready</span>)</span>`;
+                                    }
+                                }
+                                
+                                const hasReady = devices.some(d => d.isReadyToTest);
+                                const isAllNotReady = devices.every(d => !d.isReadyToTest);
+                                
                                 return `
-                                    <div style="background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border); overflow: hidden;">
+                                    <div class="ready-to-test-building-item" data-has-not-ready="${hasNotReady}" data-is-all-ready="${isAllReady}" data-has-ready="${hasReady}" data-is-all-not-ready="${isAllNotReady}" style="background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border); overflow: hidden;">
                                         <div onclick="toggleBuildingGroup('${groupId}')" 
                                              style="padding: 14px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); transition: background 0.2s;"
                                              onmouseover="this.style.background='var(--panel-bg)'" 
@@ -3361,7 +3560,7 @@
                                                         <strong style="font-size: 1.05em; color: ${config.color};">${address}</strong>
                                                         ${earliestDateDisplay}
                                                     </div>
-                                                    <div style="font-size: 0.85em; opacity: 0.7; margin-top: 2px;">${devices.length} device${devices.length !== 1 ? 's' : ''}</div>
+                                                    <div style="font-size: 0.85em; opacity: 0.7; margin-top: 2px;">${deviceCountDisplay}</div>
                                                 </div>
                                             </div>
                                             <span id="${groupId}_arrow" style="font-size: 1.2em; transition: transform 0.3s; transform: rotate(0deg);">▼</span>
@@ -3428,6 +3627,50 @@
                 } else {
                     content.style.display = 'none';
                     arrow.style.transform = 'rotate(0deg)';
+                }
+            }
+        }
+        
+        // Filter buildings in Ready to Test / Not Ready Yet modals
+        function filterReadyToTestBuildings(filterValue) {
+            const buildingItems = document.querySelectorAll('.ready-to-test-building-item');
+            const countDisplay = document.getElementById('readyToTestFilterCount');
+            let visibleCount = 0;
+            
+            buildingItems.forEach(item => {
+                const hasNotReady = item.getAttribute('data-has-not-ready') === 'true';
+                const isAllReady = item.getAttribute('data-is-all-ready') === 'true';
+                const hasReady = item.getAttribute('data-has-ready') === 'true';
+                const isAllNotReady = item.getAttribute('data-is-all-not-ready') === 'true';
+                
+                let shouldShow = false;
+                
+                if (filterValue === 'all') {
+                    shouldShow = true;
+                } else if (filterValue === 'has-not-ready') {
+                    shouldShow = hasNotReady;
+                } else if (filterValue === 'all-ready') {
+                    shouldShow = isAllReady;
+                } else if (filterValue === 'has-ready') {
+                    shouldShow = hasReady;
+                } else if (filterValue === 'all-not-ready') {
+                    shouldShow = isAllNotReady;
+                }
+                
+                if (shouldShow) {
+                    item.style.display = '';
+                    visibleCount++;
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+            
+            // Update count display
+            if (countDisplay) {
+                if (filterValue !== 'all') {
+                    countDisplay.textContent = `Showing ${visibleCount} building${visibleCount !== 1 ? 's' : ''}`;
+                } else {
+                    countDisplay.textContent = '';
                 }
             }
         }
@@ -6747,12 +6990,12 @@
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div style="flex: 1;">
                                         <div style="font-size: 1.1em; margin-bottom: 8px;">
-                                            <strong style="color: var(--header-color); font-size: 1.2em;">Address:</strong> 
-                                            <span style="font-weight: 600; color: var(--text-color);">${group.address}</span>
+                                            <strong style="color: var(--header-color); font-size: 1.2em;">BIN:</strong> 
+                                            <span style="font-weight: 600; color: var(--text-color);">${bin}</span>
                                         </div>
                                         <div style="margin-bottom: 5px;">
-                                            <strong style="color: var(--header-color);">BIN:</strong> 
-                                            <span style="color: var(--text-color);">${bin}</span>
+                                            <strong style="color: var(--header-color);">Address:</strong> 
+                                            <span style="color: var(--text-color);">${group.address}</span>
                                         </div>
                                         <div style="display: flex; gap: 20px; flex-wrap: wrap;">
                                             <div>
