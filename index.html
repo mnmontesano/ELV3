@@ -45,6 +45,8 @@
     </style>
     
     <script src="theme_script.js"></script>
+    <!-- SheetJS library for Excel export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body data-active-tab="main">
     <!-- Make sure this is right after the opening <body> tag -->
@@ -760,10 +762,39 @@
             <!-- Move export button here, before Clear All -->
             <div style="display: flex; gap: 10px; justify-content: center; margin-top: 20px;">
                 <button id="binExportButton" 
-                        onclick="exportBinToCSV()" 
+                        onclick="showBinExportModal()" 
                         style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
-                    Export to CSV
+                    Export Data
                 </button>
+            </div>
+
+            <!-- BIN Export Format Selection Modal -->
+            <div id="binExportModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center;">
+                <div style="background: var(--card-bg); border-radius: 12px; padding: 25px; max-width: 400px; width: 90%; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid var(--input-border);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid var(--input-border);">
+                        <h3 style="margin: 0; color: var(--header-color); font-size: 1.2em;">Export BIN Data</h3>
+                        <button onclick="closeBinExportModal()" style="background: none; border: none; font-size: 1.5em; cursor: pointer; color: var(--text-color); padding: 0; line-height: 1;">&times;</button>
+                    </div>
+                    
+                    <div style="margin-bottom: 20px;">
+                        <label style="color: var(--text-color); font-weight: 500; margin-bottom: 10px; display: block;">Select Export Format:</label>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: var(--panel-bg); border-radius: 6px; border: 1px solid var(--input-border);">
+                                <input type="radio" name="binExportFormat" value="csv" checked style="width: 18px; height: 18px; margin: 0;">
+                                <span style="color: var(--text-color); font-size: 1em;">CSV File (.csv)</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: var(--panel-bg); border-radius: 6px; border: 1px solid var(--input-border);">
+                                <input type="radio" name="binExportFormat" value="excel" style="width: 18px; height: 18px; margin: 0;">
+                                <span style="color: var(--text-color); font-size: 1em;">Excel File (.xlsx)</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <button onclick="closeBinExportModal()" style="padding: 10px 20px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-weight: 500;">Cancel</button>
+                        <button onclick="exportBinData()" style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Export</button>
+                    </div>
+                </div>
             </div>
 
             <!-- Add Clear Button -->
@@ -797,7 +828,7 @@
                 <button id="exportButton" 
                         onclick="showExportModal()" 
                         style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
-                    Export to CSV
+                    Export Data
                 </button>
             </div>
 
@@ -906,8 +937,22 @@
                     </label>
                 </div>
                 
-                <div style="display: flex; gap: 10px; justify-content: flex-start; padding-top: 15px; border-top: 1px solid var(--input-border);">
-                    <button onclick="exportToCSV()" style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Export CSV</button>
+                <div style="margin-bottom: 15px; padding-top: 15px; border-top: 1px solid var(--input-border);">
+                    <label style="color: var(--text-color); font-weight: 500; margin-bottom: 8px; display: block;">Export Format:</label>
+                    <div style="display: flex; gap: 15px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="radio" name="exportFormat" value="csv" checked style="width: 16px; height: 16px; margin: 0;">
+                            <span style="color: var(--text-color); font-size: 0.95em;">CSV (.csv)</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="radio" name="exportFormat" value="excel" style="width: 16px; height: 16px; margin: 0;">
+                            <span style="color: var(--text-color); font-size: 0.95em;">Excel (.xlsx)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; justify-content: flex-start;">
+                    <button onclick="exportData()" style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Export</button>
                     <button onclick="closeExportModal()" style="padding: 10px 20px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-weight: 500;">Cancel</button>
                 </div>
             </div>
@@ -7691,6 +7736,572 @@
         
         function closeExportModal() {
             document.getElementById('exportModal').style.display = 'none';
+        }
+
+        // BIN Export Modal Functions
+        function showBinExportModal() {
+            const data = window.lastBinSearchResults;
+            if (!data || data.length === 0) {
+                alert('No data to export. Please perform a search first.');
+                return;
+            }
+            document.getElementById('binExportModal').style.display = 'flex';
+        }
+        
+        function closeBinExportModal() {
+            document.getElementById('binExportModal').style.display = 'none';
+        }
+
+        // Close BIN export modal when clicking outside
+        document.addEventListener('click', function(e) {
+            const modal = document.getElementById('binExportModal');
+            if (e.target === modal) {
+                closeBinExportModal();
+            }
+        });
+
+        // Main export function that handles both CSV and Excel for bulk export
+        async function exportData() {
+            const format = document.querySelector('input[name="exportFormat"]:checked').value;
+            if (format === 'csv') {
+                await exportToCSV();
+            } else {
+                await exportToExcel();
+            }
+        }
+
+        // BIN export function that handles both formats
+        async function exportBinData() {
+            const format = document.querySelector('input[name="binExportFormat"]:checked').value;
+            closeBinExportModal();
+            if (format === 'csv') {
+                await exportBinToCSV();
+            } else {
+                await exportBinToExcel();
+            }
+        }
+
+        // Export BIN data to Excel format
+        async function exportBinToExcel() {
+            const data = window.lastBinSearchResults;
+            if (!data || data.length === 0) {
+                alert('No data to export. Please perform a search first.');
+                return;
+            }
+
+            // Show loading message
+            const exportButton = document.getElementById('binExportButton');
+            const originalText = exportButton.textContent;
+            exportButton.textContent = 'Exporting...';
+            exportButton.disabled = true;
+
+            try {
+                // Get building address from first device
+                const buildingAddress = data[0] ? `${data[0].house_number || ''} ${data[0].street_name || ''}, ${data[0].borough || ''}`.trim() : 'N/A';
+                const binNumber = data[0]?.bin || 'N/A';
+                const currentYear = new Date().getFullYear();
+
+                // Define headers
+                const headers = [
+                    'BIN', 'Device Number', 'Device Type', 'Status', 'Address', 'Borough', 'ZIP Code', 'Block', 'Lot',
+                    `Latest CAT 1`, `Latest CAT 5`, `Latest PVI`, `Category Test ${currentYear}`, `PVI ${currentYear}`, 'Test Completion Status',
+                    'Building Address', 'Latest Inspection',
+                    'Violation Count', 'Violation Numbers', 'Violation Issue Dates', 'Violation Statuses', 'Violation Types', 'Violation Descriptions',
+                    'Manufacturer', 'Machine Type', 'Governor Type', 'Car Buffer Type', 'Mode Operation', 'Safety Type', 'Fireman Service', 'Working Pressure',
+                    'Controller Manufacturer', 'Elevator Control', 'Capacity (lbs)', 'Speed (fpm)'
+                ];
+
+                // Create an array of promises to fetch all data for each device
+                const promises = data.map(async device => {
+                    // Fetch violations
+                    const violations = await fetchViolations(device.device_number);
+                    const activeViolations = violations.filter(v => 
+                        v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                        v.violation_status?.toUpperCase() === 'OPEN');
+                    
+                    // Fetch device info
+                    const deviceInfo = await fetchDeviceInfo(device.device_number);
+                    
+                    // Calculate inspection dates
+                    const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                    const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                    const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                    
+                    // Find most recent date
+                    const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                    const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
+                    
+                    // Format dates
+                    const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
+                    const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
+                    const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
+                    const mostRecentDisplay = mostRecentDate ? mostRecentDate.toLocaleDateString() : 'N/A';
+                    
+                    // Check test completion status for current year
+                    const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+                    
+                    // Check if category test was done this year
+                    const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
+                    const isConveyor = device.device_type && device.device_type.toUpperCase().includes('CONVEYOR');
+                    const isWheelchairLift = device.device_type && device.device_type.toUpperCase().includes('WHEELCHAIR');
+                    const isHydraulic = device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'));
+                    const isEscalator = device.device_type && device.device_type.toUpperCase().includes('ESCALATOR');
+                    let requiresCat5 = false;
+                    if (!isDumwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && cat5Date) {
+                        const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
+                        requiresCat5 = yearsSinceCat5 >= 5;
+                    }
+                    
+                    // Determine if a valid category test was completed this year
+                    let hasCategoryTestThisYear = false;
+                    if (requiresCat5) {
+                        hasCategoryTestThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
+                    } else {
+                        hasCategoryTestThisYear = (cat1Date && cat1Date.getFullYear() === currentYear) || 
+                                                  (cat5Date && cat5Date.getFullYear() === currentYear);
+                    }
+                    
+                    // Check if device is dismantled or removed
+                    const isDismantled = device.device_status && device.device_status.toUpperCase() === 'DISMANTLED';
+                    const isRemoved = device.device_status && (device.device_status.toUpperCase() === 'REMOVED' || device.device_status.toUpperCase() === 'DELETED');
+                    
+                    const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                    let testCompletionStatus = 'N/A';
+                    if (isRemoved) {
+                        testCompletionStatus = 'N/A';
+                    } else if (isDismantled) {
+                        testCompletionStatus = hasPVIThisYear ? 'Complete (PVI only required)' : 'Incomplete';
+                    } else if (isConveyor) {
+                        testCompletionStatus = hasCat1ThisYear ? 'Complete (CAT 1 only required)' : 'Incomplete';
+                    } else if (isWheelchairLift) {
+                        if (hasPVIThisYear && hasCategoryTestThisYear) {
+                            testCompletionStatus = 'Complete (CAT 5 not required)';
+                        } else if (hasPVIThisYear || hasCategoryTestThisYear) {
+                            testCompletionStatus = 'Partial (One test)';
+                        } else {
+                            testCompletionStatus = 'Incomplete';
+                        }
+                    } else if (isHydraulic) {
+                        if (hasPVIThisYear && hasCat1ThisYear) {
+                            testCompletionStatus = 'Complete (Hydraulic - CAT 5 not required)';
+                        } else if (hasPVIThisYear || hasCat1ThisYear) {
+                            testCompletionStatus = 'Partial (One test)';
+                        } else {
+                            testCompletionStatus = 'Incomplete';
+                        }
+                    } else if (isEscalator) {
+                        if (hasPVIThisYear && hasCat1ThisYear) {
+                            testCompletionStatus = 'Complete (Escalator - CAT 5 not required)';
+                        } else if (hasPVIThisYear || hasCat1ThisYear) {
+                            testCompletionStatus = 'Partial (One test)';
+                        } else {
+                            testCompletionStatus = 'Incomplete';
+                        }
+                    } else {
+                        if (hasPVIThisYear && hasCategoryTestThisYear) {
+                            testCompletionStatus = 'Complete (Both tests)';
+                        } else if (hasPVIThisYear || hasCategoryTestThisYear) {
+                            testCompletionStatus = 'Partial (One test)';
+                        } else {
+                            testCompletionStatus = 'Incomplete';
+                        }
+                    }
+                    
+                    let categoryTestValue = 'N/A';
+                    if (!isDismantled && !isRemoved) {
+                        categoryTestValue = hasCategoryTestThisYear ? 'Yes' : 'No';
+                    }
+                    
+                    let pviValue = 'N/A';
+                    if (!isRemoved) {
+                        pviValue = hasPVIThisYear ? 'Yes' : 'No';
+                    }
+                    
+                    // Format violation details
+                    const violationNumbers = activeViolations.map(v => v.violation_number || 'N/A').join('; ');
+                    const violationIssueDates = activeViolations.map(v => {
+                        const date = v.violation_issue_date || v.violation_date;
+                        return date ? new Date(date).toLocaleDateString() : 'N/A';
+                    }).join('; ');
+                    const violationStatuses = activeViolations.map(v => v.violation_status || 'N/A').join('; ');
+                    const violationTypes = activeViolations.map(v => v.violation_type || 'N/A').join('; ');
+                    const violationDescriptions = activeViolations.map(v => {
+                        const desc = v.violation_description || v.violation_remarks || 'N/A';
+                        return desc;
+                    }).join('; ');
+                    
+                    // Build row data
+                    return [
+                        binNumber,
+                        device.device_number || 'N/A',
+                        device.device_type || 'N/A',
+                        device.device_status || 'N/A',
+                        `${device.house_number || ''} ${device.street_name || ''}`.trim() || 'N/A',
+                        device.borough || 'N/A',
+                        device.zip_code || 'N/A',
+                        device.block || 'N/A',
+                        device.lot || 'N/A',
+                        cat1Display,
+                        cat5Display,
+                        pviDisplay,
+                        categoryTestValue,
+                        pviValue,
+                        testCompletionStatus,
+                        buildingAddress,
+                        mostRecentDisplay,
+                        activeViolations.length,
+                        violationNumbers || 'N/A',
+                        violationIssueDates || 'N/A',
+                        violationStatuses || 'N/A',
+                        violationTypes || 'N/A',
+                        violationDescriptions || 'N/A',
+                        deviceInfo?.elevator_manufacturer || 'N/A',
+                        deviceInfo?.machine_type || 'N/A',
+                        deviceInfo?.governor || 'N/A',
+                        deviceInfo?.car_buffer_type || 'N/A',
+                        deviceInfo?.mode_of_operation || 'N/A',
+                        deviceInfo?.car_safety_type || 'N/A',
+                        deviceInfo?.fire_emergency_phase || 'N/A',
+                        deviceInfo?.working_pressure || 'N/A',
+                        deviceInfo?.controller_manufacturer || 'N/A',
+                        deviceInfo?.elevator_control || 'N/A',
+                        deviceInfo?.elevator_capacity_lbs || 'N/A',
+                        deviceInfo?.elevator_speed_fpm || 'N/A'
+                    ];
+                });
+
+                // Wait for all promises to resolve
+                const rows = await Promise.all(promises);
+                
+                // Create worksheet data with headers
+                const wsData = [headers, ...rows];
+                
+                // Create workbook and worksheet
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                
+                // Set column widths for better readability
+                ws['!cols'] = headers.map((h, i) => ({ wch: Math.max(h.length, 12) }));
+                
+                XLSX.utils.book_append_sheet(wb, ws, 'BIN Export');
+                
+                // Generate and download the file
+                XLSX.writeFile(wb, `bin_${binNumber}_complete_export_${new Date().toISOString().split('T')[0]}.xlsx`);
+                
+                // Restore button
+                exportButton.textContent = originalText;
+                exportButton.disabled = false;
+            } catch (error) {
+                console.error('Error exporting Excel:', error);
+                alert('Error exporting Excel. Please try again.');
+                exportButton.textContent = originalText;
+                exportButton.disabled = false;
+            }
+        }
+
+        // Export bulk data to Excel format
+        async function exportToExcel() {
+            // Fixed custom column order for export
+            const COLUMN_ORDER = [
+                'address',
+                'bin',
+                'block',
+                'lot',
+                'borough',
+                'deviceNumber',
+                'status',
+                'type',
+                'cat1Date',
+                'cat5Date',
+                'nextCat5Due',
+                'pviDate',
+                'testingEligibility',
+                'testStatus',
+                'eligibleDate',
+                'violationCount',
+                'violationStatuses',
+                'violationIssueDates',
+                'violationNumbers',
+                'violationTypes',
+                'violationDescriptions'
+            ];
+            
+            // Get the stored data from the last search
+            const deviceData = window.lastBulkSearchResults;
+            
+            if (!deviceData || (!deviceData.binGroups && !deviceData.notFound)) {
+                alert('No data to export. Please perform a search first.');
+                return;
+            }
+            
+            // Get selected columns in the custom fixed order
+            const checkedValues = Array.from(document.querySelectorAll('.export-column:checked')).map(cb => cb.value);
+            const selectedColumns = COLUMN_ORDER.filter(col => checkedValues.includes(col));
+            
+            if (selectedColumns.length === 0) {
+                alert('Please select at least one column to export.');
+                return;
+            }
+            
+            // Close the modal
+            closeExportModal();
+
+            // Show loading message
+            const exportButton = document.getElementById('exportButton');
+            const originalText = exportButton ? exportButton.textContent : 'Export Data';
+            if (exportButton) {
+                exportButton.textContent = 'Exporting...';
+                exportButton.disabled = true;
+            }
+
+            try {
+                // Define column mappings
+                const columnHeaders = {
+                    address: 'Address',
+                    borough: 'Borough',
+                    bin: 'BIN',
+                    deviceNumber: 'Device Number',
+                    type: 'Type',
+                    status: 'Status',
+                    block: 'Block',
+                    lot: 'Lot',
+                    testStatus: 'Test Status',
+                    cat1Date: 'CAT 1 Date',
+                    cat5Date: 'CAT 5 Date',
+                    nextCat5Due: 'Next CAT 5 Due',
+                    pviDate: 'PVI Date',
+                    violationStatuses: 'Violation Statuses',
+                    violationCount: 'Violation Count',
+                    violationNumbers: 'Violation Numbers',
+                    violationIssueDates: 'Violation Issue Dates',
+                    violationTypes: 'Violation Types',
+                    violationDescriptions: 'Violation Descriptions',
+                    testingEligibility: 'Testing Eligibility',
+                    eligibleDate: 'Eligible Date'
+                };
+                
+                const currentYear = new Date().getFullYear();
+                const headers = selectedColumns.map(col => columnHeaders[col]);
+
+                // Create an array of promises to fetch data for all devices
+                const devicePromises = [];
+                const binGroups = deviceData.binGroups || {};
+                for (const [bin, group] of Object.entries(binGroups)) {
+                    group.devices.forEach(device => {
+                        devicePromises.push((async () => {
+                            // Fetch violations for this device
+                            const violations = await fetchViolations(device.device_number);
+                            const activeViolations = violations.filter(v => 
+                                v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                                v.violation_status?.toUpperCase() === 'OPEN');
+                            
+                            // Format violation details
+                            const violationNumbers = activeViolations.map(v => v.violation_number || 'N/A').join('; ');
+                            const violationIssueDates = activeViolations.map(v => {
+                                const date = v.violation_issue_date || v.violation_date;
+                                return date ? new Date(date).toLocaleDateString() : 'N/A';
+                            }).join('; ');
+                            const violationStatuses = activeViolations.map(v => v.violation_status || 'N/A').join('; ');
+                            const violationTypes = activeViolations.map(v => v.violation_type || 'N/A').join('; ');
+                            const violationDescriptions = activeViolations.map(v => {
+                                const desc = v.violation_description || v.violation_remarks || 'N/A';
+                                return desc;
+                            }).join('; ');
+
+                            // Calculate test completion status
+                            const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                            const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                            const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                            
+                            const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
+                            const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
+                            const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
+                            
+                            const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+                            const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                            const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
+                            
+                            // Check device type and status
+                            const deviceType = (device.device_type || '').toUpperCase();
+                            const deviceStatus = (device.device_status || '').toUpperCase();
+                            const isDismantled = deviceStatus.includes('DISMANTLED');
+                            const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
+                            const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
+                            const isConveyor = deviceType.includes('CONVEYOR');
+                            const isWheelchairLift = deviceType.includes('WHEELCHAIR');
+                            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                            const isEscalator = deviceType.includes('ESCALATOR');
+                            const cat5NotApplicable = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled || isRemoved;
+                            
+                            let requiresCat5 = false;
+                            let nextCat5Due = 'N/A';
+                            if (!isDumbwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && cat5Date) {
+                                const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
+                                requiresCat5 = yearsSinceCat5 >= 5;
+                                nextCat5Due = String(cat5Date.getFullYear() + 5);
+                            } else if (cat5NotApplicable) {
+                                nextCat5Due = 'Not Required';
+                            } else {
+                                nextCat5Due = 'No CAT 5 on file';
+                            }
+                            
+                            // Determine test status
+                            let testStatus;
+                            if (isRemoved) {
+                                testStatus = 'No Test Required';
+                            } else {
+                                let allTestsCompleted = false;
+                                if (isDismantled) {
+                                    allTestsCompleted = hasPVIThisYear;
+                                } else if (isConveyor) {
+                                    allTestsCompleted = hasCat1ThisYear;
+                                } else if (isDumbwaiter || isWheelchairLift || isHydraulic || isEscalator) {
+                                    allTestsCompleted = hasPVIThisYear && hasCat1ThisYear;
+                                } else if (requiresCat5) {
+                                    allTestsCompleted = hasPVIThisYear && hasCat1ThisYear && hasCat5ThisYear;
+                                } else {
+                                    allTestsCompleted = hasPVIThisYear && hasCat1ThisYear;
+                                }
+                                
+                                const isWarningDevice = requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear;
+                                const someTestsDone = hasPVIThisYear || hasCat1ThisYear || hasCat5ThisYear;
+                                
+                                if (isConveyor && hasCat1ThisYear) {
+                                    testStatus = 'Testing Completed';
+                                } else if (isWarningDevice) {
+                                    testStatus = 'CAT 5 Required (Warning)';
+                                } else if (allTestsCompleted) {
+                                    testStatus = 'All Tests Completed';
+                                } else if (someTestsDone) {
+                                    let missingTests = [];
+                                    if (isConveyor) {
+                                        if (!hasCat1ThisYear) missingTests.push('CAT 1');
+                                    } else if (isDumbwaiter || isWheelchairLift || isHydraulic || isEscalator) {
+                                        if (!hasPVIThisYear) missingTests.push('PVI');
+                                        if (!hasCat1ThisYear) missingTests.push('CAT 1');
+                                    } else {
+                                        if (!hasPVIThisYear) missingTests.push('PVI');
+                                        if (!hasCat1ThisYear) missingTests.push('CAT 1');
+                                        if (requiresCat5 && !hasCat5ThisYear) missingTests.push('CAT 5');
+                                    }
+                                    testStatus = `Pending: ${missingTests.join(' & ')}`;
+                                } else {
+                                    testStatus = 'No Tests Completed';
+                                }
+                            }
+
+                            // Calculate testing eligibility
+                            const testDates = [pviDate, cat1Date, cat5Date].filter(date => date !== null);
+                            const mostRecentTestDate = testDates.length > 0 ? new Date(Math.max.apply(null, testDates)) : null;
+                            let testingEligibility = 'N/A';
+                            let eligibleDateDisplay = 'N/A';
+                            
+                            if (isRemoved) {
+                                testingEligibility = 'No Test Required';
+                            } else if (mostRecentTestDate) {
+                                const today = new Date();
+                                const timeDiff = today - mostRecentTestDate;
+                                const daysSinceLastTest = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+                                testingEligibility = daysSinceLastTest >= 91 ? 'Ready' : 'Not Ready';
+                                
+                                const eligibilityDate = new Date(mostRecentTestDate);
+                                eligibilityDate.setDate(eligibilityDate.getDate() + 91);
+                                eligibleDateDisplay = eligibilityDate.toLocaleDateString();
+                            }
+
+                            // Build row data object
+                            const rowData = {
+                                address: `${device.house_number} ${device.street_name}`,
+                                borough: device.borough,
+                                bin: bin,
+                                deviceNumber: device.device_number,
+                                type: device.device_type || 'N/A',
+                                status: device.device_status || 'N/A',
+                                block: device.block || 'N/A',
+                                lot: device.lot || 'N/A',
+                                testStatus: testStatus,
+                                cat1Date: cat1Display,
+                                cat5Date: cat5Display,
+                                nextCat5Due: nextCat5Due,
+                                pviDate: pviDisplay,
+                                violationStatuses: violationStatuses || 'N/A',
+                                violationCount: activeViolations.length,
+                                violationNumbers: violationNumbers || 'N/A',
+                                violationIssueDates: violationIssueDates || 'N/A',
+                                violationTypes: violationTypes || 'N/A',
+                                violationDescriptions: violationDescriptions || 'N/A',
+                                testingEligibility: testingEligibility,
+                                eligibleDate: eligibleDateDisplay
+                            };
+                            
+                            // Return array of selected column values
+                            return selectedColumns.map(col => rowData[col] || '');
+                        })());
+                    });
+                }
+
+                // Wait for all promises to resolve
+                const rows = await Promise.all(devicePromises);
+
+                // Add not found devices
+                if (deviceData.notFound && deviceData.notFound.length > 0) {
+                    deviceData.notFound.forEach(deviceNumber => {
+                        const notFoundData = {
+                            address: 'N/A',
+                            borough: 'N/A',
+                            bin: 'Not Found',
+                            deviceNumber: deviceNumber,
+                            type: 'N/A',
+                            status: 'N/A',
+                            block: 'N/A',
+                            lot: 'N/A',
+                            testStatus: 'N/A',
+                            cat1Date: 'N/A',
+                            cat5Date: 'N/A',
+                            nextCat5Due: 'N/A',
+                            pviDate: 'N/A',
+                            violationStatuses: 'N/A',
+                            violationCount: 'N/A',
+                            violationNumbers: 'N/A',
+                            violationIssueDates: 'N/A',
+                            violationTypes: 'N/A',
+                            violationDescriptions: 'N/A',
+                            testingEligibility: 'N/A',
+                            eligibleDate: 'N/A'
+                        };
+                        rows.push(selectedColumns.map(col => notFoundData[col] || ''));
+                    });
+                }
+                
+                // Create worksheet data with headers
+                const wsData = [headers, ...rows];
+                
+                // Create workbook and worksheet
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                
+                // Set column widths for better readability
+                ws['!cols'] = headers.map((h, i) => ({ wch: Math.max(String(h).length, 12) }));
+                
+                XLSX.utils.book_append_sheet(wb, ws, 'Device Lookup');
+                
+                // Generate and download the file
+                XLSX.writeFile(wb, `device_lookup_results_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+                // Restore button
+                if (exportButton) {
+                    exportButton.textContent = originalText;
+                    exportButton.disabled = false;
+                }
+            } catch (error) {
+                console.error('Error exporting Excel:', error);
+                console.error('Error stack:', error.stack);
+                alert('Error exporting Excel: ' + error.message);
+                if (exportButton) {
+                    exportButton.textContent = originalText;
+                    exportButton.disabled = false;
+                }
+            }
         }
         
         function selectAllColumns() {
