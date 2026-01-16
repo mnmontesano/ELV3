@@ -2821,16 +2821,16 @@
                             <!-- Add Important dropdown for red devices -->
                             ${allDatesAreSame ? `
                                 <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
-                                    <button onclick="toggleImportantDropdown('${device.device_number || deviceNumber}')"
+                                    <button onclick="toggleImportantDropdown('device_${device.device_number || deviceNumber}')"
                                             style="width: 100%; padding: 10px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">
                                         <span>⚠️ Important</span>
                                         <span class="arrow">▼</span>
                                     </button>
-                                    <div id="important_${device.device_number || deviceNumber}" style="display: none; margin-top: 10px; padding: 15px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b;">
+                                    <div id="important_device_${device.device_number || deviceNumber}" style="display: none; margin-top: 10px; padding: 15px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b;">
                                         <div style="margin-bottom: 8px;">
                                             <strong style="color: #ff6b6b;">Data Quality Alert</strong>
                                         </div>
-                                        <div style="margin-bottom: 8px;">
+                                        <div style="margin-bottom: 8px; color: var(--text-color);">
                                             This device is highlighted in red because all three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate that a final acceptance test was performed on this device. If a final acceptance test was performed no additional inspection test are required for that calendar year. Please check the official DOB site to verify the legitimacy of this information.
                                         </div>
                                     </div>
@@ -4622,11 +4622,13 @@
                         
                         // Conveyors only need CAT 1 testing (no PVI required)
                         const conveyorCompleted = isConveyor && hasCat1ThisYear;
-                        const bothTestsCompleted = hasPVIThisYear && hasCategoryTestThisYear;
+                        // CAT 1 is ALWAYS required for completion, plus CAT 5 if required
+                        const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYearForEligibility;
+                        const bothTestsCompleted = hasPVIThisYear && hasCat1ThisYear && (!requiresCat5 || hasCat5ThisYear);
                         const dismantledCompleted = isDismantled && hasPVIThisYear;
                         
                         // Check if this is a warning device (CAT 1 & PVI done but CAT 5 required and not done)
-                        const isWarningDevice = requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear;
+                        const isWarningDevice = requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear;
                         
                         // Check if device is completed FIRST - if completed, count as Completed regardless of eligibility
                         if (conveyorCompleted || bothTestsCompleted || dismantledCompleted) {
@@ -4689,13 +4691,15 @@
                                                       (cat5Date && cat5Date.getFullYear() === currentYearForEligibility);
                         }
                         
-                        const isWarningDevice = requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear;
+                        // CAT 1 is ALWAYS required for completion, plus CAT 5 if required
+                        const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYearForEligibility;
+                        const isWarningDevice = requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear;
                         
                         // Check if device is completed
                         const isDismantled = device.device_status && device.device_status.toUpperCase() === 'DISMANTLED';
                         // Conveyors only need CAT 1 testing (no PVI required)
                         const conveyorCompleted = isConveyor && hasCat1ThisYear;
-                        const bothTestsCompleted = hasPVIThisYear && hasCategoryTestThisYear;
+                        const bothTestsCompleted = hasPVIThisYear && hasCat1ThisYear && (!requiresCat5 || hasCat5ThisYear);
                         const dismantledCompleted = isDismantled && hasPVIThisYear;
                         
                         // Exclude completed devices from Not Ready count - they're in Completed section
@@ -4799,11 +4803,15 @@
                         
                         // Check if CAT 1 & PVI are done but CAT 5 is required and not done (Warning case)
                         const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                        const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
                         
                         // Conveyors only need CAT 1 testing (no PVI required)
                         const conveyorCompleted = isConveyor && hasCat1ThisYear;
                         
-                        if (requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear) {
+                        // CAT 1 is ALWAYS required for completion, plus CAT 5 if required
+                        const bothTestsCompleted = hasPVIThisYear && hasCat1ThisYear && (!requiresCat5 || hasCat5ThisYear);
+                        
+                        if (requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear) {
                             // CAT 5 is required but not done, even though CAT 1 & PVI were done - add to warning list
                             devicesWithWarning++;
                             devicesWithWarningList.push({
@@ -4816,7 +4824,7 @@
                                 lastCat5Year: cat5Date ? cat5Date.getFullYear() : null,
                                 isDismantled: false
                             });
-                        } else if (conveyorCompleted || (hasPVIThisYear && hasCategoryTestThisYear)) {
+                        } else if (conveyorCompleted || bothTestsCompleted) {
                             devicesWithBothTests++;
                             devicesWithBothTestsList.push({
                                 device_number: device.device_number,
@@ -5452,16 +5460,16 @@
                                             ` : ''}
                                             ${allDatesAreSame ? `
                                                 <div style="margin-top: 10px;">
-                                                    <button onclick="toggleImportantDropdown('${device.device_number}')"
+                                                    <button onclick="toggleImportantDropdown('bin_${device.device_number}')"
                                                             style="width: 100%; padding: 8px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.9em;">
                                                         <span>⚠️ Important</span>
                                                         <span class="arrow">▼</span>
                                                     </button>
-                                                    <div id="important_${device.device_number}" style="display: none; margin-top: 8px; padding: 12px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b; font-size: 0.9em;">
+                                                    <div id="important_bin_${device.device_number}" style="display: none; margin-top: 8px; padding: 12px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b; font-size: 0.9em;">
                                                         <div style="margin-bottom: 8px;">
                                                             <strong style="color: #ff6b6b;">Data Quality Alert</strong>
                                                         </div>
-                                                        <div style="margin-bottom: 8px;">
+                                                        <div style="margin-bottom: 8px; color: var(--text-color);">
                                                             This device is highlighted in red because all three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate that an acceptance test was performed on this device. If acceptance test was performed no additional inspection test are required for that calendar year. Please check the official DOB site to verify the legitimacy of this information.
                                                         </div>
                                                     </div>
@@ -5525,9 +5533,11 @@
             
             const isDismantled = device.device_status && device.device_status.toUpperCase() === 'DISMANTLED';
             const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+            const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
             // Conveyors only need CAT 1 testing (no PVI required)
             const conveyorCompleted = isConveyor && hasCat1ThisYear;
-            const bothTestsCompleted = hasPVIThisYear && hasCategoryTestThisYear;
+            // CAT 1 is ALWAYS required for completion, plus CAT 5 if required
+            const bothTestsCompleted = hasPVIThisYear && hasCat1ThisYear && (!requiresCat5 || hasCat5ThisYear);
             const cat5NotRequired = !requiresCat5;
             const dismantledCompleted = isDismantled && hasPVIThisYear;
             
@@ -5541,7 +5551,7 @@
             }
             
             // Check if CAT 5 is required but not done, and CAT 1 & PVI are done this year
-            if (requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear) {
+            if (requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear) {
                 return 'CAT 5 Required';
             }
             
@@ -5677,12 +5687,13 @@
                                 // Check if device is dismantled
                                 const isDismantled = device.device_status && device.device_status.toUpperCase() === 'DISMANTLED';
                                 const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                                const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
                                 
                                 // Conveyors only need CAT 1 testing (no PVI required)
                                 const conveyorCompleted = isConveyor && hasCat1ThisYear;
                                 
-                                // Check if both tests completed and CAT 5 not required
-                                const bothTestsCompleted = hasPVIThisYear && hasCategoryTestThisYear;
+                                // CAT 1 is ALWAYS required for completion, plus CAT 5 if required
+                                const bothTestsCompleted = hasPVIThisYear && hasCat1ThisYear && (!requiresCat5 || hasCat5ThisYear);
                                 const cat5NotRequired = !requiresCat5;
                                 
                                 // For dismantled devices, only PVI is required
@@ -5790,8 +5801,7 @@
                                                 </svg>`;
                                         } else {
                                             // Regular device - check if CAT 5 is required but not done this year
-                                            const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
-                                            if (requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear) {
+                                            if (requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear) {
                                             // CAT 5 is required but not done, even though CAT 1 & PVI were done - show warning but still Ready
                                             testStatus = 'CAT 5 Required';
                                             testStatusColor = '#ff9800';
@@ -5802,7 +5812,7 @@
                                         } else {
                                             isEligible = isEligibleForTesting(mostRecentDate);
                                             // If CAT 1 & PVI are done this year but CAT 5 is required and not done, still count as eligible (Ready)
-                                            if (!isEligible && hasCat1ThisYear && hasPVIThisYear && requiresCat5 && !hasCategoryTestThisYear) {
+                                            if (!isEligible && hasCat1ThisYear && hasPVIThisYear && requiresCat5 && !hasCat5ThisYear) {
                                                 isEligible = true;
                                             }
                                             testStatus = isEligible ? 'Ready' : 'Not Ready';
@@ -5848,8 +5858,7 @@
                                     }
                                 } else {
                                     // Check if CAT 5 is required but not done this year
-                                    const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
-                                    if (requiresCat5 && !hasCategoryTestThisYear && hasCat1ThisYear && hasPVIThisYear) {
+                                    if (requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear) {
                                         // CAT 5 is required but not done, even though CAT 1 & PVI were done - show warning but still Ready
                                         testStatus = 'CAT 5 Required';
                                         testStatusColor = '#ff9800';
@@ -5861,7 +5870,7 @@
                                         // Standard eligibility check
                                         isEligible = isEligibleForTesting(mostRecentDate);
                                         // If CAT 1 & PVI are done this year but CAT 5 is required and not done, still count as eligible (Ready)
-                                        if (!isEligible && hasCat1ThisYear && hasPVIThisYear && requiresCat5 && !hasCategoryTestThisYear) {
+                                        if (!isEligible && hasCat1ThisYear && hasPVIThisYear && requiresCat5 && !hasCat5ThisYear) {
                                             isEligible = true;
                                         }
                                         testStatus = isEligible ? 'Ready' : 'Not Ready';
@@ -6142,16 +6151,16 @@
                                             ` : ''}
                                             ${allDatesAreSame ? `
                                                 <div style="margin-top: 10px;">
-                                                    <button onclick="toggleImportantDropdown('${device.device_number}')"
+                                                    <button onclick="toggleImportantDropdown('bin_${device.device_number}')"
                                                             style="width: 100%; padding: 8px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.9em;">
                                                         <span>⚠️ Important</span>
                                                         <span class="arrow">▼</span>
                                                     </button>
-                                                    <div id="important_${device.device_number}" style="display: none; margin-top: 8px; padding: 12px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b; font-size: 0.9em;">
+                                                    <div id="important_bin_${device.device_number}" style="display: none; margin-top: 8px; padding: 12px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b; font-size: 0.9em;">
                                                         <div style="margin-bottom: 8px;">
                                                             <strong style="color: #ff6b6b;">Data Quality Alert</strong>
                                                         </div>
-                                                        <div style="margin-bottom: 8px;">
+                                                        <div style="margin-bottom: 8px; color: var(--text-color);">
                                                             This device is highlighted in red because all three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate that an acceptance test was performed on this device. If acceptance test was performed no additional inspection test are required for that calendar year. Please check the official DOB site to verify the legitimacy of this information.
                                                         </div>
                                                     </div>
@@ -9611,16 +9620,16 @@
                             <!-- Add Important dropdown for red devices -->
                             ${allDatesAreSame ? `
                                 <div style="margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
-                                    <button onclick="toggleImportantDropdown('${device.device_number || deviceNumber}')"
+                                    <button onclick="toggleImportantDropdown('quick_device_${device.device_number || deviceNumber}')"
                                             style="width: 100%; padding: 10px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">
                                         <span>⚠️ Important</span>
                                         <span class="arrow">▼</span>
                                     </button>
-                                    <div id="important_${device.device_number || deviceNumber}" style="display: none; margin-top: 10px; padding: 15px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b;">
+                                    <div id="important_quick_device_${device.device_number || deviceNumber}" style="display: none; margin-top: 10px; padding: 15px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b;">
                                         <div style="margin-bottom: 8px;">
                                             <strong style="color: #ff6b6b;">Data Quality Alert</strong>
                                         </div>
-                                        <div style="margin-bottom: 8px; color: #ffffff;">
+                                        <div style="margin-bottom: 8px; color: var(--text-color);">
                                             This device is highlighted in red because all three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate that an acceptance test was performed on this device. If acceptance test was performed no additional inspection test are required for that calendar year. Please check the official DOB site to verify the legitimacy of this information.
                                         </div>
                                     </div>
