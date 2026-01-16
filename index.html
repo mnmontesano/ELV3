@@ -2937,7 +2937,7 @@
                 const rowBg = idx % 2 === 0 ? 'var(--input-bg)' : 'var(--panel-bg)';
                 let rows = `
                     <tr style="background: ${rowBg};">
-                        <td style="padding: 12px 10px; border: 1px solid var(--input-border); font-weight: 600; white-space: nowrap; font-size: 1em;">${d.device_number}</td>
+                        <td style="padding: 12px 10px; border: 1px solid var(--input-border); font-weight: 600; white-space: nowrap; font-size: 1em; color: ${d.allDatesAreSame ? '#ff6b6b' : 'var(--text-color)'};">${d.device_number}${d.allDatesAreSame ? ' ⚠️' : ''}</td>
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); max-width: 150px; overflow: hidden; text-overflow: ellipsis;" title="${d.device_type}">${d.device_type}</td>
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center;">${d.device_status}</td>
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasPVIThisYear ? '600' : '400'};">${d.pvi_date}</td>
@@ -2991,6 +2991,24 @@
                                             violationRows +
                                         '</tbody>' +
                                     '</table>' +
+                                '</div>' +
+                            '</details>' +
+                        '</td>' +
+                    '</tr>';
+                }
+                
+                // Add Important dropdown row if all dates are the same
+                if (d.allDatesAreSame) {
+                    rows += '<tr style="background: ' + rowBg + ';">' +
+                        '<td colspan="11" style="padding: 0; border: 1px solid var(--input-border);">' +
+                            '<details style="margin: 0;">' +
+                                '<summary style="padding: 10px 15px; cursor: pointer; color: #ff6b6b; font-weight: 600; font-size: 0.95em; background: rgba(255, 107, 107, 0.15);">' +
+                                    '⚠️ Important - Data Quality Alert for Device #' + d.device_number +
+                                '</summary>' +
+                                '<div style="padding: 15px; background: rgba(255, 107, 107, 0.1); border-top: 1px solid #ff6b6b;">' +
+                                    '<div style="color: var(--text-color); font-size: 0.95em;">' +
+                                        'This device is highlighted in red because all three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate that an acceptance test was performed on this device. If acceptance test was performed no additional inspection tests are required for that calendar year. Please check the official DOB site to verify the legitimacy of this information.' +
+                                    '</div>' +
                                 '</div>' +
                             '</details>' +
                         '</td>' +
@@ -6687,6 +6705,11 @@
                         const cat1Date = d.cat1_latest_report_filed ? new Date(d.cat1_latest_report_filed) : null;
                         const cat5Date = d.cat5_latest_report_filed ? new Date(d.cat5_latest_report_filed) : null;
                         
+                        // Check if all dates are the same (acceptance test indicator)
+                        const allDatesAreSame = cat1Date && cat5Date && pviDate &&
+                            cat1Date.getTime() === cat5Date.getTime() &&
+                            cat5Date.getTime() === pviDate.getTime();
+                        
                         const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
                         const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
                         const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
@@ -6786,7 +6809,8 @@
                             hasCat1ThisYear,
                             hasCat5ThisYear,
                             requiresCat5,
-                            nextCat5DueYear
+                            nextCat5DueYear,
+                            allDatesAreSame
                         };
                     })
                 }));
@@ -7478,6 +7502,11 @@
                         const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : '—';
                         const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : '—';
                         
+                        // Check if all dates are the same (CAT 1, CAT 5, and PVI) - acceptance test indicator
+                        const allDatesAreSame = cat1Date && cat5Date && pviDate &&
+                            cat1Date.getTime() === cat5Date.getTime() &&
+                            cat5Date.getTime() === pviDate.getTime();
+                        
                         const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
                         const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
                         const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
@@ -7585,7 +7614,7 @@
                         
                         html += `
                             <tr style="background: ${rowBg};" class="device-row" data-device="${device.device_number}">
-                                <td style="padding: 8px; border: 1px solid var(--input-border); font-weight: 600; color: var(--text-color);">${device.device_number}</td>
+                                <td style="padding: 8px; border: 1px solid var(--input-border); font-weight: 600; color: ${allDatesAreSame ? '#ff6b6b' : 'var(--text-color)'};">${device.device_number}${allDatesAreSame ? ' ⚠️' : ''}</td>
                                 <td style="padding: 8px; border: 1px solid var(--input-border); color: var(--text-color); max-width: 150px; overflow: hidden; text-overflow: ellipsis;" title="${device.device_type || 'N/A'}">${device.device_type || 'N/A'}</td>
                                 <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: var(--text-color);">${device.device_status || 'N/A'}</td>
                                 <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${hasPVIThisYear ? '600' : '400'};">${pviDisplay}</td>
@@ -7643,6 +7672,26 @@
                                                     </tbody>
                                                 </table>
                                     </div>
+                                        </details>
+                                    </td>
+                                </tr>
+                            `;
+                        }
+                        
+                        // Add Important dropdown row if all dates are the same
+                        if (allDatesAreSame) {
+                            html += `
+                                <tr style="background: ${rowBg};">
+                                    <td colspan="11" style="padding: 0; border: 1px solid var(--input-border);">
+                                        <details style="margin: 0;">
+                                            <summary style="padding: 8px 12px; cursor: pointer; color: #ff6b6b; font-weight: 600; font-size: 0.9em; background: rgba(255, 107, 107, 0.1);">
+                                                ⚠️ Important - Data Quality Alert
+                                            </summary>
+                                            <div style="padding: 12px 15px; background: rgba(255, 107, 107, 0.1); border-top: 1px solid #ff6b6b;">
+                                                <div style="color: var(--text-color); font-size: 0.9em;">
+                                                    This device is highlighted in red because all three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate that an acceptance test was performed on this device. If acceptance test was performed no additional inspection tests are required for that calendar year. Please check the official DOB site to verify the legitimacy of this information.
+                                                </div>
+                                            </div>
                                         </details>
                                     </td>
                                 </tr>
@@ -9867,13 +9916,35 @@
                     `;
 
                     group.devices.forEach(device => {
+                        // Check if all dates are the same (acceptance test indicator)
+                        const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                        const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                        const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                        const allDatesAreSame = cat1Date && cat5Date && pviDate &&
+                            cat1Date.getTime() === cat5Date.getTime() &&
+                            cat5Date.getTime() === pviDate.getTime();
+                        
                         html += `
-                            <div style="margin-bottom: 10px; padding: 10px; background: #1c1c1c; border-radius: 5px;">
-                                <strong style="color: #4a9eff;">Device Number:</strong> ${device.device_number}<br>
+                            <div style="margin-bottom: 10px; padding: 10px; background: #1c1c1c; border-radius: 5px; ${allDatesAreSame ? 'border-left: 3px solid #ff6b6b;' : ''}">
+                                <strong style="color: #4a9eff;">Device Number:</strong> <span style="${allDatesAreSame ? 'color: #ff6b6b; font-weight: bold;' : ''}">${device.device_number}${allDatesAreSame ? ' ⚠️' : ''}</span><br>
                                 <strong style="color: #4a9eff;">Type:</strong> ${device.device_type || 'N/A'}<br>
                                 <strong style="color: #4a9eff;">Status:</strong> ${device.device_status || 'N/A'}<br>
                                 <strong style="color: #4a9eff;">Block:</strong> ${device.block || 'N/A'}<br>
                                 <strong style="color: #4a9eff;">Lot:</strong> ${device.lot || 'N/A'}
+                                ${allDatesAreSame ? `
+                                <div style="margin-top: 10px;">
+                                    <details style="margin: 0;">
+                                        <summary style="padding: 6px 10px; cursor: pointer; color: #ff6b6b; font-weight: 600; font-size: 0.9em; background: rgba(255, 107, 107, 0.15); border-radius: 4px;">
+                                            ⚠️ Important - Data Quality Alert
+                                        </summary>
+                                        <div style="padding: 10px; margin-top: 8px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b;">
+                                            <div style="color: #ffffff; font-size: 0.9em;">
+                                                This device is highlighted because all three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate that an acceptance test was performed on this device. If acceptance test was performed no additional inspection tests are required for that calendar year. Please check the official DOB site to verify the legitimacy of this information.
+                                            </div>
+                                        </div>
+                                    </details>
+                                </div>
+                                ` : ''}
                             </div>
                         `;
                     });
