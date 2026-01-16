@@ -364,6 +364,52 @@
                     </div>
                 </div>
                 
+                <!-- BIN Lookup Section -->
+                <div style="margin: 30px auto; max-width: 500px;">
+                    <!-- BIN Display -->
+                    <div id="mainBinDisplay" style="text-align: center; margin-bottom: 10px; padding: 12px; background: var(--panel-bg); border-radius: 4px; color: var(--text-color); border: 1px solid var(--input-border);">
+                        <strong>BIN:</strong> <span id="mainBinValue" 
+                                              style="padding: 4px 8px; border-radius: 4px; border: 1px solid transparent; transition: all 0.2s ease; position: relative; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;" 
+                                              onclick="copyBinToClipboard(this.textContent.replace('📋', '').trim(), event)">-</span>
+                    </div>
+                    
+                    <!-- Device Number Search Dropdown -->
+                    <div style="margin-bottom: 10px;">
+                        <button onclick="toggleMainDeviceSearch()" 
+                                style="width: 100%; padding: 12px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; transition: all 0.3s ease;"
+                                title="Search Device Number">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                            </svg>
+                            <span>Device Search</span>
+                            <span id="mainDeviceSearchArrow" style="margin-left: auto;">▼</span>
+                        </button>
+                        
+                        <div id="mainDeviceSearchFields" style="display: none; margin-top: 5px; padding: 10px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 4px;">
+                            <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 5px;">
+                                <input type="text" 
+                                       id="mainDeviceInput" 
+                                       placeholder="Enter Device Number"
+                                       oninput="this.value = this.value.toUpperCase(); searchDeviceInMain(this.value);"
+                                       style="flex: 1; padding: 8px 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 14px; box-sizing: border-box; height: 40px;">
+                                <button onclick="refreshMainDeviceLookup()"
+                                        style="padding: 8px 12px; width: 40px; height: 40px; box-sizing: border-box; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.3s ease;"
+                                        title="Refresh Device Lookup">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
+                                    </svg>
+                                </button>
+                                <button onclick="clearMainDeviceLookup()"
+                                        style="padding: 8px 12px; width: 40px; height: 40px; box-sizing: border-box; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.3s ease;"
+                                        title="Clear Device Lookup">
+                                    ✕
+                                </button>
+                            </div>
+                            <div id="mainDeviceResult" style="width: 100%; background: var(--result-bg); padding: 8px; border-radius: 4px; color: var(--text-color); min-height: 20px; border: 1px solid var(--input-border); box-sizing: border-box; overflow-wrap: break-word; word-break: break-word; font-size: 12px; display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Filing Information Dropdown -->
                 <div class="filing-info-container" style="margin: 30px auto; max-width: 500px;">
                             <button onclick="toggleFilingInfo()" id="filingInfoToggle" class="filing-info-toggle">
@@ -433,6 +479,17 @@
                     </div>
                 </div>
                 
+                <!-- ELV3 Reference section as dropdown in main ELV3 tab -->
+                <div class="main-reference-container" style="margin: 30px auto; max-width: 500px;">
+                    <button onclick="toggleMainReference()" id="mainReferenceToggle" class="filing-info-toggle">
+                        <span>ELV3 Reference</span>
+                        <span id="mainReferenceArrow" class="filing-info-arrow">▼</span>
+                    </button>
+                    <div id="mainReferenceFields" class="filing-info-fields" style="display: none;">
+                        <div id="mainReferenceContent" style="max-height: 60vh; overflow-y: auto; padding: 10px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 8px; color: var(--text-color);"></div>
+                    </div>
+                </div>
+
                 <button onclick="togglePdfViewer()" id="pdfToggleButton">Show PDF</button>
 
                 <div class="image-viewer hidden" id="pdfViewer">
@@ -1862,6 +1919,36 @@
             }
         });
 
+        // Function to toggle Main ELV3 Reference dropdown
+        function toggleMainReference() {
+            const fieldsContainer = document.getElementById('mainReferenceFields');
+            const arrow = document.getElementById('mainReferenceArrow');
+            
+            if (fieldsContainer.style.display === 'none' || fieldsContainer.style.display === '') {
+                fieldsContainer.style.display = 'block';
+                if (arrow) arrow.style.transform = 'rotate(180deg)';
+            } else {
+                fieldsContainer.style.display = 'none';
+                if (arrow) arrow.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // Populate Main ELV3 Reference content from the reference panel
+        document.addEventListener('DOMContentLoaded', function() {
+            const mainRefContent = document.getElementById('mainReferenceContent');
+            const sourcePanel = document.querySelector('.reference-panel');
+            if (mainRefContent && sourcePanel && mainRefContent.childElementCount === 0) {
+                const fragment = document.createDocumentFragment();
+                Array.from(sourcePanel.children).forEach((child) => {
+                    // Skip close button and title
+                    if (child.classList && child.classList.contains('close-reference')) return;
+                    if (child.tagName === 'H3') return;
+                    fragment.appendChild(child.cloneNode(true));
+                });
+                mainRefContent.appendChild(fragment);
+            }
+        });
+
         // Function to clear Notes field
         function clearNotes() {
             const notesField = document.getElementById('Notes');
@@ -2769,14 +2856,12 @@
                                         <span>${device.lot || 'N/A'}</span>
                                     </div>
                                     <div style="margin-top: 10px;">
-                                        <a href="https://a836-pts-access.nyc.gov/care/forms/htmlframe.aspx?mode=content/home.htm" 
-                                           target="_blank" 
-                                           rel="noopener noreferrer"
+                                        <button onclick="window.open('https://a836-pts-access.nyc.gov/care/forms/htmlframe.aspx?mode=content/home.htm', '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes,location=yes')"
                                            onmouseover="this.style.opacity='0.8';"
                                            onmouseout="this.style.opacity='1';"
                                            style="display: inline-block; padding: 6px 12px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; text-align: center; text-decoration: none; font-weight: 500; transition: opacity 0.2s ease;">
                                             NYC Finance
-                                        </a>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -12111,6 +12196,13 @@
                     mainBinInput.value = binNumber;
                 }
 
+                // Also update the Quick Filing Information BIN field in ELV3 Lookup
+                const quickBinInput = document.getElementById('quickBinInput');
+                if (quickBinInput && binNumber !== 'Not available') {
+                    quickBinInput.value = binNumber;
+                    localStorage.setItem('quickBinInputInfo', binNumber);
+                }
+
                 // Hide address search when device number is populated
                 if (typeof toggleAddressSearchVisibility === 'function') {
                     toggleAddressSearchVisibility(deviceNumber.trim());
@@ -12207,6 +12299,114 @@
                 if (exportButton) {
                     exportButton.style.display = 'none';
                 }
+            }
+        }
+
+        // ========== Main ELV3 Tab Device Search Functions ==========
+        
+        // Toggle main device search dropdown
+        function toggleMainDeviceSearch() {
+            const fields = document.getElementById('mainDeviceSearchFields');
+            const arrow = document.getElementById('mainDeviceSearchArrow');
+            
+            if (fields.style.display === 'none' || fields.style.display === '') {
+                fields.style.display = 'block';
+                arrow.textContent = '▲';
+            } else {
+                fields.style.display = 'none';
+                arrow.textContent = '▼';
+            }
+        }
+
+        // Search device in main ELV3 tab
+        async function searchDeviceInMain(deviceNumber) {
+            const resultDiv = document.getElementById('mainDeviceResult');
+            const mainBinValue = document.getElementById('mainBinValue');
+            
+            if (!deviceNumber || deviceNumber.trim() === '') {
+                resultDiv.style.display = 'none';
+                mainBinValue.textContent = '-';
+                return;
+            }
+
+            // Show loading state
+            resultDiv.innerHTML = '<span style="color: var(--text-color); font-size: 12px;">Searching device...</span>';
+            resultDiv.style.display = 'block';
+
+            try {
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber.trim()}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.length === 0) {
+                    resultDiv.innerHTML = '<span style="color: #ff6b6b; font-size: 12px;">Device not found</span>';
+                    mainBinValue.textContent = '-';
+                    return;
+                }
+
+                const device = data[0];
+                const binNumber = device.bin || 'Not available';
+                const address = device.house_number && device.street_name ? 
+                    `${device.house_number} ${device.street_name}` : 'Address not available';
+
+                // Update BIN display
+                mainBinValue.textContent = binNumber;
+
+                // Show device result
+                resultDiv.innerHTML = `
+                    <div style="font-size: 12px; line-height: 1.3;">
+                        <strong>BIN:</strong> ${binNumber}<br>
+                        <strong>Address:</strong> ${address}
+                    </div>
+                `;
+
+                // Also update the Filing Information BIN field if it exists
+                const filingBinInput = document.getElementById('binInput');
+                if (filingBinInput && binNumber !== 'Not available') {
+                    filingBinInput.value = binNumber;
+                    localStorage.setItem('binInputInfo', binNumber);
+                }
+
+            } catch (error) {
+                console.error('Error searching device:', error);
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-size: 12px;">Error searching device</span>';
+                mainBinValue.textContent = '-';
+            }
+        }
+
+        // Refresh main device lookup
+        function refreshMainDeviceLookup() {
+            const mainDeviceInput = document.getElementById('mainDeviceInput');
+            const deviceNumber = mainDeviceInput ? mainDeviceInput.value.trim() : '';
+            
+            if (!deviceNumber) {
+                alert('Please enter a device number first');
+                return;
+            }
+            
+            searchDeviceInMain(deviceNumber);
+        }
+
+        // Clear main device lookup
+        function clearMainDeviceLookup() {
+            const mainDeviceInput = document.getElementById('mainDeviceInput');
+            const mainDeviceResult = document.getElementById('mainDeviceResult');
+            const mainBinValue = document.getElementById('mainBinValue');
+            
+            if (mainDeviceInput) {
+                mainDeviceInput.value = '';
+                mainDeviceInput.focus();
+            }
+            if (mainDeviceResult) {
+                mainDeviceResult.style.display = 'none';
+                mainDeviceResult.innerHTML = '';
+            }
+            if (mainBinValue) {
+                mainBinValue.textContent = '-';
             }
         }
 
