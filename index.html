@@ -1287,11 +1287,12 @@
             const missedTests = [];
             const currentYear = new Date().getFullYear();
             
-            // Get the CAT 5 date
+            // Get all test dates
+            const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
             const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+            const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
             
-            // Check if device type requires CAT 5
-            // Dumbwaiters, Conveyors, Wheelchair Lifts, Hydraulic elevators, and Escalators do not need CAT 5 testing
+            // Check device type for test requirements
             const deviceType = (device.device_type || '').toUpperCase();
             const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMWAITER');
             const isConveyor = deviceType.includes('CONVEYOR');
@@ -1299,27 +1300,56 @@
             const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
             const isEscalator = deviceType.includes('ESCALATOR');
             
-            // Skip if device type doesn't require CAT 5
-            if (isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator) {
-                return missedTests;
-            }
-            
             // Skip if device is removed or deleted
             const deviceStatus = (device.device_status || '').toUpperCase();
             if (deviceStatus === 'REMOVED' || deviceStatus === 'DELETED') {
                 return missedTests;
             }
             
-            // If there's a CAT 5 date, check if a required test was missed in prior years
-            if (cat5Date) {
+            const isDismantled = deviceStatus.includes('DISMANTLED');
+            
+            // Check for missed CAT 1 tests (required annually for most devices, not for dismantled)
+            // Conveyors only need CAT 1, other devices need CAT 1 annually
+            if (!isDismantled && cat1Date) {
+                const cat1Year = cat1Date.getFullYear();
+                // CAT 1 is required every year
+                for (let checkYear = cat1Year + 1; checkYear < currentYear; checkYear++) {
+                    missedTests.push({
+                        test: 'CAT 1',
+                        year: checkYear,
+                        lastTestDate: cat1Date.toLocaleDateString()
+                    });
+                    // Only report the first missed year (the earliest one)
+                    break;
+                }
+            }
+            
+            // Check for missed PVI tests (required annually for most devices, not for conveyors)
+            // Conveyors don't need PVI, dismantled devices only need PVI
+            if (!isConveyor && pviDate) {
+                const pviYear = pviDate.getFullYear();
+                // PVI is required every year
+                for (let checkYear = pviYear + 1; checkYear < currentYear; checkYear++) {
+                    missedTests.push({
+                        test: 'PVI',
+                        year: checkYear,
+                        lastTestDate: pviDate.toLocaleDateString()
+                    });
+                    // Only report the first missed year (the earliest one)
+                    break;
+                }
+            }
+            
+            // Check for missed CAT 5 tests (required every 5 years for eligible device types)
+            // Dumbwaiters, Conveyors, Wheelchair Lifts, Hydraulic elevators, Escalators, and Dismantled don't need CAT 5
+            const cat5NotRequired = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled;
+            if (!cat5NotRequired && cat5Date) {
                 const cat5Year = cat5Date.getFullYear();
                 // CAT 5 is required every 5 years
                 const nextDueYear = cat5Year + 5;
                 
                 // Check each year from the due year until last year (not current year)
-                // If the due year has passed and no CAT 5 was done that year or since, it's missed
                 for (let checkYear = nextDueYear; checkYear < currentYear; checkYear++) {
-                    // If the last CAT 5 year is before the check year, the test was missed that year
                     if (cat5Year < checkYear) {
                         missedTests.push({
                             test: 'CAT 5',
@@ -2908,19 +2938,28 @@
                             ${(() => {
                                 const missedTests = getMissedRequiredTests(device);
                                 if (missedTests.length > 0) {
+                                    const missedTestsList = missedTests.map(mt => 
+                                        `<div style="margin-bottom: 8px; padding: 8px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
+                                            <strong style="color: #ff9800;">${mt.test}</strong> test missed in <strong>${mt.year}</strong>
+                                            <br><span style="font-size: 0.9em; opacity: 0.8;">Last ${mt.test} test on record: ${mt.lastTestDate}</span>
+                                        </div>`
+                                    ).join('');
                                     return `
                                         <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
                                             <button onclick="toggleMissedTestDropdown('device_${device.device_number || deviceNumber}')"
                                                     style="width: 100%; padding: 10px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">
-                                                <span>⚠️ Important - Missed Required Test</span>
+                                                <span>⚠️ Important - Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})</span>
                                                 <span class="arrow">▼</span>
                                             </button>
                                             <div id="missed_test_device_${device.device_number || deviceNumber}" style="display: none; margin-top: 10px; padding: 15px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800;">
                                                 <div style="margin-bottom: 8px;">
                                                     <strong style="color: #ff9800;">Missed Required Test Alert</strong>
                                                 </div>
-                                                <div style="margin-bottom: 8px; color: var(--text-color);">
-                                                    This device appears to have missed a required ${missedTests[0].test} test in <strong>${missedTests[0].year}</strong>. The last ${missedTests[0].test} test on record was on ${missedTests[0].lastTestDate}. CAT 5 tests are required every 5 years for this device type. Please verify this information with the official DOB records.
+                                                <div style="color: var(--text-color);">
+                                                    ${missedTestsList}
+                                                    <div style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">
+                                                        CAT 1 and PVI tests are required annually. CAT 5 tests are required every 5 years. Please verify this information with official DOB records.
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -3133,15 +3172,22 @@
                 // Add Important dropdown row for missed required tests
                 const missedTests = getMissedRequiredTests(d);
                 if (missedTests.length > 0) {
+                    const missedTestsList = missedTests.map(mt => 
+                        '<div style="margin-bottom: 8px; padding: 8px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">' +
+                            '<strong style="color: #ff9800;">' + mt.test + '</strong> test missed in <strong>' + mt.year + '</strong>' +
+                            '<br><span style="font-size: 0.9em; opacity: 0.8;">Last ' + mt.test + ' test on record: ' + mt.lastTestDate + '</span>' +
+                        '</div>'
+                    ).join('');
                     rows += '<tr style="background: ' + rowBg + ';">' +
                         '<td colspan="11" style="padding: 0; border: 1px solid var(--input-border);">' +
                             '<details style="margin: 0;">' +
                                 '<summary style="padding: 10px 15px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.95em; background: rgba(255, 152, 0, 0.15);">' +
-                                    '⚠️ Important - Missed Required Test (' + missedTests[0].test + ' in ' + missedTests[0].year + ') for Device #' + d.device_number +
+                                    '⚠️ Important - Missed Required Test' + (missedTests.length > 1 ? 's' : '') + ' (' + missedTests.length + ') for Device #' + d.device_number +
                                 '</summary>' +
                                 '<div style="padding: 15px; background: rgba(255, 152, 0, 0.1); border-top: 1px solid #ff9800;">' +
                                     '<div style="color: var(--text-color); font-size: 0.95em;">' +
-                                        'This device appears to have missed a required <strong>' + missedTests[0].test + '</strong> test in <strong>' + missedTests[0].year + '</strong>. The last ' + missedTests[0].test + ' test on record was on ' + missedTests[0].lastTestDate + '. CAT 5 tests are required every 5 years for this device type. Please verify this information with the official DOB records.' +
+                                        missedTestsList +
+                                        '<div style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">CAT 1 and PVI tests are required annually. CAT 5 tests are required every 5 years. Please verify with official DOB records.</div>' +
                                     '</div>' +
                                 '</div>' +
                             '</details>' +
@@ -3302,10 +3348,10 @@
                         const missedTestHtml = missedTests.length > 0 ? `
                             <details style="margin-top: 8px;">
                                 <summary style="padding: 6px 10px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.85em; background: rgba(255, 152, 0, 0.15); border-radius: 4px;">
-                                    ⚠️ Missed Required Test (${missedTests[0].test} in ${missedTests[0].year})
+                                    ⚠️ Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})
                                 </summary>
                                 <div style="padding: 10px; margin-top: 6px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800; font-size: 0.85em;">
-                                    This device missed a required ${missedTests[0].test} test in ${missedTests[0].year}. Last ${missedTests[0].test}: ${missedTests[0].lastTestDate}.
+                                    ${missedTests.map(mt => `<div style="margin-bottom: 4px;"><strong>${mt.test}</strong> missed in ${mt.year} (Last: ${mt.lastTestDate})</div>`).join('')}
                                 </div>
                             </details>
                         ` : '';
@@ -3341,10 +3387,10 @@
                         const missedTestHtml = missedTests.length > 0 ? `
                             <details style="margin-top: 8px;">
                                 <summary style="padding: 6px 10px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.85em; background: rgba(255, 152, 0, 0.15); border-radius: 4px;">
-                                    ⚠️ Missed Required Test (${missedTests[0].test} in ${missedTests[0].year})
+                                    ⚠️ Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})
                                 </summary>
                                 <div style="padding: 10px; margin-top: 6px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800; font-size: 0.85em;">
-                                    This device missed a required ${missedTests[0].test} test in ${missedTests[0].year}. Last ${missedTests[0].test}: ${missedTests[0].lastTestDate}.
+                                    ${missedTests.map(mt => `<div style="margin-bottom: 4px;"><strong>${mt.test}</strong> missed in ${mt.year} (Last: ${mt.lastTestDate})</div>`).join('')}
                                 </div>
                             </details>
                         ` : '';
@@ -3372,10 +3418,10 @@
                         const missedTestHtml = missedTests.length > 0 ? `
                             <details style="margin-top: 8px;">
                                 <summary style="padding: 6px 10px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.85em; background: rgba(255, 152, 0, 0.15); border-radius: 4px;">
-                                    ⚠️ Missed Required Test (${missedTests[0].test} in ${missedTests[0].year})
+                                    ⚠️ Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})
                                 </summary>
                                 <div style="padding: 10px; margin-top: 6px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800; font-size: 0.85em;">
-                                    This device missed a required ${missedTests[0].test} test in ${missedTests[0].year}. Last ${missedTests[0].test}: ${missedTests[0].lastTestDate}.
+                                    ${missedTests.map(mt => `<div style="margin-bottom: 4px;"><strong>${mt.test}</strong> missed in ${mt.year} (Last: ${mt.lastTestDate})</div>`).join('')}
                                 </div>
                             </details>
                         ` : '';
@@ -3404,10 +3450,10 @@
                         const missedTestHtml = missedTests.length > 0 ? `
                             <details style="margin-top: 8px;">
                                 <summary style="padding: 6px 10px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.85em; background: rgba(255, 152, 0, 0.15); border-radius: 4px;">
-                                    ⚠️ Missed Required Test (${missedTests[0].test} in ${missedTests[0].year})
+                                    ⚠️ Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})
                                 </summary>
                                 <div style="padding: 10px; margin-top: 6px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800; font-size: 0.85em;">
-                                    This device missed a required ${missedTests[0].test} test in ${missedTests[0].year}. Last ${missedTests[0].test}: ${missedTests[0].lastTestDate}.
+                                    ${missedTests.map(mt => `<div style="margin-bottom: 4px;"><strong>${mt.test}</strong> missed in ${mt.year} (Last: ${mt.lastTestDate})</div>`).join('')}
                                 </div>
                             </details>
                         ` : '';
@@ -3480,10 +3526,10 @@
                         const missedTestHtml = missedTests.length > 0 ? `
                             <details style="margin-top: 8px;">
                                 <summary style="padding: 6px 10px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.85em; background: rgba(255, 152, 0, 0.15); border-radius: 4px;">
-                                    ⚠️ Missed Required Test (${missedTests[0].test} in ${missedTests[0].year})
+                                    ⚠️ Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})
                                 </summary>
                                 <div style="padding: 10px; margin-top: 6px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800; font-size: 0.85em;">
-                                    This device missed a required ${missedTests[0].test} test in ${missedTests[0].year}. Last ${missedTests[0].test}: ${missedTests[0].lastTestDate}.
+                                    ${missedTests.map(mt => `<div style="margin-bottom: 4px;"><strong>${mt.test}</strong> missed in ${mt.year} (Last: ${mt.lastTestDate})</div>`).join('')}
                                 </div>
                             </details>
                         ` : '';
@@ -3563,10 +3609,10 @@
                         const missedTestHtml = missedTests.length > 0 ? `
                             <details style="margin-top: 8px;">
                                 <summary style="padding: 6px 10px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.85em; background: rgba(255, 152, 0, 0.15); border-radius: 4px;">
-                                    ⚠️ Missed Required Test (${missedTests[0].test} in ${missedTests[0].year})
+                                    ⚠️ Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})
                                 </summary>
                                 <div style="padding: 10px; margin-top: 6px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800; font-size: 0.85em;">
-                                    This device missed a required ${missedTests[0].test} test in ${missedTests[0].year}. Last ${missedTests[0].test}: ${missedTests[0].lastTestDate}.
+                                    ${missedTests.map(mt => `<div style="margin-bottom: 4px;"><strong>${mt.test}</strong> missed in ${mt.year} (Last: ${mt.lastTestDate})</div>`).join('')}
                                 </div>
                             </details>
                         ` : '';
@@ -5704,19 +5750,26 @@
                                             ${(() => {
                                                 const missedTests = getMissedRequiredTests(device);
                                                 if (missedTests.length > 0) {
+                                                    const missedTestsList = missedTests.map(mt => 
+                                                        `<div style="margin-bottom: 6px; padding: 6px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
+                                                            <strong style="color: #ff9800;">${mt.test}</strong> missed in <strong>${mt.year}</strong>
+                                                            <br><span style="font-size: 0.85em; opacity: 0.8;">Last: ${mt.lastTestDate}</span>
+                                                        </div>`
+                                                    ).join('');
                                                     return `
                                                         <div style="margin-top: 10px;">
                                                             <button onclick="toggleMissedTestDropdown('bin_removed_${device.device_number}')"
                                                                     style="width: 100%; padding: 8px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.9em;">
-                                                                <span>⚠️ Important - Missed Required Test</span>
+                                                                <span>⚠️ Important - Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})</span>
                                                                 <span class="arrow">▼</span>
                                                             </button>
                                                             <div id="missed_test_bin_removed_${device.device_number}" style="display: none; margin-top: 8px; padding: 12px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800; font-size: 0.9em;">
                                                                 <div style="margin-bottom: 8px;">
                                                                     <strong style="color: #ff9800;">Missed Required Test Alert</strong>
                                                                 </div>
-                                                                <div style="margin-bottom: 8px; color: var(--text-color);">
-                                                                    This device appears to have missed a required ${missedTests[0].test} test in <strong>${missedTests[0].year}</strong>. The last ${missedTests[0].test} test on record was on ${missedTests[0].lastTestDate}. CAT 5 tests are required every 5 years for this device type. Please verify this information with the official DOB records.
+                                                                <div style="color: var(--text-color);">
+                                                                    ${missedTestsList}
+                                                                    <div style="margin-top: 8px; font-size: 0.85em; opacity: 0.8;">CAT 1 and PVI are required annually. CAT 5 every 5 years.</div>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -6418,19 +6471,26 @@
                                             ${(() => {
                                                 const missedTests = getMissedRequiredTests(device);
                                                 if (missedTests.length > 0) {
+                                                    const missedTestsList = missedTests.map(mt => 
+                                                        `<div style="margin-bottom: 6px; padding: 6px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
+                                                            <strong style="color: #ff9800;">${mt.test}</strong> missed in <strong>${mt.year}</strong>
+                                                            <br><span style="font-size: 0.85em; opacity: 0.8;">Last: ${mt.lastTestDate}</span>
+                                                        </div>`
+                                                    ).join('');
                                                     return `
                                                         <div style="margin-top: 10px;">
                                                             <button onclick="toggleMissedTestDropdown('bin_active_${device.device_number}')"
                                                                     style="width: 100%; padding: 8px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.9em;">
-                                                                <span>⚠️ Important - Missed Required Test</span>
+                                                                <span>⚠️ Important - Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})</span>
                                                                 <span class="arrow">▼</span>
                                                             </button>
                                                             <div id="missed_test_bin_active_${device.device_number}" style="display: none; margin-top: 8px; padding: 12px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800; font-size: 0.9em;">
                                                                 <div style="margin-bottom: 8px;">
                                                                     <strong style="color: #ff9800;">Missed Required Test Alert</strong>
                                                                 </div>
-                                                                <div style="margin-bottom: 8px; color: var(--text-color);">
-                                                                    This device appears to have missed a required ${missedTests[0].test} test in <strong>${missedTests[0].year}</strong>. The last ${missedTests[0].test} test on record was on ${missedTests[0].lastTestDate}. CAT 5 tests are required every 5 years for this device type. Please verify this information with the official DOB records.
+                                                                <div style="color: var(--text-color);">
+                                                                    ${missedTestsList}
+                                                                    <div style="margin-top: 8px; font-size: 0.85em; opacity: 0.8;">CAT 1 and PVI are required annually. CAT 5 every 5 years.</div>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -7964,16 +8024,23 @@
                         // Add Important dropdown row for missed required tests
                         const missedTests = getMissedRequiredTests(device);
                         if (missedTests.length > 0) {
+                            const missedTestsList = missedTests.map(mt => 
+                                `<div style="margin-bottom: 6px; padding: 6px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
+                                    <strong style="color: #ff9800;">${mt.test}</strong> missed in <strong>${mt.year}</strong>
+                                    <br><span style="font-size: 0.85em; opacity: 0.8;">Last: ${mt.lastTestDate}</span>
+                                </div>`
+                            ).join('');
                             html += `
                                 <tr style="background: ${rowBg};">
                                     <td colspan="11" style="padding: 0; border: 1px solid var(--input-border);">
                                         <details style="margin: 0;">
                                             <summary style="padding: 8px 12px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.9em; background: rgba(255, 152, 0, 0.1);">
-                                                ⚠️ Important - Missed Required Test (${missedTests[0].test} in ${missedTests[0].year})
+                                                ⚠️ Important - Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})
                                             </summary>
                                             <div style="padding: 12px 15px; background: rgba(255, 152, 0, 0.1); border-top: 1px solid #ff9800;">
                                                 <div style="color: var(--text-color); font-size: 0.9em;">
-                                                    This device appears to have missed a required <strong>${missedTests[0].test}</strong> test in <strong>${missedTests[0].year}</strong>. The last ${missedTests[0].test} test on record was on ${missedTests[0].lastTestDate}. CAT 5 tests are required every 5 years for this device type. Please verify this information with the official DOB records.
+                                                    ${missedTestsList}
+                                                    <div style="margin-top: 8px; font-size: 0.85em; opacity: 0.8;">CAT 1 and PVI are required annually. CAT 5 every 5 years.</div>
                                                 </div>
                                             </div>
                                         </details>
@@ -9973,19 +10040,28 @@
                             ${(() => {
                                 const missedTests = getMissedRequiredTests(device);
                                 if (missedTests.length > 0) {
+                                    const missedTestsList = missedTests.map(mt => 
+                                        `<div style="margin-bottom: 8px; padding: 8px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
+                                            <strong style="color: #ff9800;">${mt.test}</strong> test missed in <strong>${mt.year}</strong>
+                                            <br><span style="font-size: 0.9em; opacity: 0.8;">Last ${mt.test} test on record: ${mt.lastTestDate}</span>
+                                        </div>`
+                                    ).join('');
                                     return `
                                         <div style="margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
                                             <button onclick="toggleMissedTestDropdown('quick_device_${device.device_number || deviceNumber}')"
                                                     style="width: 100%; padding: 10px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">
-                                                <span>⚠️ Important - Missed Required Test</span>
+                                                <span>⚠️ Important - Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})</span>
                                                 <span class="arrow">▼</span>
                                             </button>
                                             <div id="missed_test_quick_device_${device.device_number || deviceNumber}" style="display: none; margin-top: 10px; padding: 15px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800;">
                                                 <div style="margin-bottom: 8px;">
                                                     <strong style="color: #ff9800;">Missed Required Test Alert</strong>
                                                 </div>
-                                                <div style="margin-bottom: 8px; color: var(--text-color);">
-                                                    This device appears to have missed a required ${missedTests[0].test} test in <strong>${missedTests[0].year}</strong>. The last ${missedTests[0].test} test on record was on ${missedTests[0].lastTestDate}. CAT 5 tests are required every 5 years for this device type. Please verify this information with the official DOB records.
+                                                <div style="color: var(--text-color);">
+                                                    ${missedTestsList}
+                                                    <div style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">
+                                                        CAT 1 and PVI tests are required annually. CAT 5 tests are required every 5 years. Please verify this information with official DOB records.
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -10257,15 +10333,22 @@
                                 ${(() => {
                                     const missedTests = getMissedRequiredTests(device);
                                     if (missedTests.length > 0) {
+                                        const missedTestsList = missedTests.map(mt => 
+                                            `<div style="margin-bottom: 6px; padding: 6px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
+                                                <strong style="color: #ff9800;">${mt.test}</strong> missed in <strong>${mt.year}</strong>
+                                                <br><span style="font-size: 0.85em; opacity: 0.8;">Last: ${mt.lastTestDate}</span>
+                                            </div>`
+                                        ).join('');
                                         return `
                                         <div style="margin-top: 10px;">
                                             <details style="margin: 0;">
                                                 <summary style="padding: 6px 10px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.9em; background: rgba(255, 152, 0, 0.15); border-radius: 4px;">
-                                                    ⚠️ Important - Missed Required Test (${missedTests[0].test} in ${missedTests[0].year})
+                                                    ⚠️ Important - Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})
                                                 </summary>
                                                 <div style="padding: 10px; margin-top: 8px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800;">
                                                     <div style="color: #ffffff; font-size: 0.9em;">
-                                                        This device appears to have missed a required <strong>${missedTests[0].test}</strong> test in <strong>${missedTests[0].year}</strong>. The last ${missedTests[0].test} test on record was on ${missedTests[0].lastTestDate}. CAT 5 tests are required every 5 years for this device type. Please verify this information with the official DOB records.
+                                                        ${missedTestsList}
+                                                        <div style="margin-top: 8px; font-size: 0.85em; opacity: 0.8;">CAT 1 and PVI are required annually. CAT 5 every 5 years.</div>
                                                     </div>
                                                 </div>
                                             </details>
