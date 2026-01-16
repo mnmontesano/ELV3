@@ -2932,8 +2932,31 @@
             
             const currentYear = new Date().getFullYear();
             
+            // Sort devices: Active devices first, removed/deleted at bottom
+            const sortedDevices = buildingData.devices ? [...buildingData.devices].sort((a, b) => {
+                const aStatus = (a.device_status || '').toUpperCase();
+                const bStatus = (b.device_status || '').toUpperCase();
+                const aIsRemoved = aStatus.includes('REMOVED') || aStatus.includes('DELETED');
+                const bIsRemoved = bStatus.includes('REMOVED') || bStatus.includes('DELETED');
+                
+                // Primary sort: Removed/deleted devices go to the bottom
+                if (aIsRemoved !== bIsRemoved) {
+                    return aIsRemoved ? 1 : -1;
+                }
+                
+                // Secondary sort: By ready status (not ready first)
+                if (a.isReady !== b.isReady) {
+                    if (a.isReady === 'N/A') return 1;
+                    if (b.isReady === 'N/A') return -1;
+                    return a.isReady === 'Yes' ? 1 : -1;
+                }
+                
+                // Tertiary sort: By violations
+                return (b.violationCount || 0) - (a.violationCount || 0);
+            }) : [];
+            
             // Generate the device table rows with violation details
-            const deviceTableRows = buildingData.devices ? buildingData.devices.map((d, idx) => {
+            const deviceTableRows = sortedDevices.map((d, idx) => {
                 const rowBg = idx % 2 === 0 ? 'var(--input-bg)' : 'var(--panel-bg)';
                 let rows = `
                     <tr style="background: ${rowBg};">
@@ -3016,7 +3039,7 @@
                 }
                 
                 return rows;
-            }).join('') : '<tr><td colspan="11" style="padding: 20px; text-align: center; opacity: 0.7;">No devices found</td></tr>';
+            }).join('') || '<tr><td colspan="11" style="padding: 20px; text-align: center; opacity: 0.7;">No devices found</td></tr>';
             
             // Calculate summary stats
             const totalDevices = buildingData.deviceCount || 0;
@@ -7400,7 +7423,7 @@
                             <div id="buildingDevices_${bin}" style="display: none; margin-top: 15px;">
                     `;
 
-                    // Sort devices: Not ready for testing first, then ready ones
+                    // Sort devices: Active devices first (removed/deleted at bottom), then not ready first, then by violations
                     const todayForSort = new Date();
                     todayForSort.setHours(0, 0, 0, 0);
                     
@@ -7459,12 +7482,17 @@
                             }
                         }
                         
-                        // Not ready devices first (aIsReady=false should come before aIsReady=true)
+                        // Primary sort: Removed/deleted devices go to the bottom
+                        if (aIsRemoved !== bIsRemoved) {
+                            return aIsRemoved ? 1 : -1; // Removed devices last
+                        }
+                        
+                        // Secondary sort: Not ready devices first (aIsReady=false should come before aIsReady=true)
                         if (aIsReady !== bIsReady) {
                             return aIsReady ? 1 : -1; // Not ready (false) comes first
                         }
                         
-                        // Secondary sort by violations
+                        // Tertiary sort by violations
                         const aViolations = a.violations ? a.violations.length : 0;
                         const bViolations = b.violations ? b.violations.length : 0;
                         return bViolations - aViolations;
