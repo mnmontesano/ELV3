@@ -1361,15 +1361,13 @@
             // Conveyors only need CAT 1, other devices need CAT 1 annually
             if (!isDismantled && cat1Date) {
                 const cat1Year = cat1Date.getFullYear();
-                // CAT 1 is required every year
+                // CAT 1 is required every year - report all missed years
                 for (let checkYear = cat1Year + 1; checkYear < currentYear; checkYear++) {
                     missedTests.push({
                         test: 'CAT 1',
                         year: checkYear,
                         lastTestDate: cat1Date.toLocaleDateString()
                     });
-                    // Only report the first missed year (the earliest one)
-                    break;
                 }
             }
             
@@ -1377,15 +1375,13 @@
             // Conveyors don't need PVI, dismantled devices only need PVI
             if (!isConveyor && pviDate) {
                 const pviYear = pviDate.getFullYear();
-                // PVI is required every year
+                // PVI is required every year - report all missed years
                 for (let checkYear = pviYear + 1; checkYear < currentYear; checkYear++) {
                     missedTests.push({
                         test: 'PVI',
                         year: checkYear,
                         lastTestDate: pviDate.toLocaleDateString()
                     });
-                    // Only report the first missed year (the earliest one)
-                    break;
                 }
             }
             
@@ -1397,7 +1393,7 @@
                 // CAT 5 is required every 5 years
                 const nextDueYear = cat5Year + 5;
                 
-                // Check each year from the due year until last year (not current year)
+                // Check each year from the due year until last year (not current year) - report all missed years
                 for (let checkYear = nextDueYear; checkYear < currentYear; checkYear++) {
                     if (cat5Year < checkYear) {
                         missedTests.push({
@@ -1405,8 +1401,6 @@
                             year: checkYear,
                             lastTestDate: cat5Date.toLocaleDateString()
                         });
-                        // Only report the first missed year (the earliest one)
-                        break;
                     }
                 }
             }
@@ -4014,16 +4008,30 @@
                         
                         // Missed Tests Alert
                         if (hasMissedTests) {
-                            const missedTestsList = missedTests.map(mt => 
-                                `<div style="margin-bottom: 6px; padding: 6px 8px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
-                                    <strong style="color: #ff9800;">${mt.test}</strong> missed in <strong>${mt.year}</strong>
-                                    <br><span style="font-size: 0.85em; opacity: 0.8;">Last ${mt.test} test: ${mt.lastTestDate}</span>
-                                </div>`
-                            ).join('');
+                            // Group missed tests by test type for cleaner display
+                            const groupedMissed = {};
+                            missedTests.forEach(mt => {
+                                if (!groupedMissed[mt.test]) {
+                                    groupedMissed[mt.test] = { years: [], lastTestDate: mt.lastTestDate };
+                                }
+                                groupedMissed[mt.test].years.push(mt.year);
+                            });
+                            
+                            // Count unique test types for the header
+                            const uniqueTestTypes = Object.keys(groupedMissed).length;
+                            
+                            const missedTestsList = Object.keys(groupedMissed).map(test => {
+                                const data = groupedMissed[test];
+                                const sortedYears = data.years.sort((a, b) => b - a); // Sort most recent to oldest
+                                return `<div style="margin-bottom: 6px; padding: 6px 8px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
+                                    <strong style="color: #ff9800;">${test}</strong> missed in <strong>${sortedYears.join(', ')}</strong>
+                                    <br><span style="font-size: 0.85em; opacity: 0.8;">Last ${test} test: ${data.lastTestDate}</span>
+                                </div>`;
+                            }).join('');
                             
                             alertSections += `
                                 <div style="margin-bottom: 10px; padding: 12px; background: rgba(255, 152, 0, 0.1); border-radius: 6px; border-left: 3px solid #ff9800;">
-                                    <div style="font-weight: 600; color: #ff9800; margin-bottom: 6px;">⚠️ Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})</div>
+                                    <div style="font-weight: 600; color: #ff9800; margin-bottom: 6px;">⚠️ Missed Required Test${uniqueTestTypes > 1 ? 's' : ''} (${uniqueTestTypes} test type${uniqueTestTypes > 1 ? 's' : ''})</div>
                                     ${missedTestsList}
                                 </div>
                             `;
@@ -9017,7 +9025,18 @@
                                 importantInfoParts.push('Data Quality Alert: All inspection dates identical (possible acceptance test)');
                             }
                             if (missedTests.length > 0) {
-                                const missedTestStr = missedTests.map(mt => `${mt.test} missed in ${mt.year}`).join('; ');
+                                // Group missed tests by test type for cleaner display
+                                const groupedMissed = {};
+                                missedTests.forEach(mt => {
+                                    if (!groupedMissed[mt.test]) {
+                                        groupedMissed[mt.test] = [];
+                                    }
+                                    groupedMissed[mt.test].push(mt.year);
+                                });
+                                const missedTestStr = Object.keys(groupedMissed).map(test => {
+                                    const years = groupedMissed[test].sort((a, b) => b - a); // Sort most recent to oldest
+                                    return `${test} missed in ${years.join(', ')}`;
+                                }).join('; ');
                                 importantInfoParts.push(`Missed Tests: ${missedTestStr}`);
                             }
                             const importantInfo = importantInfoParts.length > 0 ? importantInfoParts.join(' | ') : '';
@@ -9430,7 +9449,18 @@
                                 importantInfoParts.push('Data Quality Alert: All inspection dates identical (possible acceptance test)');
                             }
                             if (missedTests.length > 0) {
-                                const missedTestStr = missedTests.map(mt => `${mt.test} missed in ${mt.year}`).join('; ');
+                                // Group missed tests by test type for cleaner display
+                                const groupedMissed = {};
+                                missedTests.forEach(mt => {
+                                    if (!groupedMissed[mt.test]) {
+                                        groupedMissed[mt.test] = [];
+                                    }
+                                    groupedMissed[mt.test].push(mt.year);
+                                });
+                                const missedTestStr = Object.keys(groupedMissed).map(test => {
+                                    const years = groupedMissed[test].sort((a, b) => b - a); // Sort most recent to oldest
+                                    return `${test} missed in ${years.join(', ')}`;
+                                }).join('; ');
                                 importantInfoParts.push(`Missed Tests: ${missedTestStr}`);
                             }
                             const importantInfo = importantInfoParts.length > 0 ? importantInfoParts.join(' | ') : '';
