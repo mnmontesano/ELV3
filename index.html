@@ -49,8 +49,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body data-active-tab="main">
-    <!-- Disclaimer Modal - Shows on page load -->
-    <div id="disclaimerModal" style="display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 10000; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;">
+    <!-- Disclaimer Modal - Shows on page load (TEMPORARILY DISABLED - change display to flex to re-enable) -->
+    <div id="disclaimerModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 10000; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;">
         <div style="background: var(--card-bg, #fff); border-radius: 12px; padding: 30px; max-width: 500px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.3); text-align: center;">
             <div style="font-size: 48px; margin-bottom: 15px;">⚠️</div>
             <h2 style="color: #d9534f; margin: 0 0 20px 0; font-size: 24px;">Warning</h2>
@@ -3345,7 +3345,8 @@
             oneTest: [],
             warning: [],
             noTests: [],
-            noTestRequired: []
+            noTestRequired: [],
+            permits: []
         };
 
         // Toggle function for bulk test completion status lists - now shows popup modal
@@ -4011,6 +4012,62 @@
                             ${alertSections}
                         </div>`;
                     }
+                },
+                'permits': {
+                    title: '📋 Associated Permits',
+                    color: '#2196F3',
+                    data: window.bulkDeviceLists.permits || [],
+                    groupByBuilding: false,
+                    isPermitList: true,
+                    renderItem: (p, index) => {
+                        const groupId = `permitsGroup_${Date.now()}_${index}`;
+                        const issueDateStr = p.issuance_date ? new Date(p.issuance_date).toLocaleDateString() : 'N/A';
+                        const expDateStr = p.expiration_date ? new Date(p.expiration_date).toLocaleDateString() : 'N/A';
+                        const statusColor = (p.filing_status || '').toUpperCase().includes('APPROVED') ? '#4CAF50' : 
+                                           (p.filing_status || '').toUpperCase().includes('PENDING') ? '#ff9800' : 
+                                           (p.filing_status || '').toUpperCase().includes('DISAPPROVED') ? '#ff6b6b' : 'var(--text-color)';
+                        
+                        return `<div style="background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border); overflow: hidden; border-left: 3px solid #2196F3;">
+                            <div onclick="toggleBuildingGroup('${groupId}')" 
+                                 style="padding: 14px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); transition: background 0.2s;"
+                                 onmouseover="this.style.background='var(--panel-bg)'" 
+                                 onmouseout="this.style.background='var(--input-bg)'">
+                                <div style="flex: 1;">
+                                    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                        <span style="font-size: 1.1em;">📋</span>
+                                        <strong style="font-size: 1em; color: var(--header-color);">${p.permit_number || p.job_filing_number || 'N/A'}</strong>
+                                        <span style="color: ${statusColor}; font-weight: 600; font-size: 0.9em;">${p.filing_status || 'N/A'}</span>
+                                    </div>
+                                    <div style="font-size: 0.85em; opacity: 0.8; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 12px;">
+                                        <span><strong>Device:</strong> ${p.device_number}</span>
+                                        <span><strong>Address:</strong> ${p.address || 'N/A'}</span>
+                                        <span><strong>Issued:</strong> ${issueDateStr}</span>
+                                    </div>
+                                </div>
+                                <span id="${groupId}_arrow" style="font-size: 1.2em; transition: transform 0.3s; transform: rotate(0deg);">▼</span>
+                            </div>
+                            <div id="${groupId}" style="display: none; border-top: 1px solid var(--input-border); padding: 15px;">
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 0.9em;">
+                                    <div><strong style="color: var(--header-color);">Permit #:</strong> ${p.permit_number || p.job_filing_number || 'N/A'}</div>
+                                    <div><strong style="color: var(--header-color);">BIN:</strong> ${p.bin || 'N/A'}</div>
+                                    <div><strong style="color: var(--header-color);">Device #:</strong> ${p.device_number}</div>
+                                    <div><strong style="color: var(--header-color);">Issued To:</strong> ${p.permittee_s_name || 'N/A'}</div>
+                                    <div><strong style="color: var(--header-color);">Issue Date:</strong> ${issueDateStr}</div>
+                                    <div><strong style="color: var(--header-color);">Expiration Date:</strong> ${expDateStr}</div>
+                                    <div><strong style="color: var(--header-color);">Application Type:</strong> ${p.application_type || 'N/A'}</div>
+                                    <div><strong style="color: var(--header-color);">Work Type:</strong> ${p.work_type || 'N/A'}</div>
+                                    <div><strong style="color: var(--header-color);">Filing Status:</strong> <span style="color: ${statusColor}; font-weight: 600;">${p.filing_status || 'N/A'}</span></div>
+                                    ${p.business_name ? `<div><strong style="color: var(--header-color);">Business Name:</strong> ${p.business_name}</div>` : ''}
+                                </div>
+                                ${p.description ? `
+                                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--input-border);">
+                                        <strong style="color: var(--header-color);">Description:</strong>
+                                        <div style="margin-top: 6px; font-size: 0.9em; opacity: 0.9; line-height: 1.5;">${p.description}</div>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>`;
+                    }
                 }
             };
             
@@ -4021,6 +4078,7 @@
             let countLabel = 'devices';
             if (config.isBuildingList) countLabel = 'buildings';
             else if (config.isViolationList) countLabel = 'violations';
+            else if (config.isPermitList) countLabel = 'permits';
             
             // For readyToTest and notReadyToTest, show both ready and not-ready counts
             let titleCountDisplay = `(${config.data.length} ${countLabel})`;
@@ -4251,19 +4309,28 @@
                         </div>
                     `;
                 } else {
-                    // For expandable building lists, use single column layout and pass index
-                    if (config.isExpandableBuildingList) {
+                    // For expandable building lists or permit lists, use single column layout and pass index
+                    if (config.isExpandableBuildingList || config.isPermitList) {
+                        const searchPlaceholder = config.isPermitList 
+                            ? "Search by permit number, device number, or address..." 
+                            : "Search by address, BIN, or device number...";
                         modalContent.innerHTML = `
                             <div style="margin-bottom: 15px;">
                                 <input type="text" 
                                        id="buildingModalSearch" 
-                                       placeholder="Search by address, BIN, or device number..." 
+                                       placeholder="${searchPlaceholder}" 
                                        oninput="filterBuildingModalItems(this.value)"
                                        style="width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 0.95em; box-sizing: border-box;">
                                 <div id="buildingSearchCount" style="font-size: 0.85em; color: var(--text-color); opacity: 0.7; margin-top: 6px;"></div>
                             </div>
                             <div id="buildingModalList" style="display: flex; flex-direction: column; gap: 12px;">
                                 ${config.data.map((item, index) => {
+                                    // For permits, use permit-specific data attributes
+                                    if (config.isPermitList) {
+                                        return `<div class="building-modal-item" data-address="${item.address || ''}" data-bin="${item.bin || ''}" data-devices="${item.device_number || ''}" data-permit="${item.permit_number || item.job_filing_number || ''}">
+                                            ${config.renderItem(item, index)}
+                                        </div>`;
+                                    }
                                     const deviceNumbers = item.devices ? item.devices.map(d => d.device_number).join(' ') : '';
                                     return `<div class="building-modal-item" data-address="${item.address}" data-bin="${item.bin}" data-devices="${deviceNumbers}">
                                         ${config.renderItem(item, index)}
@@ -4389,15 +4456,20 @@
             let visibleCount = 0;
             const totalCount = items.length;
             
+            // Check if this is a permit list by looking for permit data attribute
+            const hasPermits = items.length > 0 && items[0].dataset.permit !== undefined;
+            
             items.forEach(item => {
                 const address = (item.dataset.address || '').toUpperCase();
                 const bin = (item.dataset.bin || '').toUpperCase();
                 const devices = (item.dataset.devices || '').toUpperCase();
+                const permit = (item.dataset.permit || '').toUpperCase();
                 
                 const matches = term === '' || 
                                address.includes(term) || 
                                bin.includes(term) || 
-                               devices.includes(term);
+                               devices.includes(term) ||
+                               permit.includes(term);
                 
                 item.style.display = matches ? '' : 'none';
                 if (matches) visibleCount++;
@@ -4408,7 +4480,8 @@
                 if (term === '') {
                     countEl.textContent = '';
                 } else {
-                    countEl.textContent = `Showing ${visibleCount} of ${totalCount} building${totalCount !== 1 ? 's' : ''}`;
+                    const itemType = hasPermits ? 'permit' : 'building';
+                    countEl.textContent = `Showing ${visibleCount} of ${totalCount} ${itemType}${totalCount !== 1 ? 's' : ''}`;
                 }
             }
         }
@@ -7564,6 +7637,48 @@
                     });
                 });
 
+                // Fetch permit information for all devices
+                const bulkPermitsList = [];
+                let totalPermitsCount = 0;
+                
+                // Get all unique device numbers from the search
+                const allDeviceNumbers = Object.values(binGroups).flatMap(group => 
+                    group.devices.map(d => ({
+                        device_number: d.device_number,
+                        bin: d.bin,
+                        address: `${d.house_number} ${d.street_name}`
+                    }))
+                );
+                
+                // Fetch permits for all devices (in batches to avoid overwhelming the API)
+                const permitPromises = allDeviceNumbers.map(async (deviceInfo) => {
+                    try {
+                        const result = await fetchPermitInfo(deviceInfo.device_number);
+                        if (result.success && result.permits && result.permits.length > 0) {
+                            return result.permits.map(permit => ({
+                                ...permit,
+                                device_number: deviceInfo.device_number,
+                                bin: deviceInfo.bin,
+                                address: deviceInfo.address
+                            }));
+                        }
+                        return [];
+                    } catch (error) {
+                        console.error(`Error fetching permits for ${deviceInfo.device_number}:`, error);
+                        return [];
+                    }
+                });
+                
+                try {
+                    const permitResults = await Promise.all(permitPromises);
+                    permitResults.forEach(permits => {
+                        bulkPermitsList.push(...permits);
+                    });
+                    totalPermitsCount = bulkPermitsList.length;
+                } catch (error) {
+                    console.error('Error fetching permit data:', error);
+                }
+
                 // Store device lists in global variable for modal access
                 window.bulkDeviceLists = {
                     bothTests: bulkDevicesWithBothTestsList,
@@ -7576,7 +7691,8 @@
                     allBuildings: allBuildingsList,
                     allViolations: allViolationsList,
                     buildingsWithViolations: buildingsWithViolationsList,
-                    importantInfo: bulkDevicesWithImportantInfoList
+                    importantInfo: bulkDevicesWithImportantInfoList,
+                    permits: bulkPermitsList
                 };
 
                 // Sort buildings by violations (those with violations first)
@@ -7718,16 +7834,24 @@
                                     </div>
                                 </div>
                             </div>
-                            ${devicesWithImportantInfo > 0 ? `
+                            ${(devicesWithImportantInfo > 0 || totalPermitsCount > 0) ? `
                             <div style="margin-top: 15px; padding: 15px; background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border);">
                                 <div style="font-size: 1em; font-weight: 600; color: var(--header-color); margin-bottom: 12px;">
-                                    Important Information <span style="font-size: 0.8em; font-weight: 400; opacity: 0.7;">(click to view devices)</span>
+                                    Additional Information <span style="font-size: 0.8em; font-weight: 400; opacity: 0.7;">(click to view details)</span>
                                 </div>
-                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+                                    ${devicesWithImportantInfo > 0 ? `
                                     <div onclick="toggleBulkTestList('importantInfo')" style="padding: 12px; background: var(--panel-bg); border-radius: 6px; text-align: center; border-left: 3px solid #e91e63; cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 2px 8px rgba(233,30,99,0.3)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
                                         <div style="font-size: 1.5em; font-weight: 700; color: #e91e63;">${devicesWithImportantInfo}</div>
-                                        <div style="font-size: 0.8em; color: var(--text-color);">⚠️ Important Information</div>
+                                        <div style="font-size: 0.8em; color: var(--text-color);">⚠️ Important Info</div>
                                     </div>
+                                    ` : ''}
+                                    ${totalPermitsCount > 0 ? `
+                                    <div onclick="toggleBulkTestList('permits')" style="padding: 12px; background: var(--panel-bg); border-radius: 6px; text-align: center; border-left: 3px solid #2196F3; cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 2px 8px rgba(33,150,243,0.3)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
+                                        <div style="font-size: 1.5em; font-weight: 700; color: #2196F3;">${totalPermitsCount}</div>
+                                        <div style="font-size: 0.8em; color: var(--text-color);">📋 Permits</div>
+                                    </div>
+                                    ` : ''}
                                 </div>
                             </div>
                             ` : ''}
