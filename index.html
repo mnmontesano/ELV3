@@ -4272,7 +4272,20 @@
                         `;
                     }
                     
+                    // Add search box for grouped building lists
+                    const searchBoxHTML = `
+                        <div style="margin-bottom: 15px;">
+                            <input type="text" 
+                                   id="groupedBuildingSearch" 
+                                   placeholder="Search by address or device number..." 
+                                   oninput="filterGroupedBuildingItems(this.value)"
+                                   style="width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 0.95em; box-sizing: border-box;">
+                            <div id="groupedBuildingSearchCount" style="font-size: 0.85em; color: var(--text-color); opacity: 0.7; margin-top: 6px;"></div>
+                        </div>
+                    `;
+                    
                     modalContent.innerHTML = `
+                        ${searchBoxHTML}
                         ${filterHTML}
                         <div id="readyToTestBuildingsList" style="display: flex; flex-direction: column; gap: 12px;">
                             ${sortedBuildings.map(([address, devices], index) => {
@@ -4316,8 +4329,11 @@
                                 const hasReady = devices.some(d => d.isReadyToTest);
                                 const isAllNotReady = devices.every(d => !d.isReadyToTest);
                                 
+                                // Collect all device numbers for search
+                                const deviceNumbers = devices.map(d => d.device_number).join(' ');
+                                
                                 return `
-                                    <div class="ready-to-test-building-item" data-has-not-ready="${hasNotReady}" data-is-all-ready="${isAllReady}" data-has-ready="${hasReady}" data-is-all-not-ready="${isAllNotReady}" style="background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border); overflow: hidden;">
+                                    <div class="ready-to-test-building-item" data-has-not-ready="${hasNotReady}" data-is-all-ready="${isAllReady}" data-has-ready="${hasReady}" data-is-all-not-ready="${isAllNotReady}" data-address="${address}" data-devices="${deviceNumbers}" style="background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border); overflow: hidden;">
                                         <div onclick="toggleBuildingGroup('${groupId}')" 
                                              style="padding: 14px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); transition: background 0.2s;"
                                              onmouseover="this.style.background='var(--panel-bg)'" 
@@ -4413,6 +4429,9 @@
         function filterReadyToTestBuildings(filterValue) {
             const buildingItems = document.querySelectorAll('.ready-to-test-building-item');
             const countDisplay = document.getElementById('readyToTestFilterCount');
+            const searchInput = document.getElementById('groupedBuildingSearch');
+            const searchTerm = searchInput ? searchInput.value.toUpperCase().trim() : '';
+            
             let visibleCount = 0;
             
             buildingItems.forEach(item => {
@@ -4421,19 +4440,28 @@
                 const hasReady = item.getAttribute('data-has-ready') === 'true';
                 const isAllNotReady = item.getAttribute('data-is-all-not-ready') === 'true';
                 
-                let shouldShow = false;
-                
+                // Check dropdown filter
+                let dropdownMatches = false;
                 if (filterValue === 'all') {
-                    shouldShow = true;
+                    dropdownMatches = true;
                 } else if (filterValue === 'has-not-ready') {
-                    shouldShow = hasNotReady;
+                    dropdownMatches = hasNotReady;
                 } else if (filterValue === 'all-ready') {
-                    shouldShow = isAllReady;
+                    dropdownMatches = isAllReady;
                 } else if (filterValue === 'has-ready') {
-                    shouldShow = hasReady;
+                    dropdownMatches = hasReady;
                 } else if (filterValue === 'all-not-ready') {
-                    shouldShow = isAllNotReady;
+                    dropdownMatches = isAllNotReady;
                 }
+                
+                // Check search filter
+                const address = (item.dataset.address || '').toUpperCase();
+                const devices = (item.dataset.devices || '').toUpperCase();
+                const searchMatches = searchTerm === '' || 
+                                     address.includes(searchTerm) || 
+                                     devices.includes(searchTerm);
+                
+                const shouldShow = dropdownMatches && searchMatches;
                 
                 if (shouldShow) {
                     item.style.display = '';
@@ -4518,6 +4546,58 @@
                 } else {
                     const itemType = hasPermits ? 'permit' : 'building';
                     countEl.textContent = `Showing ${visibleCount} of ${totalCount} ${itemType}${totalCount !== 1 ? 's' : ''}`;
+                }
+            }
+        }
+        
+        // Filter grouped building items (for Test Completion Status, Testing Status, and Important Info modals)
+        function filterGroupedBuildingItems(searchTerm) {
+            const term = searchTerm.toUpperCase().trim();
+            const items = document.querySelectorAll('.ready-to-test-building-item');
+            const countEl = document.getElementById('groupedBuildingSearchCount');
+            const dropdownFilter = document.getElementById('readyToTestBuildingFilter');
+            const dropdownValue = dropdownFilter ? dropdownFilter.value : 'all';
+            
+            let visibleCount = 0;
+            const totalCount = items.length;
+            
+            items.forEach(item => {
+                const address = (item.dataset.address || '').toUpperCase();
+                const devices = (item.dataset.devices || '').toUpperCase();
+                
+                // Check search match
+                const searchMatches = term === '' || 
+                               address.includes(term) || 
+                               devices.includes(term);
+                
+                // Check dropdown filter match
+                const hasNotReady = item.getAttribute('data-has-not-ready') === 'true';
+                const isAllReady = item.getAttribute('data-is-all-ready') === 'true';
+                const hasReady = item.getAttribute('data-has-ready') === 'true';
+                const isAllNotReady = item.getAttribute('data-is-all-not-ready') === 'true';
+                
+                let dropdownMatches = true;
+                if (dropdownValue === 'has-not-ready') {
+                    dropdownMatches = hasNotReady;
+                } else if (dropdownValue === 'all-ready') {
+                    dropdownMatches = isAllReady;
+                } else if (dropdownValue === 'has-ready') {
+                    dropdownMatches = hasReady;
+                } else if (dropdownValue === 'all-not-ready') {
+                    dropdownMatches = isAllNotReady;
+                }
+                
+                const shouldShow = searchMatches && dropdownMatches;
+                item.style.display = shouldShow ? '' : 'none';
+                if (shouldShow) visibleCount++;
+            });
+            
+            // Update count display
+            if (countEl) {
+                if (term === '') {
+                    countEl.textContent = '';
+                } else {
+                    countEl.textContent = `Showing ${visibleCount} of ${totalCount} building${totalCount !== 1 ? 's' : ''}`;
                 }
             }
         }
