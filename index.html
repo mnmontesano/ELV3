@@ -2747,6 +2747,11 @@
 
                     // Fetch detailed device information
                     const deviceInfo = await fetchDeviceInfo(deviceNumber);
+                    
+                    // Fetch permit information to check for removal permits
+                    const permitResult = await fetchPermitInfo(deviceNumber);
+                    const hasPermits = permitResult.success && permitResult.permits && permitResult.permits.length > 0;
+                    const permitData = permitResult;
 
                     // Format dates and calculate most recent inspection
                     const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
@@ -2981,12 +2986,44 @@
                             ${(() => {
                                 const missedTests = getMissedRequiredTests(device);
                                 if (missedTests.length > 0) {
+                                    // Check if device has a removal permit
+                                    let hasRemovalPermit = false;
+                                    let removalPermitNumber = '';
+                                    if (hasPermits && permitData.permits) {
+                                        const removalPermit = permitData.permits.find(p => {
+                                            const workType = (p.work_type || '').toUpperCase();
+                                            const description = (p.description || '').toUpperCase();
+                                            const appType = (p.application_type || '').toUpperCase();
+                                            return workType.includes('REMOVAL') || workType.includes('REMOVE') || 
+                                                   workType.includes('DISMANTLE') || workType.includes('DISCONTINUE') ||
+                                                   description.includes('REMOVAL') || description.includes('REMOVE ELEVATOR') ||
+                                                   description.includes('DISMANTLE') || description.includes('DISCONTINUE') ||
+                                                   appType.includes('REMOVAL') || appType.includes('DISMANTLE');
+                                        });
+                                        if (removalPermit) {
+                                            hasRemovalPermit = true;
+                                            removalPermitNumber = removalPermit.permit_number || removalPermit.job_filing_number || '';
+                                        }
+                                    }
+                                    
                                     const missedTestsList = missedTests.map(mt => 
                                         `<div style="margin-bottom: 8px; padding: 8px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
                                             <strong style="color: #ff9800;">${mt.test}</strong> test missed in <strong>${mt.year}</strong>
                                             <br><span style="font-size: 0.9em; opacity: 0.8;">Last ${mt.test} test on record: ${mt.lastTestDate}</span>
                                         </div>`
                                     ).join('');
+                                    
+                                    const removalPermitNote = hasRemovalPermit ? `
+                                        <div style="margin-top: 10px; padding: 8px; background: rgba(33, 150, 243, 0.1); border-radius: 4px; border: 1px solid #2196F3;">
+                                            <div style="color: #2196F3; font-weight: 500; margin-bottom: 4px;">
+                                                📋 Removal Permit Found${removalPermitNumber ? ': ' + removalPermitNumber : ''}
+                                            </div>
+                                            <div style="font-size: 0.85em; opacity: 0.9;">
+                                                Testing may not have been performed due to the device being slated for removal. Please verify the current status with the DOB.
+                                            </div>
+                                        </div>
+                                    ` : '';
+                                    
                                     return `
                                         <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
                                             <button onclick="toggleMissedTestDropdown('device_${device.device_number || deviceNumber}')"
@@ -3003,6 +3040,7 @@
                                                     <div style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">
                                                         CAT 1 and PVI tests are required annually. CAT 5 tests are required every 5 years. Please verify this information with official DOB records.
                                                     </div>
+                                                    ${removalPermitNote}
                                                 </div>
                                             </div>
                                         </div>
@@ -3215,6 +3253,34 @@
                 // Add Important dropdown row for missed required tests
                 const missedTests = getMissedRequiredTests(d);
                 if (missedTests.length > 0) {
+                    // Check for removal permits for this device
+                    let removalPermitNote = '';
+                    const allPermits = window.bulkDeviceLists?.permits || [];
+                    const devicePermits = allPermits.filter(p => p.device_number === d.device_number);
+                    if (devicePermits.length > 0) {
+                        const removalPermit = devicePermits.find(p => {
+                            const workType = (p.work_type || '').toUpperCase();
+                            const description = (p.description || '').toUpperCase();
+                            const appType = (p.application_type || '').toUpperCase();
+                            return workType.includes('REMOVAL') || workType.includes('REMOVE') || 
+                                   workType.includes('DISMANTLE') || workType.includes('DISCONTINUE') ||
+                                   description.includes('REMOVAL') || description.includes('REMOVE ELEVATOR') ||
+                                   description.includes('DISMANTLE') || description.includes('DISCONTINUE') ||
+                                   appType.includes('REMOVAL') || appType.includes('DISMANTLE');
+                        });
+                        if (removalPermit) {
+                            const permitNum = removalPermit.permit_number || removalPermit.job_filing_number || '';
+                            removalPermitNote = '<div style="margin-top: 10px; padding: 8px; background: rgba(33, 150, 243, 0.1); border-radius: 4px; border: 1px solid #2196F3;">' +
+                                '<div style="color: #2196F3; font-weight: 500; margin-bottom: 4px;">' +
+                                    '📋 Removal Permit Found' + (permitNum ? ': ' + permitNum : '') +
+                                '</div>' +
+                                '<div style="font-size: 0.85em; opacity: 0.9;">' +
+                                    'Testing may not have been performed due to the device being slated for removal. Please verify the current status with the DOB.' +
+                                '</div>' +
+                            '</div>';
+                        }
+                    }
+                    
                     const missedTestsList = missedTests.map(mt => 
                         '<div style="margin-bottom: 8px; padding: 8px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">' +
                             '<strong style="color: #ff9800;">' + mt.test + '</strong> test missed in <strong>' + mt.year + '</strong>' +
@@ -3231,6 +3297,7 @@
                                     '<div style="color: var(--text-color); font-size: 0.95em;">' +
                                         missedTestsList +
                                         '<div style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">CAT 1 and PVI tests are required annually. CAT 5 tests are required every 5 years. Please verify with official DOB records.</div>' +
+                                        removalPermitNote +
                                     '</div>' +
                                 '</div>' +
                             '</details>' +
@@ -3992,6 +4059,28 @@
                         const hasMissedTests = missedTests.length > 0;
                         const hasAllDatesSame = d.allDatesAreSame;
                         
+                        // Check for removal permits for this device
+                        let hasRemovalPermit = false;
+                        let removalPermitNumber = '';
+                        const allPermits = window.bulkDeviceLists.permits || [];
+                        const devicePermits = allPermits.filter(p => p.device_number === d.device_number);
+                        if (devicePermits.length > 0) {
+                            const removalPermit = devicePermits.find(p => {
+                                const workType = (p.work_type || '').toUpperCase();
+                                const description = (p.description || '').toUpperCase();
+                                const appType = (p.application_type || '').toUpperCase();
+                                return workType.includes('REMOVAL') || workType.includes('REMOVE') || 
+                                       workType.includes('DISMANTLE') || workType.includes('DISCONTINUE') ||
+                                       description.includes('REMOVAL') || description.includes('REMOVE ELEVATOR') ||
+                                       description.includes('DISMANTLE') || description.includes('DISCONTINUE') ||
+                                       appType.includes('REMOVAL') || appType.includes('DISMANTLE');
+                            });
+                            if (removalPermit) {
+                                hasRemovalPermit = true;
+                                removalPermitNumber = removalPermit.permit_number || removalPermit.job_filing_number || '';
+                            }
+                        }
+                        
                         let alertSections = '';
                         
                         // Data Quality Alert (all dates same)
@@ -4029,10 +4118,23 @@
                                 </div>`;
                             }).join('');
                             
+                            // Add removal permit note if applicable
+                            const removalPermitNote = (hasMissedTests && hasRemovalPermit) ? `
+                                <div style="margin-top: 8px; padding: 8px; background: rgba(33, 150, 243, 0.1); border-radius: 4px; border: 1px solid #2196F3;">
+                                    <div style="color: #2196F3; font-weight: 500; margin-bottom: 4px;">
+                                        📋 Removal Permit Found${removalPermitNumber ? ': ' + removalPermitNumber : ''}
+                                    </div>
+                                    <div style="font-size: 0.85em; opacity: 0.9;">
+                                        Testing may not have been performed due to the device being slated for removal. Please verify the current status with the DOB.
+                                    </div>
+                                </div>
+                            ` : '';
+                            
                             alertSections += `
                                 <div style="margin-bottom: 10px; padding: 12px; background: rgba(255, 152, 0, 0.1); border-radius: 6px; border-left: 3px solid #ff9800;">
                                     <div style="font-weight: 600; color: #ff9800; margin-bottom: 6px;">⚠️ Missed Required Test${uniqueTestTypes > 1 ? 's' : ''} (${uniqueTestTypes} test type${uniqueTestTypes > 1 ? 's' : ''})</div>
                                     ${missedTestsList}
+                                    ${removalPermitNote}
                                 </div>
                             `;
                         }
@@ -6013,12 +6115,44 @@
                                             ${(() => {
                                                 const missedTests = getMissedRequiredTests(device);
                                                 if (missedTests.length > 0) {
+                                                    // Check if device has a removal permit
+                                                    let hasRemovalPermit = false;
+                                                    let removalPermitNumber = '';
+                                                    if (hasPermits && permitData.permits) {
+                                                        const removalPermit = permitData.permits.find(p => {
+                                                            const workType = (p.work_type || '').toUpperCase();
+                                                            const description = (p.description || '').toUpperCase();
+                                                            const appType = (p.application_type || '').toUpperCase();
+                                                            return workType.includes('REMOVAL') || workType.includes('REMOVE') || 
+                                                                   workType.includes('DISMANTLE') || workType.includes('DISCONTINUE') ||
+                                                                   description.includes('REMOVAL') || description.includes('REMOVE ELEVATOR') ||
+                                                                   description.includes('DISMANTLE') || description.includes('DISCONTINUE') ||
+                                                                   appType.includes('REMOVAL') || appType.includes('DISMANTLE');
+                                                        });
+                                                        if (removalPermit) {
+                                                            hasRemovalPermit = true;
+                                                            removalPermitNumber = removalPermit.permit_number || removalPermit.job_filing_number || '';
+                                                        }
+                                                    }
+                                                    
                                                     const missedTestsList = missedTests.map(mt => 
                                                         `<div style="margin-bottom: 6px; padding: 6px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
                                                             <strong style="color: #ff9800;">${mt.test}</strong> missed in <strong>${mt.year}</strong>
                                                             <br><span style="font-size: 0.85em; opacity: 0.8;">Last: ${mt.lastTestDate}</span>
                                                         </div>`
                                                     ).join('');
+                                                    
+                                                    const removalPermitNote = hasRemovalPermit ? `
+                                                        <div style="margin-top: 10px; padding: 8px; background: rgba(33, 150, 243, 0.1); border-radius: 4px; border: 1px solid #2196F3;">
+                                                            <div style="color: #2196F3; font-weight: 500; margin-bottom: 4px;">
+                                                                📋 Removal Permit Found${removalPermitNumber ? ': ' + removalPermitNumber : ''}
+                                                            </div>
+                                                            <div style="font-size: 0.85em; opacity: 0.9;">
+                                                                Testing may not have been performed due to the device being slated for removal. Please verify the current status with the DOB.
+                                                            </div>
+                                                        </div>
+                                                    ` : '';
+                                                    
                                                     return `
                                                         <div style="margin-top: 10px;">
                                                             <button onclick="toggleMissedTestDropdown('bin_removed_${device.device_number}')"
@@ -6033,6 +6167,7 @@
                                                                 <div style="color: var(--text-color);">
                                                                     ${missedTestsList}
                                                                     <div style="margin-top: 8px; font-size: 0.85em; opacity: 0.8;">CAT 1 and PVI are required annually. CAT 5 every 5 years.</div>
+                                                                    ${removalPermitNote}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -6734,12 +6869,44 @@
                                             ${(() => {
                                                 const missedTests = getMissedRequiredTests(device);
                                                 if (missedTests.length > 0) {
+                                                    // Check if device has a removal permit
+                                                    let hasRemovalPermit = false;
+                                                    let removalPermitNumber = '';
+                                                    if (hasPermits && permitData.permits) {
+                                                        const removalPermit = permitData.permits.find(p => {
+                                                            const workType = (p.work_type || '').toUpperCase();
+                                                            const description = (p.description || '').toUpperCase();
+                                                            const appType = (p.application_type || '').toUpperCase();
+                                                            return workType.includes('REMOVAL') || workType.includes('REMOVE') || 
+                                                                   workType.includes('DISMANTLE') || workType.includes('DISCONTINUE') ||
+                                                                   description.includes('REMOVAL') || description.includes('REMOVE ELEVATOR') ||
+                                                                   description.includes('DISMANTLE') || description.includes('DISCONTINUE') ||
+                                                                   appType.includes('REMOVAL') || appType.includes('DISMANTLE');
+                                                        });
+                                                        if (removalPermit) {
+                                                            hasRemovalPermit = true;
+                                                            removalPermitNumber = removalPermit.permit_number || removalPermit.job_filing_number || '';
+                                                        }
+                                                    }
+                                                    
                                                     const missedTestsList = missedTests.map(mt => 
                                                         `<div style="margin-bottom: 6px; padding: 6px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
                                                             <strong style="color: #ff9800;">${mt.test}</strong> missed in <strong>${mt.year}</strong>
                                                             <br><span style="font-size: 0.85em; opacity: 0.8;">Last: ${mt.lastTestDate}</span>
                                                         </div>`
                                                     ).join('');
+                                                    
+                                                    const removalPermitNote = hasRemovalPermit ? `
+                                                        <div style="margin-top: 10px; padding: 8px; background: rgba(33, 150, 243, 0.1); border-radius: 4px; border: 1px solid #2196F3;">
+                                                            <div style="color: #2196F3; font-weight: 500; margin-bottom: 4px;">
+                                                                📋 Removal Permit Found${removalPermitNumber ? ': ' + removalPermitNumber : ''}
+                                                            </div>
+                                                            <div style="font-size: 0.85em; opacity: 0.9;">
+                                                                Testing may not have been performed due to the device being slated for removal. Please verify the current status with the DOB.
+                                                            </div>
+                                                        </div>
+                                                    ` : '';
+                                                    
                                                     return `
                                                         <div style="margin-top: 10px;">
                                                             <button onclick="toggleMissedTestDropdown('bin_active_${device.device_number}')"
@@ -6754,6 +6921,7 @@
                                                                 <div style="color: var(--text-color);">
                                                                     ${missedTestsList}
                                                                     <div style="margin-top: 8px; font-size: 0.85em; opacity: 0.8;">CAT 1 and PVI are required annually. CAT 5 every 5 years.</div>
+                                                                    ${removalPermitNote}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -8377,6 +8545,36 @@
                         // Add Important dropdown row for missed required tests
                         const missedTests = getMissedRequiredTests(device);
                         if (missedTests.length > 0) {
+                            // Check for removal permits for this device
+                            let removalPermitNote = '';
+                            const allPermits = window.bulkDeviceLists?.permits || [];
+                            const devicePermits = allPermits.filter(p => p.device_number === device.device_number);
+                            if (devicePermits.length > 0) {
+                                const removalPermit = devicePermits.find(p => {
+                                    const workType = (p.work_type || '').toUpperCase();
+                                    const description = (p.description || '').toUpperCase();
+                                    const appType = (p.application_type || '').toUpperCase();
+                                    return workType.includes('REMOVAL') || workType.includes('REMOVE') || 
+                                           workType.includes('DISMANTLE') || workType.includes('DISCONTINUE') ||
+                                           description.includes('REMOVAL') || description.includes('REMOVE ELEVATOR') ||
+                                           description.includes('DISMANTLE') || description.includes('DISCONTINUE') ||
+                                           appType.includes('REMOVAL') || appType.includes('DISMANTLE');
+                                });
+                                if (removalPermit) {
+                                    const permitNum = removalPermit.permit_number || removalPermit.job_filing_number || '';
+                                    removalPermitNote = `
+                                        <div style="margin-top: 10px; padding: 8px; background: rgba(33, 150, 243, 0.1); border-radius: 4px; border: 1px solid #2196F3;">
+                                            <div style="color: #2196F3; font-weight: 500; margin-bottom: 4px;">
+                                                📋 Removal Permit Found${permitNum ? ': ' + permitNum : ''}
+                                            </div>
+                                            <div style="font-size: 0.85em; opacity: 0.9;">
+                                                Testing may not have been performed due to the device being slated for removal. Please verify the current status with the DOB.
+                                            </div>
+                                        </div>
+                                    `;
+                                }
+                            }
+                            
                             const missedTestsList = missedTests.map(mt => 
                                 `<div style="margin-bottom: 6px; padding: 6px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
                                     <strong style="color: #ff9800;">${mt.test}</strong> missed in <strong>${mt.year}</strong>
@@ -8394,6 +8592,7 @@
                                                 <div style="color: var(--text-color); font-size: 0.9em;">
                                                     ${missedTestsList}
                                                     <div style="margin-top: 8px; font-size: 0.85em; opacity: 0.8;">CAT 1 and PVI are required annually. CAT 5 every 5 years.</div>
+                                                    ${removalPermitNote}
                                                 </div>
                                             </div>
                                         </details>
@@ -9099,6 +9298,26 @@
                             // Get missed required tests
                             const missedTests = getMissedRequiredTests(device);
                             
+                            // Check for removal permits
+                            let hasRemovalPermit = false;
+                            let removalPermitNumber = '';
+                            if (permits.length > 0) {
+                                const removalPermit = permits.find(p => {
+                                    const workType = (p.work_type || '').toUpperCase();
+                                    const description = (p.description || '').toUpperCase();
+                                    const appType = (p.application_type || '').toUpperCase();
+                                    return workType.includes('REMOVAL') || workType.includes('REMOVE') || 
+                                           workType.includes('DISMANTLE') || workType.includes('DISCONTINUE') ||
+                                           description.includes('REMOVAL') || description.includes('REMOVE ELEVATOR') ||
+                                           description.includes('DISMANTLE') || description.includes('DISCONTINUE') ||
+                                           appType.includes('REMOVAL') || appType.includes('DISMANTLE');
+                                });
+                                if (removalPermit) {
+                                    hasRemovalPermit = true;
+                                    removalPermitNumber = removalPermit.permit_number || removalPermit.job_filing_number || '';
+                                }
+                            }
+                            
                             // Build important info string
                             let importantInfoParts = [];
                             if (allDatesAreSame) {
@@ -9118,6 +9337,11 @@
                                     return `${test} missed in ${years.join(', ')}`;
                                 }).join('; ');
                                 importantInfoParts.push(`Missed Tests: ${missedTestStr}`);
+                                
+                                // Add removal permit note if applicable
+                                if (hasRemovalPermit) {
+                                    importantInfoParts.push(`Removal Permit Found${removalPermitNumber ? ': ' + removalPermitNumber : ''} - Testing may not have been performed due to device being slated for removal`);
+                                }
                             }
                             const importantInfo = importantInfoParts.length > 0 ? importantInfoParts.join(' | ') : '';
 
@@ -9523,6 +9747,26 @@
                             // Get missed required tests
                             const missedTests = getMissedRequiredTests(device);
                             
+                            // Check for removal permits
+                            let hasRemovalPermit = false;
+                            let removalPermitNumber = '';
+                            if (permits.length > 0) {
+                                const removalPermit = permits.find(p => {
+                                    const workType = (p.work_type || '').toUpperCase();
+                                    const description = (p.description || '').toUpperCase();
+                                    const appType = (p.application_type || '').toUpperCase();
+                                    return workType.includes('REMOVAL') || workType.includes('REMOVE') || 
+                                           workType.includes('DISMANTLE') || workType.includes('DISCONTINUE') ||
+                                           description.includes('REMOVAL') || description.includes('REMOVE ELEVATOR') ||
+                                           description.includes('DISMANTLE') || description.includes('DISCONTINUE') ||
+                                           appType.includes('REMOVAL') || appType.includes('DISMANTLE');
+                                });
+                                if (removalPermit) {
+                                    hasRemovalPermit = true;
+                                    removalPermitNumber = removalPermit.permit_number || removalPermit.job_filing_number || '';
+                                }
+                            }
+                            
                             // Build important info string
                             let importantInfoParts = [];
                             if (allDatesAreSame) {
@@ -9542,6 +9786,11 @@
                                     return `${test} missed in ${years.join(', ')}`;
                                 }).join('; ');
                                 importantInfoParts.push(`Missed Tests: ${missedTestStr}`);
+                                
+                                // Add removal permit note if applicable
+                                if (hasRemovalPermit) {
+                                    importantInfoParts.push(`Removal Permit Found${removalPermitNumber ? ': ' + removalPermitNumber : ''} - Testing may not have been performed due to device being slated for removal`);
+                                }
                             }
                             const importantInfo = importantInfoParts.length > 0 ? importantInfoParts.join(' | ') : '';
 
@@ -10334,6 +10583,11 @@
 
                     // Fetch detailed device information
                     const deviceInfo = await fetchDeviceInfo(deviceNumber);
+                    
+                    // Fetch permit information to check for removal permits
+                    const permitResult = await fetchPermitInfo(deviceNumber);
+                    const hasPermits = permitResult.success && permitResult.permits && permitResult.permits.length > 0;
+                    const permitData = permitResult;
 
                     // Format dates and calculate most recent inspection
                     const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
@@ -10568,12 +10822,44 @@
                             ${(() => {
                                 const missedTests = getMissedRequiredTests(device);
                                 if (missedTests.length > 0) {
+                                    // Check if device has a removal permit
+                                    let hasRemovalPermit = false;
+                                    let removalPermitNumber = '';
+                                    if (hasPermits && permitData.permits) {
+                                        const removalPermit = permitData.permits.find(p => {
+                                            const workType = (p.work_type || '').toUpperCase();
+                                            const description = (p.description || '').toUpperCase();
+                                            const appType = (p.application_type || '').toUpperCase();
+                                            return workType.includes('REMOVAL') || workType.includes('REMOVE') || 
+                                                   workType.includes('DISMANTLE') || workType.includes('DISCONTINUE') ||
+                                                   description.includes('REMOVAL') || description.includes('REMOVE ELEVATOR') ||
+                                                   description.includes('DISMANTLE') || description.includes('DISCONTINUE') ||
+                                                   appType.includes('REMOVAL') || appType.includes('DISMANTLE');
+                                        });
+                                        if (removalPermit) {
+                                            hasRemovalPermit = true;
+                                            removalPermitNumber = removalPermit.permit_number || removalPermit.job_filing_number || '';
+                                        }
+                                    }
+                                    
                                     const missedTestsList = missedTests.map(mt => 
                                         `<div style="margin-bottom: 8px; padding: 8px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
                                             <strong style="color: #ff9800;">${mt.test}</strong> test missed in <strong>${mt.year}</strong>
                                             <br><span style="font-size: 0.9em; opacity: 0.8;">Last ${mt.test} test on record: ${mt.lastTestDate}</span>
                                         </div>`
                                     ).join('');
+                                    
+                                    const removalPermitNote = hasRemovalPermit ? `
+                                        <div style="margin-top: 10px; padding: 8px; background: rgba(33, 150, 243, 0.1); border-radius: 4px; border: 1px solid #2196F3;">
+                                            <div style="color: #2196F3; font-weight: 500; margin-bottom: 4px;">
+                                                📋 Removal Permit Found${removalPermitNumber ? ': ' + removalPermitNumber : ''}
+                                            </div>
+                                            <div style="font-size: 0.85em; opacity: 0.9;">
+                                                Testing may not have been performed due to the device being slated for removal. Please verify the current status with the DOB.
+                                            </div>
+                                        </div>
+                                    ` : '';
+                                    
                                     return `
                                         <div style="margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
                                             <button onclick="toggleMissedTestDropdown('quick_device_${device.device_number || deviceNumber}')"
@@ -10590,6 +10876,7 @@
                                                     <div style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">
                                                         CAT 1 and PVI tests are required annually. CAT 5 tests are required every 5 years. Please verify this information with official DOB records.
                                                     </div>
+                                                    ${removalPermitNote}
                                                 </div>
                                             </div>
                                         </div>
