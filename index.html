@@ -837,12 +837,12 @@
                         <label style="color: var(--text-color); font-weight: 500; margin-bottom: 10px; display: block;">Select Export Format:</label>
                         <div style="display: flex; flex-direction: column; gap: 12px;">
                             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: var(--panel-bg); border-radius: 6px; border: 1px solid var(--input-border);">
-                                <input type="radio" name="binExportFormat" value="csv" checked style="width: 18px; height: 18px; margin: 0;">
-                                <span style="color: var(--text-color); font-size: 1em;">CSV File (.csv)</span>
+                                <input type="radio" name="binExportFormat" value="excel" checked style="width: 18px; height: 18px; margin: 0;">
+                                <span style="color: var(--text-color); font-size: 1em;">Excel File (.xlsx)</span>
                             </label>
                             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: var(--panel-bg); border-radius: 6px; border: 1px solid var(--input-border);">
-                                <input type="radio" name="binExportFormat" value="excel" style="width: 18px; height: 18px; margin: 0;">
-                                <span style="color: var(--text-color); font-size: 1em;">Excel File (.xlsx)</span>
+                                <input type="radio" name="binExportFormat" value="csv" style="width: 18px; height: 18px; margin: 0;">
+                                <span style="color: var(--text-color); font-size: 1em;">CSV File (.csv)</span>
                             </label>
                         </div>
                     </div>
@@ -992,18 +992,22 @@
                         <input type="checkbox" class="export-column" value="eligibleDate" checked style="width: 16px; height: 16px; margin: 0;">
                         <span style="color: var(--text-color); font-size: 0.9em;">Eligible Date</span>
                     </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="export-column" value="importantInfo" checked style="width: 16px; height: 16px; margin: 0;">
+                        <span style="color: var(--text-color); font-size: 0.9em;">Important Information</span>
+                    </label>
                 </div>
                 
                 <div style="margin-bottom: 15px; padding-top: 15px; border-top: 1px solid var(--input-border);">
                     <label style="color: var(--text-color); font-weight: 500; margin-bottom: 8px; display: block;">Export Format:</label>
                     <div style="display: flex; gap: 15px;">
                         <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                            <input type="radio" name="exportFormat" value="csv" checked style="width: 16px; height: 16px; margin: 0;">
-                            <span style="color: var(--text-color); font-size: 0.95em;">CSV (.csv)</span>
+                            <input type="radio" name="exportFormat" value="excel" checked style="width: 16px; height: 16px; margin: 0;">
+                            <span style="color: var(--text-color); font-size: 0.95em;">Excel (.xlsx)</span>
                         </label>
                         <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                            <input type="radio" name="exportFormat" value="excel" style="width: 16px; height: 16px; margin: 0;">
-                            <span style="color: var(--text-color); font-size: 0.95em;">Excel (.xlsx)</span>
+                            <input type="radio" name="exportFormat" value="csv" style="width: 16px; height: 16px; margin: 0;">
+                            <span style="color: var(--text-color); font-size: 0.95em;">CSV (.csv)</span>
                         </label>
                     </div>
                 </div>
@@ -3935,6 +3939,59 @@
                                     </table>
                                 </div>
                             </div>
+                        </div>`;
+                    }
+                },
+                'importantInfo': {
+                    title: '⚠️ Important Information',
+                    color: '#e91e63',
+                    data: window.bulkDeviceLists.importantInfo || [],
+                    groupByBuilding: true,
+                    renderItem: (d) => {
+                        const missedTests = d.missedTests || getMissedRequiredTests(d);
+                        const hasMissedTests = missedTests.length > 0;
+                        const hasAllDatesSame = d.allDatesAreSame;
+                        
+                        let alertSections = '';
+                        
+                        // Data Quality Alert (all dates same)
+                        if (hasAllDatesSame) {
+                            alertSections += `
+                                <div style="margin-bottom: 10px; padding: 12px; background: rgba(255, 107, 107, 0.1); border-radius: 6px; border-left: 3px solid #ff6b6b;">
+                                    <div style="font-weight: 600; color: #ff6b6b; margin-bottom: 6px;">⚠️ Data Quality Alert</div>
+                                    <div style="font-size: 0.9em; color: var(--text-color); opacity: 0.9;">
+                                        All three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate an acceptance test was performed on this device. If so, no additional inspection tests are required for that calendar year. Please verify with the official DOB site.
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        
+                        // Missed Tests Alert
+                        if (hasMissedTests) {
+                            const missedTestsList = missedTests.map(mt => 
+                                `<div style="margin-bottom: 6px; padding: 6px 8px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
+                                    <strong style="color: #ff9800;">${mt.test}</strong> missed in <strong>${mt.year}</strong>
+                                    <br><span style="font-size: 0.85em; opacity: 0.8;">Last ${mt.test} test: ${mt.lastTestDate}</span>
+                                </div>`
+                            ).join('');
+                            
+                            alertSections += `
+                                <div style="margin-bottom: 10px; padding: 12px; background: rgba(255, 152, 0, 0.1); border-radius: 6px; border-left: 3px solid #ff9800;">
+                                    <div style="font-weight: 600; color: #ff9800; margin-bottom: 6px;">⚠️ Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})</div>
+                                    ${missedTestsList}
+                                </div>
+                            `;
+                        }
+                        
+                        return `<div style="padding: 12px; background: var(--panel-bg); border-radius: 6px; border-left: 3px solid #e91e63;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                                <div>
+                                    <strong style="color: var(--header-color);">${d.device_number}</strong>
+                                    <span style="opacity: 0.7; margin-left: 8px; font-size: 0.9em;">${d.device_type}</span>
+                                    ${d.isDismantled ? '<span style="color: #ffd700; font-weight: bold; margin-left: 8px;">[DISMANTLED]</span>' : ''}
+                                </div>
+                            </div>
+                            ${alertSections}
                         </div>`;
                     }
                 }
@@ -7305,6 +7362,10 @@
                 const bulkDevicesNotReadyToTestList = [];
                 let devicesReadyToTest = 0;
                 let devicesNotReadyToTest = 0;
+                
+                // Important Information list (devices with data quality alerts or missed tests)
+                const bulkDevicesWithImportantInfoList = [];
+                let devicesWithImportantInfo = 0;
 
                 // Count test completion across all devices
                 Object.values(binGroups).forEach(group => {
@@ -7429,6 +7490,14 @@
                         const bothTestsCompleted = allTestsCompleted;
                         const dismantledCompleted = isDismantled && hasPVIThisYear;
                         
+                        // Check if all dates are the same (potential acceptance test indicator)
+                        const allDatesAreSame = cat1Date && cat5Date && pviDate &&
+                            cat1Date.getTime() === cat5Date.getTime() &&
+                            cat5Date.getTime() === pviDate.getTime();
+                        
+                        // Get missed tests for this device
+                        const missedTests = getMissedRequiredTests(device);
+                        
                         const deviceInfo = {
                             device_number: device.device_number,
                             device_type: device.device_type || 'Unknown',
@@ -7446,8 +7515,21 @@
                             isHydraulic: isHydraulic,
                             isEscalator: isEscalator,
                             requiresCat5: requiresCat5,
-                            yearsSinceCat5: yearsSinceCat5
+                            yearsSinceCat5: yearsSinceCat5,
+                            allDatesAreSame: allDatesAreSame,
+                            missedTests: missedTests,
+                            // Store raw device data for getMissedRequiredTests
+                            cat1_latest_report_filed: device.cat1_latest_report_filed,
+                            cat5_latest_report_filed: device.cat5_latest_report_filed,
+                            periodic_latest_inspection: device.periodic_latest_inspection,
+                            device_status: device.device_status
                         };
+                        
+                        // Track devices with Important Information
+                        if (allDatesAreSame || missedTests.length > 0) {
+                            devicesWithImportantInfo++;
+                            bulkDevicesWithImportantInfoList.push(deviceInfo);
+                        }
                         
                         if (isWarningDevice) {
                             devicesWithWarning++;
@@ -7476,7 +7558,8 @@
                     notReadyToTest: bulkDevicesNotReadyToTestList,
                     allBuildings: allBuildingsList,
                     allViolations: allViolationsList,
-                    buildingsWithViolations: buildingsWithViolationsList
+                    buildingsWithViolations: buildingsWithViolationsList,
+                    importantInfo: bulkDevicesWithImportantInfoList
                 };
 
                 // Sort buildings by violations (those with violations first)
@@ -7618,6 +7701,19 @@
                                     </div>
                                 </div>
                             </div>
+                            ${devicesWithImportantInfo > 0 ? `
+                            <div style="margin-top: 15px; padding: 15px; background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border);">
+                                <div style="font-size: 1em; font-weight: 600; color: var(--header-color); margin-bottom: 12px;">
+                                    Important Information <span style="font-size: 0.8em; font-weight: 400; opacity: 0.7;">(click to view devices)</span>
+                                </div>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                                    <div onclick="toggleBulkTestList('importantInfo')" style="padding: 12px; background: var(--panel-bg); border-radius: 6px; text-align: center; border-left: 3px solid #e91e63; cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 2px 8px rgba(233,30,99,0.3)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
+                                        <div style="font-size: 1.5em; font-weight: 700; color: #e91e63;">${devicesWithImportantInfo}</div>
+                                        <div style="font-size: 0.8em; color: var(--text-color);">⚠️ Important Information</div>
+                                    </div>
+                                </div>
+                            </div>
+                            ` : ''}
                             <div style="margin-bottom: 12px;">
                                 <div style="font-size: 0.95em; font-weight: 600; color: var(--header-color); margin-top: 15px; margin-bottom: 12px;">Search</div>
                                 <input type="text" 
@@ -8517,7 +8613,8 @@
                 'violationIssueDates',
                 'violationNumbers',
                 'violationTypes',
-                'violationDescriptions'
+                'violationDescriptions',
+                'importantInfo'
             ];
             
             // Get the stored data from the last search
@@ -8571,7 +8668,8 @@
                     violationTypes: 'Violation Types',
                     violationDescriptions: 'Violation Descriptions',
                     testingEligibility: 'Testing Eligibility',
-                    eligibleDate: 'Eligible Date'
+                    eligibleDate: 'Eligible Date',
+                    importantInfo: 'Important Information'
                 };
                 
                 const currentYear = new Date().getFullYear();
@@ -8703,6 +8801,26 @@
                                 eligibleDateDisplay = eligibilityDate.toLocaleDateString();
                             }
 
+                            // Check for Important Information
+                            // All dates same check (acceptance test indicator)
+                            const allDatesAreSame = cat1Date && cat5Date && pviDate &&
+                                cat1Date.getTime() === cat5Date.getTime() &&
+                                cat5Date.getTime() === pviDate.getTime();
+                            
+                            // Get missed required tests
+                            const missedTests = getMissedRequiredTests(device);
+                            
+                            // Build important info string
+                            let importantInfoParts = [];
+                            if (allDatesAreSame) {
+                                importantInfoParts.push('Data Quality Alert: All inspection dates identical (possible acceptance test)');
+                            }
+                            if (missedTests.length > 0) {
+                                const missedTestStr = missedTests.map(mt => `${mt.test} missed in ${mt.year}`).join('; ');
+                                importantInfoParts.push(`Missed Tests: ${missedTestStr}`);
+                            }
+                            const importantInfo = importantInfoParts.length > 0 ? importantInfoParts.join(' | ') : '';
+
                             // Build row data object
                             const rowData = {
                                 address: `${device.house_number} ${device.street_name}`,
@@ -8725,7 +8843,8 @@
                                 violationTypes: violationTypes || 'N/A',
                                 violationDescriptions: violationDescriptions || 'N/A',
                                 testingEligibility: testingEligibility,
-                                eligibleDate: eligibleDateDisplay
+                                eligibleDate: eligibleDateDisplay,
+                                importantInfo: importantInfo
                             };
                             
                             // Return array of selected column values
@@ -8761,7 +8880,8 @@
                             violationTypes: 'N/A',
                             violationDescriptions: 'N/A',
                             testingEligibility: 'N/A',
-                            eligibleDate: 'N/A'
+                            eligibleDate: 'N/A',
+                            importantInfo: ''
                         };
                         rows.push(selectedColumns.map(col => notFoundData[col] || ''));
                     });
@@ -8775,7 +8895,20 @@
                 const ws = XLSX.utils.aoa_to_sheet(wsData);
                 
                 // Set column widths for better readability
-                ws['!cols'] = headers.map((h, i) => ({ wch: Math.max(String(h).length, 12) }));
+                // Make certain columns wider for better display
+                ws['!cols'] = headers.map((h, i) => {
+                    const headerName = String(h).toLowerCase();
+                    // Wide columns for descriptions and important info
+                    if (headerName.includes('violation description') || headerName.includes('important information')) {
+                        return { wch: 80 };
+                    }
+                    // Medium-wide columns
+                    if (headerName.includes('violation type') || headerName === 'address') {
+                        return { wch: 40 };
+                    }
+                    // Default width
+                    return { wch: Math.max(String(h).length, 15) };
+                });
                 
                 XLSX.utils.book_append_sheet(wb, ws, 'Device Lookup');
                 
@@ -8838,7 +8971,8 @@
                 'violationIssueDates',
                 'violationNumbers',
                 'violationTypes',
-                'violationDescriptions'
+                'violationDescriptions',
+                'importantInfo'
             ];
             
             // Get the stored data from the last search
@@ -8892,7 +9026,8 @@
                     violationTypes: 'Violation Types',
                     violationDescriptions: 'Violation Descriptions',
                     testingEligibility: 'Testing Eligibility',
-                    eligibleDate: 'Eligible Date'
+                    eligibleDate: 'Eligible Date',
+                    importantInfo: 'Important Information'
                 };
                 
                 // Create CSV content with selected columns only
@@ -9033,6 +9168,26 @@
                                 eligibleDateDisplay = eligibilityDate.toLocaleDateString();
                             }
 
+                            // Check for Important Information
+                            // All dates same check (acceptance test indicator)
+                            const allDatesAreSame = cat1Date && cat5Date && pviDate &&
+                                cat1Date.getTime() === cat5Date.getTime() &&
+                                cat5Date.getTime() === pviDate.getTime();
+                            
+                            // Get missed required tests
+                            const missedTests = getMissedRequiredTests(device);
+                            
+                            // Build important info string
+                            let importantInfoParts = [];
+                            if (allDatesAreSame) {
+                                importantInfoParts.push('Data Quality Alert: All inspection dates identical (possible acceptance test)');
+                            }
+                            if (missedTests.length > 0) {
+                                const missedTestStr = missedTests.map(mt => `${mt.test} missed in ${mt.year}`).join('; ');
+                                importantInfoParts.push(`Missed Tests: ${missedTestStr}`);
+                            }
+                            const importantInfo = importantInfoParts.length > 0 ? importantInfoParts.join(' | ') : '';
+
                             // Build row data object
                             const rowData = {
                                 address: `${device.house_number} ${device.street_name}`,
@@ -9055,7 +9210,8 @@
                                 violationTypes: violationTypes || 'N/A',
                                 violationDescriptions: violationDescriptions || 'N/A',
                                 testingEligibility: testingEligibility,
-                                eligibleDate: eligibleDateDisplay
+                                eligibleDate: eligibleDateDisplay,
+                                importantInfo: importantInfo
                             };
                             
                             // Only include selected columns
@@ -9101,7 +9257,8 @@
                             violationTypes: 'N/A',
                             violationDescriptions: 'N/A',
                             testingEligibility: 'N/A',
-                            eligibleDate: 'N/A'
+                            eligibleDate: 'N/A',
+                            importantInfo: ''
                         };
                         const notFoundRow = selectedColumns.map(col => {
                             const fieldStr = String(notFoundData[col] || '');
