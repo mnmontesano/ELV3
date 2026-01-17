@@ -49,6 +49,23 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body data-active-tab="main">
+    <!-- Disclaimer Modal - Shows on page load -->
+    <div id="disclaimerModal" style="display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 10000; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;">
+        <div style="background: var(--card-bg, #fff); border-radius: 12px; padding: 30px; max-width: 500px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.3); text-align: center;">
+            <div style="font-size: 48px; margin-bottom: 15px;">⚠️</div>
+            <h2 style="color: #d9534f; margin: 0 0 20px 0; font-size: 24px;">Warning</h2>
+            <p style="color: var(--text-color, #333); line-height: 1.6; margin-bottom: 25px; font-size: 14px; text-align: left;">
+                Use of the Vertical Terminal and the information it presents should not be taken as a primary source. All data presented should be verified with the primary source DOB (Department of Buildings) before making any decisions based on the information present.
+            </p>
+            <p style="color: var(--text-color, #333); line-height: 1.6; margin-bottom: 25px; font-size: 14px; text-align: left; font-weight: bold;">
+                By using this webpage you acknowledge this and agree to these terms and conditions.
+            </p>
+            <button id="disclaimerAcceptBtn" onclick="acceptDisclaimer()" style="padding: 14px 40px; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; transition: background 0.3s ease;">
+                I Understand and Agree
+            </button>
+        </div>
+    </div>
+
     <!-- Make sure this is right after the opening <body> tag -->
     <div id="quickLookupOverlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999;"></div>
 
@@ -12250,22 +12267,20 @@
                                             Device-Specific Permit
                                         </div>` : ''
                                     }
-                                    <div><strong style="color: var(--header-color);">Permit #:</strong> ${permit.permit_number || 'N/A'}</div>
-                                    <div><strong style="color: var(--header-color);">Issued To:</strong> ${permit.permittee_s_name || 'N/A'}</div>
-                                    <div><strong style="color: var(--header-color);">Issue Date:</strong> ${issueDate}</div>
-                                    <div><strong style="color: var(--header-color);">Expiration Date:</strong> ${expirationDate}</div>
-                                    <div><strong style="color: var(--header-color);">Address:</strong> ${permit.house_number || ''} ${permit.street_name || 'N/A'}</div>
-                                    <div><strong style="color: var(--header-color);">Application Type:</strong> ${permit.application_type || 'N/A'}</div>
-                                    <div><strong style="color: var(--header-color);">Work Type:</strong> ${permit.work_type || 'N/A'}</div>
-                                    <div><strong style="color: var(--header-color);">Filing Status:</strong> ${permit.filing_status || 'N/A'}</div>
-                                    <div><strong style="color: var(--header-color);">Job/Filing Number:</strong> ${permit.job_filing_number || 'N/A'}</div>
-                                    ${permit.business_name ? `<div><strong style="color: var(--header-color);">Business Name:</strong> ${permit.business_name}</div>` : ''}
+                                    <div style="margin-bottom: 5px;"><strong style="color: var(--header-color);">Permit #:</strong> ${permit.permit_number || 'N/A'}</div>
+                                    <div style="margin-bottom: 5px;"><strong style="color: var(--header-color);">Issued To:</strong> ${permit.permittee_s_name || 'N/A'}</div>
+                                    <div style="margin-bottom: 5px;"><strong style="color: var(--header-color);">Issue Date:</strong> ${issueDate}</div>
+                                    <div style="margin-bottom: 5px;"><strong style="color: var(--header-color);">Expiration Date:</strong> ${expirationDate}</div>
+                                    <div style="margin-bottom: 5px;"><strong style="color: var(--header-color);">Address:</strong> ${permit.house_number || ''} ${permit.street_name || 'N/A'}</div>
+                                    <div style="margin-bottom: 5px;"><strong style="color: var(--header-color);">Application Type:</strong> ${permit.application_type || 'N/A'}</div>
+                                    <div style="margin-bottom: 5px;"><strong style="color: var(--header-color);">Work Type:</strong> ${permit.work_type || 'N/A'}</div>
+                                    <div style="margin-bottom: 5px;"><strong style="color: var(--header-color);">Filing Status:</strong> ${permit.filing_status || 'N/A'}</div>
+                                    <div style="margin-bottom: 5px;"><strong style="color: var(--header-color);">Job/Filing Number:</strong> ${permit.job_filing_number || 'N/A'}</div>
+                                    ${permit.business_name ? `<div style="margin-bottom: 5px;"><strong style="color: var(--header-color);">Business Name:</strong> ${permit.business_name}</div>` : ''}
                                     ${permit.description ? 
                                         `<div style="margin-top: 8px;">
                                             <strong style="color: var(--header-color);">Description:</strong> 
-                                            <div style="margin-top: 4px; padding: 8px; background: var(--panel-bg); border-radius: 4px; white-space: pre-wrap; font-size: 0.9em;">
-                                                ${permit.description}
-                                                </div>
+                                            <div style="margin-top: 4px; padding: 8px; background: var(--panel-bg); border-radius: 4px; white-space: pre-wrap; font-size: 0.9em; text-align: left;">${permit.description.trim()}</div>
                                         </div>` : ''
                                     }
                                 </div>
@@ -13058,6 +13073,28 @@
                 mainBinValue.textContent = '-';
             }
         }
+
+        // Disclaimer Modal Functions
+        function acceptDisclaimer() {
+            const modal = document.getElementById('disclaimerModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+            // Store acceptance in sessionStorage (resets when browser is closed)
+            sessionStorage.setItem('disclaimerAccepted', 'true');
+        }
+
+        // Check if disclaimer was already accepted this session
+        function checkDisclaimerStatus() {
+            const accepted = sessionStorage.getItem('disclaimerAccepted');
+            const modal = document.getElementById('disclaimerModal');
+            if (accepted === 'true' && modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        // Run on page load
+        document.addEventListener('DOMContentLoaded', checkDisclaimerStatus);
 
 
     </script>
