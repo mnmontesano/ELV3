@@ -1013,6 +1013,34 @@
                         <input type="checkbox" class="export-column" value="importantInfo" checked style="width: 16px; height: 16px; margin: 0;">
                         <span style="color: var(--text-color); font-size: 0.9em;">Important Information</span>
                     </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="export-column" value="permitCount" checked style="width: 16px; height: 16px; margin: 0;">
+                        <span style="color: var(--text-color); font-size: 0.9em;">Permit Count</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="export-column" value="permitNumbers" checked style="width: 16px; height: 16px; margin: 0;">
+                        <span style="color: var(--text-color); font-size: 0.9em;">Permit Numbers</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="export-column" value="permitIssueDates" checked style="width: 16px; height: 16px; margin: 0;">
+                        <span style="color: var(--text-color); font-size: 0.9em;">Permit Issue Dates</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="export-column" value="permitPermittees" checked style="width: 16px; height: 16px; margin: 0;">
+                        <span style="color: var(--text-color); font-size: 0.9em;">Permit Permittees</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="export-column" value="permitFilingStatus" checked style="width: 16px; height: 16px; margin: 0;">
+                        <span style="color: var(--text-color); font-size: 0.9em;">Permit Filing Status</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="export-column" value="permitWorkTypes" checked style="width: 16px; height: 16px; margin: 0;">
+                        <span style="color: var(--text-color); font-size: 0.9em;">Permit Work Types</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="export-column" value="permitDescriptions" checked style="width: 16px; height: 16px; margin: 0;">
+                        <span style="color: var(--text-color); font-size: 0.9em;">Permit Descriptions</span>
+                    </label>
                 </div>
                 
                 <div style="margin-bottom: 15px; padding-top: 15px; border-top: 1px solid var(--input-border);">
@@ -8755,7 +8783,14 @@
                 'violationNumbers',
                 'violationTypes',
                 'violationDescriptions',
-                'importantInfo'
+                'importantInfo',
+                'permitCount',
+                'permitNumbers',
+                'permitIssueDates',
+                'permitPermittees',
+                'permitFilingStatus',
+                'permitWorkTypes',
+                'permitDescriptions'
             ];
             
             // Get the stored data from the last search
@@ -8810,7 +8845,14 @@
                     violationDescriptions: 'Violation Descriptions',
                     testingEligibility: 'Testing Eligibility',
                     eligibleDate: 'Eligible Date',
-                    importantInfo: 'Important Information'
+                    importantInfo: 'Important Information',
+                    permitCount: 'Permit Count',
+                    permitNumbers: 'Permit Numbers',
+                    permitIssueDates: 'Permit Issue Dates',
+                    permitPermittees: 'Permit Permittees',
+                    permitFilingStatus: 'Permit Filing Status',
+                    permitWorkTypes: 'Permit Work Types',
+                    permitDescriptions: 'Permit Descriptions'
                 };
                 
                 const currentYear = new Date().getFullYear();
@@ -8827,6 +8869,24 @@
                             const activeViolations = violations.filter(v => 
                                 v.violation_status?.toUpperCase() === 'ACTIVE' || 
                                 v.violation_status?.toUpperCase() === 'OPEN');
+                            
+                            // Fetch permit information for this device
+                            const permitData = await fetchPermitInfo(device.device_number);
+                            const permits = (permitData.success && permitData.permits) ? permitData.permits : [];
+                            
+                            // Format permit details
+                            const permitNumbers = permits.map(p => p.permit_number || p.job_filing_number || 'N/A').join('; ');
+                            const permitIssueDates = permits.map(p => {
+                                const date = p.issuance_date;
+                                return date ? new Date(date).toLocaleDateString() : 'N/A';
+                            }).join('; ');
+                            const permitPermittees = permits.map(p => p.permittee_s_name || p.business_name || 'N/A').join('; ');
+                            const permitFilingStatus = permits.map(p => p.filing_status || 'N/A').join('; ');
+                            const permitWorkTypes = permits.map(p => p.work_type || p.application_type || 'N/A').join('; ');
+                            const permitDescriptions = permits.map(p => {
+                                const desc = p.description || 'N/A';
+                                return desc.replace(/"/g, '""');
+                            }).join('; ');
                             
                             // Format violation details
                             const violationNumbers = activeViolations.map(v => v.violation_number || 'N/A').join('; ');
@@ -8985,7 +9045,14 @@
                                 violationDescriptions: violationDescriptions || 'N/A',
                                 testingEligibility: testingEligibility,
                                 eligibleDate: eligibleDateDisplay,
-                                importantInfo: importantInfo
+                                importantInfo: importantInfo,
+                                permitCount: permits.length,
+                                permitNumbers: permitNumbers || 'N/A',
+                                permitIssueDates: permitIssueDates || 'N/A',
+                                permitPermittees: permitPermittees || 'N/A',
+                                permitFilingStatus: permitFilingStatus || 'N/A',
+                                permitWorkTypes: permitWorkTypes || 'N/A',
+                                permitDescriptions: permitDescriptions || 'N/A'
                             };
                             
                             // Return array of selected column values
@@ -9022,7 +9089,14 @@
                             violationDescriptions: 'N/A',
                             testingEligibility: 'N/A',
                             eligibleDate: 'N/A',
-                            importantInfo: ''
+                            importantInfo: '',
+                            permitCount: 0,
+                            permitNumbers: 'N/A',
+                            permitIssueDates: 'N/A',
+                            permitPermittees: 'N/A',
+                            permitFilingStatus: 'N/A',
+                            permitWorkTypes: 'N/A',
+                            permitDescriptions: 'N/A'
                         };
                         rows.push(selectedColumns.map(col => notFoundData[col] || ''));
                     });
@@ -9040,11 +9114,11 @@
                 ws['!cols'] = headers.map((h, i) => {
                     const headerName = String(h).toLowerCase();
                     // Wide columns for descriptions and important info
-                    if (headerName.includes('violation description') || headerName.includes('important information')) {
+                    if (headerName.includes('violation description') || headerName.includes('important information') || headerName.includes('permit description')) {
                         return { wch: 80 };
                     }
                     // Medium-wide columns
-                    if (headerName.includes('violation type') || headerName === 'address') {
+                    if (headerName.includes('violation type') || headerName === 'address' || headerName.includes('permit permittee') || headerName.includes('permit work')) {
                         return { wch: 40 };
                     }
                     // Default width
@@ -9113,7 +9187,14 @@
                 'violationNumbers',
                 'violationTypes',
                 'violationDescriptions',
-                'importantInfo'
+                'importantInfo',
+                'permitCount',
+                'permitNumbers',
+                'permitIssueDates',
+                'permitPermittees',
+                'permitFilingStatus',
+                'permitWorkTypes',
+                'permitDescriptions'
             ];
             
             // Get the stored data from the last search
@@ -9168,7 +9249,14 @@
                     violationDescriptions: 'Violation Descriptions',
                     testingEligibility: 'Testing Eligibility',
                     eligibleDate: 'Eligible Date',
-                    importantInfo: 'Important Information'
+                    importantInfo: 'Important Information',
+                    permitCount: 'Permit Count',
+                    permitNumbers: 'Permit Numbers',
+                    permitIssueDates: 'Permit Issue Dates',
+                    permitPermittees: 'Permit Permittees',
+                    permitFilingStatus: 'Permit Filing Status',
+                    permitWorkTypes: 'Permit Work Types',
+                    permitDescriptions: 'Permit Descriptions'
                 };
                 
                 // Create CSV content with selected columns only
@@ -9198,6 +9286,24 @@
                             // Get violation descriptions (use violation_description if available, otherwise use violation_remarks)
                             const violationDescriptions = activeViolations.map(v => {
                                 const desc = v.violation_description || v.violation_remarks || 'N/A';
+                                return desc.replace(/"/g, '""');
+                            }).join('; ');
+                            
+                            // Fetch permit information for this device
+                            const permitData = await fetchPermitInfo(device.device_number);
+                            const permits = (permitData.success && permitData.permits) ? permitData.permits : [];
+                            
+                            // Format permit details
+                            const permitNumbers = permits.map(p => p.permit_number || p.job_filing_number || 'N/A').join('; ');
+                            const permitIssueDates = permits.map(p => {
+                                const date = p.issuance_date;
+                                return date ? new Date(date).toLocaleDateString() : 'N/A';
+                            }).join('; ');
+                            const permitPermittees = permits.map(p => p.permittee_s_name || p.business_name || 'N/A').join('; ');
+                            const permitFilingStatus = permits.map(p => p.filing_status || 'N/A').join('; ');
+                            const permitWorkTypes = permits.map(p => p.work_type || p.application_type || 'N/A').join('; ');
+                            const permitDescriptions = permits.map(p => {
+                                const desc = p.description || 'N/A';
                                 return desc.replace(/"/g, '""');
                             }).join('; ');
 
@@ -9352,7 +9458,14 @@
                                 violationDescriptions: violationDescriptions || 'N/A',
                                 testingEligibility: testingEligibility,
                                 eligibleDate: eligibleDateDisplay,
-                                importantInfo: importantInfo
+                                importantInfo: importantInfo,
+                                permitCount: permits.length,
+                                permitNumbers: permitNumbers || 'N/A',
+                                permitIssueDates: permitIssueDates || 'N/A',
+                                permitPermittees: permitPermittees || 'N/A',
+                                permitFilingStatus: permitFilingStatus || 'N/A',
+                                permitWorkTypes: permitWorkTypes || 'N/A',
+                                permitDescriptions: permitDescriptions || 'N/A'
                             };
                             
                             // Only include selected columns
@@ -9399,7 +9512,14 @@
                             violationDescriptions: 'N/A',
                             testingEligibility: 'N/A',
                             eligibleDate: 'N/A',
-                            importantInfo: ''
+                            importantInfo: '',
+                            permitCount: 0,
+                            permitNumbers: 'N/A',
+                            permitIssueDates: 'N/A',
+                            permitPermittees: 'N/A',
+                            permitFilingStatus: 'N/A',
+                            permitWorkTypes: 'N/A',
+                            permitDescriptions: 'N/A'
                         };
                         const notFoundRow = selectedColumns.map(col => {
                             const fieldStr = String(notFoundData[col] || '');
