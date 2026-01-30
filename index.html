@@ -2458,6 +2458,13 @@
                 negativeToggle.style.color = '#666';
                 negativeToggle.style.borderColor = '#ccc';
             }
+            
+            // Recalculate if there's a custom days value entered
+            const customDaysInput = document.getElementById('customDays');
+            const dateInput = document.getElementById('dateInput');
+            if (customDaysInput && dateInput && customDaysInput.value && dateInput.value && !isNaN(parseInt(customDaysInput.value))) {
+                calculateCustomDate();
+            }
         }
 
         // Function to handle mode selection from mobile dropdown
@@ -2499,12 +2506,15 @@
             // Store the last calculation type and value
             lastCalculation = { type: 'custom', days: days };
             
+            // Apply the dateMode to determine direction (prior = negative, future = positive)
+            const effectiveDays = dateMode === 'negative' ? -Math.abs(days) : Math.abs(days);
+            
             const inputDate = new Date(dateStr + "T12:00:00");
             const resultDate = new Date(inputDate);
-            resultDate.setDate(resultDate.getDate() + days);
+            resultDate.setDate(resultDate.getDate() + effectiveDays);
             
-            const dayText = days > 0 ? " days after " : " days before ";
-            const absDay = Math.abs(days);
+            const dayText = effectiveDays > 0 ? " days after " : " days before ";
+            const absDay = Math.abs(effectiveDays);
             
             document.getElementById('dateResult').textContent = 
                 absDay + dayText + inputDate.toLocaleDateString() + " is " + resultDate.toLocaleDateString();
