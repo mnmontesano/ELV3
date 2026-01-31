@@ -14553,6 +14553,7 @@
         
         // Step 1: Extract all devices and their numbers from ALL pages
         const devices = {}; // Global device index -> deviceNumber
+        const deviceAdditionalText = {}; // Global device index -> additional text from Device # field
         let globalDeviceIndex = 0;
         
         // Sort pages to process in order
@@ -14604,6 +14605,11 @@
                 if (deviceMatch) {
                     const localIndex = parseInt(deviceMatch[1]);
                     const deviceNumber = extractELV3DeviceNumber(value);
+                    
+                    // Also extract full text to capture any additional info after device number
+                    const fullInfo = extractDeviceFieldFullText(value);
+                    const additionalText = fullInfo ? fullInfo.additionalText : null;
+                    
                     if (deviceNumber) {
                         // Calculate global index based on page and local index
                         // Page 2: devices 1-5, Page 3: devices 6-10, etc. (5 per page)
@@ -14623,6 +14629,12 @@
                             devices[globalIdx] = deviceNumber;
                             globalDeviceIndex = Math.max(globalDeviceIndex, globalIdx);
                             
+                            // Store additional text for this device index (for later use in comments)
+                            if (additionalText) {
+                                deviceAdditionalText[globalIdx] = additionalText;
+                                console.log(`Found additional text for device ${deviceNumber}: "${additionalText}"`);
+                            }
+                            
                             // Add to result devices if not already there
                             if (!result.devices.find(d => d.deviceNumber === deviceNumber)) {
                                 result.devices.push({
@@ -14631,7 +14643,7 @@
                                     deviceType: 'Elevator'
                                 });
                             }
-                            console.log(`Found device on Page${pageNum}: index ${globalIdx} = ${deviceNumber}`);
+                            console.log(`Found device on Page${pageNum}: index ${globalIdx} = ${deviceNumber}${additionalText ? ` (${additionalText})` : ''}`);
                         }
                     }
                 }
@@ -14804,6 +14816,8 @@
         for (const [deviceIndex, viol] of Object.entries(mainViolations)) {
             const deviceNumber = devices[deviceIndex];
             if (deviceNumber && viol.partCode) {
+                // Include additional text from Device # field if present
+                const additionalInfo = deviceAdditionalText[deviceIndex] || null;
                 const violation = {
                     deviceNumber: deviceNumber,
                     partCode: viol.partCode,
@@ -14812,10 +14826,11 @@
                     conditionDescription: ELV3_CONDITION_CODES[viol.conditionCode] || viol.conditionCode,
                     remedyCode: viol.remedyCode || null,
                     remedyDescription: ELV3_REMEDY_CODES[viol.remedyCode] || `Remedy ${viol.remedyCode}`,
-                    comments: null
+                    comments: null, // Will be filled by actual comments later
+                    deviceFieldText: additionalInfo // Store the extra text from Device # field separately
                 };
                 result.violations.push(violation);
-                console.log(`Found main violation: Device ${violation.deviceNumber}, Part ${violation.partCode}, Condition ${violation.conditionCode}, Remedy ${violation.remedyCode}`);
+                console.log(`Found main violation: Device ${violation.deviceNumber}, Part ${violation.partCode}, Condition ${violation.conditionCode}, Remedy ${violation.remedyCode}${additionalInfo ? `, Additional: ${additionalInfo}` : ''}`);
             }
         }
         
@@ -14955,6 +14970,8 @@
         for (const triplet of bracketTriplets) {
             const deviceNumber = devices[triplet.deviceIndex];
             if (deviceNumber) {
+                // Include additional text from Device # field if present
+                const additionalInfo = deviceAdditionalText[triplet.deviceIndex] || null;
                 const violation = {
                     deviceNumber: deviceNumber,
                     partCode: triplet.partCode,
@@ -14963,7 +14980,8 @@
                     conditionDescription: ELV3_CONDITION_CODES[triplet.conditionCode] || triplet.conditionCode,
                     remedyCode: triplet.remedyCode,
                     remedyDescription: ELV3_REMEDY_CODES[triplet.remedyCode] || `Remedy ${triplet.remedyCode}`,
-                    comments: null
+                    comments: null, // Will be filled by actual comments later
+                    deviceFieldText: additionalInfo
                 };
                 result.violations.push(violation);
                 console.log(`Found bracket additional violation: Device ${violation.deviceNumber}, Part ${violation.partCode}, Condition ${violation.conditionCode}, Remedy ${violation.remedyCode}`);
@@ -14983,6 +15001,8 @@
                 );
                 
                 if (!exists) {
+                    // Include additional text from Device # field if present
+                    const additionalInfo = deviceAdditionalText[triplet.deviceIndex] || null;
                     const violation = {
                         deviceNumber: deviceNumber,
                         partCode: triplet.partCode,
@@ -14991,7 +15011,8 @@
                         conditionDescription: ELV3_CONDITION_CODES[triplet.conditionCode] || triplet.conditionCode,
                         remedyCode: triplet.remedyCode,
                         remedyDescription: ELV3_REMEDY_CODES[triplet.remedyCode] || `Remedy ${triplet.remedyCode}`,
-                        comments: null
+                        comments: null, // Will be filled by actual comments later
+                        deviceFieldText: additionalInfo
                     };
                     result.violations.push(violation);
                     console.log(`Found additional violation (Page${triplet.page} TextField1_${triplet.fieldStart}): Device ${violation.deviceNumber}, Part ${violation.partCode}, Condition ${violation.conditionCode}, Remedy ${violation.remedyCode}`);
@@ -15093,8 +15114,34 @@
     function extractELV3DeviceNumber(value) {
         if (!value) return null;
         const str = value.toString().trim().toUpperCase();
-        const match = str.match(/(\d[A-Z]\d{3,5})/);
+        // Pattern: 1 digit, 1 letter, 3-8 digits (e.g., 1P49414, 1P0989351)
+        const match = str.match(/(\d[A-Z]\d{3,8})/);
         return match ? match[1] : null;
+    }
+    
+    /**
+     * Extract the full text from a Device # field (device number + any additional text)
+     */
+    function extractDeviceFieldFullText(value) {
+        if (!value) return null;
+        const str = value.toString().trim();
+        const deviceNumber = extractELV3DeviceNumber(str);
+        if (!deviceNumber) return null;
+        
+        // Get any text after the device number
+        const upperStr = str.toUpperCase();
+        const deviceIndex = upperStr.indexOf(deviceNumber);
+        if (deviceIndex === -1) return null;
+        
+        const afterDevice = str.substring(deviceIndex + deviceNumber.length).trim();
+        // Clean up common separators at the start
+        const additionalText = afterDevice.replace(/^[-–—:,\s]+/, '').trim();
+        
+        return {
+            deviceNumber: deviceNumber,
+            additionalText: additionalText || null,
+            fullText: str
+        };
     }
 
     /**
@@ -15127,10 +15174,13 @@
         if (data.violations.length > 0) {
             resultHtml += `
                 <h5 class="elv3-scan-section-title violations">⚠ Devices with Violations</h5>
-                ${Object.entries(data.violationsByDevice).map(([deviceNumber, violations]) => `
+                ${Object.entries(data.violationsByDevice).map(([deviceNumber, violations]) => {
+                    // Get device field text from first violation (they all share the same device)
+                    const deviceFieldText = violations[0]?.deviceFieldText || null;
+                    return `
                     <div class="elv3-scan-device-group">
                         <div class="elv3-scan-device-header violations">
-                            <span class="elv3-scan-device-number">${deviceNumber}</span>
+                            <span class="elv3-scan-device-number">${deviceNumber}${deviceFieldText ? ` <span class="elv3-scan-device-note">${deviceFieldText}</span>` : ''}</span>
                             <span class="elv3-scan-device-count">${violations.length} violation${violations.length > 1 ? 's' : ''}</span>
                         </div>
                         <div class="elv3-scan-device-violations">
@@ -15148,7 +15198,7 @@
                             `).join('')}
                         </div>
                     </div>
-                `).join('')}
+                `}).join('')}
             `;
         }
         
