@@ -6,6 +6,8 @@
     <title>Vertical Terminal</title>
     <link rel="icon" type="image/png" href="logo.png">
     <link rel="stylesheet" href="styles.css">
+    <!-- PDF-lib for ELV3 PDF parsing -->
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     
     <!-- Inline theme application to prevent flash: always follow system -->
     <script>
@@ -358,6 +360,15 @@
                             style="padding: 10px 20px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; box-sizing: border-box; transition: all 0.3s ease; font-size: 1.2em; display: flex; align-items: center; justify-content: center;" 
                             title="View Lookup Log">
                         📋
+                    </button>
+                </div>
+                
+                <!-- Upload ELV3 Button -->
+                <div style="display: flex; justify-content: center; margin: 10px auto;">
+                    <button onclick="showUploadELV3ScanModal()" 
+                            style="padding: 10px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.3s ease; box-shadow: 0 2px 5px rgba(0,0,0,0.2);"
+                            title="Upload and Scan ELV3 Form">
+                        <span>📄</span> Upload ELV3
                     </button>
                 </div>
                 
@@ -13838,6 +13849,1346 @@
     </script>
 
     <script src="device-filter-functions.js"></script>
+
+    <!-- Upload ELV3 Scan Modal -->
+    <div id="uploadELV3ScanModal" class="elv3-scan-modal" style="display: none;">
+        <div class="elv3-scan-modal-content">
+            <div class="elv3-scan-modal-header">
+                <h3>Scan ELV3 Inspection Form</h3>
+                <button class="elv3-scan-close-btn" onclick="closeUploadELV3ScanModal()">&times;</button>
+            </div>
+            <div class="elv3-scan-modal-body">
+                <!-- Left side: Upload controls and results -->
+                <div class="elv3-scan-left-panel">
+                    <div class="elv3-scan-upload-area" id="elv3ScanUploadArea">
+                        <div class="elv3-scan-upload-icon">📄</div>
+                        <p>Drag & drop your ELV3 PDF here</p>
+                        <p class="elv3-scan-upload-hint">or click to select a file</p>
+                        <input type="file" id="elv3ScanFileInput" accept=".pdf" style="display: none;" onchange="handleELV3FileScan(event)">
+                    </div>
+                    
+                    <div id="elv3ScanProgress" class="elv3-scan-progress" style="display: none;">
+                        <div class="elv3-scan-progress-bar">
+                            <div class="elv3-scan-progress-fill" id="elv3ScanProgressFill"></div>
+                        </div>
+                        <p id="elv3ScanStatusText">Parsing ELV3 form...</p>
+                    </div>
+                    
+                    <div id="elv3ScanResult" class="elv3-scan-result" style="display: none;">
+                        <div id="elv3ScanResultContent"></div>
+                    </div>
+                    
+                    <div id="elv3ScanError" class="elv3-scan-error" style="display: none;"></div>
+                </div>
+                
+                <!-- Resizable divider (visible on narrow screens) -->
+                <div class="elv3-scan-divider" id="elv3ScanDivider">
+                    <div class="elv3-scan-divider-handle"></div>
+                </div>
+                
+                <!-- Right side: PDF Preview -->
+                <div class="elv3-scan-right-panel" id="elv3ScanPdfPreviewPanel" style="display: none;">
+                    <div class="elv3-scan-pdf-preview-header">
+                        <h4>PDF Preview</h4>
+                    </div>
+                    <div class="elv3-scan-pdf-preview-container">
+                        <iframe id="elv3ScanPdfPreviewFrame" class="elv3-scan-pdf-preview-frame"></iframe>
+                    </div>
+                </div>
+            </div>
+            <div class="elv3-scan-modal-footer">
+                <button class="elv3-scan-btn elv3-scan-btn-secondary" onclick="closeUploadELV3ScanModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ============================================
+    // ELV3 PDF Scanner Functions
+    // ============================================
+
+    // ELV3 Code Mappings
+    const ELV3_PART_CODES = {
+        "01": "Emergency Stop Switch",
+        "02": "Alarm System",
+        "03": "Car Enclosure",
+        "04": "Side Emergency Exit",
+        "05": "Car Door/Gate",
+        "06": "Car Door/Gate Contact",
+        "07": "Door Reopening Device",
+        "08": "Car Floor to Landing Sill",
+        "09": "Car Floor",
+        "10": "Car Door Gibs",
+        "11": "Car Button Station",
+        "12": "Car Lighting",
+        "13": "Emergency Lighting",
+        "14": "Car Mirror",
+        "15": "Certificate Frame",
+        "16": "Hoistway Doors",
+        "17": "Hoistway Door Gibs",
+        "18": "Hoistway Door Reinforcements",
+        "19": "Hoistway Door Safety Retainer",
+        "20": "Vision Panel",
+        "21": "Interlocks",
+        "22": "Parking Device",
+        "23": "Hall Button Station",
+        "24": "Indicators",
+        "25": "Door Safety Retainer",
+        "26": "Top Emergency Exit Cover",
+        "27": "Governor Release Carrier",
+        "28": "Door Hangers & Connectors",
+        "29": "Door Operator",
+        "30": "Normal Limits",
+        "31": "Final Limits",
+        "32": "Guide Shoes / Roller Guides",
+        "33": "Counterweight",
+        "34": "Hoistway",
+        "35": "Electrical Wiring",
+        "36": "Pipes and Ducts",
+        "37": "Overhead & Deflector Sheave",
+        "38": "Traveling Cable & Junction",
+        "39": "Car Top",
+        "40": "Machine Room",
+        "41": "Machine Room Door",
+        "42": "Controller—Selector",
+        "43": "Reverse Phase Relay",
+        "44": "Traction Sheave",
+        "45": "Governor",
+        "46": "Governor Switch",
+        "47": "Drum",
+        "48": "Pump Unit",
+        "49": "Drum Machine Limit SW",
+        "50": "Generator",
+        "51": "Slack Rope Switch",
+        "52": "Hoist Cables",
+        "53": "Governor Ropes",
+        "54": "Car Counterweight Rope",
+        "55": "Drum Counterweight Rope",
+        "56": "Hoist Machine",
+        "57": "Hoist Motor",
+        "58": "Worm / Gear / Bearings",
+        "59": "Machine Brake",
+        "60": "Lighting Machine Space",
+        "61": "Machine Disconnect SW",
+        "62": "Commutator",
+        "63": "Motor Brushes",
+        "64": "NYC Device #",
+        "65": "Unintended Car Movement",
+        "66": "Emergency Brake/Rope Gripper",
+        "67": "Communication",
+        "68": "Maintenance Log",
+        "69": "Code Data Plate",
+        "70": "Pit",
+        "71": "Pit Light",
+        "72": "Pit Stop Switch",
+        "73": "Car Guide-Rails & Brackets",
+        "74": "Cwt Guide-Rails & Brackets",
+        "75": "Buffers",
+        "76": "Car Safety & Tail Rope",
+        "77": "Underside Platform",
+        "78": "Tension Weight",
+        "79": "Comp / Chains / Ropes / Switch",
+        "80": "Counterweight Runby",
+        "81": "Counterweight Runby Signage",
+        "82": "Plunger Gripper",
+        "83": "Fire Shutters",
+        "84": "Skirt Switch",
+        "85": "Skirt Deflection Device",
+        "86": "Comb Plate / Comb Plate Teeth",
+        "87": "Landing Plate / Impact Switches",
+        "88": "Handrails / Handrail Safeties",
+        "89": "Step / Thread",
+        "90": "Key Switch",
+        "91": "Emergency Stop Button",
+        "92": "Decking and Balustrades",
+        "93": "Ceiling Guards",
+        "94": "Deck Barricades",
+        "95": "Internal Safeties",
+        "96": "Safety Signage",
+        "97": "Entire Device",
+        "98": "Current Five Year Tag",
+        "99": "Current One Year Tag",
+        "100": "Miscellaneous"
+    };
+
+    const ELV3_CONDITION_CODES = {
+        "A": "Altered",
+        "B": "Insufficient",
+        "C": "Padlocked",
+        "D": "Unsecured",
+        "E": "Rubbing",
+        "F": "Lost Motion",
+        "G": "Improper Fuses",
+        "H": "Worn",
+        "I": "Damaged",
+        "J": "Misaligned",
+        "K": "Rusted",
+        "L": "Defective",
+        "M": "Missing",
+        "N": "By-passed",
+        "O": "Dirty",
+        "P": "No Means of Access",
+        "Q": "Unguarded",
+        "R": "Illegal",
+        "S": "Not Fire Retardant",
+        "T": "Unlabeled",
+        "U": "Device Not Tagged",
+        "V": "Not Level",
+        "W": "Unlocked",
+        "X": "Inoperative",
+        "Y": "Oil Leak",
+        "Z": "Water Leak",
+        "AA": "Carbon Buildup",
+        "BB": "Expired Tag"
+    };
+
+    const ELV3_REMEDY_CODES = {
+        "01": "Adjust",
+        "02": "Clean",
+        "03": "Install Guards",
+        "04": "Patch",
+        "05": "Perform & File Test",
+        "06": "Properly Secure",
+        "07": "Provide",
+        "08": "Regroove",
+        "09": "Remove",
+        "10": "Repair",
+        "11": "Replace",
+        "12": "Reshackle",
+        "13": "Seal",
+        "14": "Shorten",
+        "15": "Tag Device",
+        "16": "Provide Means of Access",
+        "17": "Re-inspection Required"
+    };
+
+    /**
+     * Get the location suffix for a part code based on its numeric range
+     */
+    function getELV3PartLocation(partCode) {
+        const intValue = parseInt(partCode, 10);
+        
+        if (intValue >= 1 && intValue <= 15) return " (Inside Car)";
+        if (intValue >= 16 && intValue <= 25) return " (Outside Hoistway)";
+        if (intValue >= 26 && intValue <= 39) return " (Top of Car)";
+        if (intValue >= 40 && intValue <= 69) return " (Machine Room)";
+        if (intValue >= 70 && intValue <= 82) return " (Pit)";
+        if (intValue >= 83 && intValue <= 96) return " (Escalator/Moving Walk)";
+        if (intValue >= 97 && intValue <= 100) return " (All Types)";
+        
+        return "";
+    }
+
+    /**
+     * Get full part description including location
+     */
+    function getELV3PartDescriptionWithLocation(partCode) {
+        const baseName = ELV3_PART_CODES[partCode] || `Part ${partCode}`;
+        const location = getELV3PartLocation(partCode);
+        return baseName + location;
+    }
+
+    /**
+     * Show the upload ELV3 scan modal
+     */
+    function showUploadELV3ScanModal() {
+        const modal = document.getElementById('uploadELV3ScanModal');
+        modal.style.display = 'flex';
+        
+        // Reset state
+        document.getElementById('elv3ScanUploadArea').style.display = 'block';
+        document.getElementById('elv3ScanProgress').style.display = 'none';
+        document.getElementById('elv3ScanResult').style.display = 'none';
+        document.getElementById('elv3ScanError').style.display = 'none';
+        document.getElementById('elv3ScanPdfPreviewPanel').style.display = 'none';
+        
+        // Setup drag and drop
+        const uploadArea = document.getElementById('elv3ScanUploadArea');
+        uploadArea.onclick = () => document.getElementById('elv3ScanFileInput').click();
+        
+        uploadArea.ondragover = (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('drag-over');
+        };
+        
+        uploadArea.ondragleave = () => {
+            uploadArea.classList.remove('drag-over');
+        };
+        
+        uploadArea.ondrop = (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('drag-over');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].type === 'application/pdf') {
+                showPdfScanPreview(files[0]);
+                processELV3Scan(files[0]);
+            } else {
+                document.getElementById('elv3ScanError').textContent = 'Please upload a PDF file';
+                document.getElementById('elv3ScanError').style.display = 'block';
+            }
+        };
+    }
+
+    /**
+     * Close the upload ELV3 scan modal
+     */
+    function closeUploadELV3ScanModal() {
+        const modal = document.getElementById('uploadELV3ScanModal');
+        modal.style.display = 'none';
+        
+        // Reset the PDF preview
+        const previewPanel = document.getElementById('elv3ScanPdfPreviewPanel');
+        const previewFrame = document.getElementById('elv3ScanPdfPreviewFrame');
+        
+        if (previewFrame.src && previewFrame.src.startsWith('blob:')) {
+            URL.revokeObjectURL(previewFrame.src);
+        }
+        
+        previewFrame.src = '';
+        previewPanel.style.display = 'none';
+        previewPanel.classList.remove('elv3-scan-pdf-fullscreen');
+        
+        // Reset file input
+        document.getElementById('elv3ScanFileInput').value = '';
+    }
+
+    /**
+     * Toggle PDF preview visibility
+     */
+    function togglePdfPreview() {
+        const pdfPanel = document.getElementById('elv3ScanPdfPreviewPanel');
+        const divider = document.getElementById('elv3ScanDivider');
+        const toggleBtn = document.querySelector('.elv3-scan-toggle-pdf-btn');
+        const leftPanel = document.querySelector('.elv3-scan-left-panel');
+        
+        if (pdfPanel.style.display === 'none' || pdfPanel.classList.contains('hidden')) {
+            // Show PDF
+            pdfPanel.style.display = 'flex';
+            pdfPanel.classList.remove('hidden');
+            divider.style.display = '';
+            toggleBtn.querySelector('.toggle-text').textContent = 'Hide PDF';
+            toggleBtn.classList.remove('pdf-hidden');
+            
+            // Reset flex on narrow screens
+            if (window.innerWidth <= 900) {
+                leftPanel.style.flex = '';
+                leftPanel.style.height = '';
+            }
+        } else {
+            // Hide PDF
+            pdfPanel.style.display = 'none';
+            pdfPanel.classList.add('hidden');
+            divider.style.display = 'none';
+            toggleBtn.querySelector('.toggle-text').textContent = 'Show PDF';
+            toggleBtn.classList.add('pdf-hidden');
+            
+            // Make left panel take full space
+            if (window.innerWidth <= 900) {
+                leftPanel.style.flex = '1';
+            }
+        }
+    }
+
+    /**
+     * Copy BIN to clipboard
+     */
+    function copyBinToClipboard(bin) {
+        navigator.clipboard.writeText(bin).then(() => {
+            // Show brief visual feedback
+            const binElement = document.querySelector('.elv3-scan-bin-copy');
+            if (binElement) {
+                const originalText = binElement.textContent;
+                binElement.textContent = 'Copied!';
+                binElement.classList.add('copied');
+                setTimeout(() => {
+                    binElement.textContent = originalText;
+                    binElement.classList.remove('copied');
+                }, 1500);
+            }
+        }).catch(err => {
+            console.error('Failed to copy BIN:', err);
+        });
+    }
+
+    /**
+     * Handle file selection
+     */
+    function handleELV3FileScan(event) {
+        const file = event.target.files[0];
+        if (file) {
+            showPdfScanPreview(file);
+            processELV3Scan(file);
+        }
+    }
+
+    /**
+     * Show PDF preview in the right panel
+     */
+    function showPdfScanPreview(file) {
+        const previewPanel = document.getElementById('elv3ScanPdfPreviewPanel');
+        const previewFrame = document.getElementById('elv3ScanPdfPreviewFrame');
+        
+        const fileUrl = URL.createObjectURL(file);
+        previewFrame.src = fileUrl;
+        previewPanel.style.display = 'flex';
+    }
+
+    /**
+     * Toggle PDF fullscreen mode
+     */
+    function togglePdfScanFullscreen() {
+        const previewPanel = document.getElementById('elv3ScanPdfPreviewPanel');
+        previewPanel.classList.toggle('elv3-scan-pdf-fullscreen');
+        
+        const btn = previewPanel.querySelector('.elv3-scan-fullscreen-btn');
+        if (previewPanel.classList.contains('elv3-scan-pdf-fullscreen')) {
+            btn.textContent = '✕ Exit Fullscreen';
+        } else {
+            btn.textContent = '⛶ Fullscreen';
+        }
+    }
+
+    /**
+     * Initialize resizable divider for narrow screens
+     */
+    (function initResizableDivider() {
+        const divider = document.getElementById('elv3ScanDivider');
+        const modalBody = document.querySelector('.elv3-scan-modal-body');
+        let isDragging = false;
+        let startY = 0;
+        let startPdfHeight = 0;
+        let startViolationsHeight = 0;
+
+        function onDragStart(e) {
+            // Only work on narrow screens when divider is visible
+            if (window.getComputedStyle(divider).display === 'none') return;
+            
+            isDragging = true;
+            divider.classList.add('dragging');
+            
+            const pdfPanel = document.getElementById('elv3ScanPdfPreviewPanel');
+            const violationsPanel = document.querySelector('.elv3-scan-left-panel');
+            
+            startY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+            startPdfHeight = pdfPanel.offsetHeight;
+            startViolationsHeight = violationsPanel.offsetHeight;
+            
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+            
+            e.preventDefault();
+        }
+
+        function onDragMove(e) {
+            if (!isDragging) return;
+            
+            const pdfPanel = document.getElementById('elv3ScanPdfPreviewPanel');
+            const violationsPanel = document.querySelector('.elv3-scan-left-panel');
+            
+            const currentY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+            const deltaY = currentY - startY;
+            
+            // Since PDF is on top (order: -1), dragging down makes PDF taller
+            const newPdfHeight = Math.max(100, Math.min(startPdfHeight + deltaY, modalBody.offsetHeight - 150));
+            const newViolationsHeight = Math.max(100, startViolationsHeight - deltaY);
+            
+            pdfPanel.style.height = newPdfHeight + 'px';
+            pdfPanel.style.flex = 'none';
+            violationsPanel.style.height = newViolationsHeight + 'px';
+            violationsPanel.style.flex = 'none';
+        }
+
+        function onDragEnd() {
+            if (!isDragging) return;
+            
+            isDragging = false;
+            divider.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+
+        // Mouse events
+        divider.addEventListener('mousedown', onDragStart);
+        document.addEventListener('mousemove', onDragMove);
+        document.addEventListener('mouseup', onDragEnd);
+
+        // Touch events for mobile
+        divider.addEventListener('touchstart', onDragStart, { passive: false });
+        document.addEventListener('touchmove', onDragMove, { passive: false });
+        document.addEventListener('touchend', onDragEnd);
+
+        // Reset heights when window resizes to desktop
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 900) {
+                const pdfPanel = document.getElementById('elv3ScanPdfPreviewPanel');
+                const violationsPanel = document.querySelector('.elv3-scan-left-panel');
+                if (pdfPanel) {
+                    pdfPanel.style.height = '';
+                    pdfPanel.style.flex = '';
+                }
+                if (violationsPanel) {
+                    violationsPanel.style.height = '';
+                    violationsPanel.style.flex = '';
+                }
+            }
+        });
+    })();
+
+    /**
+     * Process and parse ELV3 PDF file
+     */
+    async function processELV3Scan(file) {
+        const uploadArea = document.getElementById('elv3ScanUploadArea');
+        const progressDiv = document.getElementById('elv3ScanProgress');
+        const progressFill = document.getElementById('elv3ScanProgressFill');
+        const statusText = document.getElementById('elv3ScanStatusText');
+        const resultDiv = document.getElementById('elv3ScanResult');
+        const errorDiv = document.getElementById('elv3ScanError');
+        
+        // Hide upload area, show progress
+        uploadArea.style.display = 'none';
+        progressDiv.style.display = 'block';
+        resultDiv.style.display = 'none';
+        errorDiv.style.display = 'none';
+        
+        progressFill.classList.add('indeterminate');
+        statusText.textContent = 'Parsing ELV3 form...';
+        
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const result = await parseELV3PDFClient(arrayBuffer);
+            
+            // Try to fetch BIN from DOB API using the first device number
+            if (result.devices.length > 0 && !result.bin) {
+                statusText.textContent = 'Looking up BIN number...';
+                const firstDevice = result.devices[0];
+                const deviceNumber = firstDevice.deviceNumber || firstDevice;
+                console.log(`Looking up BIN for device: ${deviceNumber}`);
+                try {
+                    // Use the same API as the rest of the site: e5aq-a4j2.json?device_number=
+                    const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber)}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data && data.length > 0 && data[0].bin) {
+                            result.bin = data[0].bin;
+                            // Also get address if not already set
+                            if (!result.address && data[0].house_number && data[0].street_name) {
+                                result.address = `${data[0].house_number} ${data[0].street_name}`.trim();
+                            }
+                            console.log(`BIN fetched from API: ${result.bin}, Address: ${result.address}`);
+                        }
+                    }
+                } catch (apiError) {
+                    console.log('Could not fetch BIN from API:', apiError);
+                }
+            }
+            
+            progressFill.classList.remove('indeterminate');
+            progressDiv.style.display = 'none';
+            
+            // Show success result
+            resultDiv.style.display = 'block';
+            resultDiv.classList.remove('error');
+            
+            renderELV3ScanResult(result);
+            
+        } catch (error) {
+            progressFill.classList.remove('indeterminate');
+            progressDiv.style.display = 'none';
+            
+            resultDiv.style.display = 'block';
+            resultDiv.classList.add('error');
+            document.getElementById('elv3ScanResultContent').innerHTML = `
+                <h4>✗ Scan Failed</h4>
+                <div class="elv3-scan-result-details">
+                    <p>${error.message}</p>
+                </div>
+            `;
+            
+            setTimeout(() => {
+                uploadArea.style.display = 'block';
+            }, 2000);
+        }
+    }
+
+    /**
+     * Parse ELV3 PDF client-side using pdf-lib
+     */
+    async function parseELV3PDFClient(arrayBuffer) {
+        const result = {
+            success: false,
+            address: null,
+            bin: null,
+            devices: [],
+            violations: [],
+            violationsByDevice: {},
+            satisfactoryDevices: [],
+            devicesWithViolations: []
+        };
+        
+        try {
+            // Check if PDFLib is loaded
+            if (typeof PDFLib === 'undefined') {
+                throw new Error('PDF library not loaded. Please refresh the page and try again.');
+            }
+            
+            console.log('PDFLib loaded:', typeof PDFLib);
+            console.log('PDFLib.PDFDocument:', typeof PDFLib.PDFDocument);
+            
+            const { PDFDocument } = PDFLib;
+            console.log('Loading PDF, buffer size:', arrayBuffer.byteLength);
+            
+            const pdfDoc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+            console.log('PDF loaded successfully, pages:', pdfDoc.getPageCount());
+            
+            const form = pdfDoc.getForm();
+            console.log('Form object:', form);
+            
+            const fields = form.getFields();
+            console.log('Raw fields array:', fields);
+            
+            console.log('Total PDF form fields found:', fields.length);
+            
+            // Extract all form field values
+            const formData = {};
+            const allFieldNames = [];
+            
+            for (const field of fields) {
+                const name = field.getName();
+                allFieldNames.push(name);
+                let value = null;
+                
+                // Log field type info for debugging
+                const fieldMethods = [];
+                if (typeof field.getText === 'function') fieldMethods.push('getText');
+                if (typeof field.isChecked === 'function') fieldMethods.push('isChecked');
+                if (typeof field.getSelected === 'function') fieldMethods.push('getSelected');
+                if (typeof field.getOptions === 'function') fieldMethods.push('getOptions');
+                
+                try {
+                    // Use duck typing instead of constructor.name (which can be minified in browser)
+                    // Check for getText method (PDFTextField)
+                    if (typeof field.getText === 'function') {
+                        value = field.getText();
+                    }
+                    // Check for isChecked method (PDFCheckBox)
+                    else if (typeof field.isChecked === 'function') {
+                        value = field.isChecked();
+                    }
+                    // Check for getSelected method (PDFDropdown, PDFRadioGroup)
+                    else if (typeof field.getSelected === 'function') {
+                        value = field.getSelected();
+                    }
+                    // Check for getOptions method (PDFOptionList)
+                    else if (typeof field.getOptions === 'function') {
+                        value = field.getSelected ? field.getSelected() : null;
+                    }
+                } catch (e) {
+                    // Field might not have a value, try alternative approaches
+                    console.log(`Could not get value for field "${name}" (methods: ${fieldMethods.join(', ')}):`, e.message);
+                }
+                
+                // Store all values including empty ones for debugging
+                if (value !== null && value !== undefined) {
+                    if (value !== '') {
+                        formData[name] = value;
+                    }
+                    console.log(`Field "${name}" [${fieldMethods.join(', ')}] = "${value}"`);
+                } else {
+                    console.log(`Field "${name}" [${fieldMethods.join(', ')}] = (no value)`);
+                }
+            }
+            
+            console.log('Fields with values:', Object.keys(formData).length);
+            console.log('All field names:', allFieldNames);
+            console.log('All form data:', formData);
+            
+            // Parse the form data
+            parseELV3FormData(formData, result, allFieldNames);
+            
+            // Match server-side logic: success if devices OR violations found
+            result.success = result.devices.length > 0 || result.violations.length > 0;
+            
+            if (!result.success) {
+                // Log debug info to help diagnose
+                console.log('=== DEBUG: No devices or violations found ===');
+                console.log('Total fields:', allFieldNames.length);
+                console.log('Fields with values:', Object.keys(formData).length);
+                
+                // Show more helpful error message
+                if (allFieldNames.length === 0) {
+                    throw new Error('PDF has no form fields. This may not be a fillable ELV3 form.');
+                } else if (Object.keys(formData).length === 0) {
+                    throw new Error('PDF form fields are empty. The form may not be filled out.');
+                } else {
+                    throw new Error('Could not find device numbers in form. Check browser console (F12) for field names.');
+                }
+            }
+            
+        } catch (error) {
+            console.error('PDF parsing error:', error);
+            throw new Error(`Failed to parse PDF: ${error.message}`);
+        }
+        
+        return result;
+    }
+
+    /**
+     * Parse ELV3 form data into structured result
+     * This is a direct port of the server's parseXFAFormFields function
+     */
+    function parseELV3FormData(formData, result, allFieldNames) {
+        console.log('Parsing XFA form fields, total fields:', Object.keys(formData).length);
+        
+        // Detect which pages exist in the form
+        const pagesFound = new Set();
+        for (const fieldName of Object.keys(formData)) {
+            const pageMatch = fieldName.match(/Page(\d+)/i);
+            if (pageMatch) {
+                pagesFound.add(parseInt(pageMatch[1]));
+            }
+        }
+        console.log('Pages found in PDF:', Array.from(pagesFound).sort((a,b) => a-b));
+        
+        // Step 1: Extract all devices and their numbers from ALL pages
+        const devices = {}; // Global device index -> deviceNumber
+        let globalDeviceIndex = 0;
+        
+        // Sort pages to process in order
+        const sortedPages = Array.from(pagesFound).sort((a, b) => a - b);
+        
+        // First, look for devices on Page1 (devices 6+ have _N_Device pattern on Page1)
+        for (const [fieldName, value] of Object.entries(formData)) {
+            if (!value || value === '') continue;
+            if (!fieldName.includes('Page1')) continue;
+            
+            // Look for device fields with pattern like _6_Device, _7_Device etc. (devices 6+)
+            const deviceMatch = fieldName.match(/_(\d+)_Device/i);
+            if (deviceMatch) {
+                const deviceIndex = parseInt(deviceMatch[1]);
+                // Only capture devices 6+ from Page1 (devices 1-5 come from Page2)
+                if (deviceIndex >= 6) {
+                    const deviceNumber = extractELV3DeviceNumber(value);
+                    if (deviceNumber && !devices[deviceIndex]) {
+                        devices[deviceIndex] = deviceNumber;
+                        globalDeviceIndex = Math.max(globalDeviceIndex, deviceIndex);
+                        
+                        if (!result.devices.find(d => d.deviceNumber === deviceNumber)) {
+                            result.devices.push({
+                                deviceNumber: deviceNumber,
+                                satisfactory: false,
+                                deviceType: 'Elevator'
+                            });
+                        }
+                        console.log(`Found device on Page1: index ${deviceIndex} = ${deviceNumber}`);
+                    }
+                }
+            }
+        }
+        
+        // Then process Page2+ for devices 1-5 and devices 10+
+        for (const pageNum of sortedPages) {
+            // Skip Page1 as devices 1-5 are detailed on Page2+
+            if (pageNum < 2) continue;
+            
+            const pagePattern = new RegExp(`Page${pageNum}`, 'i');
+            
+            for (const [fieldName, value] of Object.entries(formData)) {
+                if (!value || value === '') continue;
+                if (!pagePattern.test(fieldName)) continue;
+                
+                // Look for device fields with pattern like _1_Device_0_ or _2_Device_0_ etc.
+                // Support device indices from 1-99 to handle many devices
+                const deviceMatch = fieldName.match(/_(\d+)_Device/i);
+                if (deviceMatch) {
+                    const localIndex = parseInt(deviceMatch[1]);
+                    const deviceNumber = extractELV3DeviceNumber(value);
+                    if (deviceNumber) {
+                        // Calculate global index based on page and local index
+                        // Page 2: devices 1-5, Page 3: devices 6-10, etc. (5 per page)
+                        // But devices 10+ on Page2 use their actual index
+                        let globalIdx;
+                        if (localIndex >= 10) {
+                            // Device 10+ on Page2 uses actual index
+                            globalIdx = localIndex;
+                        } else {
+                            // Devices 1-5 per page
+                            const devicesPerPage = 5;
+                            const pageOffset = (pageNum - 2) * devicesPerPage;
+                            globalIdx = pageOffset + localIndex;
+                        }
+                        
+                        if (!devices[globalIdx]) {
+                            devices[globalIdx] = deviceNumber;
+                            globalDeviceIndex = Math.max(globalDeviceIndex, globalIdx);
+                            
+                            // Add to result devices if not already there
+                            if (!result.devices.find(d => d.deviceNumber === deviceNumber)) {
+                                result.devices.push({
+                                    deviceNumber: deviceNumber,
+                                    satisfactory: false,
+                                    deviceType: 'Elevator'
+                                });
+                            }
+                            console.log(`Found device on Page${pageNum}: index ${globalIdx} = ${deviceNumber}`);
+                        }
+                    }
+                }
+                
+                // Extract address from first Page2 field found
+                const lowerName = fieldName.toLowerCase();
+                if (lowerName.includes('textfield1_0_') && pageNum === 2 && !result.address) {
+                    result.address = value.toString().trim();
+                }
+            }
+        }
+        
+        console.log('Total devices found:', Object.keys(devices).length, devices);
+        
+        // Step 1b: Extract satisfactory/unsatisfactory status from Page1 checkboxes
+        // On Page1, devices are listed with Satisfactory and Unsatisfactory checkboxes
+        // Based on analysis:
+        // Devices 1-5:   SAT = 34-38,  UNSAT = 39-43
+        // Devices 6-10:  SAT = 44-48,  UNSAT = 49-53
+        // Devices 11-15: SAT = 54-58,  UNSAT = 59-63
+        // Devices 16-20: SAT = 64-68,  UNSAT = 69-73
+        // Devices 21-25: SAT = 74-78,  UNSAT = 79-83
+        const deviceStatus = {}; // deviceIndex -> { satisfactory: bool, unsatisfactory: bool }
+        
+        for (const [fieldName, value] of Object.entries(formData)) {
+            if (!fieldName.includes('Page1')) continue;
+            
+            // Look for satisfactory checkbox pattern
+            const checkboxMatch = fieldName.match(/CheckBox1_(\d+)/);
+            if (checkboxMatch && value === true) {
+                const checkboxNum = parseInt(checkboxMatch[1]);
+                
+                // Determine which device row (0=devices 1-5, 1=devices 6-10, etc.)
+                // and whether it's SAT or UNSAT
+                // Pattern: Each row of 5 devices has 5 SAT checkboxes then 5 UNSAT checkboxes
+                // Row 0: 34-38 SAT, 39-43 UNSAT
+                // Row 1: 44-48 SAT, 49-53 UNSAT
+                // etc.
+                
+                if (checkboxNum >= 34) {
+                    const adjustedNum = checkboxNum - 34;
+                    const rowOf10 = Math.floor(adjustedNum / 10); // Each row has 10 checkboxes (5 SAT + 5 UNSAT)
+                    const posInRow = adjustedNum % 10;
+                    
+                    const isSatisfactory = posInRow < 5;
+                    const deviceInRow = posInRow < 5 ? posInRow : posInRow - 5;
+                    const deviceIdx = (rowOf10 * 5) + deviceInRow + 1;
+                    
+                    if (!deviceStatus[deviceIdx]) deviceStatus[deviceIdx] = {};
+                    
+                    if (isSatisfactory) {
+                        deviceStatus[deviceIdx].satisfactory = true;
+                        console.log(`Device ${deviceIdx} marked as SATISFACTORY (CheckBox1_${checkboxNum})`);
+                    } else {
+                        deviceStatus[deviceIdx].unsatisfactory = true;
+                        console.log(`Device ${deviceIdx} marked as UNSATISFACTORY (CheckBox1_${checkboxNum})`);
+                    }
+                }
+            }
+        }
+        
+        // Update device satisfactory status in result
+        for (const device of result.devices) {
+            const deviceIdx = Object.entries(devices).find(([idx, num]) => num === device.deviceNumber)?.[0];
+            if (deviceIdx && deviceStatus[deviceIdx]) {
+                device.satisfactory = deviceStatus[deviceIdx].satisfactory === true && !deviceStatus[deviceIdx].unsatisfactory;
+            }
+        }
+        
+        console.log('Device status:', deviceStatus);
+        
+        // Step 2: Extract violations from main Elevator_Part fields (Row 1 for each device)
+        // Scan ALL pages for violation data
+        const mainViolations = {}; // globalDeviceIndex -> {partCode, conditionCode, remedyCode}
+        
+        for (const pageNum of sortedPages) {
+            if (pageNum < 2) continue;
+            
+            const pagePattern = new RegExp(`Page${pageNum}`, 'i');
+            const devicesPerPage = 5;
+            const pageOffset = (pageNum - 2) * devicesPerPage;
+            
+            for (const [fieldName, value] of Object.entries(formData)) {
+                if (!value || value === '') continue;
+                if (!pagePattern.test(fieldName)) continue;
+                
+                // Elevator_Part_0_ = device 1 (index 0 maps to device index 1)
+                // Elevator_Part_2_0_ = device 2 (index 2 maps to device index 2)
+                // Elevator_Part_3_0_ = device 3, etc.
+                const partMatch = fieldName.match(/Elevator_Part(?:_(\d+))?_0_/i);
+                if (partMatch) {
+                    const fieldIndex = partMatch[1] ? parseInt(partMatch[1]) : 0;
+                    // Map field index to device: 0->1, 2->2, 3->3, 4->4, 5->5 (local to page)
+                    const localDeviceIndex = fieldIndex === 0 ? 1 : fieldIndex;
+                    const globalDeviceIdx = pageOffset + localDeviceIndex;
+                    if (!mainViolations[globalDeviceIdx]) mainViolations[globalDeviceIdx] = {};
+                    mainViolations[globalDeviceIdx].partCode = value.toString().trim().padStart(2, '0');
+                }
+                
+                const conditionMatch = fieldName.match(/Violation_Condition(?:_(\d+))?_0_/i);
+                if (conditionMatch) {
+                    const fieldIndex = conditionMatch[1] ? parseInt(conditionMatch[1]) : 0;
+                    const localDeviceIndex = fieldIndex === 0 ? 1 : fieldIndex;
+                    const globalDeviceIdx = pageOffset + localDeviceIndex;
+                    if (!mainViolations[globalDeviceIdx]) mainViolations[globalDeviceIdx] = {};
+                    mainViolations[globalDeviceIdx].conditionCode = value.toString().trim().toUpperCase();
+                }
+                
+                const remedyMatch = fieldName.match(/Suggested_Remedy(?:_(\d+))?_0_/i);
+                if (remedyMatch) {
+                    const fieldIndex = remedyMatch[1] ? parseInt(remedyMatch[1]) : 0;
+                    const localDeviceIndex = fieldIndex === 0 ? 1 : fieldIndex;
+                    const globalDeviceIdx = pageOffset + localDeviceIndex;
+                    if (!mainViolations[globalDeviceIdx]) mainViolations[globalDeviceIdx] = {};
+                    mainViolations[globalDeviceIdx].remedyCode = value.toString().trim().padStart(2, '0');
+                }
+            }
+        }
+        
+        // Step 2b: Extract violations for devices 10+ using Elevator_Part_6[N] pattern
+        // This section uses array indices: [1] = device 12, [2] = device 13, etc.
+        // Formula: device_number = 11 + array_index
+        const devices10PlusViolations = {}; // deviceIndex -> { partCode, conditionCode, remedyCode }
+        
+        for (const [fieldName, value] of Object.entries(formData)) {
+            if (!value || value === '') continue;
+            if (!fieldName.includes('Page2')) continue;
+            
+            // Match Elevator_Part_6[N] pattern (NOT Elevator_Part_6_0 which is underscore format)
+            const partMatch6 = fieldName.match(/Elevator_Part_6\[(\d+)\]/i);
+            if (partMatch6) {
+                const arrayIndex = parseInt(partMatch6[1]);
+                if (arrayIndex > 0) { // [0] is usually empty, [1]+ are devices 12+
+                    const deviceIdx = 11 + arrayIndex; // [1] = device 12, [2] = device 13
+                    if (!devices10PlusViolations[deviceIdx]) devices10PlusViolations[deviceIdx] = {};
+                    devices10PlusViolations[deviceIdx].partCode = value.toString().trim().padStart(2, '0');
+                    console.log(`Found device 10+ violation part: Device ${deviceIdx}, Part ${value}`);
+                }
+            }
+            
+            const conditionMatch6 = fieldName.match(/Violation_Condition_6\[(\d+)\]/i);
+            if (conditionMatch6) {
+                const arrayIndex = parseInt(conditionMatch6[1]);
+                if (arrayIndex > 0) {
+                    const deviceIdx = 11 + arrayIndex;
+                    if (!devices10PlusViolations[deviceIdx]) devices10PlusViolations[deviceIdx] = {};
+                    devices10PlusViolations[deviceIdx].conditionCode = value.toString().trim().toUpperCase();
+                }
+            }
+            
+            const remedyMatch6 = fieldName.match(/Suggested_Remedy_6\[(\d+)\]/i);
+            if (remedyMatch6) {
+                const arrayIndex = parseInt(remedyMatch6[1]);
+                if (arrayIndex > 0) {
+                    const deviceIdx = 11 + arrayIndex;
+                    if (!devices10PlusViolations[deviceIdx]) devices10PlusViolations[deviceIdx] = {};
+                    devices10PlusViolations[deviceIdx].remedyCode = value.toString().trim().padStart(2, '0');
+                }
+            }
+        }
+        
+        // Add devices 10+ violations to mainViolations
+        for (const [deviceIdx, viol] of Object.entries(devices10PlusViolations)) {
+            if (viol.partCode) {
+                mainViolations[deviceIdx] = viol;
+            }
+        }
+        
+        // Add main violations to result
+        for (const [deviceIndex, viol] of Object.entries(mainViolations)) {
+            const deviceNumber = devices[deviceIndex];
+            if (deviceNumber && viol.partCode) {
+                const violation = {
+                    deviceNumber: deviceNumber,
+                    partCode: viol.partCode,
+                    partDescription: getELV3PartDescriptionWithLocation(viol.partCode),
+                    conditionCode: viol.conditionCode || null,
+                    conditionDescription: ELV3_CONDITION_CODES[viol.conditionCode] || viol.conditionCode,
+                    remedyCode: viol.remedyCode || null,
+                    remedyDescription: ELV3_REMEDY_CODES[viol.remedyCode] || `Remedy ${viol.remedyCode}`,
+                    comments: null
+                };
+                result.violations.push(violation);
+                console.log(`Found main violation: Device ${violation.deviceNumber}, Part ${violation.partCode}, Condition ${violation.conditionCode}, Remedy ${violation.remedyCode}`);
+            }
+        }
+        
+        // Step 3: Extract additional violation rows from TextField1_ fields
+        // Scan ALL pages for TextField data
+        const textFieldsByPage = {}; // pageNum -> { fieldNum -> value }
+        
+        for (const pageNum of sortedPages) {
+            if (pageNum < 2) continue;
+            
+            const pagePattern = new RegExp(`Page${pageNum}`, 'i');
+            textFieldsByPage[pageNum] = {};
+            
+            for (const [fieldName, value] of Object.entries(formData)) {
+                if (!value) continue;
+                if (!pagePattern.test(fieldName)) continue;
+                
+                const match = fieldName.match(/TextField1_(\d+)_/);
+                if (match) {
+                    const num = parseInt(match[1]);
+                    textFieldsByPage[pageNum][num] = value.toString().trim();
+                }
+            }
+        }
+        
+        // Step 3b: Also collect TextField1[N] bracket notation (used for devices 10+ additional violations)
+        const bracketTextFields = {}; // fieldNum -> value
+        for (const [fieldName, value] of Object.entries(formData)) {
+            if (!value) continue;
+            if (!fieldName.includes('Page2')) continue;
+            
+            // Match TextField1[N] (bracket notation, not underscore)
+            const bracketMatch = fieldName.match(/TextField1\[(\d+)\]$/);
+            if (bracketMatch) {
+                const num = parseInt(bracketMatch[1]);
+                bracketTextFields[num] = value.toString().trim();
+            }
+        }
+        
+        // Scan for violation triplets (Part, Condition, Remedy)
+        // Part: 2-digit number (01-99)
+        // Condition: 1-2 letters (A-Z, BB, etc.)
+        // Remedy: 2-digit number (01-99)
+        const partPattern = /^\d{1,2}$/;
+        const conditionPattern = /^[A-Z]{1,2}$/i;  // Allow 1-2 letters for conditions like "BB"
+        const remedyPattern = /^\d{1,2}$/;
+        
+        // Each device section has ~27 fields (9 rows x 3 fields)
+        const FIELDS_PER_DEVICE = 27;
+        const FIRST_DEVICE_OFFSET = 7;
+        const devicesPerPage = 5;
+        
+        // Find all valid triplets from ALL pages
+        const foundTriplets = [];
+        
+        for (const pageNum of sortedPages) {
+            if (pageNum < 2) continue;
+            
+            const textFields = textFieldsByPage[pageNum] || {};
+            const pageOffset = (pageNum - 2) * devicesPerPage;
+            
+            // Scan up to 500 fields to handle many devices
+            for (let i = 0; i <= 500; i++) {
+                const a = textFields[i];
+                const b = textFields[i + 1];
+                const c = textFields[i + 2];
+                
+                if (a && b && c) {
+                    const aClean = a.trim();
+                    const bClean = b.trim().toUpperCase();
+                    const cClean = c.trim();
+                    
+                    if (partPattern.test(aClean) && conditionPattern.test(bClean) && remedyPattern.test(cClean)) {
+                        // Determine which device this belongs to based on field offset
+                        const offset = i - FIRST_DEVICE_OFFSET;
+                        const localDeviceIndex = Math.floor(offset / FIELDS_PER_DEVICE) + 1;
+                        const globalDeviceIndex = pageOffset + localDeviceIndex;
+                        
+                        foundTriplets.push({
+                            page: pageNum,
+                            fieldStart: i,
+                            deviceIndex: globalDeviceIndex,
+                            partCode: aClean.padStart(2, '0'),
+                            conditionCode: bClean,
+                            remedyCode: cClean.padStart(2, '0')
+                        });
+                    }
+                }
+            }
+        }
+        
+        console.log(`Found ${foundTriplets.length} potential violation triplets across all pages`);
+        
+        // Step 3c: Find violation triplets in bracket notation TextField1[N] (for devices 10+)
+        const bracketTriplets = [];
+        const bracketIndices = Object.keys(bracketTextFields).map(Number).sort((a, b) => a - b);
+        
+        for (let i = 0; i < bracketIndices.length - 2; i++) {
+            const idx1 = bracketIndices[i];
+            const idx2 = bracketIndices[i + 1];
+            const idx3 = bracketIndices[i + 2];
+            
+            // Check if they're consecutive
+            if (idx2 === idx1 + 1 && idx3 === idx1 + 2) {
+                const a = bracketTextFields[idx1];
+                const b = bracketTextFields[idx2];
+                const c = bracketTextFields[idx3];
+                
+                if (a && b && c) {
+                    const aClean = a.trim();
+                    const bClean = b.trim().toUpperCase();
+                    const cClean = c.trim();
+                    
+                    if (partPattern.test(aClean) && conditionPattern.test(bClean) && remedyPattern.test(cClean)) {
+                        // For bracket notation, device mapping based on field range
+                        let targetDevice = null;
+                        if (idx1 >= 80 && idx1 < 90) targetDevice = 13;
+                        else if (idx1 >= 70 && idx1 < 80) targetDevice = 12;
+                        else if (idx1 >= 90 && idx1 < 100) targetDevice = 14;
+                        
+                        if (targetDevice && devices[targetDevice]) {
+                            bracketTriplets.push({
+                                fieldStart: idx1,
+                                deviceIndex: targetDevice,
+                                partCode: aClean.padStart(2, '0'),
+                                conditionCode: bClean,
+                                remedyCode: cClean.padStart(2, '0')
+                            });
+                            console.log(`Found bracket violation: TextField1[${idx1}] -> Device ${targetDevice}, Part ${aClean}, Condition ${bClean}, Remedy ${cClean}`);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Add bracket triplet violations to result
+        for (const triplet of bracketTriplets) {
+            const deviceNumber = devices[triplet.deviceIndex];
+            if (deviceNumber) {
+                const violation = {
+                    deviceNumber: deviceNumber,
+                    partCode: triplet.partCode,
+                    partDescription: getELV3PartDescriptionWithLocation(triplet.partCode),
+                    conditionCode: triplet.conditionCode,
+                    conditionDescription: ELV3_CONDITION_CODES[triplet.conditionCode] || triplet.conditionCode,
+                    remedyCode: triplet.remedyCode,
+                    remedyDescription: ELV3_REMEDY_CODES[triplet.remedyCode] || `Remedy ${triplet.remedyCode}`,
+                    comments: null
+                };
+                result.violations.push(violation);
+                console.log(`Found bracket additional violation: Device ${violation.deviceNumber}, Part ${violation.partCode}, Condition ${violation.conditionCode}, Remedy ${violation.remedyCode}`);
+            }
+        }
+        
+        // Add TextField violations to result
+        for (const triplet of foundTriplets) {
+            const deviceNumber = devices[triplet.deviceIndex];
+            if (deviceNumber) {
+                // Check if this exact violation already exists (from main fields)
+                const exists = result.violations.some(v => 
+                    v.deviceNumber === deviceNumber && 
+                    v.partCode === triplet.partCode && 
+                    v.conditionCode === triplet.conditionCode &&
+                    v.remedyCode === triplet.remedyCode
+                );
+                
+                if (!exists) {
+                    const violation = {
+                        deviceNumber: deviceNumber,
+                        partCode: triplet.partCode,
+                        partDescription: getELV3PartDescriptionWithLocation(triplet.partCode),
+                        conditionCode: triplet.conditionCode,
+                        conditionDescription: ELV3_CONDITION_CODES[triplet.conditionCode] || triplet.conditionCode,
+                        remedyCode: triplet.remedyCode,
+                        remedyDescription: ELV3_REMEDY_CODES[triplet.remedyCode] || `Remedy ${triplet.remedyCode}`,
+                        comments: null
+                    };
+                    result.violations.push(violation);
+                    console.log(`Found additional violation (Page${triplet.page} TextField1_${triplet.fieldStart}): Device ${violation.deviceNumber}, Part ${violation.partCode}, Condition ${violation.conditionCode}, Remedy ${violation.remedyCode}`);
+                }
+            } else {
+                console.log(`Warning: Found triplet at Page${triplet.page} TextField1_${triplet.fieldStart} but couldn't map to device index ${triplet.deviceIndex}`);
+            }
+        }
+        
+        // Step 4: Look for comments in "Text Field" fields (note the space)
+        const deviceComments = {};
+        const COMMENT_FIELDS_PER_DEVICE = 3;
+        
+        for (const [fieldName, value] of Object.entries(formData)) {
+            if (!value) continue;
+            
+            const strValue = value.toString().trim();
+            if (!strValue) continue;
+            
+            // Look for "Text Field" pattern (with space) - these are the comment fields
+            const textFieldMatch = fieldName.match(/Text Field(\d+)/);
+            if (textFieldMatch) {
+                const fieldNum = parseInt(textFieldMatch[1]);
+                const deviceIndex = Math.floor(fieldNum / COMMENT_FIELDS_PER_DEVICE) + 1;
+                const rowIndex = fieldNum % COMMENT_FIELDS_PER_DEVICE;
+                
+                if (devices[deviceIndex]) {
+                    if (!deviceComments[deviceIndex]) deviceComments[deviceIndex] = [];
+                    deviceComments[deviceIndex].push({
+                        row: rowIndex,
+                        comment: strValue
+                    });
+                    console.log(`Found comment for device ${deviceIndex} (${devices[deviceIndex]}) row ${rowIndex}: ${strValue.substring(0, 50)}...`);
+                }
+            }
+            
+            // Also check for Comment_N_ patterns
+            const commentMatch = fieldName.match(/Comments?_(\d+)?/i);
+            if (commentMatch && strValue.length > 0) {
+                const deviceIdx = commentMatch[1] ? parseInt(commentMatch[1]) : 1;
+                if (!deviceComments[deviceIdx]) deviceComments[deviceIdx] = [];
+                deviceComments[deviceIdx].push({ row: 0, comment: strValue });
+            }
+        }
+        
+        console.log(`Found comments for ${Object.keys(deviceComments).length} devices`);
+        
+        // Attach comments to violations
+        for (const [deviceIndex, comments] of Object.entries(deviceComments)) {
+            const deviceNumber = devices[deviceIndex];
+            if (deviceNumber && comments.length > 0) {
+                const combinedComment = comments.map(c => c.comment).join(' | ');
+                for (const violation of result.violations) {
+                    if (violation.deviceNumber === deviceNumber && !violation.comments) {
+                        violation.comments = combinedComment;
+                    }
+                }
+                console.log(`Attached comments to device ${deviceNumber}: ${combinedComment.substring(0, 80)}...`);
+            }
+        }
+        
+        // Step 5: Group violations by device for easier display
+        result.violationsByDevice = {};
+        for (const violation of result.violations) {
+            if (!result.violationsByDevice[violation.deviceNumber]) {
+                result.violationsByDevice[violation.deviceNumber] = [];
+            }
+            result.violationsByDevice[violation.deviceNumber].push(violation);
+        }
+        
+        // Step 6: Separate devices into those with violations and satisfactory ones
+        result.devicesWithViolations = [];
+        result.satisfactoryDevices = [];
+        
+        for (const device of result.devices) {
+            const hasViolations = result.violationsByDevice[device.deviceNumber]?.length > 0;
+            if (hasViolations) {
+                result.devicesWithViolations.push(device);
+            } else if (device.satisfactory) {
+                result.satisfactoryDevices.push(device);
+            } else {
+                // Device has no violations but wasn't marked satisfactory
+                // Still include in satisfactory list (it was tested)
+                result.satisfactoryDevices.push({
+                    ...device,
+                    satisfactory: true
+                });
+            }
+        }
+        
+        console.log('Total violations found:', result.violations.length);
+        console.log('Devices with violations:', result.devicesWithViolations.length);
+        console.log('Satisfactory devices:', result.satisfactoryDevices.length);
+    }
+
+    /**
+     * Extract device number from a string
+     */
+    function extractELV3DeviceNumber(value) {
+        if (!value) return null;
+        const str = value.toString().trim().toUpperCase();
+        const match = str.match(/(\d[A-Z]\d{3,5})/);
+        return match ? match[1] : null;
+    }
+
+    /**
+     * Render the ELV3 scan result
+     */
+    function renderELV3ScanResult(data) {
+        const devicesWithViolationsCount = Object.keys(data.violationsByDevice).length;
+        const satisfactoryDevices = data.satisfactoryDevices || [];
+        const totalDevices = data.devices.length;
+        
+        let resultHtml = `
+            <h4>✓ Scan Complete</h4>
+            <div class="elv3-scan-result-details">
+                ${data.address ? `<p><strong>Address:</strong> ${data.address}</p>` : ''}
+                ${data.bin ? `<p><strong>BIN:</strong> <span class="elv3-scan-bin-copy" onclick="copyBinToClipboard('${data.bin}')" title="Click to copy">${data.bin}</span></p>` : ''}
+                <p><strong>Devices Scanned:</strong> ${totalDevices}</p>
+                <p><strong>Devices with Violations:</strong> ${devicesWithViolationsCount}</p>
+                <p><strong>Satisfactory Devices:</strong> ${satisfactoryDevices.length}</p>
+                <p><strong>Total Violations:</strong> ${data.violations.length}</p>
+            </div>
+            <button class="elv3-scan-toggle-pdf-btn" onclick="togglePdfPreview()">
+                <span class="toggle-icon">📄</span>
+                <span class="toggle-text">Hide PDF</span>
+            </button>
+        `;
+        
+        resultHtml += `<div class="elv3-scan-results-scroll">`;
+        
+        // Show devices with violations
+        if (data.violations.length > 0) {
+            resultHtml += `
+                <h5 class="elv3-scan-section-title violations">⚠ Devices with Violations</h5>
+                ${Object.entries(data.violationsByDevice).map(([deviceNumber, violations]) => `
+                    <div class="elv3-scan-device-group">
+                        <div class="elv3-scan-device-header violations">
+                            <span class="elv3-scan-device-number">${deviceNumber}</span>
+                            <span class="elv3-scan-device-count">${violations.length} violation${violations.length > 1 ? 's' : ''}</span>
+                        </div>
+                        <div class="elv3-scan-device-violations">
+                            ${violations.map(v => `
+                                <div class="elv3-scan-violation-item">
+                                    <div class="elv3-scan-violation-codes">
+                                        <span class="elv3-scan-code-badge"><span class="code">${v.partCode}</span> Part</span>
+                                        <span class="elv3-scan-code-badge"><span class="code">${v.conditionCode || '-'}</span> Cond</span>
+                                        <span class="elv3-scan-code-badge"><span class="code">${v.remedyCode || '-'}</span> Remedy</span>
+                                    </div>
+                                    <div class="elv3-scan-violation-part">${v.partDescription}</div>
+                                    <div class="elv3-scan-violation-details">${v.conditionDescription || ''} → ${v.remedyDescription || ''}</div>
+                                    ${v.comments ? `<div class="elv3-scan-violation-comment">"${v.comments}"</div>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('')}
+            `;
+        }
+        
+        // Show satisfactory devices
+        if (satisfactoryDevices.length > 0) {
+            resultHtml += `
+                <h5 class="elv3-scan-section-title satisfactory">✓ Satisfactory Devices</h5>
+                <div class="elv3-scan-satisfactory-list">
+                    ${satisfactoryDevices.map(device => `
+                        <div class="elv3-scan-satisfactory-item">
+                            <span class="elv3-scan-device-number">${device.deviceNumber}</span>
+                            <span class="elv3-scan-satisfactory-badge">✓ Satisfactory</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        resultHtml += `</div>`;
+        
+        document.getElementById('elv3ScanResultContent').innerHTML = resultHtml;
+    }
+
+    // Close modal on escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('uploadELV3ScanModal');
+            if (modal && modal.style.display !== 'none') {
+                closeUploadELV3ScanModal();
+            }
+        }
+    });
+
+    // Close modal on outside click
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('elv3-scan-modal')) {
+            closeUploadELV3ScanModal();
+        }
+    });
+    </script>
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
