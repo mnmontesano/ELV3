@@ -9068,6 +9068,7 @@
                         let complete = 0, incomplete = 0;
                         const readyDevices = [];
                         const notReadyDevices = [];
+                        const removedDismantledDevices = []; // Track removed/dismantled devices
                         
                         group.devices.forEach(device => {
                             const deviceStatus = (device.device_status || '').toUpperCase();
@@ -9075,6 +9076,18 @@
                             const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                             const isDismantled = deviceStatus.includes('DISMANTLED');
                             
+                            // Track removed and dismantled devices separately
+                            if (isRemoved || isDismantled) {
+                                const statusDate = device.status_date ? new Date(device.status_date).toLocaleDateString() : 'N/A';
+                                removedDismantledDevices.push({
+                                    number: device.device_number,
+                                    type: device.device_type || 'Unknown',
+                                    status: device.device_status || 'N/A',
+                                    statusDate: statusDate
+                                });
+                            }
+                            
+                            // Skip removed devices from testing calculations
                             if (isRemoved) return;
                             
                             const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
@@ -9135,7 +9148,8 @@
                             incomplete,
                             violations: group.devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0),
                             readyDevices,
-                            notReadyDevices
+                            notReadyDevices,
+                            removedDismantledDevices
                         });
                         totalDevices += group.devices.length;
                     }
@@ -9217,6 +9231,16 @@
                     `<div style="font-size: 11px; padding: 2px 0; display: flex; justify-content: space-between;">
                         <span>${d.number}</span>
                         <span style="opacity: 0.7; font-size: 10px;">${d.daysUntil > 0 ? d.daysUntil + ' days' : ''}</span>
+                    </div>`
+                ).join('');
+                
+                // Generate list for removed/dismantled devices
+                const removedDismantledList = building.removedDismantledDevices.slice(0, 5).map(d => 
+                    `<div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between; border-bottom: 1px solid rgba(128,128,128,0.2);">
+                        <span style="font-weight: 500;">${d.number}</span>
+                        <span style="color: ${d.status.toUpperCase().includes('DISMANTLED') ? '#ffd700' : '#ff6b6b'}; font-size: 10px; font-weight: 500;">
+                            ${d.status.toUpperCase().includes('DISMANTLED') ? 'Dismantled' : 'Removed'}
+                        </span>
                     </div>`
                 ).join('');
                 
@@ -9302,6 +9326,18 @@
                                 ${building.notReadyDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${building.notReadyDevices.length - 5} more...</div>` : ''}
                             </div>
                         </div>
+                        
+                        ${building.removedDismantledDevices.length > 0 ? `
+                        <div style="margin-top: 10px; background: rgba(128,128,128,0.1); padding: 10px; border-radius: 6px; border: 1px solid rgba(128,128,128,0.3);">
+                            <div style="font-size: 11px; font-weight: 600; color: #888; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                <span style="font-size: 14px;">🚫</span> Removed/Dismantled Devices (${building.removedDismantledDevices.length})
+                            </div>
+                            <div style="font-size: 10px; color: #888; margin-bottom: 8px; font-style: italic;">
+                                These devices are no longer active at this building
+                            </div>
+                            ${removedDismantledList}
+                            ${building.removedDismantledDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 6px;">+${building.removedDismantledDevices.length - 5} more...</div>` : ''}
+                        </div>` : ''}
                     </div>
                 `;
 
