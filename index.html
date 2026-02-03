@@ -49,6 +49,9 @@
     <script src="theme_script.js"></script>
     <!-- SheetJS library for Excel export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Leaflet library for maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body data-active-tab="main">
     <!-- Disclaimer Modal - Shows on page load (TEMPORARILY DISABLED - change display to flex to re-enable) -->
@@ -915,10 +918,32 @@
                         style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
                     Export Data
                 </button>
+                <button id="mapButton" 
+                        onclick="showBuildingMap()" 
+                        style="padding: 12px 20px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
+                    📍 View on Map
+                </button>
             </div>
 
             <div id="bulkResult" class="result" style="margin-top: 15px; display: none; background: var(--result-bg); color: var(--text-color); min-height: 100px; overflow-y: auto; resize: vertical; border: 2px solid var(--input-border); border-radius: 8px; padding: 10px;">
                 <!-- Results will be displayed here -->
+            </div>
+        </div>
+
+        <!-- Building Map Modal -->
+        <div id="buildingMapModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10001; justify-content: center; align-items: center;">
+            <div style="background: var(--card-bg); border-radius: 12px; width: 95%; max-width: 1200px; height: 85%; max-height: 800px; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid var(--input-border); overflow: hidden;">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 2px solid var(--input-border); background: var(--panel-bg);">
+                    <h3 style="margin: 0; color: var(--header-color); font-size: 1.2em;">📍 Building Locations</h3>
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <span id="mapBuildingCount" style="color: var(--text-color); font-size: 0.9em;"></span>
+                        <button onclick="closeBuildingMap()" style="background: none; border: none; font-size: 1.8em; cursor: pointer; color: var(--text-color); padding: 0; line-height: 1;">&times;</button>
+                    </div>
+                </div>
+                <div id="buildingMap" style="flex: 1; min-height: 400px;"></div>
+                <div style="padding: 10px 20px; background: var(--panel-bg); border-top: 1px solid var(--input-border); font-size: 0.85em; color: var(--text-color);">
+                    <span style="opacity: 0.7;">Click a marker to view building details • Click BIN to copy • Map data © OpenStreetMap contributors</span>
+                </div>
             </div>
         </div>
 
@@ -7464,8 +7489,15 @@
                         if (!binGroups[bin]) {
                             binGroups[bin] = {
                                 address: `${device.house_number} ${device.street_name}, ${device.borough}`,
-                                devices: []
+                                devices: [],
+                                latitude: device.latitude || null,
+                                longitude: device.longitude || null
                             };
+                        }
+                        // Update lat/lng if this device has them and the group doesn't yet
+                        if (!binGroups[bin].latitude && device.latitude) {
+                            binGroups[bin].latitude = device.latitude;
+                            binGroups[bin].longitude = device.longitude;
                         }
                         binGroups[bin].devices.push(device);
                         
@@ -8730,8 +8762,9 @@
                     notFound: notFound
                 };
 
-                // Show the export button if we have results
+                // Show the export button and map button if we have results
                 document.getElementById('exportButton').style.display = 'block';
+                document.getElementById('mapButton').style.display = 'block';
             } catch (error) {
                 resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
                 console.error('Error:', error);
@@ -8744,7 +8777,322 @@
             resultDiv.innerHTML = '';
             resultDiv.style.display = 'none';
             document.getElementById('exportButton').style.display = 'none';
+            document.getElementById('mapButton').style.display = 'none';
             window.lastBulkSearchResults = null;
+        }
+
+        // Map functionality for bulk device lookup
+        let buildingMap = null;
+        let mapMarkers = [];
+
+        // Copy BIN from map popup
+        function copyMapBin(bin) {
+            navigator.clipboard.writeText(bin).then(() => {
+                // Show brief feedback
+                const notification = document.createElement('div');
+                notification.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: #4CAF50;
+                    color: white;
+                    padding: 10px 20px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    z-index: 10002;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                `;
+                notification.textContent = `BIN ${bin} copied to clipboard!`;
+                document.body.appendChild(notification);
+                setTimeout(() => notification.remove(), 2000);
+            }).catch(err => {
+                console.error('Failed to copy BIN:', err);
+                alert('Failed to copy BIN. Please copy manually: ' + bin);
+            });
+        }
+
+        function showBuildingMap() {
+            const deviceData = window.lastBulkSearchResults;
+            if (!deviceData || !deviceData.binGroups) {
+                alert('No data to display on map. Please perform a search first.');
+                return;
+            }
+
+            const modal = document.getElementById('buildingMapModal');
+            modal.style.display = 'flex';
+
+            // Small delay to ensure modal is visible before initializing map
+            setTimeout(() => {
+                initBuildingMap(deviceData.binGroups);
+            }, 100);
+        }
+
+        function closeBuildingMap() {
+            const modal = document.getElementById('buildingMapModal');
+            modal.style.display = 'none';
+            
+            // Clean up map
+            if (buildingMap) {
+                buildingMap.remove();
+                buildingMap = null;
+            }
+            mapMarkers = [];
+        }
+
+        function initBuildingMap(binGroups) {
+            const mapContainer = document.getElementById('buildingMap');
+            
+            // Clear any existing map
+            if (buildingMap) {
+                buildingMap.remove();
+                buildingMap = null;
+            }
+            mapMarkers = [];
+
+            // Get all buildings with valid coordinates
+            const buildingsWithCoords = [];
+            let totalDevices = 0;
+            
+            for (const [bin, group] of Object.entries(binGroups)) {
+                if (group.latitude && group.longitude) {
+                    const lat = parseFloat(group.latitude);
+                    const lng = parseFloat(group.longitude);
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        // Calculate completion stats and testing eligibility for this building
+                        const currentYear = new Date().getFullYear();
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        
+                        let complete = 0, incomplete = 0;
+                        const readyDevices = [];
+                        const notReadyDevices = [];
+                        
+                        group.devices.forEach(device => {
+                            const deviceStatus = (device.device_status || '').toUpperCase();
+                            const deviceType = (device.device_type || '').toUpperCase();
+                            const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
+                            const isDismantled = deviceStatus.includes('DISMANTLED');
+                            
+                            if (isRemoved) return;
+                            
+                            const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                            const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                            const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                            const hasPVI = pviDate && pviDate.getFullYear() === currentYear;
+                            const hasCat1 = cat1Date && cat1Date.getFullYear() === currentYear;
+                            
+                            if (hasPVI && hasCat1) complete++;
+                            else incomplete++;
+                            
+                            // Calculate 91-day testing eligibility
+                            let mostRecentTest;
+                            if (isDismantled) {
+                                mostRecentTest = pviDate;
+                            } else {
+                                const allDates = [pviDate, cat1Date, cat5Date].filter(d => d !== null);
+                                mostRecentTest = allDates.length > 0 ? new Date(Math.max(...allDates.map(d => d.getTime()))) : null;
+                            }
+                            
+                            let isReady = true;
+                            let eligibleDate = null;
+                            let daysUntil = null;
+                            
+                            if (mostRecentTest) {
+                                eligibleDate = new Date(mostRecentTest);
+                                eligibleDate.setDate(eligibleDate.getDate() + 91);
+                                eligibleDate.setHours(0, 0, 0, 0);
+                                daysUntil = Math.ceil((eligibleDate - today) / (1000 * 60 * 60 * 24));
+                                isReady = daysUntil <= 0;
+                            }
+                            
+                            const deviceInfo = {
+                                number: device.device_number,
+                                type: device.device_type || 'Unknown',
+                                status: device.device_status || 'N/A',
+                                hasPVI,
+                                hasCat1,
+                                eligibleDate,
+                                daysUntil,
+                                mostRecentTest
+                            };
+                            
+                            if (isReady) {
+                                readyDevices.push(deviceInfo);
+                            } else {
+                                notReadyDevices.push(deviceInfo);
+                            }
+                        });
+                        
+                        buildingsWithCoords.push({
+                            bin,
+                            address: group.address,
+                            latitude: lat,
+                            longitude: lng,
+                            deviceCount: group.devices.length,
+                            complete,
+                            incomplete,
+                            violations: group.devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0),
+                            readyDevices,
+                            notReadyDevices
+                        });
+                        totalDevices += group.devices.length;
+                    }
+                }
+            }
+
+            // Update building count display
+            const countDisplay = document.getElementById('mapBuildingCount');
+            countDisplay.textContent = `${buildingsWithCoords.length} buildings with ${totalDevices} devices`;
+
+            if (buildingsWithCoords.length === 0) {
+                mapContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-color);"><p>No buildings with location data found. The API may not have coordinates for these addresses.</p></div>';
+                return;
+            }
+
+            // Initialize the map centered on NYC
+            buildingMap = L.map(mapContainer).setView([40.7128, -74.0060], 11);
+
+            // Add OpenStreetMap tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(buildingMap);
+
+            // Create markers for each building
+            const bounds = L.latLngBounds();
+            
+            buildingsWithCoords.forEach(building => {
+                // Determine marker color based on testing readiness (91-day eligibility)
+                let markerColor;
+                
+                if (building.notReadyDevices.length === 0 && building.readyDevices.length > 0) {
+                    markerColor = '#4CAF50'; // Green - all devices ready to test
+                } else if (building.readyDevices.length > 0 && building.notReadyDevices.length > 0) {
+                    markerColor = '#ffc107'; // Yellow - some devices ready to test
+                } else {
+                    markerColor = '#ff6b6b'; // Red - no devices ready to test
+                }
+
+                // Create custom icon
+                const icon = L.divIcon({
+                    className: 'custom-map-marker',
+                    html: `<div style="
+                        background: ${markerColor};
+                        width: 24px;
+                        height: 24px;
+                        border-radius: 50%;
+                        border: 3px solid white;
+                        box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-weight: bold;
+                        font-size: 11px;
+                    ">${building.deviceCount}</div>`,
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 15]
+                });
+
+                const marker = L.marker([building.latitude, building.longitude], { icon })
+                    .addTo(buildingMap);
+
+                // Create popup content with detailed device testing info
+                const readyList = building.readyDevices.slice(0, 5).map(d => 
+                    `<div style="font-size: 11px; padding: 2px 0; display: flex; justify-content: space-between;">
+                        <span>${d.number}</span>
+                        <span style="opacity: 0.7; font-size: 10px;">${d.hasPVI && d.hasCat1 ? '✓ Done' : 'Needs tests'}</span>
+                    </div>`
+                ).join('');
+                
+                const notReadyList = building.notReadyDevices.slice(0, 5).map(d => 
+                    `<div style="font-size: 11px; padding: 2px 0; display: flex; justify-content: space-between;">
+                        <span>${d.number}</span>
+                        <span style="opacity: 0.7; font-size: 10px;">${d.daysUntil > 0 ? d.daysUntil + ' days' : ''}</span>
+                    </div>`
+                ).join('');
+                
+                const popupContent = `
+                    <div class="map-popup-content" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                        <div style="font-weight: bold; margin-bottom: 10px; font-size: 14px; padding-bottom: 8px; border-bottom: 2px solid #1a73e8;">${building.address}</div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                            <div style="font-size: 12px;">
+                                <strong>BIN:</strong> 
+                                <span onclick="copyMapBin('${building.bin}')" 
+                                      style="cursor: pointer; padding: 2px 6px; background: rgba(26,115,232,0.1); border-radius: 4px; transition: all 0.2s;"
+                                      onmouseover="this.style.background='rgba(26,115,232,0.2)'"
+                                      onmouseout="this.style.background='rgba(26,115,232,0.1)'"
+                                      title="Click to copy BIN">
+                                    ${building.bin} 📋
+                                </span>
+                            </div>
+                            <div style="font-size: 12px;">
+                                <strong>Devices:</strong> ${building.deviceCount}
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                            <div style="font-size: 12px;">
+                                <span style="color: #4CAF50; font-weight: 600;">✓ ${building.complete} Complete</span>
+                            </div>
+                            <div style="font-size: 12px;">
+                                <span style="color: #ff9800; font-weight: 600;">○ ${building.incomplete} Incomplete</span>
+                            </div>
+                        </div>
+                        
+                        ${building.violations > 0 ? `
+                        <div style="font-size: 12px; color: #ff6b6b; font-weight: 600; margin-bottom: 10px; padding: 6px; background: rgba(255,107,107,0.1); border-radius: 4px;">
+                            ⚠️ ${building.violations} Active Violation${building.violations !== 1 ? 's' : ''}
+                        </div>` : ''}
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div style="background: rgba(76,175,80,0.1); padding: 8px; border-radius: 6px; border: 1px solid rgba(76,175,80,0.3);">
+                                <div style="font-size: 11px; font-weight: 600; color: #4CAF50; margin-bottom: 6px;">
+                                    ✅ Ready to Test (${building.readyDevices.length})
+                                </div>
+                                ${building.readyDevices.length > 0 ? readyList : '<div style="font-size: 11px; opacity: 0.6;">None</div>'}
+                                ${building.readyDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${building.readyDevices.length - 5} more...</div>` : ''}
+                            </div>
+                            <div style="background: rgba(255,152,0,0.1); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,152,0,0.3);">
+                                <div style="font-size: 11px; font-weight: 600; color: #ff9800; margin-bottom: 6px;">
+                                    ⏳ Not Ready (${building.notReadyDevices.length})
+                                </div>
+                                ${building.notReadyDevices.length > 0 ? notReadyList : '<div style="font-size: 11px; opacity: 0.6;">None</div>'}
+                                ${building.notReadyDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${building.notReadyDevices.length - 5} more...</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                marker.bindPopup(popupContent);
+                mapMarkers.push(marker);
+                bounds.extend([building.latitude, building.longitude]);
+            });
+
+            // Fit map to show all markers
+            if (buildingsWithCoords.length > 0) {
+                buildingMap.fitBounds(bounds, { padding: [30, 30] });
+            }
+
+            // Add legend
+            const legend = L.control({ position: 'bottomright' });
+            legend.onAdd = function() {
+                const div = L.DomUtil.create('div', 'map-legend');
+                div.style.cssText = 'background: white; padding: 10px 12px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); font-size: 11px; line-height: 1.8;';
+                div.innerHTML = `
+                    <div style="font-weight: bold; margin-bottom: 8px; font-size: 12px;">Testing Readiness</div>
+                    <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #4CAF50; flex-shrink: 0;"></span><span>All Devices Ready</span></div>
+                    <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ffc107; flex-shrink: 0;"></span><span>Some Devices Ready</span></div>
+                    <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ff6b6b; flex-shrink: 0;"></span><span>No Devices Ready</span></div>
+                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(128,128,128,0.3); font-size: 10px; opacity: 0.8;">
+                        Ready = 91+ days since last test
+                    </div>
+                `;
+                return div;
+            };
+            legend.addTo(buildingMap);
         }
 
         // Add this new function to your script section
