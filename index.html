@@ -9068,7 +9068,7 @@
                         let complete = 0, incomplete = 0;
                         const readyDevices = [];
                         const notReadyDevices = [];
-                        const removedDismantledDevices = []; // Track removed/dismantled devices
+                        const removedDeletedDevices = []; // Track removed/deleted devices (not dismantled - they still need PVI)
                         
                         group.devices.forEach(device => {
                             const deviceStatus = (device.device_status || '').toUpperCase();
@@ -9076,10 +9076,10 @@
                             const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                             const isDismantled = deviceStatus.includes('DISMANTLED');
                             
-                            // Track removed and dismantled devices separately
-                            if (isRemoved || isDismantled) {
+                            // Track only removed/deleted devices - dismantled devices still need PVI tests
+                            if (isRemoved) {
                                 const statusDate = device.status_date ? new Date(device.status_date).toLocaleDateString() : 'N/A';
-                                removedDismantledDevices.push({
+                                removedDeletedDevices.push({
                                     number: device.device_number,
                                     type: device.device_type || 'Unknown',
                                     status: device.device_status || 'N/A',
@@ -9166,7 +9166,7 @@
                             violationDetails,
                             readyDevices,
                             notReadyDevices,
-                            removedDismantledDevices
+                            removedDeletedDevices
                         });
                         totalDevices += group.devices.length;
                     }
@@ -9251,12 +9251,12 @@
                     </div>`
                 ).join('');
                 
-                // Generate list for removed/dismantled devices
-                const removedDismantledList = building.removedDismantledDevices.slice(0, 5).map(d => 
+                // Generate list for removed/deleted devices (not dismantled - they still need PVI tests)
+                const removedDeletedList = building.removedDeletedDevices.slice(0, 5).map(d => 
                     `<div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between; border-bottom: 1px solid rgba(128,128,128,0.2);">
                         <span style="font-weight: 500;">${d.number}</span>
-                        <span style="color: ${d.status.toUpperCase().includes('DISMANTLED') ? '#ffd700' : '#ff6b6b'}; font-size: 10px; font-weight: 500;">
-                            ${d.status.toUpperCase().includes('DISMANTLED') ? 'Dismantled' : 'Removed'}
+                        <span style="color: #ff6b6b; font-size: 10px; font-weight: 500;">
+                            ${d.status.toUpperCase().includes('DELETED') ? 'Deleted' : 'Removed'}
                         </span>
                     </div>`
                 ).join('');
@@ -9368,16 +9368,16 @@
                             </div>
                         </div>
                         
-                        ${building.removedDismantledDevices.length > 0 ? `
+                        ${building.removedDeletedDevices.length > 0 ? `
                         <div style="margin-top: 10px; background: rgba(128,128,128,0.1); padding: 10px; border-radius: 6px; border: 1px solid rgba(128,128,128,0.3);">
                             <div style="font-size: 11px; font-weight: 600; color: #888; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-                                <span style="font-size: 14px;">🚫</span> Removed/Dismantled Devices (${building.removedDismantledDevices.length})
+                                <span style="font-size: 14px;">🚫</span> Removed/Deleted Devices (${building.removedDeletedDevices.length})
                             </div>
                             <div style="font-size: 10px; color: #888; margin-bottom: 8px; font-style: italic;">
-                                These devices are no longer active at this building
+                                These devices no longer require testing
                             </div>
-                            ${removedDismantledList}
-                            ${building.removedDismantledDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 6px;">+${building.removedDismantledDevices.length - 5} more...</div>` : ''}
+                            ${removedDeletedList}
+                            ${building.removedDeletedDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 6px;">+${building.removedDeletedDevices.length - 5} more...</div>` : ''}
                         </div>` : ''}
                     </div>
                 `;
