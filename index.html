@@ -937,12 +937,48 @@
                     <h3 style="margin: 0; color: var(--header-color); font-size: 1.2em;">📍 Building Locations</h3>
                     <div style="display: flex; align-items: center; gap: 15px;">
                         <span id="mapBuildingCount" style="color: var(--text-color); font-size: 0.9em;"></span>
+                        <button onclick="toggleMapControlsPanel()" style="background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 12px; cursor: pointer; color: var(--text-color); font-size: 0.85em; display: flex; align-items: center; gap: 6px;">
+                            <span>⚙️</span> <span style="display: none;" class="controls-btn-text">Controls</span>
+                        </button>
                         <button onclick="closeBuildingMap()" style="background: none; border: none; font-size: 1.8em; cursor: pointer; color: var(--text-color); padding: 0; line-height: 1;">&times;</button>
                     </div>
                 </div>
-                <div id="buildingMap" style="flex: 1; min-height: 400px;"></div>
+                <div style="display: flex; flex: 1; min-height: 0; overflow: hidden;">
+                    <div id="buildingMap" style="flex: 1; min-height: 400px;"></div>
+                    <!-- Map Controls Panel -->
+                    <div id="mapControlsPanel" style="display: none; width: 280px; background: var(--panel-bg); border-left: 1px solid var(--input-border); padding: 15px; overflow-y: auto; flex-shrink: 0;">
+                        <div style="margin-bottom: 20px;">
+                            <h4 style="margin: 0 0 12px 0; color: var(--header-color); font-size: 1em; display: flex; align-items: center; gap: 8px;">
+                                <span style="color: #9b59b6;">⭐</span> Favorites (<span id="mapFavoritesCount">0</span>)
+                            </h4>
+                            <p style="font-size: 11px; opacity: 0.7; margin: 0 0 10px 0;">Favorited buildings appear in purple on the map</p>
+                            <button onclick="clearAllFavorites()" style="width: 100%; padding: 8px; background: var(--input-bg); color: #f59e0b; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">Clear All Favorites</button>
+                        </div>
+                        
+                        <div style="border-top: 1px solid var(--input-border); padding-top: 15px;">
+                            <h4 style="margin: 0 0 12px 0; color: var(--header-color); font-size: 1em; display: flex; align-items: center; gap: 8px;">
+                                <span style="color: #888;">👁️‍🗨️</span> Hidden (<span id="mapHiddenCount">0</span>)
+                            </h4>
+                            <p style="font-size: 11px; opacity: 0.7; margin: 0 0 10px 0;">Hidden buildings are not shown on the map</p>
+                            <div id="hiddenBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 10px;">
+                                <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No hidden buildings</div>
+                            </div>
+                            <button onclick="unhideAllBuildings()" style="width: 100%; padding: 8px; background: var(--input-bg); color: #4CAF50; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">Show All Hidden</button>
+                        </div>
+                        
+                        <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
+                            <h4 style="margin: 0 0 10px 0; color: var(--header-color); font-size: 0.9em;">💡 Tips</h4>
+                            <ul style="font-size: 11px; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.6;">
+                                <li>Click a marker to see building details</li>
+                                <li>Use ⭐ in popup to favorite a building</li>
+                                <li>Use 👁️ in popup to hide a building</li>
+                                <li>Favorited buildings turn purple</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
                 <div style="padding: 10px 20px; background: var(--panel-bg); border-top: 1px solid var(--input-border); font-size: 0.85em; color: var(--text-color);">
-                    <span style="opacity: 0.7;">Click a marker to view building details • Click BIN to copy • Map data © OpenStreetMap contributors</span>
+                    <span style="opacity: 0.7;">Click a marker to view building details • Use ⭐ to favorite • Use 👁️ to hide • Map data © OpenStreetMap contributors</span>
                 </div>
             </div>
         </div>
@@ -8785,6 +8821,145 @@
         let buildingMap = null;
         let mapMarkers = [];
 
+        // Favorites and Hidden Buildings Storage
+        const MAP_FAVORITES_KEY = 'elv3_map_favorites';
+        const MAP_HIDDEN_KEY = 'elv3_map_hidden';
+
+        function getMapFavorites() {
+            try {
+                const stored = localStorage.getItem(MAP_FAVORITES_KEY);
+                return stored ? JSON.parse(stored) : {};
+            } catch (e) {
+                console.error('Error reading map favorites:', e);
+                return {};
+            }
+        }
+
+        function setMapFavorites(favorites) {
+            try {
+                localStorage.setItem(MAP_FAVORITES_KEY, JSON.stringify(favorites));
+            } catch (e) {
+                console.error('Error saving map favorites:', e);
+            }
+        }
+
+        function getMapHidden() {
+            try {
+                const stored = localStorage.getItem(MAP_HIDDEN_KEY);
+                return stored ? JSON.parse(stored) : {};
+            } catch (e) {
+                console.error('Error reading hidden buildings:', e);
+                return {};
+            }
+        }
+
+        function setMapHidden(hidden) {
+            try {
+                localStorage.setItem(MAP_HIDDEN_KEY, JSON.stringify(hidden));
+            } catch (e) {
+                console.error('Error saving hidden buildings:', e);
+            }
+        }
+
+        function toggleMapFavorite(bin, address) {
+            const favorites = getMapFavorites();
+            if (favorites[bin]) {
+                delete favorites[bin];
+                showMapNotification(`Building ${bin} removed from favorites`, '#f59e0b');
+            } else {
+                favorites[bin] = { address, timestamp: Date.now() };
+                showMapNotification(`Building ${bin} added to favorites`, '#9b59b6');
+            }
+            setMapFavorites(favorites);
+            // Refresh the map to update marker colors
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups);
+            }
+        }
+
+        function toggleMapHidden(bin, address) {
+            const hidden = getMapHidden();
+            if (hidden[bin]) {
+                delete hidden[bin];
+                showMapNotification(`Building ${bin} is now visible`, '#4CAF50');
+            } else {
+                hidden[bin] = { address, timestamp: Date.now() };
+                showMapNotification(`Building ${bin} hidden from map`, '#ff6b6b');
+            }
+            setMapHidden(hidden);
+            // Refresh the map to update visibility
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups);
+            }
+        }
+
+        function unhideAllBuildings() {
+            setMapHidden({});
+            showMapNotification('All buildings are now visible', '#4CAF50');
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups);
+            }
+        }
+
+        function clearAllFavorites() {
+            if (confirm('Are you sure you want to remove all favorites?')) {
+                setMapFavorites({});
+                showMapNotification('All favorites cleared', '#f59e0b');
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                    initBuildingMap(window.lastBulkSearchResults.binGroups);
+                }
+            }
+        }
+
+        function showMapNotification(message, color) {
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: ${color};
+                color: white;
+                padding: 10px 20px;
+                border-radius: 6px;
+                font-size: 14px;
+                z-index: 10003;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            `;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            setTimeout(() => notification.remove(), 2000);
+        }
+
+        function updateMapControlsPanel() {
+            const favorites = getMapFavorites();
+            const hidden = getMapHidden();
+            const favoritesCount = Object.keys(favorites).length;
+            const hiddenCount = Object.keys(hidden).length;
+
+            const favCountEl = document.getElementById('mapFavoritesCount');
+            const hiddenCountEl = document.getElementById('mapHiddenCount');
+            const hiddenListEl = document.getElementById('hiddenBuildingsList');
+
+            if (favCountEl) favCountEl.textContent = favoritesCount;
+            if (hiddenCountEl) hiddenCountEl.textContent = hiddenCount;
+
+            if (hiddenListEl) {
+                if (hiddenCount > 0) {
+                    hiddenListEl.innerHTML = Object.entries(hidden).map(([bin, data]) => `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
+                            <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${data.address || bin}">
+                                <strong>${bin}</strong>${data.address ? ` - ${data.address.substring(0, 25)}...` : ''}
+                            </span>
+                            <button onclick="toggleMapHidden('${bin}')" style="background: #4CAF50; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px; margin-left: 8px;">Show</button>
+                        </div>
+                    `).join('');
+                } else {
+                    hiddenListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No hidden buildings</div>';
+                }
+            }
+        }
+
         // Copy BIN from map popup
         function copyMapBin(bin) {
             navigator.clipboard.writeText(bin).then(() => {
@@ -8840,6 +9015,18 @@
             mapMarkers = [];
         }
 
+        function toggleMapControlsPanel() {
+            const panel = document.getElementById('mapControlsPanel');
+            if (panel) {
+                const isVisible = panel.style.display !== 'none';
+                panel.style.display = isVisible ? 'none' : 'block';
+                // Invalidate map size when panel toggles
+                if (buildingMap) {
+                    setTimeout(() => buildingMap.invalidateSize(), 100);
+                }
+            }
+        }
+
         function initBuildingMap(binGroups) {
             const mapContainer = document.getElementById('buildingMap');
             
@@ -8850,11 +9037,25 @@
             }
             mapMarkers = [];
 
+            // Get favorites and hidden buildings
+            const favorites = getMapFavorites();
+            const hidden = getMapHidden();
+
+            // Update controls panel
+            updateMapControlsPanel();
+
             // Get all buildings with valid coordinates
             const buildingsWithCoords = [];
             let totalDevices = 0;
+            let hiddenCount = 0;
             
             for (const [bin, group] of Object.entries(binGroups)) {
+                // Skip hidden buildings
+                if (hidden[bin]) {
+                    hiddenCount++;
+                    continue;
+                }
+                
                 if (group.latitude && group.longitude) {
                     const lat = parseFloat(group.latitude);
                     const lng = parseFloat(group.longitude);
@@ -8943,7 +9144,8 @@
 
             // Update building count display
             const countDisplay = document.getElementById('mapBuildingCount');
-            countDisplay.textContent = `${buildingsWithCoords.length} buildings with ${totalDevices} devices`;
+            const hiddenText = hiddenCount > 0 ? ` (${hiddenCount} hidden)` : '';
+            countDisplay.textContent = `${buildingsWithCoords.length} buildings with ${totalDevices} devices${hiddenText}`;
 
             if (buildingsWithCoords.length === 0) {
                 mapContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-color);"><p>No buildings with location data found. The API may not have coordinates for these addresses.</p></div>';
@@ -8963,10 +9165,15 @@
             const bounds = L.latLngBounds();
             
             buildingsWithCoords.forEach(building => {
-                // Determine marker color based on testing readiness (91-day eligibility)
+                // Check if building is favorited
+                const isFavorited = favorites[building.bin] ? true : false;
+                
+                // Determine marker color based on favorite status or testing readiness
                 let markerColor;
                 
-                if (building.notReadyDevices.length === 0 && building.readyDevices.length > 0) {
+                if (isFavorited) {
+                    markerColor = '#9b59b6'; // Purple - favorited building
+                } else if (building.notReadyDevices.length === 0 && building.readyDevices.length > 0) {
                     markerColor = '#4CAF50'; // Green - all devices ready to test
                 } else if (building.readyDevices.length > 0 && building.notReadyDevices.length > 0) {
                     markerColor = '#ffc107'; // Yellow - some devices ready to test
@@ -9013,9 +9220,41 @@
                     </div>`
                 ).join('');
                 
+                // Escape address for use in onclick attributes
+                const escapedAddress = building.address.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                
                 const popupContent = `
                     <div class="map-popup-content" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-                        <div style="font-weight: bold; margin-bottom: 10px; font-size: 14px; padding-bottom: 8px; border-bottom: 2px solid #1a73e8;">${building.address}</div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isFavorited ? '#9b59b6' : '#1a73e8'};">
+                            <div style="font-weight: bold; font-size: 14px; flex: 1;">${building.address}</div>
+                            <div style="display: flex; gap: 4px; margin-left: 8px;">
+                                <button onclick="toggleMapFavorite('${building.bin}', '${escapedAddress}')" 
+                                        title="${isFavorited ? 'Remove from favorites' : 'Add to favorites'}"
+                                        style="background: ${isFavorited ? '#9b59b6' : 'rgba(155,89,182,0.1)'}; 
+                                               color: ${isFavorited ? 'white' : '#9b59b6'}; 
+                                               border: 1px solid #9b59b6; 
+                                               border-radius: 4px; 
+                                               padding: 4px 8px; 
+                                               cursor: pointer; 
+                                               font-size: 14px;
+                                               transition: all 0.2s;">⭐</button>
+                                <button onclick="toggleMapHidden('${building.bin}', '${escapedAddress}')" 
+                                        title="Hide this building from map"
+                                        style="background: rgba(136,136,136,0.1); 
+                                               color: #888; 
+                                               border: 1px solid #888; 
+                                               border-radius: 4px; 
+                                               padding: 4px 8px; 
+                                               cursor: pointer; 
+                                               font-size: 14px;
+                                               transition: all 0.2s;">👁️</button>
+                            </div>
+                        </div>
+                        
+                        ${isFavorited ? `
+                        <div style="font-size: 11px; color: #9b59b6; font-weight: 600; margin-bottom: 10px; padding: 4px 8px; background: rgba(155,89,182,0.1); border-radius: 4px; text-align: center;">
+                            ⭐ Favorited Building
+                        </div>` : ''}
                         
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
                             <div style="font-size: 12px;">
@@ -9082,12 +9321,14 @@
                 const div = L.DomUtil.create('div', 'map-legend');
                 div.style.cssText = 'background: white; padding: 10px 12px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); font-size: 11px; line-height: 1.8;';
                 div.innerHTML = `
-                    <div style="font-weight: bold; margin-bottom: 8px; font-size: 12px;">Testing Readiness</div>
+                    <div style="font-weight: bold; margin-bottom: 8px; font-size: 12px;">Map Legend</div>
+                    <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #9b59b6; flex-shrink: 0;"></span><span>⭐ Favorited</span></div>
                     <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #4CAF50; flex-shrink: 0;"></span><span>All Devices Ready</span></div>
                     <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ffc107; flex-shrink: 0;"></span><span>Some Devices Ready</span></div>
                     <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ff6b6b; flex-shrink: 0;"></span><span>No Devices Ready</span></div>
                     <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(128,128,128,0.3); font-size: 10px; opacity: 0.8;">
-                        Ready = 91+ days since last test
+                        Ready = 91+ days since last test<br>
+                        Click marker for favorite/hide options
                     </div>
                 `;
                 return div;
