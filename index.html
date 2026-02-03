@@ -933,9 +933,19 @@
         <!-- Building Map Modal -->
         <div id="buildingMapModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10001; justify-content: center; align-items: center;">
             <div style="background: var(--card-bg); border-radius: 12px; width: 95%; max-width: 1200px; height: 85%; max-height: 800px; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid var(--input-border); overflow: hidden;">
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 2px solid var(--input-border); background: var(--panel-bg);">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 2px solid var(--input-border); background: var(--panel-bg); flex-wrap: wrap; gap: 10px;">
                     <h3 style="margin: 0; color: var(--header-color); font-size: 1.2em;">📍 Building Locations</h3>
+                    <div style="display: flex; align-items: center; gap: 10px; flex: 1; max-width: 400px; min-width: 200px;">
+                        <div style="position: relative; flex: 1;">
+                            <input type="text" id="mapSearchInput" placeholder="Search address, BIN, or device #..." 
+                                   style="width: 100%; padding: 8px 32px 8px 10px; border-radius: 6px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 0.85em; box-sizing: border-box;"
+                                   onkeyup="if(event.key === 'Enter') searchMapBuildings()">
+                            <button onclick="searchMapBuildings()" title="Search" style="position: absolute; right: 2px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: 4px 8px; color: var(--text-color); font-size: 1em;">🔍</button>
+                        </div>
+                        <button onclick="clearMapSearch()" title="Clear search" style="background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 10px; cursor: pointer; color: var(--text-color); font-size: 0.85em;">Clear</button>
+                    </div>
                     <div style="display: flex; align-items: center; gap: 15px;">
+                        <span id="mapSearchResultCount" style="color: #4CAF50; font-size: 0.85em; display: none;"></span>
                         <span id="mapBuildingCount" style="color: var(--text-color); font-size: 0.9em;"></span>
                         <button onclick="toggleMapControlsPanel()" style="background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 12px; cursor: pointer; color: var(--text-color); font-size: 0.85em; display: flex; align-items: center; gap: 6px;">
                             <span>⚙️</span> <span style="display: none;" class="controls-btn-text">Controls</span>
@@ -9013,6 +9023,13 @@
                 buildingMap = null;
             }
             mapMarkers = [];
+            mapBuildingsData = [];
+            
+            // Clear search
+            const searchInput = document.getElementById('mapSearchInput');
+            const resultCount = document.getElementById('mapSearchResultCount');
+            if (searchInput) searchInput.value = '';
+            if (resultCount) resultCount.style.display = 'none';
         }
 
         function toggleMapControlsPanel() {
@@ -9182,6 +9199,9 @@
                 mapContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-color);"><p>No buildings with location data found. The API may not have coordinates for these addresses.</p></div>';
                 return;
             }
+            
+            // Store buildings data for search functionality
+            mapBuildingsData = buildingsWithCoords;
 
             // Initialize the map centered on NYC
             buildingMap = L.map(mapContainer).setView([40.7128, -74.0060], 11);
@@ -9440,6 +9460,101 @@
                 
                 // Save preference to localStorage
                 localStorage.setItem('mapLegendHidden', !isHidden);
+            }
+        }
+        
+        // Store buildings data for search functionality
+        let mapBuildingsData = [];
+        
+        // Search buildings on the map
+        function searchMapBuildings() {
+            const searchInput = document.getElementById('mapSearchInput');
+            const resultCount = document.getElementById('mapSearchResultCount');
+            const searchTerm = searchInput.value.trim().toUpperCase();
+            
+            if (!searchTerm) {
+                clearMapSearch();
+                return;
+            }
+            
+            if (!mapBuildingsData || mapBuildingsData.length === 0) {
+                resultCount.textContent = 'No data loaded';
+                resultCount.style.display = 'inline';
+                resultCount.style.color = '#ff6b6b';
+                return;
+            }
+            
+            // Search through buildings for matching address, BIN, or device numbers
+            const matches = mapBuildingsData.filter(building => {
+                const addressMatch = building.address.toUpperCase().includes(searchTerm);
+                const binMatch = building.bin.toString().includes(searchTerm);
+                const deviceMatch = building.readyDevices.some(d => d.number.toUpperCase().includes(searchTerm)) ||
+                                   building.notReadyDevices.some(d => d.number.toUpperCase().includes(searchTerm)) ||
+                                   building.removedDismantledDevices.some(d => d.number.toUpperCase().includes(searchTerm));
+                return addressMatch || binMatch || deviceMatch;
+            });
+            
+            if (matches.length === 0) {
+                resultCount.textContent = 'No matches found';
+                resultCount.style.display = 'inline';
+                resultCount.style.color = '#ff6b6b';
+                return;
+            }
+            
+            // Show result count
+            resultCount.textContent = `Found ${matches.length} building${matches.length !== 1 ? 's' : ''}`;
+            resultCount.style.display = 'inline';
+            resultCount.style.color = '#4CAF50';
+            
+            // Find the markers for matching buildings and zoom to them
+            if (matches.length === 1) {
+                // Single match - zoom to it and open popup
+                const match = matches[0];
+                const marker = mapMarkers.find(m => {
+                    const latLng = m.getLatLng();
+                    return Math.abs(latLng.lat - match.latitude) < 0.0001 && 
+                           Math.abs(latLng.lng - match.longitude) < 0.0001;
+                });
+                
+                if (marker && buildingMap) {
+                    buildingMap.setView([match.latitude, match.longitude], 17);
+                    marker.openPopup();
+                }
+            } else {
+                // Multiple matches - fit bounds to show all
+                const bounds = L.latLngBounds();
+                matches.forEach(match => {
+                    bounds.extend([match.latitude, match.longitude]);
+                    
+                    // Highlight matching markers by opening their popups briefly
+                    const marker = mapMarkers.find(m => {
+                        const latLng = m.getLatLng();
+                        return Math.abs(latLng.lat - match.latitude) < 0.0001 && 
+                               Math.abs(latLng.lng - match.longitude) < 0.0001;
+                    });
+                });
+                
+                if (buildingMap) {
+                    buildingMap.fitBounds(bounds, { padding: [50, 50] });
+                }
+            }
+        }
+        
+        // Clear map search
+        function clearMapSearch() {
+            const searchInput = document.getElementById('mapSearchInput');
+            const resultCount = document.getElementById('mapSearchResultCount');
+            
+            if (searchInput) searchInput.value = '';
+            if (resultCount) resultCount.style.display = 'none';
+            
+            // Reset map view to show all markers
+            if (buildingMap && mapMarkers.length > 0) {
+                const bounds = L.latLngBounds();
+                mapMarkers.forEach(marker => {
+                    bounds.extend(marker.getLatLng());
+                });
+                buildingMap.fitBounds(bounds, { padding: [30, 30] });
             }
         }
 
