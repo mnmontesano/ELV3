@@ -1005,6 +1005,24 @@
                         </div>
                         
                         <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
+                            <h4 style="margin: 0 0 12px 0; color: var(--header-color); font-size: 1em; display: flex; align-items: center; gap: 8px;">
+                                <span style="color: #00bcd4;">📍</span> User Addresses (<span id="mapUserAddressesCount">0</span>)
+                            </h4>
+                            <p style="font-size: 11px; opacity: 0.7; margin: 0 0 10px 0;">Add custom addresses to the map (cyan markers)</p>
+                            <div style="margin-bottom: 10px;">
+                                <input type="text" id="userAddressInput" 
+                                       placeholder="Enter address (e.g., 123 Broadway, Manhattan)" 
+                                       style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 12px; box-sizing: border-box;"
+                                       onkeyup="if(event.key === 'Enter') addUserAddress()">
+                            </div>
+                            <button onclick="addUserAddress()" style="width: 100%; padding: 8px; background: #00bcd4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; margin-bottom: 10px;">➕ Add Address to Map</button>
+                            <div id="userAddressesList" style="max-height: 200px; overflow-y: auto; margin-bottom: 10px;">
+                                <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No user addresses added</div>
+                            </div>
+                            <button onclick="clearAllUserAddresses()" style="width: 100%; padding: 8px; background: var(--input-bg); color: #ff6b6b; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">Clear All User Addresses</button>
+                        </div>
+                        
+                        <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
                             <h4 style="margin: 0 0 10px 0; color: var(--header-color); font-size: 0.9em;">💡 Tips</h4>
                             <ul style="font-size: 11px; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.6;">
                                 <li>Click a marker to see building details</li>
@@ -1012,6 +1030,7 @@
                                 <li>Use 👁️ in popup to hide a building</li>
                                 <li>Use 📅 dropdown to assign a month</li>
                                 <li>Favorited buildings turn purple</li>
+                                <li>User addresses appear in cyan</li>
                             </ul>
                         </div>
                     </div>
@@ -8861,10 +8880,14 @@
         let buildingMap = null;
         let mapMarkers = [];
 
-        // Favorites, Hidden Buildings, and Month Labels Storage
+        // Favorites, Hidden Buildings, Month Labels, and User Addresses Storage
         const MAP_FAVORITES_KEY = 'elv3_map_favorites';
         const MAP_HIDDEN_KEY = 'elv3_map_hidden';
         const MAP_MONTH_LABELS_KEY = 'elv3_map_month_labels';
+        const MAP_USER_ADDRESSES_KEY = 'elv3_map_user_addresses';
+        
+        // User address markers storage
+        let userAddressMarkers = [];
         
         // Month label functions
         function getMapMonthLabels() {
@@ -9012,6 +9035,266 @@
             }
         }
 
+        // User Address Functions
+        function getUserAddresses() {
+            try {
+                const stored = localStorage.getItem(MAP_USER_ADDRESSES_KEY);
+                return stored ? JSON.parse(stored) : [];
+            } catch (e) {
+                console.error('Error reading user addresses:', e);
+                return [];
+            }
+        }
+
+        function setUserAddresses(addresses) {
+            try {
+                localStorage.setItem(MAP_USER_ADDRESSES_KEY, JSON.stringify(addresses));
+            } catch (e) {
+                console.error('Error saving user addresses:', e);
+            }
+        }
+
+        async function geocodeAddress(address) {
+            // Use OpenStreetMap Nominatim for geocoding with NYC focus
+            const searchAddress = address.includes('New York') || address.includes('NY') 
+                ? address 
+                : `${address}, New York City, NY`;
+            
+            const encodedAddress = encodeURIComponent(searchAddress);
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1&countrycodes=us`;
+            
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'ELV3-Map-Application'
+                    }
+                });
+                
+                if (!response.ok) throw new Error('Geocoding request failed');
+                
+                const data = await response.json();
+                if (data && data.length > 0) {
+                    return {
+                        lat: parseFloat(data[0].lat),
+                        lng: parseFloat(data[0].lon),
+                        displayName: data[0].display_name
+                    };
+                }
+                return null;
+            } catch (error) {
+                console.error('Geocoding error:', error);
+                return null;
+            }
+        }
+
+        async function addUserAddress() {
+            const input = document.getElementById('userAddressInput');
+            const address = input.value.trim();
+            
+            if (!address) {
+                showMapNotification('Please enter an address', '#ff6b6b');
+                return;
+            }
+            
+            // Show loading state
+            showMapNotification('Looking up address...', '#17a2b8');
+            
+            // Geocode the address
+            const coords = await geocodeAddress(address);
+            
+            if (!coords) {
+                showMapNotification('Could not find that address. Try adding more details.', '#ff6b6b');
+                return;
+            }
+            
+            // Check if address already exists
+            const existingAddresses = getUserAddresses();
+            const alreadyExists = existingAddresses.some(a => 
+                Math.abs(a.lat - coords.lat) < 0.0001 && Math.abs(a.lng - coords.lng) < 0.0001
+            );
+            
+            if (alreadyExists) {
+                showMapNotification('This address is already on the map', '#ffc107');
+                return;
+            }
+            
+            // Add to storage
+            const newAddress = {
+                id: Date.now().toString(),
+                address: address,
+                displayName: coords.displayName,
+                lat: coords.lat,
+                lng: coords.lng,
+                timestamp: Date.now()
+            };
+            
+            existingAddresses.push(newAddress);
+            setUserAddresses(existingAddresses);
+            
+            // Clear input
+            input.value = '';
+            
+            // Add marker to map
+            addUserAddressMarker(newAddress);
+            
+            // Update UI
+            updateUserAddressesList();
+            
+            showMapNotification(`Address added to map!`, '#00bcd4');
+            
+            // Zoom to the new marker
+            if (buildingMap) {
+                buildingMap.setView([coords.lat, coords.lng], 16);
+            }
+        }
+
+        function addUserAddressMarker(addressData) {
+            if (!buildingMap) return;
+            
+            // Create custom cyan icon for user addresses
+            const icon = L.divIcon({
+                className: 'custom-map-marker user-address-marker',
+                html: `<div style="
+                    background: #00bcd4;
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 50%;
+                    border: 3px solid white;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 14px;
+                ">📍</div>`,
+                iconSize: [34, 34],
+                iconAnchor: [17, 17]
+            });
+            
+            const marker = L.marker([addressData.lat, addressData.lng], { icon })
+                .addTo(buildingMap);
+            
+            // Create popup for user address
+            const popupContent = `
+                <div class="map-popup-content" style="min-width: 250px; max-width: 300px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #00bcd4;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: bold; font-size: 14px; color: #00bcd4; margin-bottom: 4px;">📍 User Added Address</div>
+                            <div style="font-size: 13px;">${addressData.address}</div>
+                        </div>
+                        <button onclick="removeUserAddress('${addressData.id}')" 
+                                title="Remove this address"
+                                style="background: rgba(255,107,107,0.1); 
+                                       color: #ff6b6b; 
+                                       border: 1px solid #ff6b6b; 
+                                       border-radius: 4px; 
+                                       padding: 4px 8px; 
+                                       cursor: pointer; 
+                                       font-size: 12px;
+                                       margin-left: 8px;
+                                       transition: all 0.2s;">🗑️</button>
+                    </div>
+                    <div style="font-size: 11px; opacity: 0.8; word-break: break-word;">
+                        ${addressData.displayName || addressData.address}
+                    </div>
+                    <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--input-border, #444);">
+                        <div style="font-size: 11px; opacity: 0.6;">
+                            Added: ${new Date(addressData.timestamp).toLocaleDateString()}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            marker.bindPopup(popupContent);
+            marker.addressId = addressData.id;
+            userAddressMarkers.push(marker);
+        }
+
+        function removeUserAddress(addressId) {
+            // Remove from storage
+            const addresses = getUserAddresses();
+            const updatedAddresses = addresses.filter(a => a.id !== addressId);
+            setUserAddresses(updatedAddresses);
+            
+            // Remove marker from map
+            const markerIndex = userAddressMarkers.findIndex(m => m.addressId === addressId);
+            if (markerIndex !== -1) {
+                const marker = userAddressMarkers[markerIndex];
+                if (buildingMap && buildingMap.hasLayer(marker)) {
+                    buildingMap.removeLayer(marker);
+                }
+                userAddressMarkers.splice(markerIndex, 1);
+            }
+            
+            // Update UI
+            updateUserAddressesList();
+            
+            showMapNotification('Address removed from map', '#ff6b6b');
+        }
+
+        function clearAllUserAddresses() {
+            if (!confirm('Remove all user-added addresses from the map?')) return;
+            
+            // Remove all markers
+            userAddressMarkers.forEach(marker => {
+                if (buildingMap && buildingMap.hasLayer(marker)) {
+                    buildingMap.removeLayer(marker);
+                }
+            });
+            userAddressMarkers = [];
+            
+            // Clear storage
+            setUserAddresses([]);
+            
+            // Update UI
+            updateUserAddressesList();
+            
+            showMapNotification('All user addresses cleared', '#ff6b6b');
+        }
+
+        function updateUserAddressesList() {
+            const addresses = getUserAddresses();
+            const listEl = document.getElementById('userAddressesList');
+            const countEl = document.getElementById('mapUserAddressesCount');
+            
+            if (countEl) countEl.textContent = addresses.length;
+            
+            if (listEl) {
+                if (addresses.length > 0) {
+                    listEl.innerHTML = addresses.map(addr => `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px; border-left: 3px solid #00bcd4;">
+                            <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${addr.displayName || addr.address}">
+                                ${addr.address.length > 30 ? addr.address.substring(0, 30) + '...' : addr.address}
+                            </span>
+                            <button onclick="removeUserAddress('${addr.id}')" style="background: #ff6b6b; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px; margin-left: 8px;">✕</button>
+                        </div>
+                    `).join('');
+                } else {
+                    listEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No user addresses added</div>';
+                }
+            }
+        }
+
+        function loadUserAddressMarkers() {
+            // Clear existing user address markers
+            userAddressMarkers.forEach(marker => {
+                if (buildingMap && buildingMap.hasLayer(marker)) {
+                    buildingMap.removeLayer(marker);
+                }
+            });
+            userAddressMarkers = [];
+            
+            // Load and add all user addresses
+            const addresses = getUserAddresses();
+            addresses.forEach(addr => {
+                addUserAddressMarker(addr);
+            });
+            
+            // Update the list display
+            updateUserAddressesList();
+        }
+
         function getMapFavorites() {
             try {
                 const stored = localStorage.getItem(MAP_FAVORITES_KEY);
@@ -9145,6 +9428,9 @@
                     hiddenListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No hidden buildings</div>';
                 }
             }
+            
+            // Update user addresses list
+            updateUserAddressesList();
         }
 
         // Copy BIN from map popup
@@ -9201,6 +9487,7 @@
             }
             mapMarkers = [];
             mapBuildingsData = [];
+            userAddressMarkers = [];
             
             // Clear search
             const searchInput = document.getElementById('mapSearchInput');
@@ -9645,6 +9932,7 @@
                             <button onclick="toggleMapLegend()" title="Hide legend" style="background: var(--input-bg, #333); border: 1px solid var(--input-border, #555); border-radius: 4px; cursor: pointer; font-size: 12px; padding: 2px 6px; color: var(--text-color, #fff); font-weight: bold; transition: all 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">Hide</button>
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #9b59b6; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">⭐ Favorited</span></div>
+                        <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #00bcd4; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">📍 User Address</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #4CAF50; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">All Devices Ready</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ffc107; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">Some Devices Ready</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ff6b6b; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">No Devices Ready</span></div>
@@ -9662,6 +9950,9 @@
                 return div;
             };
             legend.addTo(buildingMap);
+            
+            // Load user-added addresses
+            loadUserAddressMarkers();
         }
         
         // Toggle map legend visibility
