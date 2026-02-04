@@ -932,17 +932,17 @@
 
         <!-- Building Map Modal -->
         <div id="buildingMapModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10001; justify-content: center; align-items: center;">
-            <div style="background: var(--card-bg); border-radius: 12px; width: 95%; max-width: 1200px; height: 85%; max-height: 800px; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid var(--input-border); overflow: hidden;">
+            <div id="mapModalContainer" style="background: var(--card-bg); border-radius: 12px; width: 85%; max-width: 1400px; height: 80%; min-width: 400px; min-height: 400px; max-height: 95vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid var(--input-border); overflow: hidden; resize: both;">
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 2px solid var(--input-border); background: var(--panel-bg); flex-wrap: wrap; gap: 10px;">
                     <h3 style="margin: 0; color: var(--header-color); font-size: 1.2em;">📍 Building Locations</h3>
-                    <div style="display: flex; align-items: center; gap: 10px; flex: 1; max-width: 400px; min-width: 200px;">
-                        <div style="position: relative; flex: 1;">
+                    <div style="display: flex; align-items: center; gap: 10px; flex: 1; max-width: 450px; min-width: 200px;">
+                        <div style="display: flex; flex: 1; border: 1px solid var(--input-border); border-radius: 6px; background: var(--input-bg); overflow: hidden;">
                             <input type="text" id="mapSearchInput" placeholder="Search address, BIN, or device #..." 
-                                   style="width: 100%; padding: 8px 32px 8px 10px; border-radius: 6px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 0.85em; box-sizing: border-box;"
+                                   style="flex: 1; padding: 8px 12px; border: none; background: transparent; color: var(--text-color); font-size: 0.85em; outline: none;"
                                    onkeyup="if(event.key === 'Enter') searchMapBuildings()">
-                            <button onclick="searchMapBuildings()" title="Search" style="position: absolute; right: 2px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: 4px 8px; color: var(--text-color); font-size: 1em;">🔍</button>
+                            <button onclick="searchMapBuildings()" title="Search" style="background: var(--input-bg); border: none; border-left: 1px solid var(--input-border); cursor: pointer; padding: 8px 12px; color: var(--text-color); font-size: 1em; display: flex; align-items: center;">🔍</button>
                         </div>
-                        <button onclick="clearMapSearch()" title="Clear search" style="background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 10px; cursor: pointer; color: var(--text-color); font-size: 0.85em;">Clear</button>
+                        <button onclick="clearMapSearch()" title="Clear search" style="background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 8px 12px; cursor: pointer; color: var(--text-color); font-size: 0.85em;">Clear</button>
                     </div>
                     <div style="display: flex; align-items: center; gap: 15px;">
                         <span id="mapSearchResultCount" style="color: #4CAF50; font-size: 0.85em; display: none;"></span>
@@ -977,18 +977,48 @@
                         </div>
                         
                         <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
+                            <h4 style="margin: 0 0 12px 0; color: var(--header-color); font-size: 1em; display: flex; align-items: center; gap: 8px;">
+                                <span style="color: #17a2b8;">📅</span> Month Labels (<span id="mapMonthLabelsCount">0</span>)
+                            </h4>
+                            <p style="font-size: 11px; opacity: 0.7; margin: 0 0 10px 0;">Categorize buildings by month for scheduling</p>
+                            <div style="margin-bottom: 10px;">
+                                <select id="monthFilterSelect" onchange="filterByMonth(this.value)" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 12px;">
+                                    <option value="">Filter by month...</option>
+                                    <option value="January">January</option>
+                                    <option value="February">February</option>
+                                    <option value="March">March</option>
+                                    <option value="April">April</option>
+                                    <option value="May">May</option>
+                                    <option value="June">June</option>
+                                    <option value="July">July</option>
+                                    <option value="August">August</option>
+                                    <option value="September">September</option>
+                                    <option value="October">October</option>
+                                    <option value="November">November</option>
+                                    <option value="December">December</option>
+                                </select>
+                            </div>
+                            <div id="monthLabelsList" style="max-height: 150px; overflow-y: auto; margin-bottom: 10px;">
+                                <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No buildings labeled</div>
+                            </div>
+                            <button onclick="clearAllMonthLabels()" style="width: 100%; padding: 8px; background: var(--input-bg); color: #ff6b6b; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">Clear All Month Labels</button>
+                        </div>
+                        
+                        <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
                             <h4 style="margin: 0 0 10px 0; color: var(--header-color); font-size: 0.9em;">💡 Tips</h4>
                             <ul style="font-size: 11px; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.6;">
                                 <li>Click a marker to see building details</li>
                                 <li>Use ⭐ in popup to favorite a building</li>
                                 <li>Use 👁️ in popup to hide a building</li>
+                                <li>Use 📅 dropdown to assign a month</li>
                                 <li>Favorited buildings turn purple</li>
                             </ul>
                         </div>
                     </div>
                 </div>
-                <div style="padding: 10px 20px; background: var(--panel-bg); border-top: 1px solid var(--input-border); font-size: 0.85em; color: var(--text-color);">
-                    <span style="opacity: 0.7;">Click a marker to view building details • Use ⭐ to favorite • Use 👁️ to hide • Map data © OpenStreetMap contributors</span>
+                <div style="padding: 10px 20px; background: var(--panel-bg); border-top: 1px solid var(--input-border); font-size: 0.85em; color: var(--text-color); display: flex; justify-content: space-between; align-items: center;">
+                    <span style="opacity: 0.7;">Click a marker to view building details • Use ⭐ to favorite • Use 👁️ to hide</span>
+                    <span style="opacity: 0.5; font-size: 0.8em;">↘ Drag corner to resize</span>
                 </div>
             </div>
         </div>
@@ -8831,9 +8861,156 @@
         let buildingMap = null;
         let mapMarkers = [];
 
-        // Favorites and Hidden Buildings Storage
+        // Favorites, Hidden Buildings, and Month Labels Storage
         const MAP_FAVORITES_KEY = 'elv3_map_favorites';
         const MAP_HIDDEN_KEY = 'elv3_map_hidden';
+        const MAP_MONTH_LABELS_KEY = 'elv3_map_month_labels';
+        
+        // Month label functions
+        function getMapMonthLabels() {
+            try {
+                return JSON.parse(localStorage.getItem(MAP_MONTH_LABELS_KEY)) || {};
+            } catch (e) {
+                return {};
+            }
+        }
+        
+        function setMonthLabel(bin, month) {
+            const labels = getMapMonthLabels();
+            if (month === '' || month === null) {
+                delete labels[bin];
+            } else {
+                labels[bin] = month;
+            }
+            localStorage.setItem(MAP_MONTH_LABELS_KEY, JSON.stringify(labels));
+            updateMonthLabelCounts();
+        }
+        
+        function getMonthLabel(bin) {
+            const labels = getMapMonthLabels();
+            return labels[bin] || '';
+        }
+        
+        function updateMonthLabelCounts() {
+            const labels = getMapMonthLabels();
+            const counts = {};
+            const months = ['January', 'February', 'March', 'April', 'May', 'June', 
+                           'July', 'August', 'September', 'October', 'November', 'December'];
+            
+            months.forEach(m => counts[m] = 0);
+            
+            Object.values(labels).forEach(month => {
+                if (counts[month] !== undefined) {
+                    counts[month]++;
+                }
+            });
+            
+            // Update the month labels list in the controls panel
+            const listContainer = document.getElementById('monthLabelsList');
+            if (listContainer) {
+                const totalLabeled = Object.keys(labels).length;
+                if (totalLabeled === 0) {
+                    listContainer.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No buildings labeled</div>';
+                } else {
+                    let html = '';
+                    months.forEach(month => {
+                        if (counts[month] > 0) {
+                            html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px;">
+                                <span>${month}</span>
+                                <span style="background: var(--input-bg); padding: 2px 8px; border-radius: 10px;">${counts[month]}</span>
+                            </div>`;
+                        }
+                    });
+                    listContainer.innerHTML = html;
+                }
+                
+                // Update total count
+                const totalEl = document.getElementById('mapMonthLabelsCount');
+                if (totalEl) {
+                    totalEl.textContent = totalLabeled;
+                }
+            }
+        }
+        
+        function clearAllMonthLabels() {
+            if (confirm('Clear all month labels from all buildings?')) {
+                localStorage.setItem(MAP_MONTH_LABELS_KEY, JSON.stringify({}));
+                updateMonthLabelCounts();
+                // Refresh map to update markers
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                    initBuildingMap(window.lastBulkSearchResults.binGroups);
+                }
+            }
+        }
+        
+        function filterByMonth(month) {
+            if (!mapBuildingsData || mapBuildingsData.length === 0) return;
+            
+            const labels = getMapMonthLabels();
+            const resultCount = document.getElementById('mapSearchResultCount');
+            
+            if (!month) {
+                // Clear filter - show all markers
+                clearMapSearch();
+                return;
+            }
+            
+            const matches = mapBuildingsData.filter(building => labels[building.bin] === month);
+            
+            if (matches.length === 0) {
+                resultCount.textContent = `No buildings labeled "${month}"`;
+                resultCount.style.display = 'inline';
+                resultCount.style.color = '#ff6b6b';
+                // Hide all markers since none match
+                mapMarkers.forEach(marker => {
+                    if (buildingMap.hasLayer(marker)) {
+                        buildingMap.removeLayer(marker);
+                    }
+                });
+                return;
+            }
+            
+            resultCount.textContent = `Showing ${matches.length} "${month}" building${matches.length !== 1 ? 's' : ''}`;
+            resultCount.style.display = 'inline';
+            resultCount.style.color = '#17a2b8';
+            
+            // Hide non-matching markers and show matching ones
+            const bounds = L.latLngBounds();
+            
+            mapMarkers.forEach((marker, index) => {
+                const building = mapBuildingsData[index];
+                if (building && labels[building.bin] === month) {
+                    // Show matching marker
+                    if (!buildingMap.hasLayer(marker)) {
+                        buildingMap.addLayer(marker);
+                    }
+                    bounds.extend(marker.getLatLng());
+                } else {
+                    // Hide non-matching marker
+                    if (buildingMap.hasLayer(marker)) {
+                        buildingMap.removeLayer(marker);
+                    }
+                }
+            });
+            
+            // Zoom to show matching buildings
+            if (matches.length === 1) {
+                const match = matches[0];
+                const marker = mapMarkers.find((m, i) => {
+                    const building = mapBuildingsData[i];
+                    return building && labels[building.bin] === month;
+                });
+                
+                if (marker && buildingMap) {
+                    buildingMap.setView(marker.getLatLng(), 17);
+                    marker.openPopup();
+                }
+            } else if (bounds.isValid()) {
+                if (buildingMap) {
+                    buildingMap.fitBounds(bounds, { padding: [50, 50] });
+                }
+            }
+        }
 
         function getMapFavorites() {
             try {
@@ -9202,9 +9379,23 @@
             
             // Store buildings data for search functionality
             mapBuildingsData = buildingsWithCoords;
+            
+            // Update month labels count in controls panel
+            updateMonthLabelCounts();
 
             // Initialize the map centered on NYC
             buildingMap = L.map(mapContainer).setView([40.7128, -74.0060], 11);
+            
+            // Set up ResizeObserver to handle map container resizing
+            const modalContainer = document.getElementById('mapModalContainer');
+            if (modalContainer && window.ResizeObserver) {
+                const resizeObserver = new ResizeObserver(() => {
+                    if (buildingMap) {
+                        buildingMap.invalidateSize();
+                    }
+                });
+                resizeObserver.observe(modalContainer);
+            }
 
             // Add OpenStreetMap tiles
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -9297,6 +9488,9 @@
                 // Escape address for use in onclick attributes
                 const escapedAddress = building.address.replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 
+                // Get current month label for this building
+                const currentMonthLabel = getMonthLabel(building.bin);
+                
                 const popupContent = `
                     <div class="map-popup-content" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isFavorited ? '#9b59b6' : '#1a73e8'};">
@@ -9343,6 +9537,28 @@
                             </div>
                             <div style="font-size: 12px;">
                                 <strong>Devices:</strong> ${building.deviceCount}
+                            </div>
+                        </div>
+                        
+                        <div style="margin-bottom: 10px; padding: 8px; background: rgba(23,162,184,0.1); border-radius: 6px; border: 1px solid rgba(23,162,184,0.3);">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 12px; color: #17a2b8; font-weight: 600;">📅 Month:</span>
+                                <select onchange="setMonthLabel('${building.bin}', this.value); this.style.borderColor = this.value ? '#17a2b8' : 'var(--input-border)';" 
+                                        style="flex: 1; padding: 4px 8px; border-radius: 4px; border: 1px solid ${currentMonthLabel ? '#17a2b8' : 'var(--input-border)'}; background: var(--input-bg); color: var(--text-color); font-size: 11px; cursor: pointer;">
+                                    <option value="" ${!currentMonthLabel ? 'selected' : ''}>Select month...</option>
+                                    <option value="January" ${currentMonthLabel === 'January' ? 'selected' : ''}>January</option>
+                                    <option value="February" ${currentMonthLabel === 'February' ? 'selected' : ''}>February</option>
+                                    <option value="March" ${currentMonthLabel === 'March' ? 'selected' : ''}>March</option>
+                                    <option value="April" ${currentMonthLabel === 'April' ? 'selected' : ''}>April</option>
+                                    <option value="May" ${currentMonthLabel === 'May' ? 'selected' : ''}>May</option>
+                                    <option value="June" ${currentMonthLabel === 'June' ? 'selected' : ''}>June</option>
+                                    <option value="July" ${currentMonthLabel === 'July' ? 'selected' : ''}>July</option>
+                                    <option value="August" ${currentMonthLabel === 'August' ? 'selected' : ''}>August</option>
+                                    <option value="September" ${currentMonthLabel === 'September' ? 'selected' : ''}>September</option>
+                                    <option value="October" ${currentMonthLabel === 'October' ? 'selected' : ''}>October</option>
+                                    <option value="November" ${currentMonthLabel === 'November' ? 'selected' : ''}>November</option>
+                                    <option value="December" ${currentMonthLabel === 'December' ? 'selected' : ''}>December</option>
+                                </select>
                             </div>
                         </div>
                         
@@ -9490,7 +9706,7 @@
                 const binMatch = building.bin.toString().includes(searchTerm);
                 const deviceMatch = building.readyDevices.some(d => d.number.toUpperCase().includes(searchTerm)) ||
                                    building.notReadyDevices.some(d => d.number.toUpperCase().includes(searchTerm)) ||
-                                   building.removedDismantledDevices.some(d => d.number.toUpperCase().includes(searchTerm));
+                                   (building.removedDeletedDevices && building.removedDeletedDevices.some(d => d.number.toUpperCase().includes(searchTerm)));
                 return addressMatch || binMatch || deviceMatch;
             });
             
@@ -9544,17 +9760,25 @@
         function clearMapSearch() {
             const searchInput = document.getElementById('mapSearchInput');
             const resultCount = document.getElementById('mapSearchResultCount');
+            const monthFilter = document.getElementById('monthFilterSelect');
             
             if (searchInput) searchInput.value = '';
             if (resultCount) resultCount.style.display = 'none';
+            if (monthFilter) monthFilter.value = '';
             
-            // Reset map view to show all markers
+            // Show all markers that may have been hidden by month filter
             if (buildingMap && mapMarkers.length > 0) {
                 const bounds = L.latLngBounds();
                 mapMarkers.forEach(marker => {
+                    // Re-add marker to map if it was removed
+                    if (!buildingMap.hasLayer(marker)) {
+                        buildingMap.addLayer(marker);
+                    }
                     bounds.extend(marker.getLatLng());
                 });
-                buildingMap.fitBounds(bounds, { padding: [30, 30] });
+                if (bounds.isValid()) {
+                    buildingMap.fitBounds(bounds, { padding: [30, 30] });
+                }
             }
         }
 
