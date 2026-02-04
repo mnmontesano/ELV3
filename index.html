@@ -944,6 +944,14 @@
                         </div>
                         <button onclick="clearMapSearch()" title="Clear search" style="background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 8px 12px; cursor: pointer; color: var(--text-color); font-size: 0.85em;">Clear</button>
                     </div>
+                    <div style="display: flex; align-items: center; gap: 10px; flex: 1; max-width: 450px; min-width: 200px;">
+                        <div style="display: flex; flex: 1; border: 1px solid var(--input-border); border-radius: 6px; background: var(--input-bg); overflow: hidden;">
+                            <input type="text" id="additionalLocationInput" placeholder="Add location: address, BIN, or device #..." 
+                                   style="flex: 1; padding: 8px 12px; border: none; background: transparent; color: var(--text-color); font-size: 0.85em; outline: none;"
+                                   onkeyup="if(event.key === 'Enter') addAdditionalLocation()">
+                            <button onclick="addAdditionalLocation()" title="Add location" style="background: var(--input-bg); border: none; border-left: 1px solid var(--input-border); cursor: pointer; padding: 8px 12px; color: var(--text-color); font-size: 1em; display: flex; align-items: center;">➕</button>
+                        </div>
+                    </div>
                     <div style="display: flex; align-items: center; gap: 15px;">
                         <span id="mapSearchResultCount" style="color: #4CAF50; font-size: 0.85em; display: none;"></span>
                         <span id="mapBuildingCount" style="color: var(--text-color); font-size: 0.9em;"></span>
@@ -1005,6 +1013,17 @@
                         </div>
                         
                         <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
+                            <h4 style="margin: 0 0 12px 0; color: var(--header-color); font-size: 1em; display: flex; align-items: center; gap: 8px;">
+                                <span style="color: #00bcd4;">📍</span> Additional Locations (<span id="additionalLocationsCount">0</span>)
+                            </h4>
+                            <p style="font-size: 11px; opacity: 0.7; margin: 0 0 10px 0;">Custom locations appear as blue squares on the map</p>
+                            <div id="additionalLocationsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 10px;">
+                                <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No additional locations</div>
+                            </div>
+                            <button onclick="clearAllAdditionalLocations()" style="width: 100%; padding: 8px; background: var(--input-bg); color: #00bcd4; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">Clear All Additional Locations</button>
+                        </div>
+                        
+                        <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
                             <h4 style="margin: 0 0 10px 0; color: var(--header-color); font-size: 0.9em;">💡 Tips</h4>
                             <ul style="font-size: 11px; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.6;">
                                 <li>Click a marker to see building details</li>
@@ -1012,6 +1031,7 @@
                                 <li>Use 👁️ in popup to hide a building</li>
                                 <li>Use 📅 dropdown to assign a month</li>
                                 <li>Favorited buildings turn purple</li>
+                                <li>Add custom locations with the ➕ button</li>
                             </ul>
                         </div>
                     </div>
@@ -8861,10 +8881,513 @@
         let buildingMap = null;
         let mapMarkers = [];
 
-        // Favorites, Hidden Buildings, and Month Labels Storage
+        // Favorites, Hidden Buildings, Month Labels, and Additional Locations Storage
         const MAP_FAVORITES_KEY = 'elv3_map_favorites';
         const MAP_HIDDEN_KEY = 'elv3_map_hidden';
         const MAP_MONTH_LABELS_KEY = 'elv3_map_month_labels';
+        const MAP_ADDITIONAL_LOCATIONS_KEY = 'elv3_map_additional_locations';
+        
+        // Additional locations storage
+        let additionalLocationMarkers = [];
+        
+        function getAdditionalLocations() {
+            try {
+                return JSON.parse(localStorage.getItem(MAP_ADDITIONAL_LOCATIONS_KEY)) || [];
+            } catch (e) {
+                return [];
+            }
+        }
+        
+        function setAdditionalLocations(locations) {
+            try {
+                localStorage.setItem(MAP_ADDITIONAL_LOCATIONS_KEY, JSON.stringify(locations));
+            } catch (e) {
+                console.error('Error saving additional locations:', e);
+            }
+        }
+        
+        async function addAdditionalLocation() {
+            const input = document.getElementById('additionalLocationInput');
+            const searchTerm = input.value.trim();
+            
+            if (!searchTerm) {
+                showMapNotification('Please enter an address, BIN, or device number', '#ff6b6b');
+                return;
+            }
+            
+            // Show loading state
+            const originalValue = input.value;
+            input.value = 'Looking up...';
+            input.disabled = true;
+            
+            let locationAdded = false;
+            
+            try {
+                let location = null;
+                
+                // Check if it's a BIN number (numeric, 6-7 digits)
+                if (/^\d{6,7}$/.test(searchTerm)) {
+                    location = await lookupLocationByBin(searchTerm);
+                }
+                // Check if it's a device number (format: XXXX-XXXX or similar)
+                else if (/^[A-Z0-9]+-[A-Z0-9]+/.test(searchTerm.toUpperCase())) {
+                    location = await lookupLocationByDevice(searchTerm);
+                }
+                // Otherwise treat as address
+                else {
+                    location = await lookupLocationByAddress(searchTerm);
+                }
+                
+                if (location) {
+                    const locations = getAdditionalLocations();
+                    // Check if location already exists
+                    const exists = locations.some(loc => 
+                        loc.latitude === location.latitude && 
+                        loc.longitude === location.longitude
+                    );
+                    
+                    if (exists) {
+                        showMapNotification('This location is already on the map', '#ff6b6b');
+                        input.value = originalValue; // Restore original value
+                    } else {
+                        locations.push(location);
+                        setAdditionalLocations(locations);
+                        input.value = ''; // Clear input on success
+                        locationAdded = true;
+                        showMapNotification(`Added location: ${location.label}`, '#00bcd4');
+                        
+                        // Update the controls panel
+                        updateAdditionalLocationsPanel();
+                        
+                        // Refresh map if it's open
+                        if (buildingMap && window.lastBulkSearchResults) {
+                            initBuildingMap(window.lastBulkSearchResults.binGroups);
+                        }
+                    }
+                } else {
+                    showMapNotification('Could not find location. Please check the address, BIN, or device number.', '#ff6b6b');
+                    input.value = originalValue; // Restore original value
+                }
+            } catch (error) {
+                console.error('Error adding location:', error);
+                showMapNotification('Error looking up location. Please try again.', '#ff6b6b');
+                input.value = originalValue; // Restore original value
+            } finally {
+                input.disabled = false;
+                input.focus();
+            }
+        }
+        
+        async function lookupLocationByBin(bin) {
+            try {
+                // Use NYC open data to get all devices for this BIN
+                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=bin='${bin}'`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Network response not ok');
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    const building = data[0];
+                    const address = `${building.house_number} ${building.street_name}, ${building.borough}`;
+                    
+                    // Fetch violations for all devices
+                    const devicesWithViolations = await Promise.all(data.map(async (device) => {
+                        const violations = await fetchViolations(device.device_number);
+                        const activeViolations = violations.filter(v => 
+                            v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                            v.violation_status?.toUpperCase() === 'OPEN');
+                        return {
+                            ...device,
+                            violations: activeViolations
+                        };
+                    }));
+                    
+                    // Try to get coordinates from the API response
+                    if (building.latitude && building.longitude) {
+                        return {
+                            label: address,
+                            latitude: parseFloat(building.latitude),
+                            longitude: parseFloat(building.longitude),
+                            bin: bin,
+                            type: 'bin',
+                            devices: devicesWithViolations
+                        };
+                    }
+                    
+                    // If no coordinates, try geocoding the address
+                    const location = await geocodeAddress(address, bin);
+                    if (location) {
+                        location.devices = devicesWithViolations;
+                    }
+                    return location;
+                }
+                return null;
+            } catch (error) {
+                console.error('Error looking up BIN:', error);
+                return null;
+            }
+        }
+        
+        async function lookupLocationByDevice(deviceNumber) {
+            try {
+                // Use NYC open data to get device info
+                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=UPPER(device_number)='${deviceNumber.toUpperCase()}'&$limit=1`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Network response not ok');
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    const device = data[0];
+                    const address = `${device.house_number} ${device.street_name}, ${device.borough}`;
+                    
+                    // Fetch violations for this device
+                    const violations = await fetchViolations(deviceNumber);
+                    const activeViolations = violations.filter(v => 
+                        v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                        v.violation_status?.toUpperCase() === 'OPEN');
+                    
+                    const deviceWithViolations = {
+                        ...device,
+                        violations: activeViolations
+                    };
+                    
+                    // Try to get coordinates from the API response
+                    if (device.latitude && device.longitude) {
+                        return {
+                            label: `${address} (Device: ${deviceNumber})`,
+                            latitude: parseFloat(device.latitude),
+                            longitude: parseFloat(device.longitude),
+                            bin: device.bin,
+                            deviceNumber: deviceNumber,
+                            type: 'device',
+                            devices: [deviceWithViolations]
+                        };
+                    }
+                    
+                    // If no coordinates, try geocoding the address
+                    const location = await geocodeAddress(address, device.bin, deviceNumber);
+                    if (location) {
+                        location.devices = [deviceWithViolations];
+                    }
+                    return location;
+                }
+                return null;
+            } catch (error) {
+                console.error('Error looking up device:', error);
+                return null;
+            }
+        }
+        
+        async function lookupLocationByAddress(address) {
+            try {
+                // Parse address into components
+                const addressParts = address.split(',').map(part => part.trim());
+                const streetAddress = addressParts[0];
+                const borough = addressParts[1] || '';
+                
+                // Split street address into house number and street name
+                const match = streetAddress.match(/^(\d+)\s+(.+)$/);
+                if (!match) {
+                    // Try geocoding the full address as-is
+                    return await geocodeAddress(address);
+                }
+                
+                const [_, houseNumber, streetName] = match;
+                
+                // Build query
+                const escapeQuotes = value => value.replace(/'/g, "''");
+                const whereParts = [
+                    `UPPER(house_number)='${escapeQuotes(houseNumber)}'`,
+                    `UPPER(street_name) like '${escapeQuotes(streetName)}%'`
+                ];
+                
+                if (borough) {
+                    whereParts.push(`UPPER(borough) like '${escapeQuotes(borough)}%'`);
+                }
+                
+                const params = new URLSearchParams();
+                params.set('$where', whereParts.join(' AND '));
+                params.set('$limit', '1');
+                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?${params.toString()}`;
+                
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Network response not ok');
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    const building = data[0];
+                    const fullAddress = `${building.house_number} ${building.street_name}, ${building.borough}`;
+                    
+                    // Try to get coordinates from the API response
+                    if (building.latitude && building.longitude) {
+                        return {
+                            label: fullAddress,
+                            latitude: parseFloat(building.latitude),
+                            longitude: parseFloat(building.longitude),
+                            bin: building.bin,
+                            type: 'address'
+                        };
+                    }
+                    
+                    // If no coordinates, try geocoding
+                    return await geocodeAddress(fullAddress, building.bin);
+                }
+                
+                // If no match in NYC data, try geocoding the original address
+                return await geocodeAddress(address);
+            } catch (error) {
+                console.error('Error looking up address:', error);
+                // Fallback to geocoding
+                return await geocodeAddress(address);
+            }
+        }
+        
+        async function geocodeAddress(address, bin = null, deviceNumber = null) {
+            try {
+                // Use Nominatim (OpenStreetMap geocoding) - free and no API key required
+                const encodedAddress = encodeURIComponent(address + ', New York, NY');
+                const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1`;
+                
+                const response = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'ELV3-Cheat-Sheet/1.0'
+                    }
+                });
+                
+                if (!response.ok) throw new Error('Geocoding failed');
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    const result = data[0];
+                    return {
+                        label: address,
+                        latitude: parseFloat(result.lat),
+                        longitude: parseFloat(result.lon),
+                        bin: bin,
+                        deviceNumber: deviceNumber,
+                        type: bin ? (deviceNumber ? 'device' : 'bin') : 'address'
+                    };
+                }
+                return null;
+            } catch (error) {
+                console.error('Geocoding error:', error);
+                return null;
+            }
+        }
+        
+        function formatDeviceInfoForPopup(devices) {
+            if (!devices || devices.length === 0) return '';
+            
+            const currentYear = new Date().getFullYear();
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            let html = `
+                <div style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #00bcd4;">
+                    <div style="font-weight: 600; font-size: 13px; color: #00bcd4; margin-bottom: 10px;">
+                        Device Information (${devices.length} device${devices.length !== 1 ? 's' : ''})
+                    </div>
+                    <div style="max-height: 400px; overflow-y: auto;">
+            `;
+            
+            devices.forEach((device, idx) => {
+                const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                
+                const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+                const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
+                
+                const deviceType = (device.device_type || '').toUpperCase();
+                const deviceStatus = (device.device_status || '').toUpperCase();
+                const isDismantled = deviceStatus.includes('DISMANTLED');
+                const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
+                const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER');
+                const isConveyor = deviceType.includes('CONVEYOR');
+                const isWheelchairLift = deviceType.includes('WHEELCHAIR');
+                const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                const isEscalator = deviceType.includes('ESCALATOR');
+                
+                // Calculate completion status
+                let completionStatus, completionColor;
+                if (isRemoved) {
+                    completionStatus = 'N/A'; completionColor = '#9e9e9e';
+                } else if (isConveyor && hasCat1ThisYear) {
+                    completionStatus = 'Complete'; completionColor = '#4CAF50';
+                } else if (isDismantled && hasPVIThisYear) {
+                    completionStatus = 'Complete'; completionColor = '#4CAF50';
+                } else if ((isDumbwaiter || isWheelchairLift || isHydraulic || isEscalator) && hasPVIThisYear && hasCat1ThisYear) {
+                    completionStatus = 'Complete'; completionColor = '#4CAF50';
+                } else {
+                    let requiresCat5 = false;
+                    if (!isDumbwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && cat5Date) {
+                        const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
+                        requiresCat5 = yearsSinceCat5 >= 5;
+                    }
+                    
+                    if (requiresCat5) {
+                        if (hasPVIThisYear && hasCat1ThisYear && hasCat5ThisYear) {
+                            completionStatus = 'Complete'; completionColor = '#4CAF50';
+                        } else {
+                            let missing = [];
+                            if (!hasPVIThisYear) missing.push('PVI');
+                            if (!hasCat1ThisYear) missing.push('CAT1');
+                            if (!hasCat5ThisYear) missing.push('CAT5');
+                            completionStatus = missing.join('+');
+                            completionColor = missing.length === 3 ? '#ff6b6b' : '#ffd700';
+                        }
+                    } else {
+                        if (hasPVIThisYear && hasCat1ThisYear) {
+                            completionStatus = 'Complete'; completionColor = '#4CAF50';
+                        } else {
+                            let missing = [];
+                            if (!hasPVIThisYear) missing.push('PVI');
+                            if (!hasCat1ThisYear) missing.push('CAT1');
+                            completionStatus = missing.join('+');
+                            completionColor = missing.length === 2 ? '#ff6b6b' : '#ffd700';
+                        }
+                    }
+                }
+                
+                // Calculate 91-day eligibility
+                let mostRecentTest;
+                if (isDismantled) {
+                    mostRecentTest = pviDate;
+                } else {
+                    const allDates = [pviDate, cat1Date, cat5Date].filter(d => d !== null);
+                    mostRecentTest = allDates.length > 0 ? new Date(Math.max(...allDates.map(d => d.getTime()))) : null;
+                }
+                
+                let isReady = 'N/A';
+                let isReadyColor = '#9e9e9e';
+                let eligibleDate = '—';
+                
+                if (!isRemoved && mostRecentTest) {
+                    const eligible = new Date(mostRecentTest);
+                    eligible.setDate(eligible.getDate() + 91);
+                    eligible.setHours(0, 0, 0, 0);
+                    isReady = eligible <= today ? 'Yes' : 'No';
+                    isReadyColor = eligible <= today ? '#4CAF50' : '#ff9800';
+                    eligibleDate = eligible.toLocaleDateString();
+                }
+                
+                const violationCount = device.violations ? device.violations.length : 0;
+                
+                html += `
+                    <div style="background: var(--input-bg); padding: 12px; border-radius: 6px; margin-bottom: 10px; border: 1px solid var(--input-border);">
+                        <div style="font-weight: 600; font-size: 12px; color: var(--header-color); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <span>${device.device_number || 'N/A'}</span>
+                            ${violationCount > 0 ? `<span style="color: #ff6b6b; font-size: 11px;">⚠ ${violationCount} violation${violationCount !== 1 ? 's' : ''}</span>` : ''}
+                        </div>
+                        <div style="font-size: 11px; margin-bottom: 4px;">
+                            <strong>Type:</strong> ${device.device_type || 'N/A'}
+                        </div>
+                        <div style="font-size: 11px; margin-bottom: 4px;">
+                            <strong>Status:</strong> <span style="color: ${isRemoved ? '#ff6b6b' : (deviceStatus.includes('ACTIVE') ? '#4CAF50' : '#ff9800')};">${device.device_status || 'N/A'}</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--input-border);">
+                            <div style="font-size: 10px;">
+                                <strong>PVI:</strong> ${pviDate ? pviDate.toLocaleDateString() : '—'}
+                            </div>
+                            <div style="font-size: 10px;">
+                                <strong>CAT 1:</strong> ${cat1Date ? cat1Date.toLocaleDateString() : '—'}
+                            </div>
+                            <div style="font-size: 10px;">
+                                <strong>CAT 5:</strong> ${cat5Date ? cat5Date.toLocaleDateString() : '—'}
+                            </div>
+                            <div style="font-size: 10px;">
+                                <strong>${currentYear} Status:</strong> <span style="color: ${completionColor};">${completionStatus}</span>
+                            </div>
+                            <div style="font-size: 10px;">
+                                <strong>Ready:</strong> <span style="color: ${isReadyColor};">${isReady}</span>
+                            </div>
+                            <div style="font-size: 10px;">
+                                <strong>Eligible:</strong> ${eligibleDate}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += `
+                    </div>
+                </div>
+            `;
+            
+            return html;
+        }
+        
+        function removeAdditionalLocation(index) {
+            const locations = getAdditionalLocations();
+            if (index >= 0 && index < locations.length) {
+                const removed = locations.splice(index, 1)[0];
+                setAdditionalLocations(locations);
+                showMapNotification(`Removed location: ${removed.label}`, '#00bcd4');
+                
+                // Update the controls panel
+                updateAdditionalLocationsPanel();
+                
+                // Refresh map if it's open
+                if (buildingMap && window.lastBulkSearchResults) {
+                    initBuildingMap(window.lastBulkSearchResults.binGroups);
+                }
+            }
+        }
+        
+        function removeAdditionalLocationByCoords(latitude, longitude) {
+            const locations = getAdditionalLocations();
+            const index = locations.findIndex(loc => 
+                Math.abs(loc.latitude - latitude) < 0.0001 && 
+                Math.abs(loc.longitude - longitude) < 0.0001
+            );
+            if (index >= 0) {
+                removeAdditionalLocation(index);
+            }
+        }
+        
+        function clearAllAdditionalLocations() {
+            if (confirm('Are you sure you want to remove all additional locations?')) {
+                setAdditionalLocations([]);
+                showMapNotification('All additional locations cleared', '#00bcd4');
+                
+                // Update the controls panel
+                updateAdditionalLocationsPanel();
+                
+                // Refresh map if it's open
+                if (buildingMap && window.lastBulkSearchResults) {
+                    initBuildingMap(window.lastBulkSearchResults.binGroups);
+                }
+            }
+        }
+        
+        function updateAdditionalLocationsPanel() {
+            const locations = getAdditionalLocations();
+            const countEl = document.getElementById('additionalLocationsCount');
+            const listEl = document.getElementById('additionalLocationsList');
+            
+            if (countEl) {
+                countEl.textContent = locations.length;
+            }
+            
+            if (listEl) {
+                if (locations.length === 0) {
+                    listEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No additional locations</div>';
+                } else {
+                    listEl.innerHTML = locations.map((loc, index) => `
+                        <div style="background: var(--input-bg); padding: 8px; border-radius: 4px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--input-border);">
+                            <div style="flex: 1; font-size: 11px; color: var(--text-color);">
+                                <div style="font-weight: 500; margin-bottom: 2px;">${loc.label}</div>
+                                <div style="opacity: 0.7; font-size: 10px;">${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)}</div>
+                            </div>
+                            <button onclick="removeAdditionalLocation(${index})" 
+                                    style="background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid #ff6b6b; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px; margin-left: 8px;"
+                                    title="Remove location">✕</button>
+                        </div>
+                    `).join('');
+                }
+            }
+        }
         
         // Month label functions
         function getMapMonthLabels() {
@@ -9145,6 +9668,9 @@
                     hiddenListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No hidden buildings</div>';
                 }
             }
+            
+            // Update additional locations panel
+            updateAdditionalLocationsPanel();
         }
 
         // Copy BIN from map popup
@@ -9184,6 +9710,72 @@
             const modal = document.getElementById('buildingMapModal');
             modal.style.display = 'flex';
 
+            // Prevent body scrolling when map modal is open
+            document.body.style.overflow = 'hidden';
+            document.body.style.position = 'fixed';
+            document.body.style.width = '100%';
+
+            // Track mouse activity to prevent accidental closes during resize
+            let mouseDownOnContainer = false;
+            let mouseMoved = false;
+            const mapContainer = document.getElementById('mapModalContainer');
+            
+            const handleContainerMouseDown = (e) => {
+                mouseDownOnContainer = true;
+                mouseMoved = false;
+            };
+            
+            const handleMouseMove = () => {
+                if (mouseDownOnContainer) {
+                    mouseMoved = true;
+                }
+            };
+            
+            const handleMouseUp = () => {
+                // Reset after a short delay to allow events to settle
+                setTimeout(() => {
+                    mouseDownOnContainer = false;
+                    mouseMoved = false;
+                }, 100);
+            };
+            
+            if (mapContainer) {
+                mapContainer.addEventListener('mousedown', handleContainerMouseDown);
+                document.addEventListener('mousemove', handleMouseMove);
+                document.addEventListener('mouseup', handleMouseUp);
+                modal._containerMouseDownHandler = handleContainerMouseDown;
+                modal._mouseMoveHandler = handleMouseMove;
+                modal._mouseUpHandler = handleMouseUp;
+            }
+            
+            // Add event listener to close modal when clicking on backdrop
+            // Use mousedown instead of click to avoid conflicts with resize
+            const handleBackdropClick = (e) => {
+                // Don't close if user was interacting with container (resizing, dragging, etc.)
+                if (mouseDownOnContainer || mouseMoved) {
+                    return;
+                }
+                
+                // Only close if clicking directly on the backdrop (modal itself), not on container or children
+                const mapContainer = document.getElementById('mapModalContainer');
+                if (e.target === modal && (!mapContainer || !mapContainer.contains(e.target))) {
+                    // Prevent the click from propagating
+                    e.stopPropagation();
+                    closeBuildingMap();
+                }
+            };
+            modal.addEventListener('mousedown', handleBackdropClick);
+            modal._backdropClickHandler = handleBackdropClick;
+
+            // Add event listener to close modal on ESC key
+            const handleEscKey = (e) => {
+                if (e.key === 'Escape' && modal.style.display === 'flex') {
+                    closeBuildingMap();
+                }
+            };
+            document.addEventListener('keydown', handleEscKey);
+            modal._escKeyHandler = handleEscKey;
+
             // Small delay to ensure modal is visible before initializing map
             setTimeout(() => {
                 initBuildingMap(deviceData.binGroups);
@@ -9194,12 +9786,43 @@
             const modal = document.getElementById('buildingMapModal');
             modal.style.display = 'none';
             
+            // Re-enable body scrolling when map modal is closed
+            document.body.style.overflow = '';
+            document.body.style.position = '';
+            document.body.style.width = '';
+            
+            // Remove event listeners
+            if (modal._backdropClickHandler) {
+                modal.removeEventListener('mousedown', modal._backdropClickHandler);
+                delete modal._backdropClickHandler;
+            }
+            if (modal._escKeyHandler) {
+                document.removeEventListener('keydown', modal._escKeyHandler);
+                delete modal._escKeyHandler;
+            }
+            if (modal._containerMouseDownHandler) {
+                const mapContainer = document.getElementById('mapModalContainer');
+                if (mapContainer) {
+                    mapContainer.removeEventListener('mousedown', modal._containerMouseDownHandler);
+                }
+                delete modal._containerMouseDownHandler;
+            }
+            if (modal._mouseMoveHandler) {
+                document.removeEventListener('mousemove', modal._mouseMoveHandler);
+                delete modal._mouseMoveHandler;
+            }
+            if (modal._mouseUpHandler) {
+                document.removeEventListener('mouseup', modal._mouseUpHandler);
+                delete modal._mouseUpHandler;
+            }
+            
             // Clean up map
             if (buildingMap) {
                 buildingMap.remove();
                 buildingMap = null;
             }
             mapMarkers = [];
+            additionalLocationMarkers = [];
             mapBuildingsData = [];
             
             // Clear search
@@ -9207,6 +9830,10 @@
             const resultCount = document.getElementById('mapSearchResultCount');
             if (searchInput) searchInput.value = '';
             if (resultCount) resultCount.style.display = 'none';
+            
+            // Clear additional location input
+            const additionalInput = document.getElementById('additionalLocationInput');
+            if (additionalInput) additionalInput.value = '';
         }
 
         function toggleMapControlsPanel() {
@@ -9230,6 +9857,7 @@
                 buildingMap = null;
             }
             mapMarkers = [];
+            additionalLocationMarkers = [];
 
             // Get favorites and hidden buildings
             const favorites = getMapFavorites();
@@ -9623,8 +10251,307 @@
                 bounds.extend([building.latitude, building.longitude]);
             });
 
-            // Fit map to show all markers
-            if (buildingsWithCoords.length > 0) {
+            // Clear existing additional location markers
+            additionalLocationMarkers.forEach(marker => {
+                if (buildingMap.hasLayer(marker)) {
+                    buildingMap.removeLayer(marker);
+                }
+            });
+            additionalLocationMarkers = [];
+
+            // Add markers for additional locations (custom locations)
+            const additionalLocations = getAdditionalLocations();
+            additionalLocations.forEach(location => {
+                // Process devices if available (same logic as buildings)
+                let deviceCount = 0;
+                let complete = 0;
+                let incomplete = 0;
+                const readyDevices = [];
+                const notReadyDevices = [];
+                const removedDeletedDevices = [];
+                const violationDetails = [];
+                
+                if (location.devices && location.devices.length > 0) {
+                    deviceCount = location.devices.length;
+                    const currentYear = new Date().getFullYear();
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    
+                    location.devices.forEach(device => {
+                        const deviceStatus = (device.device_status || '').toUpperCase();
+                        const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
+                        const isDismantled = deviceStatus.includes('DISMANTLED');
+                        
+                        // Track removed/deleted devices
+                        if (isRemoved) {
+                            const statusDate = device.status_date ? new Date(device.status_date).toLocaleDateString() : 'N/A';
+                            removedDeletedDevices.push({
+                                number: device.device_number,
+                                type: device.device_type || 'Unknown',
+                                status: device.device_status || 'N/A',
+                                statusDate: statusDate
+                            });
+                        }
+                        
+                        // Skip removed devices from testing calculations
+                        if (isRemoved) return;
+                        
+                        const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                        const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                        const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                        const hasPVI = pviDate && pviDate.getFullYear() === currentYear;
+                        const hasCat1 = cat1Date && cat1Date.getFullYear() === currentYear;
+                        
+                        if (hasPVI && hasCat1) complete++;
+                        else incomplete++;
+                        
+                        // Calculate 91-day testing eligibility
+                        let mostRecentTest;
+                        if (isDismantled) {
+                            mostRecentTest = pviDate;
+                        } else {
+                            const allDates = [pviDate, cat1Date, cat5Date].filter(d => d !== null);
+                            mostRecentTest = allDates.length > 0 ? new Date(Math.max(...allDates.map(d => d.getTime()))) : null;
+                        }
+                        
+                        let isReady = true;
+                        let eligibleDate = null;
+                        let daysUntil = null;
+                        
+                        if (mostRecentTest) {
+                            eligibleDate = new Date(mostRecentTest);
+                            eligibleDate.setDate(eligibleDate.getDate() + 91);
+                            eligibleDate.setHours(0, 0, 0, 0);
+                            daysUntil = Math.ceil((eligibleDate - today) / (1000 * 60 * 60 * 24));
+                            isReady = daysUntil <= 0;
+                        }
+                        
+                        const deviceInfo = {
+                            number: device.device_number,
+                            type: device.device_type || 'Unknown',
+                            status: device.device_status || 'N/A',
+                            hasPVI,
+                            hasCat1,
+                            eligibleDate,
+                            daysUntil,
+                            mostRecentTest
+                        };
+                        
+                        if (isReady) {
+                            readyDevices.push(deviceInfo);
+                        } else {
+                            notReadyDevices.push(deviceInfo);
+                        }
+                        
+                        // Collect violation details
+                        if (device.violations && device.violations.length > 0) {
+                            device.violations.forEach(v => {
+                                violationDetails.push({
+                                    deviceNumber: device.device_number,
+                                    description: v.violation_description || v.violation_remarks || 'No description available',
+                                    status: v.violation_status || 'Unknown',
+                                    type: v.violation_type || 'N/A',
+                                    issueDate: v.violation_issue_date || v.violation_date || null
+                                });
+                            });
+                        }
+                    });
+                }
+                
+                // Determine icon based on device count
+                const iconText = deviceCount > 0 ? deviceCount : '📍';
+                
+                // Create circular icon for additional locations (same style as building markers but different color)
+                const additionalIcon = L.divIcon({
+                    className: 'custom-map-marker-additional',
+                    html: `<div style="
+                        background: #00bcd4;
+                        width: 24px;
+                        height: 24px;
+                        border-radius: 50%;
+                        border: 3px solid white;
+                        box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-weight: bold;
+                        font-size: 11px;
+                    ">${iconText}</div>`,
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 15]
+                });
+
+                const additionalMarker = L.marker([location.latitude, location.longitude], { icon: additionalIcon })
+                    .addTo(buildingMap);
+
+                // Create popup content matching building popup format
+                const readyList = readyDevices.slice(0, 5).map(d => 
+                    `<div style="font-size: 11px; padding: 2px 0; display: flex; justify-content: space-between;">
+                        <span>${d.number}</span>
+                        <span style="opacity: 0.7; font-size: 10px;">${d.hasPVI && d.hasCat1 ? '✓ Done' : 'Needs tests'}</span>
+                    </div>`
+                ).join('');
+                
+                const notReadyList = notReadyDevices.slice(0, 5).map(d => 
+                    `<div style="font-size: 11px; padding: 2px 0; display: flex; justify-content: space-between;">
+                        <span>${d.number}</span>
+                        <span style="opacity: 0.7; font-size: 10px;">${d.daysUntil > 0 ? d.daysUntil + ' days' : ''}</span>
+                    </div>`
+                ).join('');
+                
+                const removedDeletedList = removedDeletedDevices.slice(0, 5).map(d => 
+                    `<div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between; border-bottom: 1px solid rgba(128,128,128,0.2);">
+                        <span style="font-weight: 500;">${d.number}</span>
+                        <span style="color: #ff6b6b; font-size: 10px; font-weight: 500;">
+                            ${d.status.toUpperCase().includes('DELETED') ? 'Deleted' : 'Removed'}
+                        </span>
+                    </div>`
+                ).join('');
+                
+                const violationDetailsList = violationDetails.slice(0, 10).map(v => {
+                    const truncatedDesc = v.description.length > 80 ? v.description.substring(0, 80) + '...' : v.description;
+                    const issueDate = v.issueDate ? new Date(v.issueDate).toLocaleDateString() : '';
+                    return `<div style="font-size: 11px; padding: 6px 0; border-bottom: 1px solid rgba(255,107,107,0.2);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+                            <span style="font-weight: 600; color: #ff6b6b;">Device: ${v.deviceNumber}</span>
+                            ${issueDate ? `<span style="font-size: 9px; opacity: 0.7;">${issueDate}</span>` : ''}
+                        </div>
+                        <div style="font-size: 10px; color: #ccc; line-height: 1.3;">${truncatedDesc}</div>
+                    </div>`;
+                }).join('');
+                
+                const totalViolations = violationDetails.length;
+                const escapedAddress = location.label.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const currentMonthLabel = location.bin ? getMonthLabel(location.bin) : null;
+                
+                // Build popup content matching building popup format
+                const additionalPopupContent = `
+                    <div class="map-popup-content" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #00bcd4;">
+                            <div style="font-weight: bold; font-size: 14px; flex: 1;">${location.label.toUpperCase()}</div>
+                            <div style="display: flex; gap: 4px; margin-left: 8px;">
+                                <button onclick="removeAdditionalLocationByCoords(${location.latitude}, ${location.longitude})" 
+                                        title="Remove location"
+                                        style="background: rgba(255,107,107,0.1); 
+                                               color: #ff6b6b; 
+                                               border: 1px solid #ff6b6b; 
+                                               border-radius: 4px; 
+                                               padding: 4px 8px; 
+                                               cursor: pointer; 
+                                               font-size: 14px;
+                                               transition: all 0.2s;">✕</button>
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                            <div style="font-size: 12px;">
+                                <strong>BIN:</strong> 
+                                ${location.bin ? `
+                                <span onclick="copyMapBin('${location.bin}')" 
+                                      style="cursor: pointer; padding: 2px 6px; background: rgba(26,115,232,0.1); border-radius: 4px; transition: all 0.2s;"
+                                      onmouseover="this.style.background='rgba(26,115,232,0.2)'"
+                                      onmouseout="this.style.background='rgba(26,115,232,0.1)'"
+                                      title="Click to copy BIN">
+                                    ${location.bin} 📋
+                                </span>
+                                ` : '<span>N/A</span>'}
+                            </div>
+                            <div style="font-size: 12px;">
+                                <strong>Devices:</strong> ${deviceCount}
+                            </div>
+                        </div>
+                        
+                        ${location.bin ? `
+                        <div style="margin-bottom: 10px; padding: 8px; background: rgba(23,162,184,0.1); border-radius: 6px; border: 1px solid rgba(23,162,184,0.3);">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 12px; color: #17a2b8; font-weight: 600;">📅 Month:</span>
+                                <select onchange="setMonthLabel('${location.bin}', this.value); this.style.borderColor = this.value ? '#17a2b8' : 'var(--input-border)';" 
+                                        style="flex: 1; padding: 4px 8px; border-radius: 4px; border: 1px solid ${currentMonthLabel ? '#17a2b8' : 'var(--input-border)'}; background: var(--input-bg); color: var(--text-color); font-size: 11px; cursor: pointer;">
+                                    <option value="" ${!currentMonthLabel ? 'selected' : ''}>Select month...</option>
+                                    <option value="January" ${currentMonthLabel === 'January' ? 'selected' : ''}>January</option>
+                                    <option value="February" ${currentMonthLabel === 'February' ? 'selected' : ''}>February</option>
+                                    <option value="March" ${currentMonthLabel === 'March' ? 'selected' : ''}>March</option>
+                                    <option value="April" ${currentMonthLabel === 'April' ? 'selected' : ''}>April</option>
+                                    <option value="May" ${currentMonthLabel === 'May' ? 'selected' : ''}>May</option>
+                                    <option value="June" ${currentMonthLabel === 'June' ? 'selected' : ''}>June</option>
+                                    <option value="July" ${currentMonthLabel === 'July' ? 'selected' : ''}>July</option>
+                                    <option value="August" ${currentMonthLabel === 'August' ? 'selected' : ''}>August</option>
+                                    <option value="September" ${currentMonthLabel === 'September' ? 'selected' : ''}>September</option>
+                                    <option value="October" ${currentMonthLabel === 'October' ? 'selected' : ''}>October</option>
+                                    <option value="November" ${currentMonthLabel === 'November' ? 'selected' : ''}>November</option>
+                                    <option value="December" ${currentMonthLabel === 'December' ? 'selected' : ''}>December</option>
+                                </select>
+                            </div>
+                        </div>
+                        ` : ''}
+                        
+                        ${deviceCount > 0 ? `
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                            <div style="font-size: 12px;">
+                                <span style="color: #4CAF50; font-weight: 600;">✓ ${complete} Complete</span>
+                            </div>
+                            <div style="font-size: 12px;">
+                                <span style="color: #ff9800; font-weight: 600;">○ ${incomplete} Incomplete</span>
+                            </div>
+                        </div>
+                        
+                        ${totalViolations > 0 ? `
+                        <div style="margin-bottom: 10px;">
+                            <div onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.querySelector('.violation-arrow').textContent = this.nextElementSibling.style.display === 'none' ? '▼' : '▲';" 
+                                 style="font-size: 12px; color: #ff6b6b; font-weight: 600; padding: 8px 10px; background: rgba(255,107,107,0.1); border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,107,107,0.3); transition: all 0.2s;"
+                                 onmouseover="this.style.background='rgba(255,107,107,0.2)'"
+                                 onmouseout="this.style.background='rgba(255,107,107,0.1)'">
+                                <span>⚠️ ${totalViolations} Active Violation${totalViolations !== 1 ? 's' : ''}</span>
+                                <span class="violation-arrow" style="font-size: 10px; transition: transform 0.2s;">▼</span>
+                            </div>
+                            <div style="display: none; margin-top: 6px; padding: 10px; background: rgba(255,107,107,0.05); border-radius: 4px; border: 1px solid rgba(255,107,107,0.2); max-height: 200px; overflow-y: auto;">
+                                <div style="font-size: 10px; color: #ff6b6b; margin-bottom: 8px; font-weight: 600;">Click to view violation details:</div>
+                                ${violationDetailsList}
+                                ${violationDetails.length > 10 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 6px; text-align: center;">+${violationDetails.length - 10} more violations...</div>` : ''}
+                            </div>
+                        </div>` : ''}
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div style="background: rgba(76,175,80,0.1); padding: 8px; border-radius: 6px; border: 1px solid rgba(76,175,80,0.3);">
+                                <div style="font-size: 11px; font-weight: 600; color: #4CAF50; margin-bottom: 6px;">
+                                    ✅ Ready to Test (${readyDevices.length})
+                                </div>
+                                ${readyDevices.length > 0 ? readyList : '<div style="font-size: 11px; opacity: 0.6;">None</div>'}
+                                ${readyDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${readyDevices.length - 5} more...</div>` : ''}
+                            </div>
+                            <div style="background: rgba(255,152,0,0.1); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,152,0,0.3);">
+                                <div style="font-size: 11px; font-weight: 600; color: #ff9800; margin-bottom: 6px;">
+                                    ⏳ Not Ready (${notReadyDevices.length})
+                                </div>
+                                ${notReadyDevices.length > 0 ? notReadyList : '<div style="font-size: 11px; opacity: 0.6;">None</div>'}
+                                ${notReadyDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${notReadyDevices.length - 5} more...</div>` : ''}
+                            </div>
+                        </div>
+                        
+                        ${removedDeletedDevices.length > 0 ? `
+                        <div style="margin-top: 10px; background: rgba(128,128,128,0.1); padding: 10px; border-radius: 6px; border: 1px solid rgba(128,128,128,0.3);">
+                            <div style="font-size: 11px; font-weight: 600; color: #888; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                <span style="font-size: 14px;">🚫</span> Removed/Deleted Devices (${removedDeletedDevices.length})
+                            </div>
+                            <div style="font-size: 10px; color: #888; margin-bottom: 8px; font-style: italic;">
+                                These devices no longer require testing
+                            </div>
+                            ${removedDeletedList}
+                            ${removedDeletedDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 6px;">+${removedDeletedDevices.length - 5} more...</div>` : ''}
+                        </div>` : ''}
+                        ` : ''}
+                    </div>
+                `;
+
+                additionalMarker.bindPopup(additionalPopupContent);
+                additionalLocationMarkers.push(additionalMarker);
+                bounds.extend([location.latitude, location.longitude]);
+            });
+
+            // Fit map to show all markers (buildings + additional locations)
+            const allMarkersCount = buildingsWithCoords.length + additionalLocations.length;
+            if (allMarkersCount > 0) {
                 buildingMap.fitBounds(bounds, { padding: [30, 30] });
             }
 
@@ -9648,9 +10575,11 @@
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #4CAF50; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">All Devices Ready</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ffc107; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">Some Devices Ready</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ff6b6b; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">No Devices Ready</span></div>
+                        <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #00bcd4; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">📍 Custom Location</span></div>
                         <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--input-border, #444); font-size: 10px; color: var(--text-color, #fff); opacity: 0.8;">
                             Ready = 91+ days since last test<br>
-                            Click marker for favorite/hide options
+                            Click marker for favorite/hide options<br>
+                            Use ➕ button to add custom locations
                         </div>
                     </div>
                     <div id="mapLegendCollapsed" style="display: ${isLegendHidden ? 'block' : 'none'};">
