@@ -8961,7 +8961,7 @@
                         
                         // Refresh map if it's open
                         if (buildingMap && window.lastBulkSearchResults) {
-                            initBuildingMap(window.lastBulkSearchResults.binGroups);
+                            initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                         }
                     }
                 } else {
@@ -9330,7 +9330,7 @@
                 
                 // Refresh map if it's open
                 if (buildingMap && window.lastBulkSearchResults) {
-                    initBuildingMap(window.lastBulkSearchResults.binGroups);
+                    initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                 }
             }
         }
@@ -9356,7 +9356,7 @@
                 
                 // Refresh map if it's open
                 if (buildingMap && window.lastBulkSearchResults) {
-                    initBuildingMap(window.lastBulkSearchResults.binGroups);
+                    initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                 }
             }
         }
@@ -9461,7 +9461,7 @@
                 updateMonthLabelCounts();
                 // Refresh map to update markers
                 if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                    initBuildingMap(window.lastBulkSearchResults.binGroups);
+                    initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                 }
             }
         }
@@ -9583,7 +9583,7 @@
             setMapFavorites(favorites);
             // Refresh the map to update marker colors
             if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                initBuildingMap(window.lastBulkSearchResults.binGroups);
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
             }
         }
 
@@ -9599,7 +9599,7 @@
             setMapHidden(hidden);
             // Refresh the map to update visibility
             if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                initBuildingMap(window.lastBulkSearchResults.binGroups);
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
             }
         }
 
@@ -9607,7 +9607,7 @@
             setMapHidden({});
             showMapNotification('All buildings are now visible', '#4CAF50');
             if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                initBuildingMap(window.lastBulkSearchResults.binGroups);
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
             }
         }
 
@@ -9616,7 +9616,7 @@
                 setMapFavorites({});
                 showMapNotification('All favorites cleared', '#f59e0b');
                 if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                    initBuildingMap(window.lastBulkSearchResults.binGroups);
+                    initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                 }
             }
         }
@@ -9848,8 +9848,16 @@
             }
         }
 
-        function initBuildingMap(binGroups) {
+        function initBuildingMap(binGroups, preserveView) {
             const mapContainer = document.getElementById('buildingMap');
+            
+            // Save current view if preserving
+            let savedCenter = null;
+            let savedZoom = null;
+            if (preserveView && buildingMap) {
+                savedCenter = buildingMap.getCenter();
+                savedZoom = buildingMap.getZoom();
+            }
             
             // Clear any existing map
             if (buildingMap) {
@@ -10549,10 +10557,14 @@
                 bounds.extend([location.latitude, location.longitude]);
             });
 
-            // Fit map to show all markers (buildings + additional locations)
-            const allMarkersCount = buildingsWithCoords.length + additionalLocations.length;
-            if (allMarkersCount > 0) {
-                buildingMap.fitBounds(bounds, { padding: [30, 30] });
+            // Restore saved view or fit map to show all markers
+            if (savedCenter && savedZoom) {
+                buildingMap.setView(savedCenter, savedZoom);
+            } else {
+                const allMarkersCount = buildingsWithCoords.length + additionalLocations.length;
+                if (allMarkersCount > 0) {
+                    buildingMap.fitBounds(bounds, { padding: [30, 30] });
+                }
             }
 
             // Add legend with hide/show functionality
