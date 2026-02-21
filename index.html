@@ -15868,6 +15868,8 @@
         <div class="elv3-scan-modal-content">
             <div class="elv3-scan-modal-header">
                 <h3>Scan ELV3 Inspection Form</h3>
+                <button class="elv3-scan-header-pdf-toggle" id="headerPdfToggle" onclick="togglePdfPreview()" style="display: none;">📄 Hide PDF</button>
+                <button class="elv3-scan-header-reset-btn" id="headerResetView" onclick="resetScanView()" style="display: none;">↺ Reset View</button>
                 <button class="elv3-scan-close-btn" onclick="closeUploadELV3ScanModal()">&times;</button>
             </div>
             <div class="elv3-scan-modal-body">
@@ -15894,12 +15896,10 @@
                     <div id="elv3ScanError" class="elv3-scan-error" style="display: none;"></div>
                 </div>
                 
-                <!-- Resizable divider (visible on narrow screens) -->
-                <div class="elv3-scan-divider" id="elv3ScanDivider">
-                    <div class="elv3-scan-divider-handle"></div>
-                </div>
+                <!-- Resize handle between Violations and PDF -->
+                <div class="elv3-scan-resize-handle" id="elv3ScanResizeHandle1" data-left="elv3-scan-left-panel" data-right="elv3ScanPdfPreviewPanel"></div>
                 
-                <!-- Right side: PDF Preview -->
+                <!-- Center: PDF Preview -->
                 <div class="elv3-scan-right-panel" id="elv3ScanPdfPreviewPanel" style="display: none;">
                     <div class="elv3-scan-pdf-preview-header">
                         <button type="button" class="elv3-scan-nav-btn" id="elv3ScanPrevBtn" onclick="showPrevELV3Pdf()" title="Previous PDF" style="display: none;">← Previous</button>
@@ -15910,6 +15910,9 @@
                         <iframe id="elv3ScanPdfPreviewFrame" class="elv3-scan-pdf-preview-frame"></iframe>
                     </div>
                 </div>
+
+                <!-- Resize handle between PDF and ELV3 Lookup -->
+                <div class="elv3-scan-resize-handle" id="elv3ScanResizeHandle2" data-left="elv3ScanPdfPreviewPanel" data-right="elv3ScanLookupPanel"></div>
 
                 <!-- Right side: ELV3 Lookup Panel -->
                 <div class="elv3-scan-lookup-panel" id="elv3ScanLookupPanel">
@@ -16232,11 +16235,21 @@
         document.getElementById('elv3ScanError').style.display = 'none';
         document.getElementById('elv3ScanPdfPreviewPanel').style.display = 'none';
 
+        var headerToggle = document.getElementById('headerPdfToggle');
+        if (headerToggle) headerToggle.style.display = 'none';
+        var resetBtn = document.getElementById('headerResetView');
+        if (resetBtn) resetBtn.style.display = 'none';
+
+        var modalBody = document.querySelector('.elv3-scan-modal-body');
+        if (modalBody) modalBody.classList.remove('elv3-scan-pdf-hidden');
+
         // Before a PDF is loaded, center the upload area by expanding the left panel
         const leftPanel = document.querySelector('.elv3-scan-left-panel');
         leftPanel.classList.add('elv3-scan-upload-centered');
 
         initScanLookupPanel();
+        resetResizePanels();
+        initResizeHandles();
         
         // Setup drag and drop
         const uploadArea = document.getElementById('elv3ScanUploadArea');
@@ -16287,6 +16300,16 @@
         previewPanel.classList.remove('elv3-scan-pdf-fullscreen');
         
         document.getElementById('elv3ScanFileInput').value = '';
+
+        var headerToggle = document.getElementById('headerPdfToggle');
+        if (headerToggle) headerToggle.style.display = 'none';
+        var resetBtn = document.getElementById('headerResetView');
+        if (resetBtn) resetBtn.style.display = 'none';
+
+        var modalBody = document.querySelector('.elv3-scan-modal-body');
+        if (modalBody) modalBody.classList.remove('elv3-scan-pdf-hidden');
+
+        resetResizePanels();
     }
 
     // ============================================
@@ -16392,35 +16415,36 @@
      */
     function togglePdfPreview() {
         const pdfPanel = document.getElementById('elv3ScanPdfPreviewPanel');
-        const divider = document.getElementById('elv3ScanDivider');
+        const handle1 = document.getElementById('elv3ScanResizeHandle1');
+        const handle2 = document.getElementById('elv3ScanResizeHandle2');
         const toggleBtn = document.querySelector('.elv3-scan-toggle-pdf-btn');
-        const leftPanel = document.querySelector('.elv3-scan-left-panel');
+        const headerToggle = document.getElementById('headerPdfToggle');
+        const modalBody = document.querySelector('.elv3-scan-modal-body');
+
+        resetResizePanels();
         
         if (pdfPanel.style.display === 'none' || pdfPanel.classList.contains('hidden')) {
-            // Show PDF
             pdfPanel.style.display = 'flex';
             pdfPanel.classList.remove('hidden');
-            divider.style.display = '';
-            toggleBtn.querySelector('.toggle-text').textContent = 'Hide PDF';
-            toggleBtn.classList.remove('pdf-hidden');
-            
-            // Reset flex on narrow screens
-            if (window.innerWidth <= 900) {
-                leftPanel.style.flex = '';
-                leftPanel.style.height = '';
+            if (handle1) handle1.style.display = '';
+            if (handle2) handle2.style.display = '';
+            modalBody.classList.remove('elv3-scan-pdf-hidden');
+            if (toggleBtn) {
+                toggleBtn.querySelector('.toggle-text').textContent = 'Hide PDF';
+                toggleBtn.classList.remove('pdf-hidden');
             }
+            if (headerToggle) headerToggle.textContent = '📄 Hide PDF';
         } else {
-            // Hide PDF
             pdfPanel.style.display = 'none';
             pdfPanel.classList.add('hidden');
-            divider.style.display = 'none';
-            toggleBtn.querySelector('.toggle-text').textContent = 'Show PDF';
-            toggleBtn.classList.add('pdf-hidden');
-            
-            // Make left panel take full space
-            if (window.innerWidth <= 900) {
-                leftPanel.style.flex = '1';
+            if (handle1) handle1.style.display = 'none';
+            if (handle2) handle2.style.display = 'none';
+            modalBody.classList.add('elv3-scan-pdf-hidden');
+            if (toggleBtn) {
+                toggleBtn.querySelector('.toggle-text').textContent = 'Show PDF';
+                toggleBtn.classList.add('pdf-hidden');
             }
+            if (headerToggle) headerToggle.textContent = '📄 Show PDF';
         }
     }
 
@@ -16518,6 +16542,14 @@
         nextBtn.disabled = index >= total - 1;
         
         previewPanel.style.display = 'flex';
+
+        const headerToggle = document.getElementById('headerPdfToggle');
+        if (headerToggle) {
+            headerToggle.style.display = 'inline-block';
+            headerToggle.textContent = '📄 Hide PDF';
+        }
+        const resetBtn = document.getElementById('headerResetView');
+        if (resetBtn) resetBtn.style.display = 'inline-block';
     }
 
     /**
@@ -16554,90 +16586,140 @@
     }
 
     /**
-     * Initialize resizable divider for narrow screens
+     * Drag-to-resize handles between scan modal panels.
+     * Works for horizontal (wide) and vertical (narrow) layouts.
      */
-    (function initResizableDivider() {
-        const divider = document.getElementById('elv3ScanDivider');
-        const modalBody = document.querySelector('.elv3-scan-modal-body');
-        let isDragging = false;
-        let startY = 0;
-        let startPdfHeight = 0;
-        let startViolationsHeight = 0;
-
-        function onDragStart(e) {
-            // Only work on narrow screens when divider is visible
-            if (window.getComputedStyle(divider).display === 'none') return;
-            
-            isDragging = true;
-            divider.classList.add('dragging');
-            
-            const pdfPanel = document.getElementById('elv3ScanPdfPreviewPanel');
-            const violationsPanel = document.querySelector('.elv3-scan-left-panel');
-            
-            startY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-            startPdfHeight = pdfPanel.offsetHeight;
-            startViolationsHeight = violationsPanel.offsetHeight;
-            
-            document.body.style.cursor = 'ns-resize';
-            document.body.style.userSelect = 'none';
-            
-            e.preventDefault();
-        }
-
-        function onDragMove(e) {
-            if (!isDragging) return;
-            
-            const pdfPanel = document.getElementById('elv3ScanPdfPreviewPanel');
-            const violationsPanel = document.querySelector('.elv3-scan-left-panel');
-            
-            const currentY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-            const deltaY = currentY - startY;
-            
-            // Since PDF is on top (order: -1), dragging down makes PDF taller
-            const newPdfHeight = Math.max(100, Math.min(startPdfHeight + deltaY, modalBody.offsetHeight - 150));
-            const newViolationsHeight = Math.max(100, startViolationsHeight - deltaY);
-            
-            pdfPanel.style.height = newPdfHeight + 'px';
-            pdfPanel.style.flex = 'none';
-            violationsPanel.style.height = newViolationsHeight + 'px';
-            violationsPanel.style.flex = 'none';
-        }
-
-        function onDragEnd() {
-            if (!isDragging) return;
-            
-            isDragging = false;
-            divider.classList.remove('dragging');
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-        }
-
-        // Mouse events
-        divider.addEventListener('mousedown', onDragStart);
-        document.addEventListener('mousemove', onDragMove);
-        document.addEventListener('mouseup', onDragEnd);
-
-        // Touch events for mobile
-        divider.addEventListener('touchstart', onDragStart, { passive: false });
-        document.addEventListener('touchmove', onDragMove, { passive: false });
-        document.addEventListener('touchend', onDragEnd);
-
-        // Reset heights when window resizes to desktop
-        window.addEventListener('resize', () => {
-            if (window.innerWidth > 900) {
-                const pdfPanel = document.getElementById('elv3ScanPdfPreviewPanel');
-                const violationsPanel = document.querySelector('.elv3-scan-left-panel');
-                if (pdfPanel) {
-                    pdfPanel.style.height = '';
-                    pdfPanel.style.flex = '';
-                }
-                if (violationsPanel) {
-                    violationsPanel.style.height = '';
-                    violationsPanel.style.flex = '';
-                }
-            }
+    function initResizeHandles() {
+        var handles = document.querySelectorAll('.elv3-scan-resize-handle');
+        handles.forEach(function(handle) {
+            handle.removeEventListener('mousedown', handle._onDown);
+            handle.removeEventListener('touchstart', handle._onDown);
         });
-    })();
+
+        handles.forEach(function(handle) {
+            function getAdjacentPanels() {
+                var isNarrow = window.innerWidth <= 900;
+                var modalBody = handle.closest('.elv3-scan-modal-body');
+                if (!modalBody) return null;
+
+                var children = Array.from(modalBody.children).filter(function(el) {
+                    return el.offsetParent !== null;
+                });
+
+                if (isNarrow) {
+                    children.sort(function(a, b) {
+                        return (parseInt(getComputedStyle(a).order) || 0) - (parseInt(getComputedStyle(b).order) || 0);
+                    });
+                }
+
+                var idx = children.indexOf(handle);
+                if (idx < 1 || idx >= children.length - 1) return null;
+                return { before: children[idx - 1], after: children[idx + 1], isNarrow: isNarrow };
+            }
+
+            function onDown(e) {
+                var panels = getAdjacentPanels();
+                if (!panels) return;
+                e.preventDefault();
+
+                var isTouch = e.type === 'touchstart';
+                var startPos = isTouch ? e.touches[0] : e;
+                var startX = startPos.clientX;
+                var startY = startPos.clientY;
+
+                var beforeRect = panels.before.getBoundingClientRect();
+                var afterRect = panels.after.getBoundingClientRect();
+                var startBeforeW = beforeRect.width;
+                var startAfterW = afterRect.width;
+                var startBeforeH = beforeRect.height;
+                var startAfterH = afterRect.height;
+                var isNarrow = panels.isNarrow;
+                var beforeEl = panels.before;
+                var afterEl = panels.after;
+
+                handle.classList.add('dragging');
+                var modalBody = handle.closest('.elv3-scan-modal-body');
+                if (modalBody) modalBody.classList.add('elv3-scan-resizing');
+
+                function onMove(ev) {
+                    var pos = ev.type.includes('touch') ? ev.touches[0] : ev;
+                    if (isNarrow) {
+                        var dy = pos.clientY - startY;
+                        var newBH = Math.max(100, startBeforeH + dy);
+                        var newAH = Math.max(100, startAfterH - dy);
+                        beforeEl.style.height = newBH + 'px';
+                        beforeEl.style.flex = '0 0 auto';
+                        afterEl.style.height = newAH + 'px';
+                        afterEl.style.flex = '0 0 auto';
+                    } else {
+                        var dx = pos.clientX - startX;
+                        var newBW = Math.max(150, startBeforeW + dx);
+                        var newAW = Math.max(150, startAfterW - dx);
+                        beforeEl.style.width = newBW + 'px';
+                        beforeEl.style.flex = '0 0 auto';
+                        afterEl.style.width = newAW + 'px';
+                        afterEl.style.flex = '0 0 auto';
+                    }
+                }
+
+                function onUp() {
+                    handle.classList.remove('dragging');
+                    if (modalBody) modalBody.classList.remove('elv3-scan-resizing');
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    document.removeEventListener('touchmove', onMove);
+                    document.removeEventListener('touchend', onUp);
+                }
+
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+                document.addEventListener('touchmove', onMove, { passive: false });
+                document.addEventListener('touchend', onUp);
+            }
+
+            handle._onDown = onDown;
+            handle.addEventListener('mousedown', onDown);
+            handle.addEventListener('touchstart', onDown, { passive: false });
+        });
+    }
+
+    /**
+     * Clear all custom resize styles from scan modal panels and handles
+     */
+    function resetResizePanels() {
+        var panels = document.querySelectorAll('.elv3-scan-left-panel, .elv3-scan-right-panel, .elv3-scan-lookup-panel');
+        panels.forEach(function(p) {
+            p.style.width = '';
+            p.style.height = '';
+            p.style.flex = '';
+        });
+        var modalBody = document.querySelector('.elv3-scan-modal-body');
+        if (modalBody) modalBody.classList.remove('elv3-scan-resizing');
+    }
+
+    function resetScanView() {
+        resetResizePanels();
+
+        var pdfPanel = document.getElementById('elv3ScanPdfPreviewPanel');
+        var handle1 = document.getElementById('elv3ScanResizeHandle1');
+        var handle2 = document.getElementById('elv3ScanResizeHandle2');
+        var modalBody = document.querySelector('.elv3-scan-modal-body');
+        var toggleBtn = document.querySelector('.elv3-scan-toggle-pdf-btn');
+        var headerToggle = document.getElementById('headerPdfToggle');
+
+        if (pdfPanel && elv3ScanItems.length > 0) {
+            pdfPanel.style.display = 'flex';
+            pdfPanel.classList.remove('hidden');
+        }
+        if (handle1) handle1.style.display = '';
+        if (handle2) handle2.style.display = '';
+        if (modalBody) modalBody.classList.remove('elv3-scan-pdf-hidden');
+        if (toggleBtn) {
+            toggleBtn.querySelector('.toggle-text').textContent = 'Hide PDF';
+            toggleBtn.classList.remove('pdf-hidden');
+        }
+        if (headerToggle) headerToggle.textContent = '📄 Hide PDF';
+    }
 
     /**
      * Process and parse multiple ELV3 PDF files

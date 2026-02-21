@@ -1638,6 +1638,7 @@ body.lookup-popout-mode #quickLookupPanel {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 8px;
 }
 
 .elv3-scan-modal-header h3 {
@@ -1667,6 +1668,42 @@ body.lookup-popout-mode #quickLookupPanel {
 .elv3-scan-close-btn:hover {
     color: #fff;
     background: #ff6b6b;
+}
+
+.elv3-scan-header-pdf-toggle {
+    display: none;
+    padding: 4px 10px;
+    background: var(--input-bg, #1c1c1c);
+    color: var(--text-color, #aaa);
+    border: 1px solid var(--input-border, #444);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.elv3-scan-header-pdf-toggle:hover {
+    background: var(--panel-bg, #333);
+    color: #fff;
+}
+
+.elv3-scan-header-reset-btn {
+    display: none;
+    padding: 4px 10px;
+    background: var(--input-bg, #1c1c1c);
+    color: var(--text-color, #aaa);
+    border: 1px solid var(--input-border, #444);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.elv3-scan-header-reset-btn:hover {
+    background: var(--panel-bg, #333);
+    color: #fff;
 }
 
 .elv3-scan-modal-body {
@@ -1723,6 +1760,58 @@ body.lookup-popout-mode #quickLookupPanel {
     gap: 12px;
 }
 
+/* Resize handles between panels */
+.elv3-scan-resize-handle {
+    flex: 0 0 6px;
+    width: 6px;
+    background: transparent;
+    cursor: col-resize;
+    position: relative;
+    z-index: 2;
+    transition: background 0.15s;
+    border-radius: 3px;
+}
+
+.elv3-scan-resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 32px;
+    background: var(--input-border, #444);
+    border-radius: 1px;
+    transition: background 0.15s, height 0.15s;
+}
+
+.elv3-scan-resize-handle:hover {
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.elv3-scan-resize-handle:hover::after {
+    background: #3b82f6;
+    height: 48px;
+}
+
+.elv3-scan-resize-handle.dragging {
+    background: rgba(59, 130, 246, 0.15);
+}
+
+.elv3-scan-resize-handle.dragging::after {
+    background: #3b82f6;
+    height: 48px;
+}
+
+.elv3-scan-modal-body.elv3-scan-resizing {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.elv3-scan-resizing .elv3-scan-pdf-preview-frame {
+    pointer-events: none;
+}
+
 /* Centered upload state -- left panel expands to fill and centers the drop area */
 .elv3-scan-left-panel.elv3-scan-upload-centered {
     flex: 1;
@@ -1734,7 +1823,7 @@ body.lookup-popout-mode #quickLookupPanel {
 
 .elv3-scan-left-panel.elv3-scan-upload-centered ~ .elv3-scan-right-panel,
 .elv3-scan-left-panel.elv3-scan-upload-centered ~ .elv3-scan-lookup-panel,
-.elv3-scan-left-panel.elv3-scan-upload-centered ~ .elv3-scan-divider {
+.elv3-scan-left-panel.elv3-scan-upload-centered ~ .elv3-scan-resize-handle {
     display: none;
 }
 
@@ -2196,6 +2285,7 @@ body.lookup-popout-mode #quickLookupPanel {
 @media (max-width: 900px) {
     .elv3-scan-modal-body {
         flex-direction: column;
+        overflow-y: auto;
     }
     
     .elv3-scan-left-panel,
@@ -2204,22 +2294,96 @@ body.lookup-popout-mode #quickLookupPanel {
         min-width: auto;
     }
 
-    .elv3-scan-left-panel {
+    .elv3-scan-resize-handle {
+        flex: 0 0 6px;
         width: auto;
+        height: 6px;
+        cursor: row-resize;
     }
-    
+
+    .elv3-scan-resize-handle::after {
+        width: 32px;
+        height: 2px;
+    }
+
+    .elv3-scan-resize-handle:hover::after,
+    .elv3-scan-resize-handle.dragging::after {
+        width: 48px;
+        height: 2px;
+    }
+
+    /* PDF on top */
     .elv3-scan-right-panel {
         min-height: 450px;
-        order: -1;
+        order: 1;
     }
-    
+
+    /* Narrow order: PDF(1) → Handle2(2) → Lookup(3) → Handle1(4) → Violations(5) */
+    #elv3ScanResizeHandle2 {
+        order: 2;
+    }
+
     .elv3-scan-lookup-panel {
-        display: none;
+        width: auto;
+        max-width: none;
+        min-width: auto;
+        flex: 0 0 auto;
+        order: 3;
+    }
+
+    #elv3ScanResizeHandle1 {
+        order: 4;
+    }
+
+    .elv3-scan-left-panel {
+        width: auto;
+        overflow: visible;
+        flex: 0 0 auto;
+        order: 5;
+        min-height: auto;
+    }
+
+    .elv3-scan-left-panel .elv3-scan-result {
+        overflow: visible;
+        min-height: auto;
+    }
+
+    .elv3-scan-left-panel .elv3-scan-results-scroll {
+        height: auto;
+        flex: none;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .elv3-scan-left-panel #elv3ScanResultContent {
+        overflow: visible;
+        min-height: auto;
     }
     
     .elv3-scan-pdf-preview-container,
     .elv3-scan-pdf-preview-frame {
         min-height: 400px;
+    }
+
+    /* When PDF is hidden, show violations & lookup side by side */
+    .elv3-scan-modal-body.elv3-scan-pdf-hidden {
+        flex-direction: row;
+    }
+
+    .elv3-scan-pdf-hidden .elv3-scan-left-panel {
+        flex: 1;
+        overflow: auto;
+        order: 0;
+    }
+
+    .elv3-scan-pdf-hidden .elv3-scan-lookup-panel {
+        flex: 1;
+        width: auto;
+        order: 0;
+    }
+
+    .elv3-scan-pdf-hidden .elv3-scan-resize-handle {
+        display: none;
     }
 }
 
