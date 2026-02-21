@@ -15127,6 +15127,44 @@
             }
         }
 
+        function updateMainBinDisplayStyle() {
+            const binSpan = document.getElementById('mainBinValue');
+            if (binSpan) {
+                const binValue = binSpan.textContent.replace('📋', '').trim();
+                if (binValue && binValue !== '-') {
+                    binSpan.style.cursor = 'pointer';
+                    binSpan.style.color = '#4a9eff';
+                    binSpan.style.borderColor = '#4a9eff';
+                    binSpan.title = 'Click to copy BIN';
+                    binSpan.style.opacity = '1';
+                    
+                    if (!binSpan.querySelector('svg')) {
+                        binSpan.innerHTML = `${binValue}<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;"><path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>`;
+                    }
+                    
+                    binSpan.addEventListener('mouseenter', function() {
+                        const currentBin = this.textContent.replace('📋', '').trim();
+                        if (currentBin !== '-') {
+                            this.style.backgroundColor = 'rgba(74, 158, 255, 0.1)';
+                        }
+                    });
+                    binSpan.addEventListener('mouseleave', function() {
+                        const currentBin = this.textContent.replace('📋', '').trim();
+                        if (currentBin !== '-') {
+                            this.style.backgroundColor = 'transparent';
+                        }
+                    });
+                } else {
+                    binSpan.style.cursor = 'default';
+                    binSpan.style.color = 'var(--text-color)';
+                    binSpan.style.borderColor = 'transparent';
+                    binSpan.title = '';
+                    binSpan.style.opacity = '0.7';
+                    binSpan.innerHTML = '-';
+                }
+            }
+        }
+
         // Add this new function to handle copying BIN to clipboard
         async function copyBinToClipboard(bin, event) {
             try {
@@ -15166,26 +15204,20 @@
                 }
 
                 // Show success state
+                const originalHTML = span.innerHTML;
                 span.style.backgroundColor = '#4CAF50';
                 span.style.color = 'white';
                 span.style.borderColor = '#4CAF50';
                 span.title = 'Copied!';
-
-                // Find the SVG and change its color
-                const svg = span.querySelector('svg');
-                if (svg) {
-                    svg.style.opacity = '1';
-                }
+                span.innerHTML = `✓ Copied!`;
 
                 // Reset after 2 seconds
                 setTimeout(() => {
+                    span.innerHTML = originalHTML;
                     span.style.backgroundColor = originalBg;
                     span.style.color = originalColor;
                     span.style.borderColor = originalBorder;
-                    span.title = 'Click to copy';
-                    if (svg) {
-                        svg.style.opacity = '0.7';
-                    }
+                    span.title = 'Click to copy BIN';
                 }, 2000);
             } catch (err) {
                 console.error('Failed to copy BIN:', err);
@@ -15708,6 +15740,7 @@
             if (!deviceNumber || deviceNumber.trim() === '') {
                 resultDiv.style.display = 'none';
                 mainBinValue.textContent = '-';
+                updateMainBinDisplayStyle();
                 return;
             }
 
@@ -15727,6 +15760,7 @@
                 if (data.length === 0) {
                     resultDiv.innerHTML = '<span style="color: #ff6b6b; font-size: 12px;">Device not found</span>';
                     mainBinValue.textContent = '-';
+                    updateMainBinDisplayStyle();
                     return;
                 }
 
@@ -15737,6 +15771,7 @@
 
                 // Update BIN display
                 mainBinValue.textContent = binNumber;
+                updateMainBinDisplayStyle();
 
                 // Show device result
                 resultDiv.innerHTML = `
@@ -15757,6 +15792,7 @@
                 console.error('Error searching device:', error);
                 resultDiv.innerHTML = '<span style="color: #ff6b6b; font-size: 12px;">Error searching device</span>';
                 mainBinValue.textContent = '-';
+                updateMainBinDisplayStyle();
             }
         }
 
@@ -15789,6 +15825,7 @@
             }
             if (mainBinValue) {
                 mainBinValue.textContent = '-';
+                updateMainBinDisplayStyle();
             }
             
             // Also clear the Filing Information BIN field
@@ -15838,9 +15875,9 @@
                 <div class="elv3-scan-left-panel">
                     <div class="elv3-scan-upload-area" id="elv3ScanUploadArea">
                         <div class="elv3-scan-upload-icon">📄</div>
-                        <p>Drag & drop your ELV3 PDF here</p>
-                        <p class="elv3-scan-upload-hint">or click to select a file</p>
-                        <input type="file" id="elv3ScanFileInput" accept=".pdf" style="display: none;" onchange="handleELV3FileScan(event)">
+                        <p>Drag & drop your ELV3 PDFs here</p>
+                        <p class="elv3-scan-upload-hint">or click to select one or more files</p>
+                        <input type="file" id="elv3ScanFileInput" accept=".pdf" multiple style="display: none;" onchange="handleELV3FileScan(event)">
                     </div>
                     
                     <div id="elv3ScanProgress" class="elv3-scan-progress" style="display: none;">
@@ -15865,15 +15902,14 @@
                 <!-- Right side: PDF Preview -->
                 <div class="elv3-scan-right-panel" id="elv3ScanPdfPreviewPanel" style="display: none;">
                     <div class="elv3-scan-pdf-preview-header">
-                        <h4>PDF Preview</h4>
+                        <button type="button" class="elv3-scan-nav-btn" id="elv3ScanPrevBtn" onclick="showPrevELV3Pdf()" title="Previous PDF" style="display: none;">← Previous</button>
+                        <span class="elv3-scan-pdf-counter" id="elv3ScanPdfCounter" style="display: none;">PDF 1 of 1</span>
+                        <button type="button" class="elv3-scan-nav-btn" id="elv3ScanNextBtn" onclick="showNextELV3Pdf()" title="Next PDF" style="display: none;">Next →</button>
                     </div>
                     <div class="elv3-scan-pdf-preview-container">
                         <iframe id="elv3ScanPdfPreviewFrame" class="elv3-scan-pdf-preview-frame"></iframe>
                     </div>
                 </div>
-            </div>
-            <div class="elv3-scan-modal-footer">
-                <button class="elv3-scan-btn elv3-scan-btn-secondary" onclick="closeUploadELV3ScanModal()">Close</button>
             </div>
         </div>
     </div>
@@ -15882,6 +15918,9 @@
     // ============================================
     // ELV3 PDF Scanner Functions
     // ============================================
+
+    let elv3ScanItems = [];
+    let elv3ScanCurrentIndex = 0;
 
     // ELV3 Code Mappings
     const ELV3_PART_CODES = {
@@ -16095,12 +16134,11 @@
             e.preventDefault();
             uploadArea.classList.remove('drag-over');
             
-            const files = e.dataTransfer.files;
-            if (files.length > 0 && files[0].type === 'application/pdf') {
-                showPdfScanPreview(files[0]);
-                processELV3Scan(files[0]);
+            const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+            if (files.length > 0) {
+                processELV3ScanBatch(files);
             } else {
-                document.getElementById('elv3ScanError').textContent = 'Please upload a PDF file';
+                document.getElementById('elv3ScanError').textContent = 'Please upload PDF file(s)';
                 document.getElementById('elv3ScanError').style.display = 'block';
             }
         };
@@ -16113,19 +16151,19 @@
         const modal = document.getElementById('uploadELV3ScanModal');
         modal.style.display = 'none';
         
-        // Reset the PDF preview
+        // Revoke all blob URLs and clear state
+        for (const item of elv3ScanItems) {
+            if (item.blobUrl) URL.revokeObjectURL(item.blobUrl);
+        }
+        elv3ScanItems = [];
+        elv3ScanCurrentIndex = 0;
+        
         const previewPanel = document.getElementById('elv3ScanPdfPreviewPanel');
         const previewFrame = document.getElementById('elv3ScanPdfPreviewFrame');
-        
-        if (previewFrame.src && previewFrame.src.startsWith('blob:')) {
-            URL.revokeObjectURL(previewFrame.src);
-        }
-        
         previewFrame.src = '';
         previewPanel.style.display = 'none';
         previewPanel.classList.remove('elv3-scan-pdf-fullscreen');
         
-        // Reset file input
         document.getElementById('elv3ScanFileInput').value = '';
     }
 
@@ -16167,47 +16205,117 @@
     }
 
     /**
-     * Copy BIN to clipboard
+     * Copy BIN to clipboard (unified - handles ELV3 Lookup, main tab, and scan results)
      */
-    function copyBinToClipboard(bin) {
-        navigator.clipboard.writeText(bin).then(() => {
-            // Show brief visual feedback
-            const binElement = document.querySelector('.elv3-scan-bin-copy');
-            if (binElement) {
-                const originalText = binElement.textContent;
-                binElement.textContent = 'Copied!';
-                binElement.classList.add('copied');
-                setTimeout(() => {
-                    binElement.textContent = originalText;
-                    binElement.classList.remove('copied');
-                }, 1500);
+    async function copyBinToClipboard(bin, event) {
+        try {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
             }
-        }).catch(err => {
-            console.error('Failed to copy BIN:', err);
-        });
-    }
+            if (!bin || String(bin).trim() === '-' || String(bin).trim() === '') return;
 
-    /**
-     * Handle file selection
-     */
-    function handleELV3FileScan(event) {
-        const file = event.target.files[0];
-        if (file) {
-            showPdfScanPreview(file);
-            processELV3Scan(file);
+            const span = event ? event.target.closest('span') : document.querySelector('.elv3-scan-bin-copy');
+            if (!span) return;
+
+            const originalHTML = span.innerHTML;
+            const originalBg = span.style.backgroundColor;
+            const originalColor = span.style.color;
+            const originalBorder = span.style.borderColor;
+
+            try {
+                await navigator.clipboard.writeText(String(bin).trim());
+            } catch (err) {
+                const textarea = document.createElement('textarea');
+                textarea.value = bin;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            }
+
+            span.style.backgroundColor = '#4CAF50';
+            span.style.color = 'white';
+            span.style.borderColor = '#4CAF50';
+            span.title = 'Copied!';
+            span.innerHTML = '✓ Copied!';
+
+            setTimeout(() => {
+                span.innerHTML = originalHTML;
+                span.style.backgroundColor = originalBg;
+                span.style.color = originalColor;
+                span.style.borderColor = originalBorder;
+                span.title = 'Click to copy BIN';
+            }, 2000);
+        } catch (err) {
+            console.error('Failed to copy BIN:', err);
+            alert('Failed to copy BIN to clipboard');
         }
     }
 
     /**
-     * Show PDF preview in the right panel
+     * Handle file selection (supports multiple files)
      */
-    function showPdfScanPreview(file) {
+    function handleELV3FileScan(event) {
+        const files = event.target.files;
+        if (files && files.length > 0) {
+            const pdfFiles = Array.from(files).filter(f => f.type === 'application/pdf');
+            if (pdfFiles.length > 0) {
+                processELV3ScanBatch(pdfFiles);
+            } else {
+                document.getElementById('elv3ScanError').textContent = 'Please upload PDF file(s)';
+                document.getElementById('elv3ScanError').style.display = 'block';
+            }
+        }
+    }
+
+    /**
+     * Show the PDF and scan result at the given index
+     */
+    function showCurrentELV3Pdf(index) {
+        if (!elv3ScanItems.length || index < 0 || index >= elv3ScanItems.length) return;
+        
+        elv3ScanCurrentIndex = index;
+        const item = elv3ScanItems[index];
         const previewPanel = document.getElementById('elv3ScanPdfPreviewPanel');
         const previewFrame = document.getElementById('elv3ScanPdfPreviewFrame');
+        const resultContent = document.getElementById('elv3ScanResultContent');
+        const prevBtn = document.getElementById('elv3ScanPrevBtn');
+        const nextBtn = document.getElementById('elv3ScanNextBtn');
+        const counter = document.getElementById('elv3ScanPdfCounter');
         
-        const fileUrl = URL.createObjectURL(file);
-        previewFrame.src = fileUrl;
+        previewFrame.src = item.blobUrl;
+        renderELV3ScanResult(item.result, resultContent);
+        
+        const total = elv3ScanItems.length;
+        counter.textContent = `PDF ${index + 1} of ${total}`;
+        counter.style.display = 'inline';
+        prevBtn.style.display = total > 1 ? 'inline-block' : 'none';
+        nextBtn.style.display = total > 1 ? 'inline-block' : 'none';
+        prevBtn.disabled = index <= 0;
+        nextBtn.disabled = index >= total - 1;
+        
         previewPanel.style.display = 'flex';
+    }
+
+    /**
+     * Show previous PDF
+     */
+    function showPrevELV3Pdf() {
+        if (elv3ScanCurrentIndex > 0) {
+            showCurrentELV3Pdf(elv3ScanCurrentIndex - 1);
+        }
+    }
+
+    /**
+     * Show next PDF
+     */
+    function showNextELV3Pdf() {
+        if (elv3ScanCurrentIndex < elv3ScanItems.length - 1) {
+            showCurrentELV3Pdf(elv3ScanCurrentIndex + 1);
+        }
     }
 
     /**
@@ -16312,7 +16420,89 @@
     })();
 
     /**
-     * Process and parse ELV3 PDF file
+     * Process and parse multiple ELV3 PDF files
+     */
+    async function processELV3ScanBatch(files) {
+        const uploadArea = document.getElementById('elv3ScanUploadArea');
+        const progressDiv = document.getElementById('elv3ScanProgress');
+        const progressFill = document.getElementById('elv3ScanProgressFill');
+        const statusText = document.getElementById('elv3ScanStatusText');
+        const resultDiv = document.getElementById('elv3ScanResult');
+        const errorDiv = document.getElementById('elv3ScanError');
+
+        for (const item of elv3ScanItems) {
+            if (item.blobUrl) URL.revokeObjectURL(item.blobUrl);
+        }
+        elv3ScanItems = [];
+        elv3ScanCurrentIndex = 0;
+
+        uploadArea.style.display = 'none';
+        progressDiv.style.display = 'block';
+        resultDiv.style.display = 'none';
+        errorDiv.style.display = 'none';
+        progressFill.classList.add('indeterminate');
+
+        const pdfFiles = Array.from(files).filter(f => f.type === 'application/pdf');
+        const total = pdfFiles.length;
+
+        for (let i = 0; i < pdfFiles.length; i++) {
+            const file = pdfFiles[i];
+            statusText.textContent = total > 1 ? `Processing PDF ${i + 1} of ${total}...` : 'Parsing ELV3 form...';
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const result = await parseELV3PDFClient(arrayBuffer);
+
+                if (result.devices.length > 0 && !result.bin) {
+                    statusText.textContent = total > 1 ? `Looking up BIN for PDF ${i + 1}...` : 'Looking up BIN number...';
+                    const firstDevice = result.devices[0];
+                    const deviceNumber = firstDevice.deviceNumber || firstDevice;
+                    try {
+                        const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber)}`);
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data && data.length > 0 && data[0].bin) {
+                                result.bin = data[0].bin;
+                                if (!result.address && data[0].house_number && data[0].street_name) {
+                                    result.address = `${data[0].house_number} ${data[0].street_name}`.trim();
+                                }
+                            }
+                        }
+                    } catch (apiError) {
+                        console.log('Could not fetch BIN from API:', apiError);
+                    }
+                }
+
+                const blobUrl = URL.createObjectURL(file);
+                elv3ScanItems.push({ file, result, blobUrl });
+            } catch (error) {
+                console.error('Failed to parse PDF:', file.name, error);
+                const blobUrl = URL.createObjectURL(file);
+                elv3ScanItems.push({
+                    file,
+                    result: { success: false, errorMessage: error.message, violations: [], violationsByDevice: {}, devices: [], satisfactoryDevices: [] },
+                    blobUrl
+                });
+            }
+        }
+
+        progressFill.classList.remove('indeterminate');
+        progressDiv.style.display = 'none';
+
+        if (elv3ScanItems.length === 0) {
+            errorDiv.textContent = 'No PDFs could be parsed. Please try valid ELV3 PDF files.';
+            errorDiv.style.display = 'block';
+            uploadArea.style.display = 'block';
+            return;
+        }
+
+        resultDiv.style.display = '';
+        resultDiv.classList.remove('error');
+        showCurrentELV3Pdf(0);
+    }
+
+    /**
+     * Process and parse a single ELV3 PDF file (legacy – use processELV3ScanBatch for multiple)
      */
     async function processELV3Scan(file) {
         const uploadArea = document.getElementById('elv3ScanUploadArea');
@@ -16364,7 +16554,7 @@
             progressDiv.style.display = 'none';
             
             // Show success result
-            resultDiv.style.display = 'block';
+            resultDiv.style.display = '';
             resultDiv.classList.remove('error');
             
             renderELV3ScanResult(result);
@@ -16373,7 +16563,7 @@
             progressFill.classList.remove('indeterminate');
             progressDiv.style.display = 'none';
             
-            resultDiv.style.display = 'block';
+            resultDiv.style.display = '';
             resultDiv.classList.add('error');
             document.getElementById('elv3ScanResultContent').innerHTML = `
                 <h4>✗ Scan Failed</h4>
@@ -17123,16 +17313,28 @@
     /**
      * Render the ELV3 scan result
      */
-    function renderELV3ScanResult(data) {
-        const devicesWithViolationsCount = Object.keys(data.violationsByDevice).length;
+    function renderELV3ScanResult(data, targetEl) {
+        const container = targetEl || document.getElementById('elv3ScanResultContent');
+        if (data.success === false) {
+            if (container) {
+                container.innerHTML = `
+                    <h4>✗ Scan Failed</h4>
+                    <div class="elv3-scan-result-details">
+                        <p>${data.errorMessage || 'Could not parse this PDF.'}</p>
+                    </div>
+                `;
+            }
+            return;
+        }
+        const devicesWithViolationsCount = Object.keys(data.violationsByDevice || {}).length;
         const satisfactoryDevices = data.satisfactoryDevices || [];
-        const totalDevices = data.devices.length;
+        const totalDevices = (data.devices || []).length;
         
         let resultHtml = `
             <h4>✓ Scan Complete</h4>
             <div class="elv3-scan-result-details">
                 ${data.address ? `<p><strong>Address:</strong> ${data.address}</p>` : ''}
-                ${data.bin ? `<p><strong>BIN:</strong> <span class="elv3-scan-bin-copy" onclick="copyBinToClipboard('${data.bin}')" title="Click to copy">${data.bin}</span></p>` : ''}
+                ${data.bin ? `<p><strong>BIN:</strong> <span class="elv3-scan-bin-copy" onclick="copyBinToClipboard('${data.bin}', event)" title="Click to copy">${data.bin}</span></p>` : ''}
                 <p><strong>Devices Scanned:</strong> ${totalDevices}</p>
                 <p><strong>Devices with Violations:</strong> ${devicesWithViolationsCount}</p>
                 <p><strong>Satisfactory Devices:</strong> ${satisfactoryDevices.length}</p>
@@ -17195,7 +17397,7 @@
         
         resultHtml += `</div>`;
         
-        document.getElementById('elv3ScanResultContent').innerHTML = resultHtml;
+        if (container) container.innerHTML = resultHtml;
     }
 
     // Close modal on escape key
