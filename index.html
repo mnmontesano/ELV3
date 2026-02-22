@@ -17616,6 +17616,81 @@
         };
     }
 
+    async function copyAllViolations(event) {
+        if (!elv3ScanItems.length) return;
+        var item = elv3ScanItems[elv3ScanCurrentIndex];
+        if (!item || !item.result) return;
+        var data = item.result;
+
+        var lines = [];
+        if (data.address) lines.push('Address: ' + data.address);
+        if (data.bin) lines.push('BIN: ' + data.bin);
+        lines.push('Devices Scanned: ' + (data.devices || []).length);
+
+        var vbd = data.violationsByDevice || {};
+        var devicesWithV = Object.keys(vbd).length;
+        var satisfactory = data.satisfactoryDevices || [];
+        lines.push('Devices with Violations: ' + devicesWithV);
+        lines.push('Satisfactory Devices: ' + satisfactory.length);
+        lines.push('Total Violations: ' + (data.violations || []).length);
+        lines.push('');
+
+        if (data.violations && data.violations.length > 0) {
+            lines.push('--- DEVICES WITH VIOLATIONS ---');
+            lines.push('');
+            Object.entries(vbd).forEach(function(entry) {
+                var deviceNumber = entry[0];
+                var violations = entry[1];
+                var fieldText = violations[0] && violations[0].deviceFieldText ? ' (' + violations[0].deviceFieldText + ')' : '';
+                lines.push(deviceNumber + fieldText + '  —  ' + violations.length + ' violation' + (violations.length > 1 ? 's' : ''));
+                violations.forEach(function(v) {
+                    lines.push('  Part ' + v.partCode + ' | Cond ' + (v.conditionCode || '-') + ' | Remedy ' + (v.remedyCode || '-'));
+                    lines.push('  ' + v.partDescription);
+                    var details = (v.conditionDescription || '') + ' → ' + (v.remedyDescription || '');
+                    if (details.trim() !== '→') lines.push('  ' + details.trim());
+                    if (v.comments) lines.push('  "' + v.comments + '"');
+                });
+                lines.push('');
+            });
+        }
+
+        if (satisfactory.length > 0) {
+            lines.push('--- SATISFACTORY DEVICES ---');
+            satisfactory.forEach(function(d) {
+                lines.push(d.deviceNumber + '  ✓ Satisfactory');
+            });
+            lines.push('');
+        }
+
+        var text = lines.join('\n');
+
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch (e) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+
+        var btn = event && event.target ? event.target.closest('.elv3-scan-copy-all-btn') : null;
+        if (btn) {
+            var origHTML = btn.innerHTML;
+            btn.innerHTML = '<span class="copy-icon">✓</span><span class="copy-text">Copied!</span>';
+            btn.style.borderColor = '#10b981';
+            btn.style.color = '#10b981';
+            setTimeout(function() {
+                btn.innerHTML = origHTML;
+                btn.style.borderColor = '';
+                btn.style.color = '';
+            }, 2000);
+        }
+    }
+
     /**
      * Render the ELV3 scan result
      */
@@ -17646,10 +17721,12 @@
                 <p><strong>Satisfactory Devices:</strong> ${satisfactoryDevices.length}</p>
                 <p><strong>Total Violations:</strong> ${data.violations.length}</p>
             </div>
-            <button class="elv3-scan-toggle-pdf-btn" onclick="togglePdfPreview()">
-                <span class="toggle-icon">📄</span>
-                <span class="toggle-text">Hide PDF</span>
-            </button>
+            <div class="elv3-scan-action-row">
+                <button class="elv3-scan-copy-all-btn" onclick="copyAllViolations(event)">
+                    <span class="copy-icon">📋</span>
+                    <span class="copy-text">Copy All</span>
+                </button>
+            </div>
         `;
         
         resultHtml += `<div class="elv3-scan-results-scroll">`;
