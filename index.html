@@ -8929,8 +8929,8 @@
                 if (/^\d{6,7}$/.test(searchTerm)) {
                     location = await lookupLocationByBin(searchTerm);
                 }
-                // Check if it's a device number (format: XXXX-XXXX or similar)
-                else if (/^[A-Z0-9]+-[A-Z0-9]+/.test(searchTerm.toUpperCase())) {
+                // Check if it's a device number (e.g. 1P764, 2X123, or XXXX-XXXX)
+                else if (/^\d+[A-Z]/i.test(searchTerm) || /^[A-Z0-9]+-[A-Z0-9]+/i.test(searchTerm)) {
                     location = await lookupLocationByDevice(searchTerm);
                 }
                 // Otherwise treat as address
@@ -9030,7 +9030,6 @@
         
         async function lookupLocationByDevice(deviceNumber) {
             try {
-                // Use NYC open data to get device info
                 const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=UPPER(device_number)='${deviceNumber.toUpperCase()}'&$limit=1`;
                 const response = await fetch(url);
                 if (!response.ok) throw new Error('Network response not ok');
@@ -9038,20 +9037,21 @@
                 
                 if (data && data.length > 0) {
                     const device = data[0];
+                    if (device.bin) {
+                        const binLocation = await lookupLocationByBin(device.bin);
+                        if (binLocation) {
+                            binLocation.label = `${binLocation.label} (via Device: ${deviceNumber})`;
+                            return binLocation;
+                        }
+                    }
+
                     const address = `${device.house_number} ${device.street_name}, ${device.borough}`;
-                    
-                    // Fetch violations for this device
                     const violations = await fetchViolations(deviceNumber);
                     const activeViolations = violations.filter(v => 
                         v.violation_status?.toUpperCase() === 'ACTIVE' || 
                         v.violation_status?.toUpperCase() === 'OPEN');
+                    const deviceWithViolations = { ...device, violations: activeViolations };
                     
-                    const deviceWithViolations = {
-                        ...device,
-                        violations: activeViolations
-                    };
-                    
-                    // Try to get coordinates from the API response
                     if (device.latitude && device.longitude) {
                         return {
                             label: `${address} (Device: ${deviceNumber})`,
@@ -9064,7 +9064,6 @@
                         };
                     }
                     
-                    // If no coordinates, try geocoding the address
                     const location = await geocodeAddress(address, device.bin, deviceNumber);
                     if (location) {
                         location.devices = [deviceWithViolations];
