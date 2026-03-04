@@ -17426,6 +17426,17 @@
             }
         }
         
+        // Identify devices with a device number but neither Satisfactory nor Unsatisfactory checked
+        result.devicesWithoutStatusCheck = [];
+        for (const device of result.devices) {
+            const deviceIdx = Object.entries(devices).find(([idx, num]) => num === device.deviceNumber)?.[0];
+            const hasStatusCheck = deviceIdx && deviceStatus[deviceIdx] &&
+                (deviceStatus[deviceIdx].satisfactory === true || deviceStatus[deviceIdx].unsatisfactory === true);
+            if (!hasStatusCheck) {
+                result.devicesWithoutStatusCheck.push(device.deviceNumber);
+            }
+        }
+        
         console.log('Device status:', deviceStatus);
         
         // Step 2: Extract violations from main Elevator_Part fields (Row 1 for each device)
@@ -17796,11 +17807,16 @@
             result.violationsByDevice[violation.deviceNumber].push(violation);
         }
         
-        // Step 6: Separate devices into those with violations and satisfactory ones
+        // Step 6: Separate devices into violations, satisfactory, and missing status check
         result.devicesWithViolations = [];
         result.satisfactoryDevices = [];
+        const needsStatusCheckSet = new Set(result.devicesWithoutStatusCheck || []);
         
         for (const device of result.devices) {
+            if (needsStatusCheckSet.has(device.deviceNumber)) {
+                // Device in Missing Status Check - exclude from all other sections
+                continue;
+            }
             const hasViolations = result.violationsByDevice[device.deviceNumber]?.length > 0;
             if (hasViolations) {
                 result.devicesWithViolations.push(device);
@@ -17869,17 +17885,19 @@
         lines.push('Devices Scanned: ' + (data.devices || []).length);
 
         var vbd = data.violationsByDevice || {};
-        var devicesWithV = Object.keys(vbd).length;
+        var needsCheck = new Set(data.devicesWithoutStatusCheck || []);
+        var vbdFiltered = Object.fromEntries(Object.entries(vbd).filter(function(e) { return !needsCheck.has(e[0]); }));
+        var devicesWithV = Object.keys(vbdFiltered).length;
         var satisfactory = data.satisfactoryDevices || [];
         lines.push('Devices with Violations: ' + devicesWithV);
         lines.push('Satisfactory Devices: ' + satisfactory.length);
         lines.push('Total Violations: ' + (data.violations || []).length);
         lines.push('');
 
-        if (data.violations && data.violations.length > 0) {
+        if (Object.keys(vbdFiltered).length > 0) {
             lines.push('--- DEVICES WITH VIOLATIONS ---');
             lines.push('');
-            Object.entries(vbd).forEach(function(entry) {
+            Object.entries(vbdFiltered).forEach(function(entry) {
                 var deviceNumber = entry[0];
                 var violations = entry[1];
                 var fieldText = violations[0] && violations[0].deviceFieldText ? ' (' + violations[0].deviceFieldText + ')' : '';
@@ -17899,6 +17917,14 @@
             lines.push('--- SATISFACTORY DEVICES ---');
             satisfactory.forEach(function(d) {
                 lines.push(d.deviceNumber + '  ✓ Satisfactory');
+            });
+            lines.push('');
+        }
+
+        if (needsCheck.size > 0) {
+            lines.push('--- MISSING STATUS CHECK ---');
+            needsCheck.forEach(function(dn) {
+                lines.push(dn + '  ⚠ Needs Satisfactory/Unsatisfactory check');
             });
             lines.push('');
         }
@@ -17948,7 +17974,12 @@
             }
             return;
         }
-        const devicesWithViolationsCount = Object.keys(data.violationsByDevice || {}).length;
+        const devicesWithoutStatusCheck = data.devicesWithoutStatusCheck || [];
+        const devicesWithoutStatusCheckSet = new Set(devicesWithoutStatusCheck);
+        const violationsByDeviceFiltered = Object.fromEntries(
+            Object.entries(data.violationsByDevice || {}).filter(([dn]) => !devicesWithoutStatusCheckSet.has(dn))
+        );
+        const devicesWithViolationsCount = Object.keys(violationsByDeviceFiltered).length;
         const satisfactoryDevices = data.satisfactoryDevices || [];
         const totalDevices = (data.devices || []).length;
         
@@ -17960,6 +17991,7 @@
                 <p><strong>Devices Scanned:</strong> ${totalDevices}</p>
                 <p><strong>Devices with Violations:</strong> ${devicesWithViolationsCount}</p>
                 <p><strong>Satisfactory Devices:</strong> ${satisfactoryDevices.length}</p>
+                <p><strong>Devices Need Review:</strong> ${devicesWithoutStatusCheck.length}</p>
                 <p><strong>Total Violations:</strong> ${data.violations.length}</p>
             </div>
             <div class="elv3-scan-action-row">
@@ -17972,11 +18004,11 @@
         
         resultHtml += `<div class="elv3-scan-results-scroll">`;
         
-        // Show devices with violations
-        if (data.violations.length > 0) {
+        // Show devices with violations (excluding devices in Missing Status Check)
+        if (Object.keys(violationsByDeviceFiltered).length > 0) {
             resultHtml += `
                 <h5 class="elv3-scan-section-title violations">⚠ Devices with Violations</h5>
-                ${Object.entries(data.violationsByDevice).map(([deviceNumber, violations]) => {
+                ${Object.entries(violationsByDeviceFiltered).map(([deviceNumber, violations]) => {
                     // Get device field text from first violation (they all share the same device)
                     const deviceFieldText = violations[0]?.deviceFieldText || null;
                     return `
@@ -18001,6 +18033,21 @@
                         </div>
                     </div>
                 `}).join('')}
+            `;
+        }
+        
+        // Show warning for devices without Satisfactory/Unsatisfactory check
+        if (devicesWithoutStatusCheck.length > 0) {
+            resultHtml += `
+                <h5 class="elv3-scan-section-title" style="color: #f59e0b;">⚠ Missing Status Check</h5>
+                <div class="elv3-scan-warning-box" style="background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; border-radius: 6px; padding: 12px; margin-bottom: 16px;">
+                    <p style="margin: 0 0 8px 0; color: var(--text-color); font-size: 13px;">The following device(s) have a device number but neither Satisfactory nor Unsatisfactory is checked:</p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+                        ${devicesWithoutStatusCheck.map(deviceNumber => `
+                            <span style="background: rgba(245, 158, 11, 0.3); padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 13px;">${deviceNumber}</span>
+                        `).join('')}
+                    </div>
+                </div>
             `;
         }
         
@@ -18031,13 +18078,6 @@
             if (modal && modal.style.display !== 'none') {
                 closeUploadELV3ScanModal();
             }
-        }
-    });
-
-    // Close modal on outside click
-    document.addEventListener('click', (e) => {
-        if (e.target.classList.contains('elv3-scan-modal')) {
-            closeUploadELV3ScanModal();
         }
     });
     </script>
