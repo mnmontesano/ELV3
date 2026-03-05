@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOB Violation Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>DOB Violation Tracker</h1>
+                <div class="header-actions">
+                    <button id="dobNowBtn" class="btn btn-success" onclick="window.open('https://a810-dobnow.nyc.gov/publish/Index.html#!/', '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes,location=yes')">
+                        <span class="btn-icon">🏢</span> DOB Now
+                    </button>
+                    <button id="checkNowBtn" class="btn btn-primary" onclick="runManualCheck()">
+                        <span class="btn-icon">🔄</span> Check Now
+                    </button>
+                    <div class="status-indicator" id="statusIndicator">
+                        <span class="status-dot"></span>
+                        <span id="lastCheckText">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Alert Banner for New Violations -->
+        <div id="alertBanner" class="alert-banner" style="display: none;">
+            <div class="alert-content">
+                <span class="alert-icon">⚠️</span>
+                <span id="alertText">You have new violations!</span>
+                <button class="btn btn-small" onclick="showNewViolations()">View</button>
+                <button class="btn btn-small btn-secondary" onclick="acknowledgeAll()">Acknowledge All</button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Progress Bar (shown during violation checks) -->
+            <div id="progressContainer" class="progress-container">
+                <div class="progress-header">
+                    <div class="progress-title">
+                        <div class="spinner"></div>
+                        <span>Checking Violations</span>
+                    </div>
+                    <span id="progressPercentage" class="progress-percentage">0%</span>
+                </div>
+                <div class="progress-bar-wrapper">
+                    <div id="progressBar" class="progress-bar"></div>
+                </div>
+                <div id="progressStatus" class="progress-status">
+                    Preparing to check buildings...
+                </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <section class="stats-section">
+                <div class="stat-card">
+                    <div class="stat-value" id="buildingCount">0</div>
+                    <div class="stat-label">Buildings Monitored</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="deviceCount">0</div>
+                    <div class="stat-label">Devices</div>
+                </div>
+                <div class="stat-card highlight">
+                    <div class="stat-value" id="newViolationCount">0</div>
+                    <div class="stat-label">New Violations</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="totalViolationCount">0</div>
+                    <div class="stat-label">Total Violations</div>
+                </div>
+            </section>
+
+            <!-- Two Column Layout -->
+            <div class="content-grid">
+                <!-- Buildings Panel -->
+                <section class="panel buildings-panel">
+                    <div class="panel-header">
+                        <h2>Monitored Buildings</h2>
+                        <div class="header-buttons">
+                            <button class="btn btn-secondary btn-small" onclick="showManageCategoriesModal()">📁 Categories</button>
+                            <button class="btn btn-primary btn-small" onclick="showAddBuildingModal()">+ Add Building</button>
+                        </div>
+                    </div>
+                    <div class="panel-subheader">
+                        <div class="building-search">
+                            <input type="text" id="buildingSearch" placeholder="Search buildings..." oninput="searchBuildings()">
+                        </div>
+                        <div class="category-filter">
+                            <label for="categoryFilter">Filter:</label>
+                            <select id="categoryFilter" onchange="filterBuildingsByCategory()">
+                                <option value="all">All Buildings</option>
+                                <option value="uncategorized">Uncategorized</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="panel-content">
+                        <div id="buildingsList" class="buildings-list">
+                            <div class="loading">Loading buildings...</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Violations Panel -->
+                <section class="panel violations-panel">
+                    <div class="panel-header">
+                        <h2>Active Violations</h2>
+                        <div class="filter-group">
+                            <select id="violationFilter" onchange="filterViolations()">
+                                <option value="new">New Only</option>
+                                <option value="all">All Active</option>
+                                <option value="unacknowledged">Unacknowledged</option>
+                                <option value="acknowledged">Acknowledged</option>
+                            </select>
+                            <select id="yearFilter" onchange="filterViolations()">
+                                <option value="all">All Years</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="panel-content">
+                        <div id="violationsList" class="violations-list">
+                            <div class="loading">Loading violations...</div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ELV3 Inspections Panel -->
+            <section class="panel elv3-panel">
+                <div class="panel-header">
+                    <h2>ELV3 Field Inspections</h2>
+                    <button class="btn btn-primary btn-small" onclick="showUploadELV3Modal()">📄 Upload ELV3</button>
+                </div>
+                <div class="panel-content">
+                    <div id="elv3List" class="elv3-list">
+                        <div class="loading">Loading inspections...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Check History -->
+            <section class="panel history-panel">
+                <div class="panel-header">
+                    <h2>Check History</h2>
+                    <div class="settings-inline">
+                        <label>Check every</label>
+                        <select id="intervalSelect" onchange="updateInterval()" title="Runs at fixed times (e.g., 12am, 6am, 12pm, 6pm for 6hr interval)">
+                            <option value="1">1 hour</option>
+                            <option value="2">2 hours</option>
+                            <option value="4">4 hours</option>
+                            <option value="6" selected>6 hours</option>
+                            <option value="12">12 hours</option>
+                            <option value="24">24 hours</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="panel-content">
+                    <div id="historyList" class="history-list">
+                        <div class="loading">Loading history...</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Add Building Modal -->
+    <div id="addBuildingModal" class="modal" style="display: none;">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3>Add Building(s) to Monitor</h3>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Lookup Method Toggle -->
+                <div class="lookup-toggle">
+                    <button class="toggle-btn active" id="binToggle" onclick="setLookupMode('bin')">Search by BIN</button>
+                    <button class="toggle-btn" id="deviceToggle" onclick="setLookupMode('device')">Search by Device #</button>
+                    <button class="toggle-btn" id="multiToggle" onclick="setLookupMode('multi')">Add Multiple BINs</button>
+                </div>
+                
+                <!-- BIN Input (default) -->
+                <div id="binInputGroup" class="form-group">
+                    <label for="binInput">BIN (Building Identification Number)</label>
+                    <input type="text" id="binInput" placeholder="Enter 7-digit BIN" maxlength="7" pattern="[0-9]{7}" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                    <small>You can find the BIN on <a href="https://a810-bisweb.nyc.gov/bisweb/bispi00.jsp" target="_blank">DOB BIS</a></small>
+                </div>
+                
+                <!-- Device Number Input (alternative) -->
+                <div id="deviceInputGroup" class="form-group" style="display: none;">
+                    <label for="deviceInput">Device Number (Elevator/Escalator)</label>
+                    <input type="text" id="deviceInput" placeholder="Enter device number (e.g., 1P723)" oninput="this.value = this.value.toUpperCase()">
+                    <small>Enter the device number to find its associated building's BIN</small>
+                </div>
+                
+                <!-- Multiple BINs Input -->
+                <div id="multiInputGroup" class="form-group" style="display: none;">
+                    <label for="multiBinInput">Multiple BINs (one per line or comma-separated)</label>
+                    <textarea id="multiBinInput" rows="6" placeholder="Enter BIN numbers, one per line or comma-separated:
+1001026
+1234567
+2345678"></textarea>
+                    <small>Add multiple buildings at once. Each BIN should be 7 digits.</small>
+                </div>
+                
+                <div id="singleNicknameGroup" class="form-group">
+                    <label for="nicknameInput">Nickname (Optional)</label>
+                    <input type="text" id="nicknameInput" placeholder="e.g., Main Office, Client Building A">
+                </div>
+                
+                <div id="categorySelectGroup" class="form-group">
+                    <label for="categorySelect">Category (Optional)</label>
+                    <div class="category-select-wrapper">
+                        <select id="categorySelect">
+                            <option value="">No Category</option>
+                        </select>
+                        <button type="button" class="btn btn-small btn-secondary" onclick="showQuickAddCategory()">+ New</button>
+                    </div>
+                </div>
+                
+                <!-- Preview Area -->
+                <div id="buildingPreview" class="building-preview" style="display: none;">
+                    <h4>Building Preview</h4>
+                    <div id="previewContent"></div>
+                </div>
+                
+                <!-- Multi-BIN Results Area -->
+                <div id="multiBinResults" style="display: none; margin-top: 16px;">
+                    <h4>Results</h4>
+                    <div id="multiBinResultsContent"></div>
+                </div>
+                
+                <div id="addBuildingError" class="error-message" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-secondary" id="previewBtn" onclick="previewBuilding()">Preview</button>
+                <button class="btn btn-primary" id="addBuildingBtn" onclick="addBuilding()">Add Building</button>
+                <button class="btn btn-primary" id="addMultiBtn" onclick="addMultipleBuildings()" style="display: none;">Add All Buildings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Building Details Modal -->
+    <div id="buildingDetailsModal" class="modal" style="display: none;">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 id="buildingDetailsTitle">Building Details</h3>
+                <button class="close-btn" onclick="closeBuildingDetails()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="buildingDetailsContent">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" id="removeBuildingBtn">Remove Building</button>
+                <button class="btn btn-secondary" onclick="closeBuildingDetails()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Categories Modal -->
+    <div id="manageCategoriesModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Manage Categories</h3>
+                <button class="close-btn" onclick="closeManageCategoriesModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Create New Category</label>
+                    <div class="create-category-row">
+                        <input type="text" id="newCategoryName" placeholder="Category name">
+                        <input type="color" id="newCategoryColor" value="#3b82f6" title="Choose color">
+                        <button class="btn btn-primary btn-small" onclick="createCategory()">Add</button>
+                    </div>
+                </div>
+                
+                <div class="categories-list-header">
+                    <h4>Your Categories</h4>
+                </div>
+                <div id="categoriesList" class="categories-list">
+                    <div class="loading">Loading categories...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeManageCategoriesModal()">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Category Modal -->
+    <div id="editCategoryModal" class="modal" style="display: none;">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h3>Edit Category</h3>
+                <button class="close-btn" onclick="closeEditCategoryModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editCategoryId">
+                <div class="form-group">
+                    <label for="editCategoryName">Category Name</label>
+                    <input type="text" id="editCategoryName" placeholder="Category name">
+                </div>
+                <div class="form-group">
+                    <label for="editCategoryColor">Color</label>
+                    <input type="color" id="editCategoryColor" value="#3b82f6">
+                </div>
+                <div id="editCategoryError" class="error-message" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" onclick="deleteCategory()">Delete</button>
+                <button class="btn btn-secondary" onclick="closeEditCategoryModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveCategory()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload ELV3 Modal -->
+    <div id="uploadELV3Modal" class="modal" style="display: none;">
+        <div class="modal-content modal-xlarge">
+            <div class="modal-header">
+                <h3>Upload ELV3 Inspection Form</h3>
+                <button class="close-btn" onclick="closeUploadELV3Modal()">&times;</button>
+            </div>
+            <div class="modal-body upload-modal-body">
+                <!-- Left side: Upload controls and results -->
+                <div class="upload-left-panel">
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📄</div>
+                        <p>Drag & drop your ELV3 PDF here</p>
+                        <p class="upload-hint">or click to select a file</p>
+                        <input type="file" id="elv3FileInput" accept=".pdf" style="display: none;" onchange="handleELV3FileSelect(event)">
+                    </div>
+                    
+                    <div id="uploadProgress" class="upload-progress" style="display: none;">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="uploadProgressFill"></div>
+                        </div>
+                        <p id="uploadStatusText">Uploading...</p>
+                    </div>
+                    
+                    <div id="uploadResult" class="upload-result" style="display: none;">
+                        <div id="uploadResultContent"></div>
+                    </div>
+                    
+                    <div id="uploadError" class="error-message" style="display: none;"></div>
+                </div>
+                
+                <!-- Right side: PDF Preview -->
+                <div class="upload-right-panel" id="pdfPreviewPanel" style="display: none;">
+                    <div class="pdf-preview-header">
+                        <h4>PDF Preview</h4>
+                        <button class="btn btn-small btn-secondary" onclick="togglePdfFullscreen()">⛶ Fullscreen</button>
+                    </div>
+                    <div class="pdf-preview-container">
+                        <iframe id="pdfPreviewFrame" class="pdf-preview-frame"></iframe>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeUploadELV3Modal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ELV3 Inspection Details Modal -->
+    <div id="elv3DetailsModal" class="modal" style="display: none;">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 id="elv3DetailsTitle">Inspection Details</h3>
+                <button class="close-btn" onclick="closeELV3DetailsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="elv3DetailsContent">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" id="deleteInspectionBtn">Delete Inspection</button>
+                <button class="btn btn-secondary" onclick="closeELV3DetailsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

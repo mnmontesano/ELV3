@@ -937,11 +937,17 @@
                         style="padding: 12px 20px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
                     📍 View on Map
                 </button>
+                <button id="loadMapViewButton" 
+                        onclick="openSavedMapViewPicker()" 
+                        style="padding: 12px 20px; background: #6f42c1; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                    📂 Load Saved Map View
+                </button>
             </div>
 
             <div id="bulkResult" class="result" style="margin-top: 15px; display: none; background: var(--result-bg); color: var(--text-color); min-height: 100px; overflow-y: auto; resize: vertical; border: 2px solid var(--input-border); border-radius: 8px; padding: 10px;">
                 <!-- Results will be displayed here -->
             </div>
+            <input id="mapViewImportInput" type="file" accept=".json,application/json" style="display: none;" onchange="handleMapViewImport(event)">
         </div>
 
         <!-- Building Map Modal -->
@@ -1035,6 +1041,30 @@
                                 <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No additional locations</div>
                             </div>
                             <button onclick="clearAllAdditionalLocations()" style="width: 100%; padding: 8px; background: var(--input-bg); color: #00bcd4; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">Clear All Additional Locations</button>
+                        </div>
+
+                        <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
+                            <h4 style="margin: 0 0 12px 0; color: var(--header-color); font-size: 1em; display: flex; align-items: center; gap: 8px;">
+                                <span style="color: #6f42c1;">💾</span> Saved Views (<span id="mapSavedViewsCount">0</span>)
+                            </h4>
+                            <p style="font-size: 11px; opacity: 0.7; margin: 0 0 10px 0;">Save the current map state and load it later</p>
+                            <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                                <input id="mapViewNameInput" type="text" placeholder="View name"
+                                       style="flex: 1; padding: 7px 8px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 12px;">
+                                <button onclick="saveCurrentMapView()" style="padding: 7px 10px; background: #6f42c1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Save</button>
+                            </div>
+                            <select id="savedMapViewsSelect" onchange="refreshSavedMapViewsUI(this.value)" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 12px; margin-bottom: 8px;">
+                                <option value="">No saved views</option>
+                            </select>
+                            <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                                <button onclick="loadSelectedMapView()" style="flex: 1; padding: 8px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Load</button>
+                                <button onclick="deleteSelectedMapView()" style="flex: 1; padding: 8px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Delete</button>
+                            </div>
+                            <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                                <button onclick="exportSelectedMapView()" style="flex: 1; padding: 8px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Export</button>
+                                <button onclick="triggerMapViewImport()" style="flex: 1; padding: 8px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Import</button>
+                            </div>
+                            <div id="mapSavedViewMeta" style="font-size: 11px; opacity: 0.7;">No view selected</div>
                         </div>
                         
                         <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
@@ -8984,9 +9014,12 @@
         const MAP_HIDDEN_KEY = 'elv3_map_hidden';
         const MAP_MONTH_LABELS_KEY = 'elv3_map_month_labels';
         const MAP_ADDITIONAL_LOCATIONS_KEY = 'elv3_map_additional_locations';
+        const MAP_SAVED_VIEWS_KEY = 'elv3_map_saved_views';
         
         // Additional locations storage
         let additionalLocationMarkers = [];
+        let pendingLoadedMapViewState = null;
+        let mapViewImportMode = 'import-only';
         
         function getAdditionalLocations() {
             try {
@@ -9003,6 +9036,404 @@
                 console.error('Error saving additional locations:', e);
             }
         }
+
+        function getSavedMapViews() {
+            try {
+                const stored = localStorage.getItem(MAP_SAVED_VIEWS_KEY);
+                const views = stored ? JSON.parse(stored) : [];
+                return Array.isArray(views) ? views : [];
+            } catch (e) {
+                console.error('Error reading saved map views:', e);
+                return [];
+            }
+        }
+
+        function setSavedMapViews(views) {
+            try {
+                localStorage.setItem(MAP_SAVED_VIEWS_KEY, JSON.stringify(views));
+            } catch (e) {
+                console.error('Error saving map views:', e);
+            }
+        }
+
+        function formatSavedViewDate(timestamp) {
+            if (!timestamp) return 'Unknown date';
+            try {
+                return new Date(timestamp).toLocaleString();
+            } catch (e) {
+                return 'Unknown date';
+            }
+        }
+
+        function refreshSavedMapViewsUI(selectedId) {
+            const views = getSavedMapViews().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+            const select = document.getElementById('savedMapViewsSelect');
+            const countEl = document.getElementById('mapSavedViewsCount');
+            const metaEl = document.getElementById('mapSavedViewMeta');
+            const resolvedSelectedId = selectedId || (select ? select.value : '');
+
+            if (countEl) {
+                countEl.textContent = views.length;
+            }
+
+            if (select) {
+                if (views.length === 0) {
+                    select.innerHTML = '<option value="">No saved views</option>';
+                } else {
+                    select.innerHTML = views.map(view => `
+                        <option value="${view.id}">
+                            ${view.name} (${Object.keys((view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups) || {}).length} buildings)
+                        </option>
+                    `).join('');
+                    if (resolvedSelectedId && views.some(v => v.id === resolvedSelectedId)) {
+                        select.value = resolvedSelectedId;
+                    }
+                }
+            }
+
+            if (metaEl) {
+                const activeId = select ? select.value : resolvedSelectedId;
+                const selectedView = views.find(v => v.id === activeId);
+                if (selectedView) {
+                    const buildingCount = Object.keys((selectedView.lastBulkSearchResults && selectedView.lastBulkSearchResults.binGroups) || {}).length;
+                    metaEl.textContent = `Saved ${formatSavedViewDate(selectedView.updatedAt)} • ${buildingCount} buildings`;
+                } else {
+                    metaEl.textContent = 'No view selected';
+                }
+            }
+        }
+
+        function getCurrentMapStateForSave() {
+            const mapSearchInput = document.getElementById('mapSearchInput');
+            const monthFilterSelect = document.getElementById('monthFilterSelect');
+            const controlsPanel = document.getElementById('mapControlsPanel');
+
+            let center = null;
+            let zoom = null;
+            if (buildingMap) {
+                const currentCenter = buildingMap.getCenter();
+                center = [currentCenter.lat, currentCenter.lng];
+                zoom = buildingMap.getZoom();
+            }
+
+            return {
+                center,
+                zoom,
+                searchTerm: mapSearchInput ? mapSearchInput.value.trim() : '',
+                monthFilter: monthFilterSelect ? monthFilterSelect.value : '',
+                controlsPanelVisible: controlsPanel ? controlsPanel.style.display !== 'none' : false
+            };
+        }
+
+        function saveCurrentMapView() {
+            const hasResults = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
+            if (!hasResults) {
+                alert('No map data to save. Run a bulk lookup or load a saved view first.');
+                return;
+            }
+
+            const nameInput = document.getElementById('mapViewNameInput');
+            const rawName = nameInput ? nameInput.value.trim() : '';
+            const defaultName = `Map View ${new Date().toLocaleString()}`;
+            const viewName = rawName || defaultName;
+
+            const payload = {
+                id: `view_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
+                name: viewName,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                bulkDeviceNumbers: (document.getElementById('bulkDeviceNumbers') || {}).value || '',
+                lastBulkSearchResults: window.lastBulkSearchResults,
+                favorites: getMapFavorites(),
+                hidden: getMapHidden(),
+                monthLabels: getMapMonthLabels(),
+                additionalLocations: getAdditionalLocations(),
+                mapState: getCurrentMapStateForSave()
+            };
+
+            const views = getSavedMapViews();
+            const existingIndex = views.findIndex(view => view.name.toLowerCase() === viewName.toLowerCase());
+
+            if (existingIndex >= 0) {
+                if (!confirm(`A saved view named "${viewName}" already exists. Overwrite it?`)) {
+                    return;
+                }
+                payload.id = views[existingIndex].id;
+                payload.createdAt = views[existingIndex].createdAt || payload.createdAt;
+                views[existingIndex] = payload;
+            } else {
+                views.push(payload);
+            }
+
+            setSavedMapViews(views);
+            refreshSavedMapViewsUI(payload.id);
+            if (nameInput) nameInput.value = '';
+            showMapNotification(`Saved map view: ${viewName}`, '#6f42c1');
+        }
+
+        function renderLoadedMapViewSummary(view) {
+            const resultDiv = document.getElementById('bulkResult');
+            if (!resultDiv) return;
+
+            const binGroups = (view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups) || {};
+            const buildingCount = Object.keys(binGroups).length;
+            const deviceCount = Object.values(binGroups).reduce((sum, group) => sum + ((group.devices || []).length), 0);
+
+            resultDiv.innerHTML = `
+                <div style="background: var(--input-bg); padding: 15px; border-radius: 8px; border: 1px solid var(--input-border);">
+                    <div style="font-size: 1.05em; font-weight: 600; color: var(--header-color); margin-bottom: 8px;">
+                        Loaded Saved Map View: ${view.name}
+                    </div>
+                    <div style="font-size: 0.92em; color: var(--text-color); line-height: 1.6;">
+                        Updated: ${formatSavedViewDate(view.updatedAt)}<br>
+                        Buildings: ${buildingCount}<br>
+                        Devices: ${deviceCount}
+                    </div>
+                </div>
+            `;
+            resultDiv.style.display = 'block';
+        }
+
+        function loadSavedMapView(viewId, openMapIfClosed = true) {
+            const views = getSavedMapViews();
+            const view = views.find(v => v.id === viewId);
+            if (!view) {
+                alert('Saved view not found.');
+                return;
+            }
+
+            window.lastBulkSearchResults = view.lastBulkSearchResults || null;
+            setMapFavorites(view.favorites || {});
+            setMapHidden(view.hidden || {});
+            localStorage.setItem(MAP_MONTH_LABELS_KEY, JSON.stringify(view.monthLabels || {}));
+            setAdditionalLocations(view.additionalLocations || []);
+
+            const textarea = document.getElementById('bulkDeviceNumbers');
+            if (textarea) {
+                textarea.value = view.bulkDeviceNumbers || '';
+            }
+
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                const exportBtn = document.getElementById('exportButton');
+                const mapBtn = document.getElementById('mapButton');
+                if (exportBtn) exportBtn.style.display = 'block';
+                if (mapBtn) mapBtn.style.display = 'block';
+                renderLoadedMapViewSummary(view);
+            }
+
+            pendingLoadedMapViewState = view.mapState || null;
+
+            const modal = document.getElementById('buildingMapModal');
+            const isMapOpen = modal && modal.style.display === 'flex';
+            if (isMapOpen && buildingMap && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, false);
+            } else if (openMapIfClosed && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                showBuildingMap();
+            }
+
+            refreshSavedMapViewsUI(viewId);
+            showMapNotification(`Loaded map view: ${view.name}`, '#17a2b8');
+        }
+
+        function loadSelectedMapView() {
+            const select = document.getElementById('savedMapViewsSelect');
+            if (!select || !select.value) {
+                alert('Select a saved view first.');
+                return;
+            }
+            loadSavedMapView(select.value, true);
+        }
+
+        function deleteSelectedMapView() {
+            const select = document.getElementById('savedMapViewsSelect');
+            if (!select || !select.value) {
+                alert('Select a saved view first.');
+                return;
+            }
+
+            const views = getSavedMapViews();
+            const view = views.find(v => v.id === select.value);
+            if (!view) {
+                alert('Saved view not found.');
+                refreshSavedMapViewsUI();
+                return;
+            }
+
+            if (!confirm(`Delete saved view "${view.name}"?`)) {
+                return;
+            }
+
+            const remaining = views.filter(v => v.id !== view.id);
+            setSavedMapViews(remaining);
+            refreshSavedMapViewsUI();
+            showMapNotification(`Deleted map view: ${view.name}`, '#ff6b6b');
+        }
+
+        function openSavedMapViewPicker() {
+            const views = getSavedMapViews().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+            if (views.length === 0) {
+                const importWhenEmpty = confirm('No local saved map views found. Do you want to load a downloaded map view file?');
+                if (importWhenEmpty) {
+                    triggerMapViewImport('import-and-load');
+                }
+                return;
+            }
+
+            const optionsText = views
+                .map((view, index) => `${index + 1}. ${view.name} (${formatSavedViewDate(view.updatedAt)})`)
+                .join('\n');
+            const selection = prompt(`Load which saved map view?\n\n${optionsText}\n\nEnter a number, or type F to load a downloaded file:`);
+            if (!selection) return;
+
+            if (selection.trim().toUpperCase() === 'F') {
+                triggerMapViewImport('import-and-load');
+                return;
+            }
+
+            const index = parseInt(selection, 10) - 1;
+            if (Number.isNaN(index) || index < 0 || index >= views.length) {
+                alert('Invalid selection.');
+                return;
+            }
+
+            loadSavedMapView(views[index].id, true);
+        }
+
+        function sanitizeMapViewForExport(view) {
+            return {
+                version: 1,
+                exportedAt: Date.now(),
+                app: 'ELV3 Cheat Sheet',
+                type: 'map-view',
+                view: {
+                    id: view.id || `view_${Date.now()}`,
+                    name: view.name || 'Untitled View',
+                    createdAt: view.createdAt || Date.now(),
+                    updatedAt: view.updatedAt || Date.now(),
+                    bulkDeviceNumbers: view.bulkDeviceNumbers || '',
+                    lastBulkSearchResults: view.lastBulkSearchResults || { binGroups: {}, notFound: [] },
+                    favorites: view.favorites || {},
+                    hidden: view.hidden || {},
+                    monthLabels: view.monthLabels || {},
+                    additionalLocations: Array.isArray(view.additionalLocations) ? view.additionalLocations : [],
+                    mapState: view.mapState || null
+                }
+            };
+        }
+
+        function exportSelectedMapView() {
+            const select = document.getElementById('savedMapViewsSelect');
+            if (!select || !select.value) {
+                alert('Select a saved view first.');
+                return;
+            }
+
+            const views = getSavedMapViews();
+            const view = views.find(v => v.id === select.value);
+            if (!view) {
+                alert('Saved view not found.');
+                refreshSavedMapViewsUI();
+                return;
+            }
+
+            const exportPayload = sanitizeMapViewForExport(view);
+            const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            const safeName = (view.name || 'map-view')
+                .replace(/[^a-z0-9]+/gi, '-')
+                .replace(/^-+|-+$/g, '')
+                .toLowerCase() || 'map-view';
+            const fileName = `${safeName}-${new Date().toISOString().slice(0, 10)}.json`;
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            showMapNotification(`Exported map view: ${view.name}`, '#4CAF50');
+        }
+
+        function triggerMapViewImport(mode = 'import-only') {
+            const fileInput = document.getElementById('mapViewImportInput');
+            if (!fileInput) return;
+            mapViewImportMode = mode;
+            fileInput.value = '';
+            fileInput.click();
+        }
+
+        function normalizeImportedMapView(rawData) {
+            const source = rawData && rawData.view ? rawData.view : rawData;
+            if (!source || typeof source !== 'object') {
+                throw new Error('Invalid file format.');
+            }
+            if (!source.lastBulkSearchResults || !source.lastBulkSearchResults.binGroups) {
+                throw new Error('Missing map lookup results in file.');
+            }
+
+            const now = Date.now();
+            return {
+                id: source.id || `view_${now}_${Math.floor(Math.random() * 100000)}`,
+                name: source.name || `Imported View ${new Date(now).toLocaleString()}`,
+                createdAt: source.createdAt || now,
+                updatedAt: now,
+                bulkDeviceNumbers: source.bulkDeviceNumbers || '',
+                lastBulkSearchResults: source.lastBulkSearchResults,
+                favorites: source.favorites || {},
+                hidden: source.hidden || {},
+                monthLabels: source.monthLabels || {},
+                additionalLocations: Array.isArray(source.additionalLocations) ? source.additionalLocations : [],
+                mapState: source.mapState || null
+            };
+        }
+
+        async function handleMapViewImport(event) {
+            const file = event && event.target && event.target.files ? event.target.files[0] : null;
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                const parsed = JSON.parse(text);
+                const importedView = normalizeImportedMapView(parsed);
+
+                const views = getSavedMapViews();
+                const existingByName = views.find(v => (v.name || '').toLowerCase() === importedView.name.toLowerCase());
+                const existingById = views.find(v => v.id === importedView.id);
+                const existing = existingById || existingByName;
+
+                if (existing) {
+                    if (!confirm(`A saved view named "${existing.name}" already exists. Overwrite it with imported data?`)) {
+                        return;
+                    }
+                    importedView.id = existing.id;
+                    importedView.createdAt = existing.createdAt || importedView.createdAt;
+                    const updated = views.map(v => v.id === existing.id ? importedView : v);
+                    setSavedMapViews(updated);
+                } else {
+                    views.push(importedView);
+                    setSavedMapViews(views);
+                }
+
+                refreshSavedMapViewsUI(importedView.id);
+                showMapNotification(`Imported map view: ${importedView.name}`, '#1a73e8');
+
+                if (mapViewImportMode === 'import-and-load') {
+                    loadSavedMapView(importedView.id, true);
+                }
+            } catch (error) {
+                console.error('Error importing map view:', error);
+                alert(`Unable to import file: ${error.message || 'Invalid JSON file.'}`);
+            } finally {
+                mapViewImportMode = 'import-only';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshSavedMapViewsUI();
+        });
         
         async function addAdditionalLocation() {
             const input = document.getElementById('additionalLocationInput');
@@ -9804,6 +10235,8 @@
                 return;
             }
 
+            refreshSavedMapViewsUI();
+
             const modal = document.getElementById('buildingMapModal');
             modal.style.display = 'flex';
 
@@ -9961,6 +10394,8 @@
 
         function initBuildingMap(binGroups, preserveView) {
             const mapContainer = document.getElementById('buildingMap');
+            const loadedState = pendingLoadedMapViewState;
+            pendingLoadedMapViewState = null;
             
             // Save current view if preserving
             let savedCenter = null;
@@ -10668,13 +11103,44 @@
                 bounds.extend([location.latitude, location.longitude]);
             });
 
-            // Restore saved view or fit map to show all markers
-            if (savedCenter && savedZoom) {
+            // Restore requested view or fit map to show all markers
+            if (loadedState && Array.isArray(loadedState.center) && typeof loadedState.zoom === 'number') {
+                buildingMap.setView(loadedState.center, loadedState.zoom);
+            } else if (savedCenter && savedZoom) {
                 buildingMap.setView(savedCenter, savedZoom);
             } else {
                 const allMarkersCount = buildingsWithCoords.length + additionalLocations.length;
                 if (allMarkersCount > 0) {
                     buildingMap.fitBounds(bounds, { padding: [30, 30] });
+                }
+            }
+
+            // Restore controls panel and optional filters/search after map and markers are in place
+            if (loadedState) {
+                const controlsPanel = document.getElementById('mapControlsPanel');
+                const searchInput = document.getElementById('mapSearchInput');
+                const monthFilter = document.getElementById('monthFilterSelect');
+
+                if (controlsPanel && typeof loadedState.controlsPanelVisible === 'boolean') {
+                    controlsPanel.style.display = loadedState.controlsPanelVisible ? 'block' : 'none';
+                    setTimeout(() => {
+                        if (buildingMap) buildingMap.invalidateSize();
+                    }, 100);
+                }
+
+                if (searchInput && typeof loadedState.searchTerm === 'string') {
+                    searchInput.value = loadedState.searchTerm;
+                }
+
+                if (monthFilter && typeof loadedState.monthFilter === 'string') {
+                    monthFilter.value = loadedState.monthFilter;
+                    if (loadedState.monthFilter) {
+                        filterByMonth(loadedState.monthFilter);
+                    } else if (loadedState.searchTerm) {
+                        searchMapBuildings();
+                    }
+                } else if (loadedState.searchTerm) {
+                    searchMapBuildings();
                 }
             }
 
