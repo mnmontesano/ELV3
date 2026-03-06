@@ -8269,7 +8269,7 @@
                 let totalPermitsCount = 0;
                 
                 // Get all unique device numbers from the search
-                const allDeviceNumbers = Object.values(binGroups).flatMap(group => 
+                const allDeviceNumbers = mapFlat(Object.values(binGroups), group => 
                     group.devices.map(d => ({
                         device_number: d.device_number,
                         bin: d.bin,
@@ -9008,6 +9008,39 @@
         // Map functionality for bulk device lookup
         let buildingMap = null;
         let mapMarkers = [];
+
+        // Safari-safe compatibility helpers (avoid relying on newer APIs at runtime)
+        function mapFlat(list, mapper) {
+            if (!Array.isArray(list)) return [];
+            if (Array.prototype.flatMap) {
+                return list.flatMap(mapper);
+            }
+
+            const output = [];
+            list.forEach((item, index) => {
+                const mapped = mapper(item, index, list);
+                if (Array.isArray(mapped)) {
+                    mapped.forEach(value => output.push(value));
+                } else {
+                    output.push(mapped);
+                }
+            });
+            return output;
+        }
+
+        function objectFromEntriesSafe(entries) {
+            if (Object.fromEntries) {
+                return Object.fromEntries(entries);
+            }
+
+            const result = {};
+            (entries || []).forEach(entry => {
+                if (Array.isArray(entry) && entry.length >= 2) {
+                    result[entry[0]] = entry[1];
+                }
+            });
+            return result;
+        }
 
         // Favorites, Hidden Buildings, Month Labels, and Additional Locations Storage
         const MAP_FAVORITES_KEY = 'elv3_map_favorites';
@@ -10640,6 +10673,12 @@
             // Update month labels count in controls panel
             updateMonthLabelCounts();
 
+            // Guard against partial script/load failures in stricter Safari environments
+            if (!window.L || typeof window.L.map !== 'function') {
+                mapContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-color);"><p>Map library failed to load. Please disable content blockers for this site and try again.</p></div>';
+                return;
+            }
+
             // Initialize the map centered on NYC
             buildingMap = L.map(mapContainer).setView([40.7128, -74.0060], 11);
             
@@ -10659,6 +10698,14 @@
                 attribution: '© OpenStreetMap contributors',
                 maxZoom: 19
             }).addTo(buildingMap);
+
+            // Safari can calculate hidden/flex modal dimensions late; reflow map sizing safely.
+            setTimeout(() => {
+                if (buildingMap) buildingMap.invalidateSize();
+            }, 0);
+            setTimeout(() => {
+                if (buildingMap) buildingMap.invalidateSize();
+            }, 150);
 
             // Create markers for each building
             const bounds = L.latLngBounds();
@@ -18427,7 +18474,7 @@
 
         var vbd = data.violationsByDevice || {};
         var needsCheck = new Set(data.devicesWithoutStatusCheck || []);
-        var vbdFiltered = Object.fromEntries(Object.entries(vbd).filter(function(e) { return !needsCheck.has(e[0]); }));
+        var vbdFiltered = objectFromEntriesSafe(Object.entries(vbd).filter(function(e) { return !needsCheck.has(e[0]); }));
         var devicesWithV = Object.keys(vbdFiltered).length;
         var satisfactory = data.satisfactoryDevices || [];
         lines.push('Devices with Violations: ' + devicesWithV);
@@ -18517,7 +18564,7 @@
         }
         const devicesWithoutStatusCheck = data.devicesWithoutStatusCheck || [];
         const devicesWithoutStatusCheckSet = new Set(devicesWithoutStatusCheck);
-        const violationsByDeviceFiltered = Object.fromEntries(
+        const violationsByDeviceFiltered = objectFromEntriesSafe(
             Object.entries(data.violationsByDevice || {}).filter(([dn]) => !devicesWithoutStatusCheckSet.has(dn))
         );
         const devicesWithViolationsCount = Object.keys(violationsByDeviceFiltered).length;
