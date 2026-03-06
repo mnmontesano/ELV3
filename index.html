@@ -9125,6 +9125,64 @@
             };
         }
 
+        function collectScopedMonthLabels(binGroups, additionalLocations, labels) {
+            const scoped = {};
+            const bins = new Set();
+
+            Object.keys(binGroups || {}).forEach(bin => bins.add(bin));
+            (additionalLocations || []).forEach(location => {
+                if (location && location.bin) bins.add(String(location.bin));
+            });
+
+            bins.forEach(bin => {
+                if (labels[bin]) scoped[bin] = labels[bin];
+            });
+
+            return scoped;
+        }
+
+        function collectMonthAssignments(binGroups, additionalLocations, scopedLabels) {
+            const assignments = [];
+            const seenBins = new Set();
+
+            Object.entries(binGroups || {}).forEach(([bin, group]) => {
+                if (scopedLabels[bin]) {
+                    assignments.push({
+                        bin: String(bin),
+                        address: group && group.address ? group.address : '',
+                        month: scopedLabels[bin],
+                        source: 'bulk'
+                    });
+                    seenBins.add(String(bin));
+                }
+            });
+
+            (additionalLocations || []).forEach(location => {
+                const bin = location && location.bin ? String(location.bin) : null;
+                if (!bin || !scopedLabels[bin] || seenBins.has(bin)) return;
+                assignments.push({
+                    bin,
+                    address: location.label || '',
+                    month: scopedLabels[bin],
+                    source: 'additional'
+                });
+                seenBins.add(bin);
+            });
+
+            return assignments;
+        }
+
+        function monthLabelsFromAssignments(assignments) {
+            const labels = {};
+            if (!Array.isArray(assignments)) return labels;
+            assignments.forEach(item => {
+                if (item && item.bin && item.month) {
+                    labels[String(item.bin)] = item.month;
+                }
+            });
+            return labels;
+        }
+
         function saveCurrentMapView() {
             const hasResults = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
             if (!hasResults) {
@@ -9136,6 +9194,17 @@
             const rawName = nameInput ? nameInput.value.trim() : '';
             const defaultName = `Map View ${new Date().toLocaleString()}`;
             const viewName = rawName || defaultName;
+            const additionalLocations = getAdditionalLocations();
+            const scopedMonthLabels = collectScopedMonthLabels(
+                window.lastBulkSearchResults.binGroups || {},
+                additionalLocations,
+                getMapMonthLabels()
+            );
+            const monthAssignments = collectMonthAssignments(
+                window.lastBulkSearchResults.binGroups || {},
+                additionalLocations,
+                scopedMonthLabels
+            );
 
             const payload = {
                 id: `view_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
@@ -9146,8 +9215,9 @@
                 lastBulkSearchResults: window.lastBulkSearchResults,
                 favorites: getMapFavorites(),
                 hidden: getMapHidden(),
-                monthLabels: getMapMonthLabels(),
-                additionalLocations: getAdditionalLocations(),
+                monthLabels: scopedMonthLabels,
+                monthAssignments: monthAssignments,
+                additionalLocations: additionalLocations,
                 mapState: getCurrentMapStateForSave()
             };
 
@@ -9205,7 +9275,10 @@
             window.lastBulkSearchResults = view.lastBulkSearchResults || null;
             setMapFavorites(view.favorites || {});
             setMapHidden(view.hidden || {});
-            localStorage.setItem(MAP_MONTH_LABELS_KEY, JSON.stringify(view.monthLabels || {}));
+            const restoredMonthLabels = (Array.isArray(view.monthAssignments) && view.monthAssignments.length > 0)
+                ? monthLabelsFromAssignments(view.monthAssignments)
+                : (view.monthLabels || {});
+            localStorage.setItem(MAP_MONTH_LABELS_KEY, JSON.stringify(restoredMonthLabels));
             setAdditionalLocations(view.additionalLocations || []);
 
             const textarea = document.getElementById('bulkDeviceNumbers');
@@ -9315,6 +9388,7 @@
                     favorites: view.favorites || {},
                     hidden: view.hidden || {},
                     monthLabels: view.monthLabels || {},
+                    monthAssignments: Array.isArray(view.monthAssignments) ? view.monthAssignments : [],
                     additionalLocations: Array.isArray(view.additionalLocations) ? view.additionalLocations : [],
                     mapState: view.mapState || null
                 }
@@ -9385,6 +9459,7 @@
                 favorites: source.favorites || {},
                 hidden: source.hidden || {},
                 monthLabels: source.monthLabels || {},
+                monthAssignments: Array.isArray(source.monthAssignments) ? source.monthAssignments : [],
                 additionalLocations: Array.isArray(source.additionalLocations) ? source.additionalLocations : [],
                 mapState: source.mapState || null
             };
