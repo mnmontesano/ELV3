@@ -289,6 +289,57 @@ async function extractFormFields(pdfBuffer) {
     return formData;
 }
 
+
+function getCheckboxFieldInfo(fieldName) {
+    const pageMatch = fieldName.match(/Page(\d+)/i);
+    const checkboxMatch = fieldName.match(/CheckBox1(?:_|\[)(\d+)/i);
+
+    if (!checkboxMatch) {
+        return null;
+    }
+
+    return {
+        pageNum: pageMatch ? parseInt(pageMatch[1], 10) : null,
+        checkboxNum: parseInt(checkboxMatch[1], 10)
+    };
+}
+
+function mapCheckboxToDeviceStatus(fieldName) {
+    const checkboxInfo = getCheckboxFieldInfo(fieldName);
+    if (!checkboxInfo) {
+        return null;
+    }
+
+    const { pageNum, checkboxNum } = checkboxInfo;
+
+    if (pageNum && pageNum >= 2 && checkboxNum >= 34 && checkboxNum <= 43) {
+        const adjustedNum = checkboxNum - 34;
+        const pageOffset = (pageNum - 2) * 5;
+
+        return {
+            deviceIdx: pageOffset + (adjustedNum % 5) + 1,
+            isSatisfactory: adjustedNum < 5,
+            checkboxNum,
+            source: `Page${pageNum}`
+        };
+    }
+
+    if (checkboxNum >= 34 && checkboxNum <= 83) {
+        const adjustedNum = checkboxNum - 34;
+        const rowOf10 = Math.floor(adjustedNum / 10);
+        const posInRow = adjustedNum % 10;
+
+        return {
+            deviceIdx: (rowOf10 * 5) + (posInRow % 5) + 1,
+            isSatisfactory: posInRow < 5,
+            checkboxNum,
+            source: pageNum ? `Page${pageNum}` : 'UnknownPage'
+        };
+    }
+
+    return null;
+}
+
 /**
  * Parse ELV3 form with XFA-style field names
  * Scans ALL pages (Page2, Page3, Page4, etc.) for devices and violations
@@ -411,50 +462,26 @@ function parseXFAFormFields(formData, result) {
     
     console.log('Total devices found:', Object.keys(devices).length, devices);
     
-    // Step 1b: Extract satisfactory/unsatisfactory status from Page1 checkboxes
-    // On Page1, devices are listed with Satisfactory and Unsatisfactory checkboxes
-    // Based on analysis:
-    // Devices 1-5:   SAT = 34-38,  UNSAT = 39-43
-    // Devices 6-10:  SAT = 44-48,  UNSAT = 49-53
-    // Devices 11-15: SAT = 54-58,  UNSAT = 59-63
-    // Devices 16-20: SAT = 64-68,  UNSAT = 69-73
-    // Devices 21-25: SAT = 74-78,  UNSAT = 79-83
+    // Step 1b: Extract satisfactory/unsatisfactory status from device checkboxes.
+    // Some ELV3 PDFs store the full device matrix on Page1 (checkboxes 34-83), while
+    // others repeat local checkbox numbers 34-43 on each device detail page.
     const deviceStatus = {}; // deviceIndex -> { satisfactory: bool, unsatisfactory: bool }
     
     for (const [fieldName, value] of Object.entries(formData)) {
-        if (!fieldName.includes('Page1')) continue;
-        
-        // Look for satisfactory checkbox pattern
-        const checkboxMatch = fieldName.match(/CheckBox1_(\d+)/);
-        if (checkboxMatch && value === true) {
-            const checkboxNum = parseInt(checkboxMatch[1]);
-            
-            // Determine which device row (0=devices 1-5, 1=devices 6-10, etc.)
-            // and whether it's SAT or UNSAT
-            // Pattern: Each row of 5 devices has 5 SAT checkboxes then 5 UNSAT checkboxes
-            // Row 0: 34-38 SAT, 39-43 UNSAT
-            // Row 1: 44-48 SAT, 49-53 UNSAT
-            // etc.
-            
-            if (checkboxNum >= 34) {
-                const adjustedNum = checkboxNum - 34;
-                const rowOf10 = Math.floor(adjustedNum / 10); // Each row has 10 checkboxes (5 SAT + 5 UNSAT)
-                const posInRow = adjustedNum % 10;
-                
-                const isSatisfactory = posInRow < 5;
-                const deviceInRow = posInRow < 5 ? posInRow : posInRow - 5;
-                const deviceIdx = (rowOf10 * 5) + deviceInRow + 1;
-                
-                if (!deviceStatus[deviceIdx]) deviceStatus[deviceIdx] = {};
-                
-                if (isSatisfactory) {
-                    deviceStatus[deviceIdx].satisfactory = true;
-                    console.log(`Device ${deviceIdx} marked as SATISFACTORY (CheckBox1_${checkboxNum})`);
-                } else {
-                    deviceStatus[deviceIdx].unsatisfactory = true;
-                    console.log(`Device ${deviceIdx} marked as UNSATISFACTORY (CheckBox1_${checkboxNum})`);
-                }
-            }
+        if (value !== true) continue;
+
+        const checkboxInfo = mapCheckboxToDeviceStatus(fieldName);
+        if (!checkboxInfo) continue;
+
+        const { deviceIdx, isSatisfactory, checkboxNum, source } = checkboxInfo;
+        if (!deviceStatus[deviceIdx]) deviceStatus[deviceIdx] = {};
+
+        if (isSatisfactory) {
+            deviceStatus[deviceIdx].satisfactory = true;
+            console.log(`Device ${deviceIdx} marked as SATISFACTORY (${source} CheckBox1_${checkboxNum})`);
+        } else {
+            deviceStatus[deviceIdx].unsatisfactory = true;
+            console.log(`Device ${deviceIdx} marked as UNSATISFACTORY (${source} CheckBox1_${checkboxNum})`);
         }
     }
     
