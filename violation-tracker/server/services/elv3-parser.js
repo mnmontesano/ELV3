@@ -291,15 +291,23 @@ async function extractFormFields(pdfBuffer) {
 
 
 function getCheckboxFieldInfo(fieldName) {
-    const pageMatch = fieldName.match(/Page(\d+)/i);
-    const checkboxMatch = fieldName.match(/CheckBox1(?:_|\[)(\d+)/i);
+    // Use the LAST PageN occurrence - in nested forms (Page1.Page2.Page3), the checkbox
+    // belongs to the innermost page (Page3), not the first match (Page1)
+    const pageMatches = [...fieldName.matchAll(/Page(\d+)/gi)];
+    const pageNum = pageMatches.length > 0
+        ? parseInt(pageMatches[pageMatches.length - 1][1], 10)
+        : null;
+
+    // Support multiple checkbox naming patterns: CheckBox1_34, CheckBox1[34], CheckBox_34, CheckBox[34]
+    const checkboxMatch = fieldName.match(/CheckBox1?(?:_|\[)(\d+)/i)
+        || fieldName.match(/CheckBox[_\[](\d+)/i);
 
     if (!checkboxMatch) {
         return null;
     }
 
     return {
-        pageNum: pageMatch ? parseInt(pageMatch[1], 10) : null,
+        pageNum,
         checkboxNum: parseInt(checkboxMatch[1], 10)
     };
 }
