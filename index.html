@@ -17954,11 +17954,43 @@
             }
         }
         
+        // Step 1b (addition): Handle bracket-notation CheckBox1[N] for devices 6+
+        // These are the new-style checkboxes directly under Page1[0] (not in the old sub-container).
+        // UNSAT ranges repeat every 34 indices, covering 5 devices each:
+        //   [36..40]  → devices 6-10 UNSAT  (group 0)
+        //   [70..74]  → devices 11-15 UNSAT (group 1)
+        //   [104..108]→ devices 16-20 UNSAT (group 2)  … etc.
+        const BRACKET_UNSAT_BASE   = 36;
+        const BRACKET_GROUP_STRIDE = 34;
+        const BRACKET_FIRST_DEV    = 6;
+        
+        for (const [fieldName, value] of Object.entries(formData)) {
+            if (!fieldName.includes('Page1')) continue;
+            if (value !== true) continue;
+            
+            const bracketCbMatch = fieldName.match(/CheckBox1\[(\d+)\]/);
+            if (bracketCbMatch) {
+                const cbNum  = parseInt(bracketCbMatch[1]);
+                const offset = cbNum - BRACKET_UNSAT_BASE;
+                if (offset >= 0) {
+                    const groupNum   = Math.floor(offset / BRACKET_GROUP_STRIDE);
+                    const posInGroup = offset % BRACKET_GROUP_STRIDE;
+                    if (posInGroup < 5) {
+                        const deviceIdx = BRACKET_FIRST_DEV + (groupNum * 5) + posInGroup;
+                        if (!deviceStatus[deviceIdx]) deviceStatus[deviceIdx] = {};
+                        deviceStatus[deviceIdx].unsatisfactory = true;
+                        console.log(`Device ${deviceIdx} marked UNSATISFACTORY via CheckBox1[${cbNum}]`);
+                    }
+                }
+            }
+        }
+        
         // Update device satisfactory status in result
         for (const device of result.devices) {
             const deviceIdx = Object.entries(devices).find(([idx, num]) => num === device.deviceNumber)?.[0];
             if (deviceIdx && deviceStatus[deviceIdx]) {
                 device.satisfactory = deviceStatus[deviceIdx].satisfactory === true && !deviceStatus[deviceIdx].unsatisfactory;
+                device.unsatisfactory = deviceStatus[deviceIdx].unsatisfactory === true;
             }
         }
         
@@ -18023,52 +18055,70 @@
             }
         }
         
-        // Step 2b: Extract violations for devices 10+ using Elevator_Part_6[N] pattern
-        // This section uses array indices: [1] = device 12, [2] = device 13, etc.
-        // Formula: device_number = 11 + array_index
-        const devices10PlusViolations = {}; // deviceIndex -> { partCode, conditionCode, remedyCode }
+        // Step 2b: Extract violations from bracket-notation fields (covers all pages).
+        // These fields use [N] suffix instead of _N_ suffix and exist in two naming styles:
+        //
+        //   Elevator_Part[0]        → device 6   (no prefix ≡ prefix 1)
+        //   Elevator_Part_2[0]      → device 7
+        //   Elevator_Part_3[0]      → device 8
+        //   Elevator_Part_4[0]      → device 9
+        //   Elevator_Part_5[0]      → device 10
+        //   Elevator_Part_6[0]      → device 11
+        //   Elevator_Part_6[1]      → device 12
+        //   Elevator_Part_6[2]      → device 13  … etc.
+        //
+        // The regex safely avoids the old-system fields like Elevator_Part_0_[0] because
+        // those have an underscore between the digit and the bracket (e.g. _0_[0]), which
+        // causes the pattern to fail to match — the digit group is followed by '_', not '['.
+        const bracketViolations = {}; // deviceIndex -> { partCode, conditionCode, remedyCode }
         
         for (const [fieldName, value] of Object.entries(formData)) {
             if (!value || value === '') continue;
-            if (!fieldName.includes('Page2')) continue;
             
-            // Match Elevator_Part_6[N] pattern (NOT Elevator_Part_6_0 which is underscore format)
-            const partMatch6 = fieldName.match(/Elevator_Part_6\[(\d+)\]/i);
-            if (partMatch6) {
-                const arrayIndex = parseInt(partMatch6[1]);
-                if (arrayIndex > 0) { // [0] is usually empty, [1]+ are devices 12+
-                    const deviceIdx = 11 + arrayIndex; // [1] = device 12, [2] = device 13
-                    if (!devices10PlusViolations[deviceIdx]) devices10PlusViolations[deviceIdx] = {};
-                    devices10PlusViolations[deviceIdx].partCode = value.toString().trim().padStart(2, '0');
-                    console.log(`Found device 10+ violation part: Device ${deviceIdx}, Part ${value}`);
+            const _calcBracketDeviceIdx = (prefixStr, arrayIdx) => {
+                const prefix = prefixStr ? parseInt(prefixStr) : 1; // no prefix ≡ 1
+                if (prefix <= 5) {
+                    return arrayIdx === 0 ? 5 + prefix : null; // devices 6-10, first row only
+                } else if (prefix === 6) {
+                    return 11 + arrayIdx; // devices 11, 12, 13, … ([0]=11, [1]=12, …)
+                }
+                return null;
+            };
+            
+            const bPartMatch = fieldName.match(/Elevator_Part(?:_(\d+))?\[(\d+)\]/i);
+            if (bPartMatch) {
+                const deviceIdx = _calcBracketDeviceIdx(bPartMatch[1], parseInt(bPartMatch[2]));
+                if (deviceIdx !== null) {
+                    if (!bracketViolations[deviceIdx]) bracketViolations[deviceIdx] = {};
+                    bracketViolations[deviceIdx].partCode = value.toString().trim().padStart(2, '0');
+                    console.log(`Bracket violation part: device ${deviceIdx} = ${value}`);
                 }
             }
             
-            const conditionMatch6 = fieldName.match(/Violation_Condition_6\[(\d+)\]/i);
-            if (conditionMatch6) {
-                const arrayIndex = parseInt(conditionMatch6[1]);
-                if (arrayIndex > 0) {
-                    const deviceIdx = 11 + arrayIndex;
-                    if (!devices10PlusViolations[deviceIdx]) devices10PlusViolations[deviceIdx] = {};
-                    devices10PlusViolations[deviceIdx].conditionCode = value.toString().trim().toUpperCase();
+            const bCondMatch = fieldName.match(/Violation_Condition(?:_(\d+))?\[(\d+)\]/i);
+            if (bCondMatch) {
+                const deviceIdx = _calcBracketDeviceIdx(bCondMatch[1], parseInt(bCondMatch[2]));
+                if (deviceIdx !== null) {
+                    if (!bracketViolations[deviceIdx]) bracketViolations[deviceIdx] = {};
+                    bracketViolations[deviceIdx].conditionCode = value.toString().trim().toUpperCase();
                 }
             }
             
-            const remedyMatch6 = fieldName.match(/Suggested_Remedy_6\[(\d+)\]/i);
-            if (remedyMatch6) {
-                const arrayIndex = parseInt(remedyMatch6[1]);
-                if (arrayIndex > 0) {
-                    const deviceIdx = 11 + arrayIndex;
-                    if (!devices10PlusViolations[deviceIdx]) devices10PlusViolations[deviceIdx] = {};
-                    devices10PlusViolations[deviceIdx].remedyCode = value.toString().trim().padStart(2, '0');
+            const bRemedyMatch = fieldName.match(/Suggested_Remedy(?:_(\d+))?\[(\d+)\]/i);
+            if (bRemedyMatch) {
+                const deviceIdx = _calcBracketDeviceIdx(bRemedyMatch[1], parseInt(bRemedyMatch[2]));
+                if (deviceIdx !== null) {
+                    if (!bracketViolations[deviceIdx]) bracketViolations[deviceIdx] = {};
+                    bracketViolations[deviceIdx].remedyCode = value.toString().trim().padStart(2, '0');
                 }
             }
         }
         
-        // Add devices 10+ violations to mainViolations
-        for (const [deviceIdx, viol] of Object.entries(devices10PlusViolations)) {
-            if (viol.partCode) {
+        // Merge bracket violations into mainViolations (don't overwrite already-found entries)
+        for (const [deviceIdx, viol] of Object.entries(bracketViolations)) {
+            if (viol.partCode && !mainViolations[deviceIdx]) {
                 mainViolations[deviceIdx] = viol;
+                console.log(`Added bracket main violation: device ${deviceIdx}, part ${viol.partCode}`);
             }
         }
         
@@ -18116,27 +18166,38 @@
             }
         }
         
-        // Step 3b: Also collect TextField1[N] bracket notation (used for devices 10+ additional violations)
-        const bracketTextFields = {}; // fieldNum -> value
-        for (const [fieldName, value] of Object.entries(formData)) {
-            if (!value) continue;
-            if (!fieldName.includes('Page2')) continue;
-            
-            // Match TextField1[N] (bracket notation, not underscore)
-            const bracketMatch = fieldName.match(/TextField1\[(\d+)\]$/);
-            if (bracketMatch) {
-                const num = parseInt(bracketMatch[1]);
-                bracketTextFields[num] = value.toString().trim();
+        // Step 3b: Collect bracket-notation TextField1[N] values from Pages 1 and 2 separately,
+        // then scan each page's values for additional violation triplets (Part / Condition / Remedy).
+        //
+        // Page 1 bracket TextFields contain additional rows for devices 6-9.
+        //   Triplet starting indices: 26, 53, 80, 107 (gap ≈ 27) → devices 6, 7, 8, 9
+        //
+        // Page 2 bracket TextFields contain additional rows for devices 10-14.
+        //   Triplets start near index 0 and repeat at approximately 27-field intervals.
+        //   We assign them sequentially starting from device 10.
+        
+        const bracketTFByPage = {}; // pageNum -> { fieldNum -> value }
+        for (const pageNum of [1, 2]) {
+            const pagePattern = new RegExp(`Page${pageNum}`, 'i');
+            bracketTFByPage[pageNum] = {};
+            for (const [fieldName, value] of Object.entries(formData)) {
+                if (!value) continue;
+                if (!pagePattern.test(fieldName)) continue;
+                const bracketMatch = fieldName.match(/TextField1\[(\d+)\]$/);
+                if (bracketMatch) {
+                    const num = parseInt(bracketMatch[1]);
+                    bracketTFByPage[pageNum][num] = value.toString().trim();
+                }
             }
         }
         
         // Scan for violation triplets (Part, Condition, Remedy)
-        // Part: 2-digit number (01-99)
+        // Part:      1-3 digit number (01-99, and 3-digit codes like 100 for CAT tests)
         // Condition: 1-2 letters (A-Z, BB, etc.)
-        // Remedy: 2-digit number (01-99)
-        const partPattern = /^\d{1,2}$/;
+        // Remedy:    1-3 digit number
+        const partPattern = /^\d{1,3}$/;
         const conditionPattern = /^[A-Z]{1,2}$/i;  // Allow 1-2 letters for conditions like "BB"
-        const remedyPattern = /^\d{1,2}$/;
+        const remedyPattern = /^\d{1,3}$/;
         
         // Each device section has ~27 fields (9 rows x 3 fields)
         const FIELDS_PER_DEVICE = 27;
@@ -18184,47 +18245,52 @@
         
         console.log(`Found ${foundTriplets.length} potential violation triplets across all pages`);
         
-        // Step 3c: Find violation triplets in bracket notation TextField1[N] (for devices 10+)
+        // Step 3c: Find violation triplets in bracket-notation TextField1[N] fields.
+        //
+        // Page 1 devices 6-9:  triplet starts at index 26, then +27 per device → devices 6,7,8,9
+        // Page 2 devices 10-14: sequential triplets starting from the smallest found index → devices 10,11,12,…
+        //
+        // Device numbers that are strings (e.g. "1P19296") will not pass partPattern, so the
+        // scanner skips them naturally.
         const bracketTriplets = [];
-        const bracketIndices = Object.keys(bracketTextFields).map(Number).sort((a, b) => a - b);
         
-        for (let i = 0; i < bracketIndices.length - 2; i++) {
-            const idx1 = bracketIndices[i];
-            const idx2 = bracketIndices[i + 1];
-            const idx3 = bracketIndices[i + 2];
-            
-            // Check if they're consecutive
-            if (idx2 === idx1 + 1 && idx3 === idx1 + 2) {
-                const a = bracketTextFields[idx1];
-                const b = bracketTextFields[idx2];
-                const c = bracketTextFields[idx3];
-                
-                if (a && b && c) {
-                    const aClean = a.trim();
-                    const bClean = b.trim().toUpperCase();
-                    const cClean = c.trim();
-                    
-                    if (partPattern.test(aClean) && conditionPattern.test(bClean) && remedyPattern.test(cClean)) {
-                        // For bracket notation, device mapping based on field range
-                        let targetDevice = null;
-                        if (idx1 >= 80 && idx1 < 90) targetDevice = 13;
-                        else if (idx1 >= 70 && idx1 < 80) targetDevice = 12;
-                        else if (idx1 >= 90 && idx1 < 100) targetDevice = 14;
-                        
-                        if (targetDevice && devices[targetDevice]) {
-                            bracketTriplets.push({
-                                fieldStart: idx1,
-                                deviceIndex: targetDevice,
-                                partCode: aClean.padStart(2, '0'),
-                                conditionCode: bClean,
-                                remedyCode: cClean.padStart(2, '0')
-                            });
-                            console.log(`Found bracket violation: TextField1[${idx1}] -> Device ${targetDevice}, Part ${aClean}, Condition ${bClean}, Remedy ${cClean}`);
-                        }
+        // Page 1 bracket TF scan is intentionally skipped: the sequential device-assignment
+        // approach breaks for PDFs where some devices are satisfactory (their empty slots shift
+        // the counter, misattributing the next device's triplet to the wrong device).
+        // The main violations for devices 6-9 are already captured by the Step 2b bracket
+        // violation scanner, so we lose only secondary rows — an acceptable trade-off.
+        //
+        // Page 2 bracket TFs are scanned for additional violation rows for devices 10-14.
+        // Guard: only add an additional row if the device already has a confirmed main violation,
+        // preventing false positives for satisfactory devices.
+        const _scanBracketTFPage = (tfMap, startDevice) => {
+            const sorted = Object.keys(tfMap).map(Number).sort((a, b) => a - b);
+            let deviceCounter = startDevice;
+            for (let i = 0; i < sorted.length - 2; i++) {
+                const idx1 = sorted[i], idx2 = sorted[i + 1], idx3 = sorted[i + 2];
+                if (idx2 !== idx1 + 1 || idx3 !== idx1 + 2) continue;
+                const aClean = tfMap[idx1].trim();
+                const bClean = tfMap[idx2].trim().toUpperCase();
+                const cClean = tfMap[idx3].trim();
+                if (partPattern.test(aClean) && conditionPattern.test(bClean) && remedyPattern.test(cClean)) {
+                    const targetDevice = deviceCounter++;
+                    // Only add additional rows for devices already known to have a main violation
+                    if (devices[targetDevice] && mainViolations[targetDevice]) {
+                        bracketTriplets.push({
+                            fieldStart: idx1,
+                            deviceIndex: targetDevice,
+                            partCode: aClean.padStart(2, '0'),
+                            conditionCode: bClean,
+                            remedyCode: cClean.padStart(2, '0')
+                        });
+                        console.log(`Bracket additional violation: TextField1[${idx1}] -> Device ${targetDevice}, Part ${aClean}`);
                     }
+                    i += 2; // advance past the consumed triplet
                 }
             }
-        }
+        };
+        
+        _scanBracketTFPage(bracketTFByPage[2] || {}, 10); // Page 2 → devices 10-14
         
         // Add bracket triplet violations to result
         for (const triplet of bracketTriplets) {
@@ -18240,11 +18306,11 @@
                     conditionDescription: ELV3_CONDITION_CODES[triplet.conditionCode] || triplet.conditionCode,
                     remedyCode: triplet.remedyCode,
                     remedyDescription: ELV3_REMEDY_CODES[triplet.remedyCode] || `Remedy ${triplet.remedyCode}`,
-                    comments: null, // Will be filled by actual comments later
+                    comments: null,
                     deviceFieldText: additionalInfo
                 };
                 result.violations.push(violation);
-                console.log(`Found bracket additional violation: Device ${violation.deviceNumber}, Part ${violation.partCode}, Condition ${violation.conditionCode}, Remedy ${violation.remedyCode}`);
+                console.log(`Added bracket additional violation: Device ${violation.deviceNumber}, Part ${violation.partCode}`);
             }
         }
         
@@ -18359,8 +18425,10 @@
             } else if (device.satisfactory) {
                 result.satisfactoryDevices.push(device);
             } else {
-                // Device has no violations but wasn't marked satisfactory
-                // Still include in satisfactory list (it was tested)
+                // No violation codes found for this device. The checkbox-based SAT/UNSAT
+                // detection in this form is unreliable (the checked boxes often represent device
+                // type or test category, not the inspection result). Rely solely on whether
+                // actual violation codes were parsed: if none were found the device passed.
                 result.satisfactoryDevices.push({
                     ...device,
                     satisfactory: true
