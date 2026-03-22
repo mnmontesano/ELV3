@@ -315,6 +315,7 @@
         <button onclick="showTab('main')" id="mainTab" class="tab-button">ELV3</button>
         <button onclick="showTab('dob')" id="dobTab" class="tab-button">DOB</button>
         <button onclick="showTab('dates')" id="datesTab" class="tab-button">DATES</button>
+        <button onclick="showTab('map')" id="mapTab" class="tab-button">MAP</button>
         <button onclick="showTab('pdf')" id="pdfTab" class="tab-button" style="display: none;">PDF</button>
         <button onclick="showTab('resources')" id="resourcesTab" class="tab-button">RESOURCES</button>
         <button onclick="showTab('devices')" id="devicesTab" class="tab-button" style="display: none;">DEVICES</button>
@@ -326,6 +327,7 @@
             <option value="main">ELV3</option>
             <option value="dob">DOB</option>
             <option value="dates">DATES</option>
+            <option value="map">MAP</option>
             <!-- <option value="pdf">PDF</option> -->
             <option value="resources">RESOURCES</option>
             <!-- <option value="devices">DEVICES</option> -->
@@ -1700,6 +1702,48 @@
         </div>
     </div>
 
+    <div id="mapContent" class="content-section">
+        <div style="max-width: 800px; margin: 20px auto; padding: 20px; background: var(--card-bg); border-radius: 5px; box-shadow: 0 2px 8px var(--card-shadow);">
+            <h3 style="text-align: center; margin-bottom: 20px; color: var(--text-color);">Bulk Device Lookup</h3>
+            
+            <div style="margin-bottom: 15px; padding: 0 5px;">
+                <textarea id="mapTabBulkDeviceNumbers" 
+                         placeholder="Enter multiple device numbers (one per line)"
+                         oninput="this.value = this.value.toUpperCase()"
+                         style="width: calc(100% - 10px); height: 100px; padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); resize: vertical;"></textarea>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px; align-items: center;">
+                <button onclick="lookupBulkDevices({textareaId: 'mapTabBulkDeviceNumbers', resultDivId: 'mapTabBulkResult', exportBtnId: 'mapTabExportButton', mapBtnId: 'mapTabMapButton'})" 
+                        style="padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                    Look up All Devices
+                </button>
+                <button onclick="clearBulkLookup({textareaId: 'mapTabBulkDeviceNumbers', resultDivId: 'mapTabBulkResult', exportBtnId: 'mapTabExportButton', mapBtnId: 'mapTabMapButton'})" 
+                        style="padding: 12px 20px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                    Clear
+                </button>
+                <button id="mapTabExportButton" 
+                        onclick="showExportModal()" 
+                        style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
+                    Export Data
+                </button>
+                <button id="mapTabMapButton" 
+                        onclick="showBuildingMap()" 
+                        style="padding: 12px 20px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
+                    📍 View on Map
+                </button>
+                <button onclick="openSavedMapViewPicker()" 
+                        style="padding: 12px 20px; background: #6f42c1; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                    📂 Load Saved Map View
+                </button>
+            </div>
+
+            <div id="mapTabBulkResult" class="result" style="margin-top: 15px; display: none; background: var(--result-bg); color: var(--text-color); min-height: 100px; overflow-y: auto; resize: vertical; border: 2px solid var(--input-border); border-radius: 8px; padding: 10px;">
+            </div>
+            <input id="mapTabMapViewImportInput" type="file" accept=".json,application/json" style="display: none;" onchange="handleMapViewImport(event)">
+        </div>
+    </div>
+
     <div id="devicesContent" class="content-section" style="display: none;">
         <div style="width: 100%; height: calc(100vh - 100px); border: none;">
             <iframe src="device_search.html" 
@@ -1710,6 +1754,14 @@
     </div>
 
     <script>
+        // Move fixed-position modals to body so they render from any tab
+        document.addEventListener('DOMContentLoaded', function() {
+            ['buildingMapModal', 'exportModal', 'bulkDeviceListModal'].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) document.body.appendChild(el);
+            });
+        });
+
         // Global variables for storing address suggestions state
         window.savedAddressSuggestions = null;
         window.cameFromSuggestions = false;
@@ -2399,6 +2451,7 @@
                 main: 'ELV3 Terminal',
                 dob: 'DOB Terminal',
                 dates: 'DATES Terminal',
+                map: 'Map Terminal',
                 pdf: 'PDF Terminal',
                 resources: 'Resources',
                 devices: 'Device Lookup Terminal'
@@ -7653,9 +7706,12 @@
         }
 
         // Add these new functions to your script section
-        async function lookupBulkDevices() {
-            const textarea = document.getElementById('bulkDeviceNumbers');
-            const resultDiv = document.getElementById('bulkResult');
+        async function lookupBulkDevices(opts) {
+            opts = opts || {};
+            const textarea = document.getElementById(opts.textareaId || 'bulkDeviceNumbers');
+            const resultDiv = document.getElementById(opts.resultDivId || 'bulkResult');
+            const _exportBtnId = opts.exportBtnId || 'exportButton';
+            const _mapBtnId = opts.mapBtnId || 'mapButton';
             
             const deviceNumbers = textarea.value.split('\n')
                 .map(num => num.trim())
@@ -8996,21 +9052,23 @@
                 };
 
                 // Show the export button and map button if we have results
-                document.getElementById('exportButton').style.display = 'block';
-                document.getElementById('mapButton').style.display = 'block';
+                document.getElementById(_exportBtnId).style.display = 'block';
+                document.getElementById(_mapBtnId).style.display = 'block';
             } catch (error) {
                 resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
                 console.error('Error:', error);
             }
         }
 
-        function clearBulkLookup() {
-            document.getElementById('bulkDeviceNumbers').value = '';
-            const resultDiv = document.getElementById('bulkResult');
+        function clearBulkLookup(opts) {
+            opts = opts || {};
+            document.getElementById(opts.textareaId || 'bulkDeviceNumbers').value = '';
+            const resultDiv = document.getElementById(opts.resultDivId || 'bulkResult');
             resultDiv.innerHTML = '';
             resultDiv.style.display = 'none';
-            document.getElementById('exportButton').style.display = 'none';
-            document.getElementById('mapButton').style.display = 'none';
+            document.getElementById(opts.exportBtnId || 'exportButton').style.display = 'none';
+            const mapBtn = document.getElementById(opts.mapBtnId || 'mapButton');
+            if (mapBtn) mapBtn.style.display = 'none';
             window.lastBulkSearchResults = null;
         }
 
@@ -9327,12 +9385,20 @@
             if (textarea) {
                 textarea.value = view.bulkDeviceNumbers || '';
             }
+            const mapTabTextarea = document.getElementById('mapTabBulkDeviceNumbers');
+            if (mapTabTextarea) {
+                mapTabTextarea.value = view.bulkDeviceNumbers || '';
+            }
 
             if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
                 const exportBtn = document.getElementById('exportButton');
                 const mapBtn = document.getElementById('mapButton');
                 if (exportBtn) exportBtn.style.display = 'block';
                 if (mapBtn) mapBtn.style.display = 'block';
+                const mapTabExportBtn = document.getElementById('mapTabExportButton');
+                const mapTabMapBtn = document.getElementById('mapTabMapButton');
+                if (mapTabExportBtn) mapTabExportBtn.style.display = 'block';
+                if (mapTabMapBtn) mapTabMapBtn.style.display = 'block';
                 renderLoadedMapViewSummary(view);
             }
 
