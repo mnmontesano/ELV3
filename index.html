@@ -1703,6 +1703,54 @@
     </div>
 
     <div id="mapContent" class="content-section">
+
+        <!-- Address Search for Map Tab -->
+        <div style="max-width: 800px; margin: 20px auto; padding: 20px; background: var(--card-bg); border-radius: 5px; box-shadow: 0 2px 8px var(--card-shadow);">
+            <h3 style="text-align: center; margin-bottom: 20px; color: var(--text-color);">Search by Address</h3>
+            <p style="text-align: center; font-size: 0.9em; color: var(--text-color); opacity: 0.7; margin-bottom: 16px;">Find all devices at a building address and view them on the map</p>
+
+            <div style="padding: 0 5px;">
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <input type="text"
+                           id="mapTabHouseNumber"
+                           placeholder="House Number"
+                           onkeyup="if(event.key==='Enter') lookupAddressForMapTab()"
+                           style="width: calc(40% - 5px); padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color);">
+                    <input type="text"
+                           id="mapTabStreetName"
+                           placeholder="Street Name"
+                           oninput="this.value = this.value.toUpperCase()"
+                           onkeyup="if(event.key==='Enter') lookupAddressForMapTab()"
+                           style="width: calc(60% - 5px); padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color);">
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <label style="color: var(--text-color); font-size: 0.9em; margin-bottom: 4px; display: block;">Borough:</label>
+                    <select id="mapTabBorough"
+                            style="width: 100%; padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color);">
+                        <option value="">All Boroughs</option>
+                        <option value="MANHATTAN">Manhattan</option>
+                        <option value="BROOKLYN">Brooklyn</option>
+                        <option value="QUEENS">Queens</option>
+                        <option value="BRONX">Bronx</option>
+                        <option value="STATEN ISLAND">Staten Island</option>
+                    </select>
+                </div>
+                <div style="display: flex; justify-content: center; gap: 8px;">
+                    <button onclick="lookupAddressForMapTab()"
+                            style="padding: 12px 24px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                        🔍 Search Address
+                    </button>
+                    <button onclick="clearMapTabAddressSearch()"
+                            style="padding: 12px 16px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                        ✕ Clear
+                    </button>
+                </div>
+            </div>
+
+            <div id="mapTabAddressResult" style="margin-top: 15px; display: none;">
+            </div>
+        </div>
+
         <div style="max-width: 800px; margin: 20px auto; padding: 20px; background: var(--card-bg); border-radius: 5px; box-shadow: 0 2px 8px var(--card-shadow);">
             <h3 style="text-align: center; margin-bottom: 20px; color: var(--text-color);">Bulk Device Lookup</h3>
             
@@ -13270,6 +13318,231 @@
             // Trigger a new search with the selected address
             await lookupByAddress();
         }
+
+        // ── MAP TAB address search ──────────────────────────────────────────────
+
+        const MAP_TAB_BULK_OPTS = {
+            textareaId: 'mapTabBulkDeviceNumbers',
+            resultDivId: 'mapTabBulkResult',
+            exportBtnId: 'mapTabExportButton',
+            mapBtnId: 'mapTabMapButton'
+        };
+
+        function clearMapTabAddressSearch() {
+            document.getElementById('mapTabHouseNumber').value = '';
+            document.getElementById('mapTabStreetName').value = '';
+            document.getElementById('mapTabBorough').value = '';
+            const r = document.getElementById('mapTabAddressResult');
+            r.innerHTML = '';
+            r.style.display = 'none';
+        }
+
+        async function selectBoroughAndSearchForMap(borough) {
+            const sel = document.getElementById('mapTabBorough');
+            if (sel) sel.value = borough;
+            await lookupAddressForMapTab();
+        }
+
+        async function selectSuggestedAddressForMap(houseNumber, streetName, borough) {
+            document.getElementById('mapTabHouseNumber').value = houseNumber;
+            document.getElementById('mapTabStreetName').value = streetName || '';
+            const sel = document.getElementById('mapTabBorough');
+            if (sel && borough) sel.value = borough;
+            await lookupAddressForMapTab();
+        }
+
+        async function searchForSimilarAddressesForMap(targetHouseNumber, streetName, borough, resultDiv) {
+            const escapeQuotes = v => (v || '').replace(/'/g, "''");
+            try {
+                let streetUrl;
+                if (borough) {
+                    const wc = `UPPER(street_name) like '${escapeQuotes(streetName.toUpperCase())}%' AND UPPER(borough)='${escapeQuotes(borough)}'`;
+                    streetUrl = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=${encodeURIComponent(wc)}&$limit=1000`;
+                } else {
+                    streetUrl = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?street_name=${encodeURIComponent(streetName)}&$limit=1000`;
+                }
+                const streetData = await (await fetch(streetUrl)).json();
+
+                if (!streetData || streetData.length === 0) {
+                    resultDiv.innerHTML = '<span style="color:#ff6b6b;font-weight:500;">No addresses found on this street</span>';
+                    return;
+                }
+
+                const targetNum = parseInt(targetHouseNumber.replace(/-/g, '')) || parseInt(targetHouseNumber) || 0;
+                const uniqueAddresses = {};
+                const deviceCounts = {};
+                streetData.forEach(device => {
+                    const hn = device.house_number;
+                    const boroughKey = device.borough || '';
+                    const key = `${hn}_${device.street_name}_${boroughKey}`;
+                    deviceCounts[key] = (deviceCounts[key] || 0) + 1;
+                    if (!uniqueAddresses[key] && hn) {
+                        const dn = parseInt(String(hn).replace(/-/g, '')) || parseInt(hn) || 0;
+                        uniqueAddresses[key] = {
+                            house_number: hn, street_name: device.street_name,
+                            borough: device.borough, bin: device.bin,
+                            distance: Math.abs(dn - targetNum), deviceCount: deviceCounts[key]
+                        };
+                    } else if (uniqueAddresses[key]) {
+                        uniqueAddresses[key].deviceCount = deviceCounts[key];
+                    }
+                });
+
+                const suggestions = Object.values(uniqueAddresses)
+                    .filter(a => a.distance <= 50)
+                    .sort((a, b) => a.distance - b.distance)
+                    .slice(0, 10);
+
+                if (suggestions.length === 0) {
+                    resultDiv.innerHTML = '<span style="color:#ff6b6b;font-weight:500;">No similar addresses found on this street</span>';
+                    return;
+                }
+
+                let html = `
+                    <div style="background:var(--input-bg);padding:20px;border-radius:8px;border:1px solid var(--input-border);color:var(--text-color);">
+                        <h4 style="color:var(--header-color);margin-bottom:15px;">No exact match for "${targetHouseNumber} ${streetName}"</h4>
+                        <p style="margin-bottom:15px;">Did you mean one of these addresses?</p>
+                        <div style="display:flex;flex-direction:column;gap:8px;">
+                `;
+                suggestions.forEach(addr => {
+                    const bv = (addr.borough || '').replace(/'/g, "\\'");
+                    const hn = String(addr.house_number).replace(/'/g, "\\'");
+                    const sn = String(addr.street_name || '').replace(/'/g, "\\'");
+                    html += `
+                        <div style="padding:10px;background:var(--panel-bg);border-radius:4px;border:1px solid var(--input-border);cursor:pointer;transition:background-color 0.2s ease;"
+                             onclick="selectSuggestedAddressForMap('${hn}','${sn}','${bv}')"
+                             onmouseover="this.style.backgroundColor='rgba(26,115,232,0.1)'"
+                             onmouseout="this.style.backgroundColor='var(--panel-bg)'">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <div>
+                                    <strong style="color:var(--header-color);">${addr.house_number} ${addr.street_name}</strong>
+                                    ${addr.borough ? `<span style="opacity:0.8;"> • ${addr.borough}</span>` : ''}
+                                </div>
+                                <div style="font-size:0.9em;display:flex;gap:15px;">
+                                    <span style="color:var(--header-color);font-weight:500;">${addr.deviceCount} device${addr.deviceCount !== 1 ? 's' : ''}</span>
+                                    <span style="opacity:0.7;">${addr.distance === 0 ? 'Exact match' : `±${addr.distance} numbers`}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += `</div><p style="margin-top:15px;font-size:0.9em;opacity:0.8;">Click an address to search for its devices.</p></div>`;
+                resultDiv.innerHTML = html;
+                resultDiv.style.display = 'block';
+            } catch (e) {
+                console.error('Error searching similar addresses:', e);
+                resultDiv.innerHTML = '<span style="color:#ff6b6b;font-weight:500;">Error searching for similar addresses</span>';
+            }
+        }
+
+        async function lookupAddressForMapTab() {
+            const houseNumber = document.getElementById('mapTabHouseNumber').value.trim();
+            const streetName  = document.getElementById('mapTabStreetName').value.trim();
+            const borough     = (document.getElementById('mapTabBorough')?.value || '').trim();
+            const resultDiv   = document.getElementById('mapTabAddressResult');
+
+            if (!houseNumber || !streetName) {
+                resultDiv.innerHTML = '<span style="color:#ff6b6b;font-weight:500;">Please enter both house number and street name</span>';
+                resultDiv.style.display = 'block';
+                return;
+            }
+
+            resultDiv.innerHTML = '<span style="color:var(--text-color);">Looking up address...</span>';
+            resultDiv.style.display = 'block';
+
+            try {
+                const escapeQuotes = v => (v || '').replace(/'/g, "''");
+                const houseVariants = getHouseNumberVariants(houseNumber);
+                const houseNumberCondition = houseVariants.length > 1
+                    ? '(' + houseVariants.map(v => `UPPER(house_number)='${escapeQuotes(v.toUpperCase())}'`).join(' OR ') + ')'
+                    : null;
+
+                // No borough selected — find which boroughs have this address first
+                if (!borough) {
+                    let prelimUrl;
+                    if (houseNumberCondition) {
+                        const wc = `${houseNumberCondition} AND UPPER(street_name)='${escapeQuotes(streetName.toUpperCase())}'`;
+                        prelimUrl = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=${encodeURIComponent(wc)}&$limit=500`;
+                    } else {
+                        prelimUrl = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?house_number=${encodeURIComponent(houseNumber)}&street_name=${encodeURIComponent(streetName)}&$limit=500`;
+                    }
+                    const prelimData = await (await fetch(prelimUrl)).json();
+
+                    if (prelimData && prelimData.length > 0) {
+                        const boroughCounts = {};
+                        prelimData.forEach(d => {
+                            const b = d.borough || 'UNKNOWN';
+                            boroughCounts[b] = (boroughCounts[b] || 0) + 1;
+                        });
+                        const boroughsFound = Object.keys(boroughCounts).filter(b => b !== 'UNKNOWN');
+
+                        if (boroughsFound.length === 1) {
+                            document.getElementById('mapTabBorough').value = boroughsFound[0];
+                            await lookupAddressForMapTab();
+                            return;
+                        }
+
+                        if (boroughsFound.length > 1) {
+                            const labels = { MANHATTAN:'Manhattan', BROOKLYN:'Brooklyn', QUEENS:'Queens', BRONX:'Bronx', 'STATEN ISLAND':'Staten Island' };
+                            let html = `
+                                <div style="background:var(--input-bg);padding:20px;border-radius:8px;border:1px solid var(--input-border);color:var(--text-color);">
+                                    <h4 style="color:var(--header-color);margin-bottom:12px;">Select Borough</h4>
+                                    <p style="margin-bottom:15px;font-size:0.95em;">"${houseNumber} ${streetName}" was found in ${boroughsFound.length} boroughs. Please select one:</p>
+                                    <div style="display:flex;flex-direction:column;gap:8px;">
+                            `;
+                            boroughsFound.forEach(b => {
+                                html += `
+                                    <div style="padding:12px;background:var(--panel-bg);border-radius:6px;border:1px solid var(--input-border);cursor:pointer;transition:background-color 0.2s ease;"
+                                         onclick="selectBoroughAndSearchForMap('${b.replace(/'/g, "\\'")}')"
+                                         onmouseover="this.style.backgroundColor='rgba(26,115,232,0.15)'"
+                                         onmouseout="this.style.backgroundColor='var(--panel-bg)'">
+                                        <strong style="color:var(--header-color);">${labels[b] || b}</strong>
+                                        <span style="opacity:0.8;font-size:0.9em;"> — ${boroughCounts[b]} device${boroughCounts[b] !== 1 ? 's' : ''}</span>
+                                    </div>
+                                `;
+                            });
+                            html += `</div></div>`;
+                            resultDiv.innerHTML = html;
+                            return;
+                        }
+                    }
+                    resultDiv.innerHTML = '<span style="color:var(--text-color);">No exact match found. Searching for similar addresses...</span>';
+                    await searchForSimilarAddressesForMap(houseNumber, streetName, '', resultDiv);
+                    return;
+                }
+
+                // Borough selected — fetch devices at this exact address
+                let apiUrl;
+                if (houseNumberCondition) {
+                    const wc = `${houseNumberCondition} AND UPPER(street_name)='${escapeQuotes(streetName.toUpperCase())}' AND UPPER(borough)='${escapeQuotes(borough)}'`;
+                    apiUrl = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=${encodeURIComponent(wc)}`;
+                } else {
+                    apiUrl = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?house_number=${encodeURIComponent(houseNumber)}&street_name=${encodeURIComponent(streetName)}&borough=${encodeURIComponent(borough)}`;
+                }
+
+                const data = await (await fetch(apiUrl)).json();
+
+                if (data && data.length > 0) {
+                    const deviceNumbers = [...new Set(data.map(d => d.device_number).filter(Boolean))];
+                    const address = `${data[0].house_number} ${data[0].street_name}, ${data[0].borough}`;
+
+                    resultDiv.innerHTML = `<span style="color:var(--text-color);">Found ${deviceNumbers.length} device${deviceNumbers.length !== 1 ? 's' : ''} at ${address}. Running bulk lookup...</span>`;
+                    resultDiv.style.display = 'block';
+
+                    document.getElementById('mapTabBulkDeviceNumbers').value = deviceNumbers.join('\n');
+                    await lookupBulkDevices(MAP_TAB_BULK_OPTS);
+                    resultDiv.style.display = 'none';
+                } else {
+                    resultDiv.innerHTML = '<span style="color:var(--text-color);">No exact match found. Searching for similar addresses...</span>';
+                    await searchForSimilarAddressesForMap(houseNumber, streetName, borough, resultDiv);
+                }
+            } catch (e) {
+                resultDiv.innerHTML = '<span style="color:#ff6b6b;font-weight:500;">Error looking up address. Please try again later.</span>';
+                console.error('Error in lookupAddressForMapTab:', e);
+            }
+        }
+
+        // ── End MAP TAB address search ──────────────────────────────────────────
 
         // Function to go back to the address suggestions list
         function showPreviousSuggestions() {
