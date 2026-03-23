@@ -1511,6 +1511,18 @@
             }
         }
 
+        // DOB NOW Build (juyv-2jek) machine_type values include Hydraulic, Chain-Hydraulic, Roped-Hydraulic, etc.
+        function isHydraulicMachineType(machineType) {
+            if (machineType == null || machineType === '') return false;
+            return String(machineType).toUpperCase().includes('HYDRAULIC');
+        }
+
+        function isHydraulicForCat5(deviceType, machineTypeFromBuild) {
+            const dt = (deviceType || '').toUpperCase();
+            if (dt.includes('HYDRAULIC') || dt.includes('HYDRO')) return true;
+            return isHydraulicMachineType(machineTypeFromBuild);
+        }
+
         // Function to check for missed required tests in prior years
         function getMissedRequiredTests(device) {
             const missedTests = [];
@@ -1526,7 +1538,7 @@
             const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMWAITER');
             const isConveyor = deviceType.includes('CONVEYOR');
             const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+            const isHydraulic = isHydraulicForCat5(device.device_type, device.machine_type);
             const isEscalator = deviceType.includes('ESCALATOR');
             
             // Skip if device is removed or deleted
@@ -3095,6 +3107,9 @@
 
                     // Fetch detailed device information
                     const deviceInfo = await fetchDeviceInfo(deviceNumber);
+                    if (deviceInfo && deviceInfo.machine_type) {
+                        device.machine_type = deviceInfo.machine_type;
+                    }
                     
                     // Fetch permit information to check for removal permits
                     const permitResult = await fetchPermitInfo(deviceNumber);
@@ -5572,6 +5587,13 @@
                 updateBinProgress(33, 'Step 1 of 3: Device list retrieved', `Found ${data.length} device(s)...`);
                 
                 if (data && data.length > 0) {
+                    updateBinProgress(32, 'Step 1 of 3: Loading machine types...', `Fetching DOB NOW Build specs for ${data.length} device(s)...`);
+                    const buildMtMapBin = await fetchBuildMachineTypesMap(data.map(d => d.device_number));
+                    data.forEach(d => {
+                        const mt = buildMtMapBin.get(String(d.device_number));
+                        if (mt !== undefined) d.machine_type = mt;
+                    });
+
                     // Store the data for CSV export
                     window.lastBinSearchResults = data;
                     document.getElementById('binExportButton').style.display = 'block';
@@ -5646,7 +5668,7 @@
                         const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
                         const isConveyor = device.device_type && device.device_type.toUpperCase().includes('CONVEYOR');
                         const isWheelchairLift = device.device_type && device.device_type.toUpperCase().includes('WHEELCHAIR');
-                        const isHydraulic = device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'));
+                        const isHydraulic = isHydraulicForCat5(device.device_type, device.machine_type);
                         const isEscalator = device.device_type && device.device_type.toUpperCase().includes('ESCALATOR');
                         const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYearForEligibility;
                         const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYearForEligibility;
@@ -5718,7 +5740,7 @@
                         const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
                         const isConveyor = device.device_type && device.device_type.toUpperCase().includes('CONVEYOR');
                         const isWheelchairLift = device.device_type && device.device_type.toUpperCase().includes('WHEELCHAIR');
-                        const isHydraulic = device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'));
+                        const isHydraulic = isHydraulicForCat5(device.device_type, device.machine_type);
                         const isEscalator = device.device_type && device.device_type.toUpperCase().includes('ESCALATOR');
                         const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYearForEligibility;
                         const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYearForEligibility;
@@ -5829,7 +5851,7 @@
                         const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
                         const isConveyor = device.device_type && device.device_type.toUpperCase().includes('CONVEYOR');
                         const isWheelchairLift = device.device_type && device.device_type.toUpperCase().includes('WHEELCHAIR');
-                        const isHydraulic = device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'));
+                        const isHydraulic = isHydraulicForCat5(device.device_type, device.machine_type);
                         const isEscalator = device.device_type && device.device_type.toUpperCase().includes('ESCALATOR');
                         let requiresCat5 = false;
                         if (!isDumwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && cat5Date) {
@@ -6622,7 +6644,7 @@
             const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
             const isConveyor = device.device_type && device.device_type.toUpperCase().includes('CONVEYOR');
             const isWheelchairLift = device.device_type && device.device_type.toUpperCase().includes('WHEELCHAIR');
-            const isHydraulic = device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'));
+            const isHydraulic = isHydraulicForCat5(device.device_type, device.machine_type);
             const isEscalator = device.device_type && device.device_type.toUpperCase().includes('ESCALATOR');
             let requiresCat5 = false;
             if (!isDumwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && cat5Date) {
@@ -6774,7 +6796,7 @@
                                 const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
                                 const isConveyor = device.device_type && device.device_type.toUpperCase().includes('CONVEYOR');
                                 const isWheelchairLift = device.device_type && device.device_type.toUpperCase().includes('WHEELCHAIR');
-                                const isHydraulic = device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'));
+                                const isHydraulic = isHydraulicForCat5(device.device_type, device.machine_type);
                                 const isEscalator = device.device_type && device.device_type.toUpperCase().includes('ESCALATOR');
                                 let requiresCat5 = false;
                                 if (!isDumwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && cat5Date) {
@@ -7501,7 +7523,7 @@
                     const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
                     const isConveyor = device.device_type && device.device_type.toUpperCase().includes('CONVEYOR');
                     const isWheelchairLift = device.device_type && device.device_type.toUpperCase().includes('WHEELCHAIR');
-                    const isHydraulic = device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'));
+                    const isHydraulic = isHydraulicForCat5(device.device_type, device.machine_type || (deviceInfo && deviceInfo.machine_type));
                     const isEscalator = device.device_type && device.device_type.toUpperCase().includes('ESCALATOR');
                     let requiresCat5 = false;
                     if (!isDumwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && cat5Date) {
@@ -7847,6 +7869,15 @@
                     }
                 }
 
+                const bulkFoundNums = Object.values(binGroups).flatMap(g => g.devices.map(d => d.device_number));
+                const buildMtMapBulk = await fetchBuildMachineTypesMap(bulkFoundNums);
+                Object.values(binGroups).forEach(g => {
+                    g.devices.forEach(d => {
+                        const mt = buildMtMapBulk.get(String(d.device_number));
+                        if (mt !== undefined) d.machine_type = mt;
+                    });
+                });
+
                     let html = `
                         <div style="background: var(--input-bg); padding: 25px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
                         <div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid var(--input-border);">
@@ -7893,7 +7924,7 @@
                         const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                         const isConveyor = deviceType.includes('CONVEYOR');
                         const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                        const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                        const isHydraulic = isHydraulicForCat5(d.device_type, d.machine_type);
                         const isEscalator = deviceType.includes('ESCALATOR');
                         const noTestRequired = isRemoved;
                         
@@ -8008,7 +8039,7 @@
                     const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                     const isConveyor = deviceType.includes('CONVEYOR');
                     const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                    const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                    const isHydraulic = isHydraulicForCat5(d.device_type, d.machine_type);
                     const isEscalator = deviceType.includes('ESCALATOR');
                     const noTestRequired = isRemoved;
                     
@@ -8209,7 +8240,7 @@
                         const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                         const isConveyor = deviceType.includes('CONVEYOR');
                         const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                        const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                        const isHydraulic = isHydraulicForCat5(device.device_type, device.machine_type);
                         const isEscalator = deviceType.includes('ESCALATOR');
                         
                         // Removed/deleted devices don't require any tests
@@ -8811,7 +8842,7 @@
                         const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                         const isConveyor = deviceType.includes('CONVEYOR');
                         const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                        const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                        const isHydraulic = isHydraulicForCat5(device.device_type, device.machine_type);
                         const isEscalator = deviceType.includes('ESCALATOR');
                         const noTestRequired = isRemoved;
                         
@@ -9957,7 +9988,7 @@
                 const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER');
                 const isConveyor = deviceType.includes('CONVEYOR');
                 const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                const isHydraulic = isHydraulicForCat5(device.device_type, device.machine_type);
                 const isEscalator = deviceType.includes('ESCALATOR');
                 
                 // Calculate completion status
@@ -11793,7 +11824,7 @@
                     const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
                     const isConveyor = device.device_type && device.device_type.toUpperCase().includes('CONVEYOR');
                     const isWheelchairLift = device.device_type && device.device_type.toUpperCase().includes('WHEELCHAIR');
-                    const isHydraulic = device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'));
+                    const isHydraulic = isHydraulicForCat5(device.device_type, device.machine_type || (deviceInfo && deviceInfo.machine_type));
                     const isEscalator = device.device_type && device.device_type.toUpperCase().includes('ESCALATOR');
                     let requiresCat5 = false;
                     if (!isDumwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && cat5Date) {
@@ -12051,6 +12082,13 @@
                 // Create an array of promises to fetch data for all devices
                 const devicePromises = [];
                 const binGroups = deviceData.binGroups || {};
+                const exportBulkMtMap = await fetchBuildMachineTypesMap(Object.values(binGroups).flatMap(g => g.devices.map(d => d.device_number)));
+                Object.values(binGroups).forEach(g => {
+                    g.devices.forEach(d => {
+                        const m = exportBulkMtMap.get(String(d.device_number));
+                        if (m !== undefined) d.machine_type = m;
+                    });
+                });
                 for (const [bin, group] of Object.entries(binGroups)) {
                     group.devices.forEach(device => {
                         devicePromises.push((async () => {
@@ -12112,7 +12150,7 @@
                             const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                             const isConveyor = deviceType.includes('CONVEYOR');
                             const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                            const isHydraulic = isHydraulicForCat5(device.device_type, device.machine_type);
                             const isEscalator = deviceType.includes('ESCALATOR');
                             const cat5NotApplicable = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled || isRemoved;
                             
@@ -12492,6 +12530,13 @@
                 // Create an array of promises to fetch violations for all devices
                 const devicePromises = [];
                 const binGroups = deviceData.binGroups || {};
+                const exportBulkMtMapCsv = await fetchBuildMachineTypesMap(Object.values(binGroups).flatMap(g => g.devices.map(d => d.device_number)));
+                Object.values(binGroups).forEach(g => {
+                    g.devices.forEach(d => {
+                        const m = exportBulkMtMapCsv.get(String(d.device_number));
+                        if (m !== undefined) d.machine_type = m;
+                    });
+                });
                 for (const [bin, group] of Object.entries(binGroups)) {
                     group.devices.forEach(device => {
                         devicePromises.push((async () => {
@@ -12554,7 +12599,7 @@
                             const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                             const isConveyor = deviceType.includes('CONVEYOR');
                             const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                            const isHydraulic = isHydraulicForCat5(device.device_type, device.machine_type);
                             const isEscalator = deviceType.includes('ESCALATOR');
                             const cat5NotApplicable = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled || isRemoved;
                             
@@ -13598,6 +13643,9 @@
 
                     // Fetch detailed device information
                     const deviceInfo = await fetchDeviceInfo(deviceNumber);
+                    if (deviceInfo && deviceInfo.machine_type) {
+                        device.machine_type = deviceInfo.machine_type;
+                    }
                     
                     // Fetch permit information to check for removal permits
                     const permitResult = await fetchPermitInfo(deviceNumber);
@@ -13956,6 +14004,12 @@
                 const data = await response.json();
                 
                 if (data && data.length > 0) {
+                    const buildMtMapQuickBin = await fetchBuildMachineTypesMap(data.map(d => d.device_number));
+                    data.forEach(d => {
+                        const mt = buildMtMapQuickBin.get(String(d.device_number));
+                        if (mt !== undefined) d.machine_type = mt;
+                    });
+
                     // Store the data for CSV export
                     window.lastBinSearchResults = data;
                     document.getElementById('binExportButton').style.display = 'block';
@@ -14115,6 +14169,15 @@
                         notFound.push(deviceNumber);
                     }
                 }
+
+                const quickBulkNums = Object.values(binGroups).flatMap(g => g.devices.map(d => d.device_number));
+                const buildMtMapQuickBulk = await fetchBuildMachineTypesMap(quickBulkNums);
+                Object.values(binGroups).forEach(g => {
+                    g.devices.forEach(d => {
+                        const mt = buildMtMapQuickBulk.get(String(d.device_number));
+                        if (mt !== undefined) d.machine_type = mt;
+                    });
+                });
 
                     let html = `
                     <div style="background: #1c1c1c; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); color: #ffffff; border: 1px solid #333;">
@@ -16009,6 +16072,37 @@
                 console.error('Error fetching device info:', error);
                 return null;
             }
+        }
+
+        async function fetchBuildMachineTypesMap(deviceIds) {
+            const result = new Map();
+            const unique = [...new Set((deviceIds || []).filter(Boolean).map(id => String(id)))];
+            const chunkSize = 40;
+            for (let i = 0; i < unique.length; i += chunkSize) {
+                const chunk = unique.slice(i, i + chunkSize);
+                const inList = chunk.map(id => "'" + String(id).replace(/'/g, "''") + "'").join(',');
+                const url = 'https://data.cityofnewyork.us/resource/juyv-2jek.json?$where=device_id in (' + inList + ')&$select=device_id,machine_type&$limit=50000';
+                try {
+                    const res = await fetch(url);
+                    if (!res.ok) continue;
+                    const rows = await res.json();
+                    for (let j = 0; j < rows.length; j++) {
+                        const row = rows[j];
+                        const id = row.device_id;
+                        if (!id) continue;
+                        const mt = row.machine_type || '';
+                        const key = String(id);
+                        if (isHydraulicMachineType(mt)) {
+                            result.set(key, mt);
+                        } else if (!result.has(key)) {
+                            result.set(key, mt);
+                        }
+                    }
+                } catch (e) {
+                    console.error('fetchBuildMachineTypesMap:', e);
+                }
+            }
+            return result;
         }
 
         // Add this function to handle the "X" button clicks
