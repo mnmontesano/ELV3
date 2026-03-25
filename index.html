@@ -3543,7 +3543,7 @@
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center;">${d.device_status}</td>
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasPVIThisYear ? '600' : '400'};">${d.pvi_date}</td>
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasCat1ThisYear ? '600' : '400'};">${d.cat1_date}</td>
-                        <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)')}; font-weight: ${d.hasCat5ThisYear || d.requiresCat5 ? '600' : '400'};">${d.cat5_date}</td>
+                        <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.isHydraulic ? '#888' : (d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)'))}; font-weight: ${!d.isHydraulic && (d.hasCat5ThisYear || d.requiresCat5) ? '600' : '400'}; ${d.isHydraulic ? 'font-style: italic;' : ''}">${d.cat5_date}</td>
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '600' : '400'};">${d.next_cat5}</td>
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.completionColor}; font-weight: 600;">${d.completionStatus}</td>
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.isReadyColor}; font-weight: 600;">${d.isReady}</td>
@@ -3600,6 +3600,9 @@
                 
                 // Add Important dropdown row if all dates are the same
                 if (d.allDatesAreSame) {
+                    const alertMessage = d.isHydraulic
+                        ? 'This device is highlighted in red because both inspection dates (CAT 1 and PVI) are identical. This may indicate that an acceptance test was performed on this device. If acceptance test was performed no additional inspection tests are required for that calendar year. Please check the official DOB site to verify the legitimacy of this information.'
+                        : 'This device is highlighted in red because all three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate that an acceptance test was performed on this device. If acceptance test was performed no additional inspection tests are required for that calendar year. Please check the official DOB site to verify the legitimacy of this information.';
                     rows += '<tr style="background: ' + rowBg + ';">' +
                         '<td colspan="11" style="padding: 0; border: 1px solid var(--input-border);">' +
                             '<details style="margin: 0;">' +
@@ -3608,8 +3611,9 @@
                                 '</summary>' +
                                 '<div style="padding: 15px; background: rgba(255, 107, 107, 0.1); border-top: 1px solid #ff6b6b;">' +
                                     '<div style="color: var(--text-color); font-size: 0.95em;">' +
-                                        'This device is highlighted in red because all three inspection dates (CAT 1, CAT 5, and PVI) are identical. This may indicate that an acceptance test was performed on this device. If acceptance test was performed no additional inspection tests are required for that calendar year. Please check the official DOB site to verify the legitimacy of this information.' +
+                                        alertMessage +
                                     '</div>' +
+                                    (d.isHydraulic ? '<div style="margin-top: 10px; padding: 8px; background: rgba(33, 150, 243, 0.1); border-radius: 4px; border: 1px solid #2196F3; font-size: 0.9em;"><span style="color: #2196F3;">ℹ️ <strong>Hydraulic Device:</strong></span> This machine type is listed as Hydraulic on the DOB. No CAT 5 testing is required.</div>' : '') +
                                 '</div>' +
                             '</details>' +
                         '</td>' +
@@ -3617,7 +3621,7 @@
                 }
                 
                 // Add Important dropdown row for missed required tests
-                const missedTests = getMissedRequiredTests(d);
+                const missedTests = getMissedRequiredTests(d, d.machine_type);
                 if (missedTests.length > 0) {
                     // Check for removal permits for this device
                     let removalPermitNote = '';
@@ -3821,7 +3825,7 @@
                     renderItem: (d) => {
                         let testInfo = d.isDismantled ? 'PVI done (Dismantled)' : 'PVI + CAT done';
                         let statusNote = d.isDismantled ? '<span style="color: #ffd700; font-weight: bold;">[DISMANTLED]</span> ' : '';
-                        const missedTests = getMissedRequiredTests(d);
+                        const missedTests = getMissedRequiredTests(d, d.machine_type);
                         const missedTestHtml = missedTests.length > 0 ? `
                             <details style="margin-top: 8px;">
                                 <summary style="padding: 6px 10px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.85em; background: rgba(255, 152, 0, 0.15); border-radius: 4px;">
@@ -3860,7 +3864,7 @@
                         } else {
                             testInfo = d.hasPVI ? 'CAT pending' : 'PVI pending';
                         }
-                        const missedTests = getMissedRequiredTests(d);
+                        const missedTests = getMissedRequiredTests(d, d.machine_type);
                         const missedTestHtml = missedTests.length > 0 ? `
                             <details style="margin-top: 8px;">
                                 <summary style="padding: 6px 10px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.85em; background: rgba(255, 152, 0, 0.15); border-radius: 4px;">
@@ -3891,7 +3895,7 @@
                     data: window.bulkDeviceLists.warning,
                     groupByBuilding: true,
                     renderItem: (d) => {
-                        const missedTests = getMissedRequiredTests(d);
+                        const missedTests = getMissedRequiredTests(d, d.machine_type);
                         const missedTestHtml = missedTests.length > 0 ? `
                             <details style="margin-top: 8px;">
                                 <summary style="padding: 6px 10px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.85em; background: rgba(255, 152, 0, 0.15); border-radius: 4px;">
@@ -3923,7 +3927,7 @@
                     groupByBuilding: true,
                     renderItem: (d) => {
                         let statusNote = d.isDismantled ? '<span style="color: #ffd700; font-weight: bold;">[DISMANTLED]</span> ' : '';
-                        const missedTests = getMissedRequiredTests(d);
+                        const missedTests = getMissedRequiredTests(d, d.machine_type);
                         const missedTestHtml = missedTests.length > 0 ? `
                             <details style="margin-top: 8px;">
                                 <summary style="padding: 6px 10px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.85em; background: rgba(255, 152, 0, 0.15); border-radius: 4px;">
@@ -3999,7 +4003,7 @@
                         const lastInspectionStr = d.mostRecentInspection 
                             ? d.mostRecentInspection.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                             : 'No inspection on file';
-                        const missedTests = getMissedRequiredTests(d);
+                        const missedTests = getMissedRequiredTests(d, d.machine_type);
                         const missedTestHtml = missedTests.length > 0 ? `
                             <details style="margin-top: 8px;">
                                 <summary style="padding: 6px 10px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.85em; background: rgba(255, 152, 0, 0.15); border-radius: 4px;">
@@ -4082,7 +4086,7 @@
                         const lastInspectionStr = d.mostRecentInspection 
                             ? d.mostRecentInspection.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                             : 'No inspection on file';
-                        const missedTests = getMissedRequiredTests(d);
+                        const missedTests = getMissedRequiredTests(d, d.machine_type);
                         const missedTestHtml = missedTests.length > 0 ? `
                             <details style="margin-top: 8px;">
                                 <summary style="padding: 6px 10px; cursor: pointer; color: #ff9800; font-weight: 600; font-size: 0.85em; background: rgba(255, 152, 0, 0.15); border-radius: 4px;">
@@ -4153,7 +4157,7 @@
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${d.device_status}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasPVIThisYear ? '600' : '400'};">${d.pvi_date}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasCat1ThisYear ? '600' : '400'};">${d.cat1_date}</td>
-                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)')}; font-weight: ${d.hasCat5ThisYear || d.requiresCat5 ? '600' : '400'};">${d.cat5_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isHydraulic ? '#888' : (d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)'))}; font-weight: ${!d.isHydraulic && (d.hasCat5ThisYear || d.requiresCat5) ? '600' : '400'}; ${d.isHydraulic ? 'font-style: italic;' : ''}">${d.cat5_date}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '600' : '400'};">${d.next_cat5}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.completionColor}; font-weight: 600;">${d.completionStatus}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isReadyColor}; font-weight: 600;">${d.isReady}</td>
@@ -4232,7 +4236,7 @@
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${d.device_status}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasPVIThisYear ? '600' : '400'};">${d.pvi_date}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasCat1ThisYear ? '600' : '400'};">${d.cat1_date}</td>
-                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)')}; font-weight: ${d.hasCat5ThisYear || d.requiresCat5 ? '600' : '400'};">${d.cat5_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isHydraulic ? '#888' : (d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)'))}; font-weight: ${!d.isHydraulic && (d.hasCat5ThisYear || d.requiresCat5) ? '600' : '400'}; ${d.isHydraulic ? 'font-style: italic;' : ''}">${d.cat5_date}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '600' : '400'};">${d.next_cat5}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.completionColor}; font-weight: 600;">${d.completionStatus}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isReadyColor}; font-weight: 600;">${d.isReady}</td>
@@ -4359,7 +4363,7 @@
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${d.device_status}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasPVIThisYear ? '600' : '400'};">${d.pvi_date}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasCat1ThisYear ? '600' : '400'};">${d.cat1_date}</td>
-                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)')}; font-weight: ${d.hasCat5ThisYear || d.requiresCat5 ? '600' : '400'};">${d.cat5_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isHydraulic ? '#888' : (d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)'))}; font-weight: ${!d.isHydraulic && (d.hasCat5ThisYear || d.requiresCat5) ? '600' : '400'}; ${d.isHydraulic ? 'font-style: italic;' : ''}">${d.cat5_date}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '600' : '400'};">${d.next_cat5}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.completionColor}; font-weight: 600;">${d.completionStatus}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isReadyColor}; font-weight: 600;">${d.isReady}</td>
@@ -4474,7 +4478,7 @@
                     data: window.bulkDeviceLists.importantInfo || [],
                     groupByBuilding: true,
                     renderItem: (d) => {
-                        const missedTests = d.missedTests || getMissedRequiredTests(d);
+                        const missedTests = d.missedTests || getMissedRequiredTests(d, d.machine_type);
                         const hasMissedTests = missedTests.length > 0;
                         const hasAllDatesSame = d.allDatesAreSame;
                         
@@ -7513,25 +7517,27 @@
                     const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
                     const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
                     
-                    // Find most recent date
-                    const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                    // Determine device type before date calculations (needed for hydraulic exclusion)
+                    const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
+                    const isConveyor = device.device_type && device.device_type.toUpperCase().includes('CONVEYOR');
+                    const isWheelchairLift = device.device_type && device.device_type.toUpperCase().includes('WHEELCHAIR');
+                    const csvMachineTypeUpper = (deviceInfo?.machine_type || '').toUpperCase();
+                    const isHydraulic = (device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'))) ||
+                                        csvMachineTypeUpper.includes('HYDRAULIC') || csvMachineTypeUpper.includes('HYDRO');
+                    const isEscalator = device.device_type && device.device_type.toUpperCase().includes('ESCALATOR');
+                    
+                    // Find most recent date (exclude CAT 5 for hydraulic devices)
+                    const dates = [cat1Date, isHydraulic ? null : cat5Date, pviDate].filter(date => date !== null);
                     const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
                     
                     // Format dates for CSV
                     const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
-                    const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
+                    const cat5Display = isHydraulic ? 'N/A (Hydraulic)' : (cat5Date ? cat5Date.toLocaleDateString() : 'N/A');
                     const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
                     const mostRecentDisplay = mostRecentDate ? mostRecentDate.toLocaleDateString() : 'N/A';
                     
                     // Check test completion status for current year
                     const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
-                    
-                    // Check if category test was done this year (Dumbwaiters, Conveyors, Wheelchair Lifts, Hydraulic elevators, and Escalators do not need CAT 5 testing)
-                    const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
-                    const isConveyor = device.device_type && device.device_type.toUpperCase().includes('CONVEYOR');
-                    const isWheelchairLift = device.device_type && device.device_type.toUpperCase().includes('WHEELCHAIR');
-                    const isHydraulic = device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'));
-                    const isEscalator = device.device_type && device.device_type.toUpperCase().includes('ESCALATOR');
                     let requiresCat5 = false;
                     if (!isDumwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && cat5Date) {
                         const yearsSinceCat5 = currentYear - cat5Date.getFullYear();
@@ -7835,19 +7841,18 @@
                         const device = data[0];
                         const bin = device.bin || 'Unknown BIN';
                         
-                        // Fetch violations for this device
-                        const violations = await fetchViolations(deviceNumber);
+                        // Fetch violations and device info in parallel
+                        const [violations, deviceInfoData] = await Promise.all([
+                            fetchViolations(deviceNumber),
+                            fetchDeviceInfo(deviceNumber)
+                        ]);
                         const activeViolations = violations.filter(v => 
                             v.violation_status?.toUpperCase() === 'ACTIVE' || 
                             v.violation_status?.toUpperCase() === 'OPEN');
                         
-                        // Store violations with device
+                        // Store violations and machine_type with device
                         device.violations = activeViolations;
-
-                        // Fetch and store machine_type for hydraulic detection
-                        const bulkDeviceInfo = await fetchDeviceInfo(deviceNumber);
-                        device.machine_type = bulkDeviceInfo?.machine_type || null;
-
+                        device.machine_type = deviceInfoData?.machine_type || '';
                         if (!binGroups[bin]) {
                             binGroups[bin] = {
                                 address: `${device.house_number} ${device.street_name}, ${device.borough}`,
@@ -7910,25 +7915,30 @@
                         const cat1Date = d.cat1_latest_report_filed ? new Date(d.cat1_latest_report_filed) : null;
                         const cat5Date = d.cat5_latest_report_filed ? new Date(d.cat5_latest_report_filed) : null;
                         
-                        // Check if all dates are the same (acceptance test indicator)
-                        const allDatesAreSame = cat1Date && cat5Date && pviDate &&
-                            cat1Date.getTime() === cat5Date.getTime() &&
-                            cat5Date.getTime() === pviDate.getTime();
-                        
-                        const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
-                        const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
-                        const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
-                        
                         const deviceType = (d.device_type || '').toUpperCase();
+                        const machineTypeUpper = (d.machine_type || '').toUpperCase();
                         const deviceStatus = (d.device_status || '').toUpperCase();
                         const isDismantled = deviceStatus.includes('DISMANTLED');
                         const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                         const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                         const isConveyor = deviceType.includes('CONVEYOR');
                         const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                        const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                        const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO') ||
+                                            machineTypeUpper.includes('HYDRAULIC') || machineTypeUpper.includes('HYDRO');
                         const isEscalator = deviceType.includes('ESCALATOR');
                         const noTestRequired = isRemoved;
+                        
+                        // Check if all dates are the same (acceptance test indicator)
+                        // For hydraulic devices, only check CAT 1 and PVI (CAT 5 not required)
+                        const allDatesAreSame = isHydraulic
+                            ? (cat1Date && pviDate && cat1Date.getTime() === pviDate.getTime())
+                            : (cat1Date && cat5Date && pviDate &&
+                                cat1Date.getTime() === cat5Date.getTime() &&
+                                cat5Date.getTime() === pviDate.getTime());
+                        
+                        const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+                        const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                        const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
                         
                         // CAT 5 requirements
                         let requiresCat5 = false;
@@ -7940,8 +7950,8 @@
                             nextCat5DueYear = cat5Date.getFullYear() + 5;
                         }
                         
-                        // Calculate eligibility
-                        const testDates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                        // Calculate eligibility (exclude CAT 5 for hydraulic devices)
+                        const testDates = [cat1Date, isHydraulic ? null : cat5Date, pviDate].filter(date => date !== null);
                         const mostRecentTestDate = testDates.length > 0 ? new Date(Math.max.apply(null, testDates)) : null;
                         let isReadyForTesting = false;
                         let eligibilityDate = null;
@@ -8003,7 +8013,7 @@
                             violations: d.violations || [],
                             pvi_date: pviDate ? pviDate.toLocaleDateString() : '—',
                             cat1_date: cat1Date ? cat1Date.toLocaleDateString() : '—',
-                            cat5_date: cat5Date ? cat5Date.toLocaleDateString() : '—',
+                            cat5_date: isHydraulic ? 'N/A' : (cat5Date ? cat5Date.toLocaleDateString() : '—'),
                             next_cat5: cat5NotApplicable ? 'N/A' : (nextCat5DueYear ? nextCat5DueYear : '—'),
                             completionStatus,
                             completionColor,
@@ -8012,14 +8022,16 @@
                             eligibleDate: noTestRequired ? 'N/A' : (eligibilityDate ? eligibilityDate.toLocaleDateString() : '—'),
                             hasPVIThisYear,
                             hasCat1ThisYear,
-                            hasCat5ThisYear,
+                            hasCat5ThisYear: isHydraulic ? false : hasCat5ThisYear,
                             requiresCat5,
                             nextCat5DueYear,
                             allDatesAreSame,
+                            isHydraulic,
                             // Preserve raw date fields for getMissedRequiredTests function
                             cat5_latest_report_filed: d.cat5_latest_report_filed,
                             cat1_latest_report_filed: d.cat1_latest_report_filed,
-                            periodic_latest_inspection: d.periodic_latest_inspection
+                            periodic_latest_inspection: d.periodic_latest_inspection,
+                            machine_type: d.machine_type || ''
                         };
                     })
                 }));
@@ -8035,15 +8047,15 @@
                     const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
                     
                     const deviceType = (d.device_type || '').toUpperCase();
+                    const machineTypeUpper = (d.machine_type || '').toUpperCase();
                     const deviceStatus = (d.device_status || '').toUpperCase();
                     const isDismantled = deviceStatus.includes('DISMANTLED');
                     const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                     const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                     const isConveyor = deviceType.includes('CONVEYOR');
                     const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                    const calcMachineTypeUpper = (d.machine_type || '').toUpperCase();
                     const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO') ||
-                                        calcMachineTypeUpper.includes('HYDRAULIC') || calcMachineTypeUpper.includes('HYDRO');
+                                        machineTypeUpper.includes('HYDRAULIC') || machineTypeUpper.includes('HYDRO');
                     const isEscalator = deviceType.includes('ESCALATOR');
                     const noTestRequired = isRemoved;
                     
@@ -8056,7 +8068,7 @@
                         nextCat5DueYear = cat5Date.getFullYear() + 5;
                     }
                     
-                    const testDates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                    const testDates = [cat1Date, isHydraulic ? null : cat5Date, pviDate].filter(date => date !== null);
                     const mostRecentTestDate = testDates.length > 0 ? new Date(Math.max.apply(null, testDates)) : null;
                     let isReadyForTesting = false;
                     let eligibilityDate = null;
@@ -8238,15 +8250,15 @@
                         
                         // Check device type and status (DELETED is treated as REMOVED)
                         const deviceType = (device.device_type || '').toUpperCase();
+                        const machineTypeUpper = (device.machine_type || '').toUpperCase();
                         const deviceStatus = (device.device_status || '').toUpperCase();
                         const isDismantled = deviceStatus.includes('DISMANTLED');
                         const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                         const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                         const isConveyor = deviceType.includes('CONVEYOR');
                         const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                        const bulkMachineTypeUpper = (device.machine_type || '').toUpperCase();
                         const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO') ||
-                                            bulkMachineTypeUpper.includes('HYDRAULIC') || bulkMachineTypeUpper.includes('HYDRO');
+                                            machineTypeUpper.includes('HYDRAULIC') || machineTypeUpper.includes('HYDRO');
                         const isEscalator = deviceType.includes('ESCALATOR');
 
                         // Removed/deleted devices don't require any tests
@@ -8263,12 +8275,12 @@
                         
                         // Calculate 91-day testing eligibility
                         // For dismantled devices, only consider PVI date (that's all they need)
-                        // For regular devices, consider all inspection dates
+                        // For hydraulic devices, exclude CAT 5 (not required)
                         let mostRecentInspection;
                         if (isDismantled) {
                             mostRecentInspection = pviDate;
                         } else {
-                            const allInspectionDates = [pviDate, cat1Date, cat5Date].filter(d => d !== null);
+                            const allInspectionDates = [pviDate, cat1Date, isHydraulic ? null : cat5Date].filter(d => d !== null);
                             mostRecentInspection = allInspectionDates.length > 0 
                                 ? new Date(Math.max(...allInspectionDates.map(d => d.getTime())))
                                 : null;
@@ -8350,12 +8362,15 @@
                         const dismantledCompleted = isDismantled && hasPVIThisYear;
                         
                         // Check if all dates are the same (potential acceptance test indicator)
-                        const allDatesAreSame = cat1Date && cat5Date && pviDate &&
-                            cat1Date.getTime() === cat5Date.getTime() &&
-                            cat5Date.getTime() === pviDate.getTime();
+                        // For hydraulic devices, only check CAT 1 and PVI (CAT 5 not required)
+                        const allDatesAreSame = isHydraulic
+                            ? (cat1Date && pviDate && cat1Date.getTime() === pviDate.getTime())
+                            : (cat1Date && cat5Date && pviDate &&
+                                cat1Date.getTime() === cat5Date.getTime() &&
+                                cat5Date.getTime() === pviDate.getTime());
                         
-                        // Get missed tests for this device
-                        const missedTests = getMissedRequiredTests(device);
+                        // Get missed tests for this device (pass machine_type for hydraulic detection)
+                        const missedTests = getMissedRequiredTests(device, device.machine_type);
                         
                         const deviceInfo = {
                             device_number: device.device_number,
@@ -8381,7 +8396,8 @@
                             cat1_latest_report_filed: device.cat1_latest_report_filed,
                             cat5_latest_report_filed: device.cat5_latest_report_filed,
                             periodic_latest_inspection: device.periodic_latest_inspection,
-                            device_status: device.device_status
+                            device_status: device.device_status,
+                            machine_type: device.machine_type || ''
                         };
                         
                         // Track devices with Important Information
@@ -8831,26 +8847,31 @@
                         const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : '—';
                         const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : '—';
                         
-                        // Check if all dates are the same (CAT 1, CAT 5, and PVI) - acceptance test indicator
-                        const allDatesAreSame = cat1Date && cat5Date && pviDate &&
-                            cat1Date.getTime() === cat5Date.getTime() &&
-                            cat5Date.getTime() === pviDate.getTime();
-                        
-                        const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
-                        const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
-                        const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
-                        
                         // Check device type and status (DELETED is treated as REMOVED)
                         const deviceType = (device.device_type || '').toUpperCase();
+                        const bulkMachineType = (device.machine_type || '').toUpperCase();
                         const deviceStatus = (device.device_status || '').toUpperCase();
                         const isDismantled = deviceStatus.includes('DISMANTLED');
                         const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                         const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                         const isConveyor = deviceType.includes('CONVEYOR');
                         const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                        const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                        const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO') ||
+                                            bulkMachineType.includes('HYDRAULIC') || bulkMachineType.includes('HYDRO');
                         const isEscalator = deviceType.includes('ESCALATOR');
                         const noTestRequired = isRemoved;
+                        
+                        // Check if all dates are the same - acceptance test indicator
+                        // For hydraulic devices, only check CAT 1 and PVI (CAT 5 not required)
+                        const allDatesAreSame = isHydraulic
+                            ? (cat1Date && pviDate && cat1Date.getTime() === pviDate.getTime())
+                            : (cat1Date && cat5Date && pviDate &&
+                                cat1Date.getTime() === cat5Date.getTime() &&
+                                cat5Date.getTime() === pviDate.getTime());
+                        
+                        const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+                        const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+                        const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
                         
                         // CAT 5 requirements
                         let requiresCat5 = false;
@@ -8863,8 +8884,8 @@
                             nextCat5DueYear = cat5Date.getFullYear() + 5;
                         }
                         
-                        // Calculate test eligibility based on 91-day rule
-                        const testDates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+                        // Calculate test eligibility based on 91-day rule (exclude CAT 5 for hydraulic)
+                        const testDates = [cat1Date, isHydraulic ? null : cat5Date, pviDate].filter(date => date !== null);
                         const mostRecentTestDate = testDates.length > 0 ? new Date(Math.max.apply(null, testDates)) : null;
                         const today = new Date();
                         let isReadyForTesting = false;
@@ -8948,7 +8969,7 @@
                                 <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: var(--text-color);">${device.device_status || 'N/A'}</td>
                                 <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${hasPVIThisYear ? '600' : '400'};">${pviDisplay}</td>
                                 <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${hasCat1ThisYear ? '600' : '400'};">${cat1Display}</td>
-                                <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${hasCat5ThisYear ? '#4CAF50' : (requiresCat5 ? '#ff9800' : 'var(--text-color)')}; font-weight: ${hasCat5ThisYear || requiresCat5 ? '600' : '400'};">${cat5Display}</td>
+                                <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${isHydraulic ? '#888' : (hasCat5ThisYear ? '#4CAF50' : (requiresCat5 ? '#ff9800' : 'var(--text-color)'))}; font-weight: ${!isHydraulic && (hasCat5ThisYear || requiresCat5) ? '600' : '400'}; ${isHydraulic ? 'font-style: italic;' : ''}">${isHydraulic ? 'N/A' : cat5Display}</td>
                                 <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${nextCat5DueYear && nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${nextCat5DueYear && nextCat5DueYear <= currentYear ? '600' : '400'};">${nextCat5Display}</td>
                                 <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${completionColor}; font-weight: 600;">${completionStatus}</td>
                                 <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${isReadyForTesting ? '#4CAF50' : '#ff9800'}; font-weight: 600;">${noTestRequired ? 'N/A' : (isReadyForTesting ? 'Yes' : 'No')}</td>
@@ -9094,6 +9115,19 @@
                                                 </div>
                                             </div>
                                         </details>
+                                    </td>
+                                </tr>
+                            `;
+                        }
+                        
+                        // Add hydraulic device info note
+                        if (isHydraulic) {
+                            html += `
+                                <tr style="background: ${rowBg};">
+                                    <td colspan="11" style="padding: 0; border: 1px solid var(--input-border);">
+                                        <div style="padding: 8px 12px; background: rgba(33, 150, 243, 0.08); border-top: 1px solid rgba(33, 150, 243, 0.3);">
+                                            <span style="color: #2196F3; font-size: 0.9em;">ℹ️ <strong>Hydraulic Device:</strong> This machine type is listed as Hydraulic on the DOB. No CAT 5 testing is required.</span>
+                                        </div>
                                     </td>
                                 </tr>
                             `;
@@ -10001,13 +10035,15 @@
                 const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
                 
                 const deviceType = (device.device_type || '').toUpperCase();
+                const popupMachineType = (device.machine_type || '').toUpperCase();
                 const deviceStatus = (device.device_status || '').toUpperCase();
                 const isDismantled = deviceStatus.includes('DISMANTLED');
                 const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                 const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER');
                 const isConveyor = deviceType.includes('CONVEYOR');
                 const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO') ||
+                                    popupMachineType.includes('HYDRAULIC') || popupMachineType.includes('HYDRO');
                 const isEscalator = deviceType.includes('ESCALATOR');
                 
                 // Calculate completion status
@@ -14178,6 +14214,10 @@
                         const device = data[0];
                         const bin = device.bin || 'Unknown BIN';
                         
+                        // Fetch device info for machine_type (needed for hydraulic detection)
+                        const quickDeviceInfo = await fetchDeviceInfo(deviceNumber);
+                        device.machine_type = quickDeviceInfo?.machine_type || '';
+                        
                         if (!binGroups[bin]) {
                             binGroups[bin] = {
                                 address: `${device.house_number} ${device.street_name}, ${device.borough}`,
@@ -14242,7 +14282,7 @@
                                 </div>
                                 ` : ''}
                                 ${(() => {
-                                    const missedTests = getMissedRequiredTests(device);
+                                    const missedTests = getMissedRequiredTests(device, device.machine_type);
                                     if (missedTests.length > 0) {
                                         const missedTestsList = missedTests.map(mt => 
                                             `<div style="margin-bottom: 6px; padding: 6px; background: rgba(255, 152, 0, 0.05); border-radius: 4px;">
