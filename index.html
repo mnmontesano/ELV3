@@ -1512,21 +1512,23 @@
         }
 
         // Function to check for missed required tests in prior years
-        function getMissedRequiredTests(device) {
+        function getMissedRequiredTests(device, machineType = '') {
             const missedTests = [];
             const currentYear = new Date().getFullYear();
-            
+
             // Get all test dates
             const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
             const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
             const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
-            
+
             // Check device type for test requirements
             const deviceType = (device.device_type || '').toUpperCase();
+            const machineTypeUpper = (machineType || '').toUpperCase();
             const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMWAITER');
             const isConveyor = deviceType.includes('CONVEYOR');
             const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO') ||
+                                 machineTypeUpper.includes('HYDRAULIC') || machineTypeUpper.includes('HYDRO');
             const isEscalator = deviceType.includes('ESCALATOR');
             
             // Skip if device is removed or deleted
@@ -3339,7 +3341,7 @@
                             
                             <!-- Add Important dropdown for missed required tests -->
                             ${(() => {
-                                const missedTests = getMissedRequiredTests(device);
+                                const missedTests = getMissedRequiredTests(device, deviceInfo?.machine_type);
                                 if (missedTests.length > 0) {
                                     // Check if device has a removal permit
                                     let hasRemovalPermit = false;
@@ -13845,7 +13847,7 @@
                             
                             <!-- Add Important dropdown for missed required tests -->
                             ${(() => {
-                                const missedTests = getMissedRequiredTests(device);
+                                const missedTests = getMissedRequiredTests(device, deviceInfo?.machine_type);
                                 if (missedTests.length > 0) {
                                     // Check if device has a removal permit
                                     let hasRemovalPermit = false;
