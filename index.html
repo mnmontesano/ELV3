@@ -11802,7 +11802,9 @@
                     const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
                     const isConveyor = device.device_type && device.device_type.toUpperCase().includes('CONVEYOR');
                     const isWheelchairLift = device.device_type && device.device_type.toUpperCase().includes('WHEELCHAIR');
-                    const isHydraulic = device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'));
+                    const binMachineTypeUpper = (deviceInfo?.machine_type || '').toUpperCase();
+                    const isHydraulic = (device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'))) ||
+                                        binMachineTypeUpper.includes('HYDRAULIC') || binMachineTypeUpper.includes('HYDRO');
                     const isEscalator = device.device_type && device.device_type.toUpperCase().includes('ESCALATOR');
                     let requiresCat5 = false;
                     if (!isDumwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && cat5Date) {
@@ -12065,14 +12067,17 @@
                         devicePromises.push((async () => {
                             // Fetch violations for this device
                             const violations = await fetchViolations(device.device_number);
-                            const activeViolations = violations.filter(v => 
-                                v.violation_status?.toUpperCase() === 'ACTIVE' || 
+                            const activeViolations = violations.filter(v =>
+                                v.violation_status?.toUpperCase() === 'ACTIVE' ||
                                 v.violation_status?.toUpperCase() === 'OPEN');
-                            
+
+                            // Fetch device info (for machine_type hydraulic check)
+                            const deviceInfo = await fetchDeviceInfo(device.device_number);
+
                             // Fetch permit information for this device
                             const permitData = await fetchPermitInfo(device.device_number);
                             const permits = (permitData.success && permitData.permits) ? permitData.permits : [];
-                            
+
                             // Format permit details
                             const permitNumbers = permits.map(p => p.permit_number || p.job_filing_number || 'N/A').join('; ');
                             const permitIssueDates = permits.map(p => {
@@ -12115,16 +12120,18 @@
                             
                             // Check device type and status
                             const deviceType = (device.device_type || '').toUpperCase();
+                            const machineTypeUpper = (deviceInfo?.machine_type || '').toUpperCase();
                             const deviceStatus = (device.device_status || '').toUpperCase();
                             const isDismantled = deviceStatus.includes('DISMANTLED');
                             const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                             const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                             const isConveyor = deviceType.includes('CONVEYOR');
                             const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO') ||
+                                                machineTypeUpper.includes('HYDRAULIC') || machineTypeUpper.includes('HYDRO');
                             const isEscalator = deviceType.includes('ESCALATOR');
                             const cat5NotApplicable = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled || isRemoved;
-                            
+
                             let requiresCat5 = false;
                             let nextCat5Due = 'N/A';
                             if (!isDumbwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && cat5Date) {
@@ -12136,7 +12143,7 @@
                             } else {
                                 nextCat5Due = 'No CAT 5 on file';
                             }
-                            
+
                             // Determine test status
                             let testStatus;
                             if (isRemoved) {
@@ -12208,8 +12215,8 @@
                                 cat5Date.getTime() === pviDate.getTime();
                             
                             // Get missed required tests
-                            const missedTests = getMissedRequiredTests(device);
-                            
+                            const missedTests = getMissedRequiredTests(device, deviceInfo?.machine_type);
+
                             // Check for removal permits
                             let hasRemovalPermit = false;
                             let removalPermitNumber = '';
@@ -12218,7 +12225,7 @@
                                     const workType = (p.work_type || '').toUpperCase();
                                     const description = (p.description || '').toUpperCase();
                                     const appType = (p.application_type || '').toUpperCase();
-                                    return workType.includes('REMOVAL') || workType.includes('REMOVE') || 
+                                    return workType.includes('REMOVAL') || workType.includes('REMOVE') ||
                                            workType.includes('DISMANTLE') || workType.includes('DISCONTINUE') ||
                                            description.includes('REMOVAL') || description.includes('REMOVE ELEVATOR') ||
                                            description.includes('DISMANTLE') || description.includes('DISCONTINUE') ||
@@ -12229,7 +12236,7 @@
                                     removalPermitNumber = removalPermit.permit_number || removalPermit.job_filing_number || '';
                                 }
                             }
-                            
+
                             // Build important info string
                             let importantInfoParts = [];
                             if (allDatesAreSame) {
@@ -12510,6 +12517,9 @@
                                 v.violation_status?.toUpperCase() === 'ACTIVE' || 
                                 v.violation_status?.toUpperCase() === 'OPEN');
                             
+
+                            // Fetch device info (for machine_type hydraulic check)
+                            const deviceInfo = await fetchDeviceInfo(device.device_number);
                             // Format violation details (same format as BIN export)
                             const violationNumbers = activeViolations.map(v => v.violation_number || 'N/A').join('; ');
                             const violationIssueDates = activeViolations.map(v => {
@@ -12557,13 +12567,15 @@
                             
                             // Check device type and status (DELETED is treated as REMOVED)
                             const deviceType = (device.device_type || '').toUpperCase();
+                            const machineTypeUpper = (deviceInfo?.machine_type || '').toUpperCase();
                             const deviceStatus = (device.device_status || '').toUpperCase();
                             const isDismantled = deviceStatus.includes('DISMANTLED');
                             const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                             const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                             const isConveyor = deviceType.includes('CONVEYOR');
                             const isWheelchairLift = deviceType.includes('WHEELCHAIR');
-                            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO');
+                            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO') ||
+                                                machineTypeUpper.includes('HYDRAULIC') || machineTypeUpper.includes('HYDRO');
                             const isEscalator = deviceType.includes('ESCALATOR');
                             const cat5NotApplicable = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled || isRemoved;
                             
@@ -12657,8 +12669,8 @@
                                 cat5Date.getTime() === pviDate.getTime();
                             
                             // Get missed required tests
-                            const missedTests = getMissedRequiredTests(device);
-                            
+                            const missedTests = getMissedRequiredTests(device, deviceInfo?.machine_type);
+
                             // Check for removal permits
                             let hasRemovalPermit = false;
                             let removalPermitNumber = '';
@@ -12667,7 +12679,7 @@
                                     const workType = (p.work_type || '').toUpperCase();
                                     const description = (p.description || '').toUpperCase();
                                     const appType = (p.application_type || '').toUpperCase();
-                                    return workType.includes('REMOVAL') || workType.includes('REMOVE') || 
+                                    return workType.includes('REMOVAL') || workType.includes('REMOVE') ||
                                            workType.includes('DISMANTLE') || workType.includes('DISCONTINUE') ||
                                            description.includes('REMOVAL') || description.includes('REMOVE ELEVATOR') ||
                                            description.includes('DISMANTLE') || description.includes('DISCONTINUE') ||
@@ -12678,7 +12690,7 @@
                                     removalPermitNumber = removalPermit.permit_number || removalPermit.job_filing_number || '';
                                 }
                             }
-                            
+
                             // Build important info string
                             let importantInfoParts = [];
                             if (allDatesAreSame) {
