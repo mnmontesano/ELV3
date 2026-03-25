@@ -6392,10 +6392,11 @@
 
         // Add function to generate removed device type section
         async function generateRemovedDeviceTypeSection(type, devices, violationsByDevice = {}) {
-            // First, fetch all permit data for the devices
-            const devicePermits = await Promise.all(
-                devices.map(device => fetchPermitInfo(device.device_number))
-            );
+            // Fetch permit data and device info for all devices
+            const [devicePermits, deviceInfoList] = await Promise.all([
+                Promise.all(devices.map(device => fetchPermitInfo(device.device_number))),
+                Promise.all(devices.map(device => fetchDeviceInfo(device.device_number)))
+            ]);
 
             return `
                 <div class="device-type-section removed-devices" data-device-type="${type}" data-device-status="REMOVED">
@@ -6532,7 +6533,7 @@
                                                 </div>
                                             ` : ''}
                                             ${(() => {
-                                                const missedTests = getMissedRequiredTests(device);
+                                                const missedTests = getMissedRequiredTests(device, deviceInfoList[index]?.machine_type);
                                                 if (missedTests.length > 0) {
                                                     // Check if device has a removal permit
                                                     let hasRemovalPermit = false;
@@ -6711,15 +6712,17 @@
 
         // Update the generateDeviceTypeSection function
         async function generateDeviceTypeSection(type, devices, violationsByDevice = {}) {
-            // First, fetch all permit data for the devices
-            const devicePermits = await Promise.all(
-                devices.map(device => fetchPermitInfo(device.device_number))
-            );
+            // Fetch permit data and device info for all devices
+            const [devicePermits, deviceInfoList] = await Promise.all([
+                Promise.all(devices.map(device => fetchPermitInfo(device.device_number))),
+                Promise.all(devices.map(device => fetchDeviceInfo(device.device_number)))
+            ]);
 
-            // Create array with devices, permits, and status for sorting
+            // Create array with devices, permits, deviceInfo, and status for sorting
             const devicesWithStatus = devices.map((device, index) => ({
                 device: device,
                 permit: devicePermits[index],
+                deviceInfo: deviceInfoList[index],
                 status: calculateTestStatusForSorting(device)
             }));
 
@@ -6741,6 +6744,8 @@
                             ${devicesWithStatus.map((item, index) => {
                                 const device = item.device;
                                 const permitData = item.permit;
+                                const itemDeviceInfo = item.deviceInfo;
+                                const itemMachineTypeUpper = (itemDeviceInfo?.machine_type || '').toUpperCase();
                                 // Get violations for this device
                                 const deviceViolations = violationsByDevice[device.device_number] || [];
                                 const activeViolations = deviceViolations.filter(v => 
@@ -6783,7 +6788,8 @@
                                 const isDumwaiter = device.device_type && device.device_type.toUpperCase().includes('DUMWAITER');
                                 const isConveyor = device.device_type && device.device_type.toUpperCase().includes('CONVEYOR');
                                 const isWheelchairLift = device.device_type && device.device_type.toUpperCase().includes('WHEELCHAIR');
-                                const isHydraulic = device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'));
+                                const isHydraulic = (device.device_type && (device.device_type.toUpperCase().includes('HYDRAULIC') || device.device_type.toUpperCase().includes('HYDRO'))) ||
+                                                   itemMachineTypeUpper.includes('HYDRAULIC') || itemMachineTypeUpper.includes('HYDRO');
                                 const isEscalator = device.device_type && device.device_type.toUpperCase().includes('ESCALATOR');
                                 let requiresCat5 = false;
                                 if (!isDumwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && cat5Date) {
@@ -7286,7 +7292,7 @@
                                                 </div>
                                             ` : ''}
                                             ${(() => {
-                                                const missedTests = getMissedRequiredTests(device);
+                                                const missedTests = getMissedRequiredTests(device, itemDeviceInfo?.machine_type);
                                                 if (missedTests.length > 0) {
                                                     // Check if device has a removal permit
                                                     let hasRemovalPermit = false;
