@@ -3101,32 +3101,39 @@
                     const hasPermits = permitResult.success && permitResult.permits && permitResult.permits.length > 0;
                     const permitData = permitResult;
 
+                    // Determine if device is hydraulic (CAT 5 not required)
+                    const deviceTypeLookup = (device.device_type || '').toUpperCase();
+                    const isHydraulic = deviceTypeLookup.includes('HYDRAULIC') || deviceTypeLookup.includes('HYDRO');
+
                     // Format dates and calculate most recent inspection
                     const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
                     const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
                     const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
-                    
-                    // Find most recent date
-                    const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+
+                    // Find most recent date (exclude CAT 5 for hydraulic devices since it's not required)
+                    const dates = [cat1Date, isHydraulic ? null : cat5Date, pviDate].filter(date => date !== null);
                     const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
-                    
+
                     // Calculate days since most recent inspection
                     const today = new Date();
-                    const daysSinceInspection = mostRecentDate ? 
+                    const daysSinceInspection = mostRecentDate ?
                         Math.floor((today - mostRecentDate) / (1000 * 60 * 60 * 24)) : null;
-                    
+
                     // Format dates for display
                     const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
                     const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
                     const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
                     const mostRecentDisplay = mostRecentDate ? mostRecentDate.toLocaleDateString() : 'N/A';
-                    
-                    // Check if all dates are the same (CAT 1, CAT 5, PVI, and Latest Inspection)
-                    const allDatesAreSame = cat1Date && cat5Date && pviDate && mostRecentDate &&
-                        cat1Date.getTime() === cat5Date.getTime() &&
-                        cat5Date.getTime() === pviDate.getTime() &&
-                        pviDate.getTime() === mostRecentDate.getTime();
-                    
+
+                    // Check if all dates are the same (data quality alert)
+                    // For hydraulic devices, only check CAT 1 and PVI (CAT 5 not required)
+                    const allDatesAreSame = isHydraulic
+                        ? (cat1Date && pviDate && cat1Date.getTime() === pviDate.getTime())
+                        : (cat1Date && cat5Date && pviDate && mostRecentDate &&
+                            cat1Date.getTime() === cat5Date.getTime() &&
+                            cat5Date.getTime() === pviDate.getTime() &&
+                            pviDate.getTime() === mostRecentDate.getTime());
+
                     // Apply red styling if all dates are the same
                     const dateStyle = allDatesAreSame ? 'color: red; font-weight: bold;' : '';
                     
@@ -3282,7 +3289,7 @@
                                 </div>
                                 <div style="margin-bottom: 10px;">
                                     <strong style="color: var(--header-color); display: inline-block; width: 120px;">Latest CAT 5:</strong> 
-                                    <span style="${dateStyle}">${cat5Display}</span>
+                                    ${isHydraulic ? '<span style="color: #888; font-style: italic;">Not required (Hydraulic)</span>' : '<span style="' + dateStyle + '">' + cat5Display + '</span>'}
                                 </div>
                                 <div style="margin-bottom: 10px;">
                                     <strong style="color: var(--header-color); display: inline-block; width: 120px;">Latest PVI:</strong> 
@@ -13502,11 +13509,7 @@
                                 </div>
                                 <div style="margin-bottom: 10px;">
                                     <strong style="color: var(--header-color); display: inline-block; width: 120px;">Latest CAT 5:</strong> 
-                                    <span style="${dateStyle}">${cat5Display}</span>
-                                </div>
-                                <div style="margin-bottom: 10px;">
-                                    <strong style="color: var(--header-color); display: inline-block; width: 120px;">Latest PVI:</strong> 
-                                    <span style="${dateStyle}">${pviDisplay}</span>
+                                    ${isHydraulic ? '<span style="color: #888; font-style: italic;">Not required (Hydraulic)</span>' : '<span style="' + dateStyle + '">' + cat5Display + '</span>'}
                                 </div>
                                 <div style="margin-bottom: 10px;">
                                     <strong style="color: var(--header-color); display: inline-block; width: 120px;">Latest Inspection:</strong> 
@@ -13604,32 +13607,39 @@
                     const hasPermits = permitResult.success && permitResult.permits && permitResult.permits.length > 0;
                     const permitData = permitResult;
 
+                    // Determine if device is hydraulic (CAT 5 not required)
+                    const deviceTypeLookup = (device.device_type || '').toUpperCase();
+                    const isHydraulic = deviceTypeLookup.includes('HYDRAULIC') || deviceTypeLookup.includes('HYDRO');
+
                     // Format dates and calculate most recent inspection
                     const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
                     const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
                     const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
-                    
-                    // Find most recent date
-                    const dates = [cat1Date, cat5Date, pviDate].filter(date => date !== null);
+
+                    // Find most recent date (exclude CAT 5 for hydraulic devices since it's not required)
+                    const dates = [cat1Date, isHydraulic ? null : cat5Date, pviDate].filter(date => date !== null);
                     const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
-                    
+
                     // Calculate days since most recent inspection
                     const today = new Date();
-                    const daysSinceInspection = mostRecentDate ? 
+                    const daysSinceInspection = mostRecentDate ?
                         Math.floor((today - mostRecentDate) / (1000 * 60 * 60 * 24)) : null;
-                    
+
                     // Format dates for display
                     const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
                     const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
                     const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
                     const mostRecentDisplay = mostRecentDate ? mostRecentDate.toLocaleDateString() : 'N/A';
-                    
-                    // Check if all dates are the same (CAT 1, CAT 5, PVI, and Latest Inspection)
-                    const allDatesAreSame = cat1Date && cat5Date && pviDate && mostRecentDate &&
-                        cat1Date.getTime() === cat5Date.getTime() &&
-                        cat5Date.getTime() === pviDate.getTime() &&
-                        pviDate.getTime() === mostRecentDate.getTime();
-                    
+
+                    // Check if all dates are the same (data quality alert)
+                    // For hydraulic devices, only check CAT 1 and PVI (CAT 5 not required)
+                    const allDatesAreSame = isHydraulic
+                        ? (cat1Date && pviDate && cat1Date.getTime() === pviDate.getTime())
+                        : (cat1Date && cat5Date && pviDate && mostRecentDate &&
+                            cat1Date.getTime() === cat5Date.getTime() &&
+                            cat5Date.getTime() === pviDate.getTime() &&
+                            pviDate.getTime() === mostRecentDate.getTime());
+
                     // Apply red styling if all dates are the same
                     const dateStyle = allDatesAreSame ? 'color: red; font-weight: bold;' : '';
                     
