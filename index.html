@@ -1034,6 +1034,7 @@
                                 <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No buildings labeled</div>
                             </div>
                             <button onclick="clearAllMonthLabels()" style="width: 100%; padding: 8px; background: var(--input-bg); color: #ff6b6b; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">Clear All Month Labels</button>
+                            <button id="hideMonthLabeledBtn" onclick="toggleHideMonthLabeled()" style="width: 100%; padding: 8px; margin-top: 6px; background: var(--input-bg); color: #17a2b8; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">🚫 Hide Month-Labeled Buildings</button>
                         </div>
                         
                         <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
@@ -9223,6 +9224,7 @@
         const MAP_MONTH_LABELS_KEY = 'elv3_map_month_labels';
         const MAP_ADDITIONAL_LOCATIONS_KEY = 'elv3_map_additional_locations';
         const MAP_SAVED_VIEWS_KEY = 'elv3_map_saved_views';
+        const MAP_HIDE_MONTH_LABELED_KEY = 'elv3_map_hide_month_labeled';
         
         // Additional locations storage
         let additionalLocationMarkers = [];
@@ -10228,6 +10230,10 @@
             }
             localStorage.setItem(MAP_MONTH_LABELS_KEY, JSON.stringify(labels));
             updateMonthLabelCounts();
+            // Refresh map so popup content reflects the saved month when reopened
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
         }
         
         function getMonthLabel(bin) {
@@ -10274,6 +10280,7 @@
                     totalEl.textContent = totalLabeled;
                 }
             }
+            updateHideMonthLabeledBtn();
         }
         
         function clearAllMonthLabels() {
@@ -10287,6 +10294,44 @@
             }
         }
         
+        function isHideMonthLabeledActive() {
+            return localStorage.getItem(MAP_HIDE_MONTH_LABELED_KEY) === 'true';
+        }
+
+        function applyMonthLabeledVisibility() {
+            if (!buildingMap || !mapMarkers.length) return;
+            const hide = isHideMonthLabeledActive();
+            const labels = getMapMonthLabels();
+            mapMarkers.forEach((marker, index) => {
+                const building = mapBuildingsData[index];
+                if (!building) return;
+                if (hide && labels[building.bin]) {
+                    if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
+                } else {
+                    if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                }
+            });
+        }
+
+        function toggleHideMonthLabeled() {
+            const newState = !isHideMonthLabeledActive();
+            localStorage.setItem(MAP_HIDE_MONTH_LABELED_KEY, String(newState));
+            updateHideMonthLabeledBtn();
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
+
+        function updateHideMonthLabeledBtn() {
+            const btn = document.getElementById('hideMonthLabeledBtn');
+            if (!btn) return;
+            const active = isHideMonthLabeledActive();
+            btn.textContent = active ? '👁️ Show Month-Labeled Buildings' : '🚫 Hide Month-Labeled Buildings';
+            btn.style.background = active ? '#17a2b8' : 'var(--input-bg)';
+            btn.style.color = active ? 'white' : '#17a2b8';
+            btn.style.borderColor = active ? '#17a2b8' : 'var(--input-border)';
+        }
+
         function filterByMonth(month) {
             if (!mapBuildingsData || mapBuildingsData.length === 0) return;
             
@@ -11441,6 +11486,10 @@
                     searchMapBuildings();
                 }
             }
+
+            // Apply hide-month-labeled toggle state and update its button
+            updateHideMonthLabeledBtn();
+            applyMonthLabeledVisibility();
 
             // Add legend with hide/show functionality
             const legend = L.control({ position: 'bottomright' });
