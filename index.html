@@ -10557,57 +10557,6 @@
             document.body.style.paddingRight = scrollbarWidth > 0 ? `${scrollbarWidth}px` : '0';
             modal._scrollY = scrollY;
 
-            // Track mouse activity to prevent accidental closes during resize
-            let mouseDownOnContainer = false;
-            let mouseMoved = false;
-            const mapContainer = document.getElementById('mapModalContainer');
-            
-            const handleContainerMouseDown = (e) => {
-                mouseDownOnContainer = true;
-                mouseMoved = false;
-            };
-            
-            const handleMouseMove = () => {
-                if (mouseDownOnContainer) {
-                    mouseMoved = true;
-                }
-            };
-            
-            const handleMouseUp = () => {
-                // Reset after a short delay to allow events to settle
-                setTimeout(() => {
-                    mouseDownOnContainer = false;
-                    mouseMoved = false;
-                }, 100);
-            };
-            
-            if (mapContainer) {
-                mapContainer.addEventListener('mousedown', handleContainerMouseDown);
-                document.addEventListener('mousemove', handleMouseMove);
-                document.addEventListener('mouseup', handleMouseUp);
-                modal._containerMouseDownHandler = handleContainerMouseDown;
-                modal._mouseMoveHandler = handleMouseMove;
-                modal._mouseUpHandler = handleMouseUp;
-            }
-            
-            // Add event listener to close modal when clicking on backdrop
-            // Use mousedown instead of click to avoid conflicts with resize
-            const handleBackdropClick = (e) => {
-                // Don't close if user was interacting with container (resizing, dragging, etc.)
-                if (mouseDownOnContainer || mouseMoved) {
-                    return;
-                }
-                
-                // Only close if clicking directly on the backdrop (modal itself), not on container or children
-                const mapContainer = document.getElementById('mapModalContainer');
-                if (e.target === modal && (!mapContainer || !mapContainer.contains(e.target))) {
-                    // Prevent the click from propagating
-                    e.stopPropagation();
-                    closeBuildingMap();
-                }
-            };
-            modal.addEventListener('mousedown', handleBackdropClick);
-            modal._backdropClickHandler = handleBackdropClick;
 
             // Add event listener to close modal on ESC key
             const handleEscKey = (e) => {
@@ -10640,28 +10589,9 @@
             window.scrollTo(0, scrollY);
             
             // Remove event listeners
-            if (modal._backdropClickHandler) {
-                modal.removeEventListener('mousedown', modal._backdropClickHandler);
-                delete modal._backdropClickHandler;
-            }
             if (modal._escKeyHandler) {
                 document.removeEventListener('keydown', modal._escKeyHandler);
                 delete modal._escKeyHandler;
-            }
-            if (modal._containerMouseDownHandler) {
-                const mapContainer = document.getElementById('mapModalContainer');
-                if (mapContainer) {
-                    mapContainer.removeEventListener('mousedown', modal._containerMouseDownHandler);
-                }
-                delete modal._containerMouseDownHandler;
-            }
-            if (modal._mouseMoveHandler) {
-                document.removeEventListener('mousemove', modal._mouseMoveHandler);
-                delete modal._mouseMoveHandler;
-            }
-            if (modal._mouseUpHandler) {
-                document.removeEventListener('mouseup', modal._mouseUpHandler);
-                delete modal._mouseUpHandler;
             }
             
             // Clean up map
@@ -10703,16 +10633,19 @@
                     const dx = ev.clientX - startX;
                     const dy = ev.clientY - startY;
                     if (direction === 'left') {
-                        const newWidth = Math.max(minWidth, Math.min(window.innerWidth * 0.98, startWidth - dx));
+                        container.style.maxWidth = 'none';
+                        const newWidth = Math.max(minWidth, Math.min(window.innerWidth, startWidth - dx));
                         container.style.width = newWidth + 'px';
                     } else if (direction === 'right') {
-                        const newWidth = Math.max(minWidth, Math.min(window.innerWidth * 0.98, startWidth + dx));
+                        container.style.maxWidth = 'none';
+                        const newWidth = Math.max(minWidth, Math.min(window.innerWidth, startWidth + dx));
                         container.style.width = newWidth + 'px';
                     } else if (direction === 'bottom') {
                         const newHeight = Math.max(minHeight, Math.min(window.innerHeight * 0.95, startHeight + dy));
                         container.style.height = newHeight + 'px';
                     } else if (direction === 'corner') {
-                        const newWidth = Math.max(minWidth, Math.min(window.innerWidth * 0.98, startWidth + dx));
+                        container.style.maxWidth = 'none';
+                        const newWidth = Math.max(minWidth, Math.min(window.innerWidth, startWidth + dx));
                         const newHeight = Math.max(minHeight, Math.min(window.innerHeight * 0.95, startHeight + dy));
                         container.style.width = newWidth + 'px';
                         container.style.height = newHeight + 'px';
