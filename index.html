@@ -956,7 +956,7 @@
 
         <!-- Building Map Modal -->
         <div id="buildingMapModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10001; justify-content: center; align-items: center;">
-            <div id="mapModalContainer" style="background: var(--card-bg); border-radius: 12px; width: 85%; max-width: 1400px; height: 80%; min-width: 400px; min-height: 400px; max-height: 95vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid var(--input-border); overflow: hidden; resize: both;">
+            <div id="mapModalContainer" style="background: var(--card-bg); border-radius: 12px; width: 85%; max-width: 1400px; height: 80%; min-width: 400px; min-height: 400px; max-height: 95vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid var(--input-border); overflow: hidden; position: relative;">
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 2px solid var(--input-border); background: var(--panel-bg); flex-wrap: wrap; gap: 10px;">
                     <h3 style="margin: 0; color: var(--header-color); font-size: 1.2em;">📍 Building Locations</h3>
                     <div style="display: flex; align-items: center; gap: 10px; flex: 1; max-width: 450px; min-width: 200px;">
@@ -1086,8 +1086,13 @@
                 </div>
                 <div style="padding: 10px 20px; background: var(--panel-bg); border-top: 1px solid var(--input-border); font-size: 0.85em; color: var(--text-color); display: flex; justify-content: space-between; align-items: center;">
                     <span style="opacity: 0.7;">Click a marker to view building details • Use ⭐ to favorite • Use 👁️ to hide</span>
-                    <span style="opacity: 0.5; font-size: 0.8em;">↘ Drag corner to resize</span>
+                    <span style="opacity: 0.5; font-size: 0.8em;">↔ Drag edges or corner to resize</span>
                 </div>
+                <!-- Resize handles -->
+                <div class="map-resize-handle map-resize-left" id="mapResizeLeft"></div>
+                <div class="map-resize-handle map-resize-right" id="mapResizeRight"></div>
+                <div class="map-resize-handle map-resize-bottom" id="mapResizeBottom"></div>
+                <div class="map-resize-handle map-resize-corner" id="mapResizeCorner"></div>
             </div>
         </div>
 
@@ -10536,6 +10541,9 @@
             const modal = document.getElementById('buildingMapModal');
             modal.style.display = 'flex';
 
+            // Initialize resize handles (safe to call multiple times)
+            initMapResizeHandles();
+
             // Prevent body scrolling when map modal is open
             // Compensate for scrollbar disappearance to prevent layout shift on large monitors
             const scrollY = window.scrollY;
@@ -10674,6 +10682,61 @@
             // Clear additional location input
             const additionalInput = document.getElementById('additionalLocationInput');
             if (additionalInput) additionalInput.value = '';
+        }
+
+        function initMapResizeHandles() {
+            const container = document.getElementById('mapModalContainer');
+            if (!container || container._resizeHandlesInit) return;
+            container._resizeHandlesInit = true;
+
+            function startResize(e, direction) {
+                e.preventDefault();
+                e.stopPropagation();
+                const startX = e.clientX;
+                const startY = e.clientY;
+                const startWidth = container.offsetWidth;
+                const startHeight = container.offsetHeight;
+                const minWidth = 400;
+                const minHeight = 400;
+
+                function onMove(ev) {
+                    const dx = ev.clientX - startX;
+                    const dy = ev.clientY - startY;
+                    if (direction === 'left') {
+                        const newWidth = Math.max(minWidth, Math.min(window.innerWidth * 0.98, startWidth - dx));
+                        container.style.width = newWidth + 'px';
+                    } else if (direction === 'right') {
+                        const newWidth = Math.max(minWidth, Math.min(window.innerWidth * 0.98, startWidth + dx));
+                        container.style.width = newWidth + 'px';
+                    } else if (direction === 'bottom') {
+                        const newHeight = Math.max(minHeight, Math.min(window.innerHeight * 0.95, startHeight + dy));
+                        container.style.height = newHeight + 'px';
+                    } else if (direction === 'corner') {
+                        const newWidth = Math.max(minWidth, Math.min(window.innerWidth * 0.98, startWidth + dx));
+                        const newHeight = Math.max(minHeight, Math.min(window.innerHeight * 0.95, startHeight + dy));
+                        container.style.width = newWidth + 'px';
+                        container.style.height = newHeight + 'px';
+                    }
+                }
+
+                function onUp() {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                }
+
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            }
+
+            const leftHandle = document.getElementById('mapResizeLeft');
+            const rightHandle = document.getElementById('mapResizeRight');
+            const bottomHandle = document.getElementById('mapResizeBottom');
+            const cornerHandle = document.getElementById('mapResizeCorner');
+
+            if (leftHandle) leftHandle.addEventListener('mousedown', (e) => startResize(e, 'left'));
+            if (rightHandle) rightHandle.addEventListener('mousedown', (e) => startResize(e, 'right'));
+            if (bottomHandle) bottomHandle.addEventListener('mousedown', (e) => startResize(e, 'bottom'));
+            if (cornerHandle) cornerHandle.addEventListener('mousedown', (e) => startResize(e, 'corner'));
         }
 
         function toggleMapControlsPanel() {
