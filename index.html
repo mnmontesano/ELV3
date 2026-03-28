@@ -976,9 +976,15 @@
                             <button onclick="addAdditionalLocation()" title="Add location" style="background: var(--input-bg); border: none; border-left: 1px solid var(--input-border); cursor: pointer; padding: 8px 12px; color: var(--text-color); font-size: 1em; display: flex; align-items: center;">➕</button>
                         </div>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 15px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
                         <span id="mapSearchResultCount" style="color: #4CAF50; font-size: 0.85em; display: none;"></span>
                         <span id="mapBuildingCount" style="color: var(--text-color); font-size: 0.9em;"></span>
+                        <button onclick="saveCurrentMapView()" title="Save current map view" style="background: #6f42c1; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: white; font-size: 0.85em; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                            <span>💾</span> <span>Save</span>
+                        </button>
+                        <button onclick="openSavedMapViewPicker()" title="Load a saved map view" style="background: #17a2b8; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: white; font-size: 0.85em; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                            <span>📂</span> <span>Load</span>
+                        </button>
                         <button onclick="toggleMapControlsPanel()" style="background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 12px; cursor: pointer; color: var(--text-color); font-size: 0.85em; display: flex; align-items: center; gap: 6px;">
                             <span>⚙️</span> <span style="display: none;" class="controls-btn-text">Controls</span>
                         </button>
@@ -1048,30 +1054,6 @@
                             <button onclick="clearAllAdditionalLocations()" style="width: 100%; padding: 8px; background: var(--input-bg); color: #00bcd4; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">Clear All Additional Locations</button>
                         </div>
 
-                        <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
-                            <h4 style="margin: 0 0 12px 0; color: var(--header-color); font-size: 1em; display: flex; align-items: center; gap: 8px;">
-                                <span style="color: #6f42c1;">💾</span> Saved Views (<span id="mapSavedViewsCount">0</span>)
-                            </h4>
-                            <p style="font-size: 11px; opacity: 0.7; margin: 0 0 10px 0;">Save the current map state and load it later</p>
-                            <div style="display: flex; gap: 6px; margin-bottom: 8px;">
-                                <input id="mapViewNameInput" type="text" placeholder="View name"
-                                       style="flex: 1; padding: 7px 8px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 12px;">
-                                <button onclick="saveCurrentMapView()" style="padding: 7px 10px; background: #6f42c1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Save</button>
-                            </div>
-                            <select id="savedMapViewsSelect" onchange="refreshSavedMapViewsUI(this.value)" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 12px; margin-bottom: 8px;">
-                                <option value="">No saved views</option>
-                            </select>
-                            <div style="display: flex; gap: 6px; margin-bottom: 8px;">
-                                <button onclick="loadSelectedMapView()" style="flex: 1; padding: 8px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Load</button>
-                                <button onclick="deleteSelectedMapView()" style="flex: 1; padding: 8px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Delete</button>
-                            </div>
-                            <div style="display: flex; gap: 6px; margin-bottom: 8px;">
-                                <button onclick="exportSelectedMapView()" style="flex: 1; padding: 8px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Export</button>
-                                <button onclick="triggerMapViewImport()" style="flex: 1; padding: 8px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Import</button>
-                            </div>
-                            <div id="mapSavedViewMeta" style="font-size: 11px; opacity: 0.7;">No view selected</div>
-                        </div>
-                        
                         <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
                             <h4 style="margin: 0 0 10px 0; color: var(--header-color); font-size: 0.9em;">💡 Tips</h4>
                             <ul style="font-size: 11px; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.6;">
@@ -9410,9 +9392,16 @@
                 return;
             }
 
-            const nameInput = document.getElementById('mapViewNameInput');
-            const rawName = nameInput ? nameInput.value.trim() : '';
             const defaultName = `Map View ${new Date().toLocaleString()}`;
+            const nameInput = document.getElementById('mapViewNameInput');
+            let rawName;
+            if (nameInput) {
+                rawName = nameInput.value.trim();
+            } else {
+                const prompted = prompt('Enter a name for this map view:', defaultName);
+                if (prompted === null) return;
+                rawName = prompted.trim();
+            }
             const viewName = rawName || defaultName;
             const additionalLocations = getAdditionalLocations();
             const scopedMonthLabels = collectScopedMonthLabels(
@@ -9457,7 +9446,6 @@
 
             setSavedMapViews(views);
             refreshSavedMapViewsUI(payload.id);
-            if (nameInput) nameInput.value = '';
             showMapNotification(`Saved map view: ${viewName}`, '#6f42c1');
         }
 
