@@ -942,9 +942,9 @@
                     📍 View on Map
                 </button>
                 <button id="loadMapViewButton" 
-                        onclick="openSavedMapViewPicker()" 
+                        onclick="triggerMapViewLoad()" 
                         style="padding: 12px 20px; background: #6f42c1; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
-                    📂 Load Saved Map View
+                    📂 Load Map View from File
                 </button>
             </div>
 
@@ -979,10 +979,10 @@
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span id="mapSearchResultCount" style="color: #4CAF50; font-size: 0.85em; display: none;"></span>
                         <span id="mapBuildingCount" style="color: var(--text-color); font-size: 0.9em;"></span>
-                        <button onclick="saveCurrentMapView()" title="Save current map view" style="background: #6f42c1; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: white; font-size: 0.85em; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                        <button onclick="downloadMapViewFile()" title="Download map view as file" style="background: #6f42c1; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: white; font-size: 0.85em; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
                             <span>💾</span> <span>Save</span>
                         </button>
-                        <button onclick="openSavedMapViewPicker()" title="Load a saved map view" style="background: #17a2b8; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: white; font-size: 0.85em; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                        <button onclick="triggerMapViewLoad()" title="Load map view from file" style="background: #17a2b8; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: white; font-size: 0.85em; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
                             <span>📂</span> <span>Load</span>
                         </button>
                         <button onclick="toggleMapControlsPanel()" style="background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 12px; cursor: pointer; color: var(--text-color); font-size: 0.85em; display: flex; align-items: center; gap: 6px;">
@@ -1063,6 +1063,7 @@
                                 <li>Use 📅 dropdown to assign a month</li>
                                 <li>Favorited buildings turn purple</li>
                                 <li>Add custom locations with the ➕ button</li>
+                                <li><strong>Save your work</strong> — data is not kept between sessions</li>
                             </ul>
                         </div>
                     </div>
@@ -1753,9 +1754,9 @@
                         style="padding: 12px 20px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
                     📍 View on Map
                 </button>
-                <button onclick="openSavedMapViewPicker()" 
+                <button onclick="triggerMapViewLoad()" 
                         style="padding: 12px 20px; background: #6f42c1; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
-                    📂 Load Saved Map View
+                    📂 Load Map View from File
                 </button>
             </div>
 
@@ -9210,99 +9211,22 @@
             return result;
         }
 
-        // Favorites, Hidden Buildings, Month Labels, and Additional Locations Storage
-        const MAP_FAVORITES_KEY = 'elv3_map_favorites';
-        const MAP_HIDDEN_KEY = 'elv3_map_hidden';
-        const MAP_MONTH_LABELS_KEY = 'elv3_map_month_labels';
-        const MAP_ADDITIONAL_LOCATIONS_KEY = 'elv3_map_additional_locations';
-        const MAP_SAVED_VIEWS_KEY = 'elv3_map_saved_views';
-        const MAP_HIDE_MONTH_LABELED_KEY = 'elv3_map_hide_month_labeled';
-        
-        // Additional locations storage
+        // In-memory map state (no localStorage — persisted only via file save/load)
+        let mapMonthLabels = {};
+        let mapFavorites = {};
+        let mapHidden = {};
+        let mapAdditionalLocations = [];
+        let mapHideMonthLabeled = false;
+
         let additionalLocationMarkers = [];
         let pendingLoadedMapViewState = null;
-        let mapViewImportMode = 'import-only';
         
         function getAdditionalLocations() {
-            try {
-                return JSON.parse(localStorage.getItem(MAP_ADDITIONAL_LOCATIONS_KEY)) || [];
-            } catch (e) {
-                return [];
-            }
+            return mapAdditionalLocations;
         }
         
         function setAdditionalLocations(locations) {
-            try {
-                localStorage.setItem(MAP_ADDITIONAL_LOCATIONS_KEY, JSON.stringify(locations));
-            } catch (e) {
-                console.error('Error saving additional locations:', e);
-            }
-        }
-
-        function getSavedMapViews() {
-            try {
-                const stored = localStorage.getItem(MAP_SAVED_VIEWS_KEY);
-                const views = stored ? JSON.parse(stored) : [];
-                return Array.isArray(views) ? views : [];
-            } catch (e) {
-                console.error('Error reading saved map views:', e);
-                return [];
-            }
-        }
-
-        function setSavedMapViews(views) {
-            try {
-                localStorage.setItem(MAP_SAVED_VIEWS_KEY, JSON.stringify(views));
-            } catch (e) {
-                console.error('Error saving map views:', e);
-            }
-        }
-
-        function formatSavedViewDate(timestamp) {
-            if (!timestamp) return 'Unknown date';
-            try {
-                return new Date(timestamp).toLocaleString();
-            } catch (e) {
-                return 'Unknown date';
-            }
-        }
-
-        function refreshSavedMapViewsUI(selectedId) {
-            const views = getSavedMapViews().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-            const select = document.getElementById('savedMapViewsSelect');
-            const countEl = document.getElementById('mapSavedViewsCount');
-            const metaEl = document.getElementById('mapSavedViewMeta');
-            const resolvedSelectedId = selectedId || (select ? select.value : '');
-
-            if (countEl) {
-                countEl.textContent = views.length;
-            }
-
-            if (select) {
-                if (views.length === 0) {
-                    select.innerHTML = '<option value="">No saved views</option>';
-                } else {
-                    select.innerHTML = views.map(view => `
-                        <option value="${view.id}">
-                            ${view.name} (${Object.keys((view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups) || {}).length} buildings)
-                        </option>
-                    `).join('');
-                    if (resolvedSelectedId && views.some(v => v.id === resolvedSelectedId)) {
-                        select.value = resolvedSelectedId;
-                    }
-                }
-            }
-
-            if (metaEl) {
-                const activeId = select ? select.value : resolvedSelectedId;
-                const selectedView = views.find(v => v.id === activeId);
-                if (selectedView) {
-                    const buildingCount = Object.keys((selectedView.lastBulkSearchResults && selectedView.lastBulkSearchResults.binGroups) || {}).length;
-                    metaEl.textContent = `Saved ${formatSavedViewDate(selectedView.updatedAt)} • ${buildingCount} buildings`;
-                } else {
-                    metaEl.textContent = 'No view selected';
-                }
-            }
+            mapAdditionalLocations = Array.isArray(locations) ? locations : [];
         }
 
         function getCurrentMapStateForSave() {
@@ -9385,24 +9309,13 @@
             return labels;
         }
 
-        function saveCurrentMapView() {
+        function downloadMapViewFile() {
             const hasResults = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
             if (!hasResults) {
-                alert('No map data to save. Run a bulk lookup or load a saved view first.');
+                alert('No map data to save. Run a bulk lookup or load a save file first.');
                 return;
             }
 
-            const defaultName = `Map View ${new Date().toLocaleString()}`;
-            const nameInput = document.getElementById('mapViewNameInput');
-            let rawName;
-            if (nameInput) {
-                rawName = nameInput.value.trim();
-            } else {
-                const prompted = prompt('Enter a name for this map view:', defaultName);
-                if (prompted === null) return;
-                rawName = prompted.trim();
-            }
-            const viewName = rawName || defaultName;
             const additionalLocations = getAdditionalLocations();
             const scopedMonthLabels = collectScopedMonthLabels(
                 window.lastBulkSearchResults.binGroups || {},
@@ -9415,9 +9328,9 @@
                 scopedMonthLabels
             );
 
-            const payload = {
+            const view = {
                 id: `view_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
-                name: viewName,
+                name: `Map View ${new Date().toLocaleString()}`,
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
                 bulkDeviceNumbers: (document.getElementById('bulkDeviceNumbers') || {}).value || '',
@@ -9430,23 +9343,20 @@
                 mapState: getCurrentMapStateForSave()
             };
 
-            const views = getSavedMapViews();
-            const existingIndex = views.findIndex(view => view.name.toLowerCase() === viewName.toLowerCase());
+            const exportPayload = sanitizeMapViewForExport(view);
+            const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
 
-            if (existingIndex >= 0) {
-                if (!confirm(`A saved view named "${viewName}" already exists. Overwrite it?`)) {
-                    return;
-                }
-                payload.id = views[existingIndex].id;
-                payload.createdAt = views[existingIndex].createdAt || payload.createdAt;
-                views[existingIndex] = payload;
-            } else {
-                views.push(payload);
-            }
+            const fileName = `map-view-${new Date().toISOString().slice(0, 10)}.json`;
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
 
-            setSavedMapViews(views);
-            refreshSavedMapViewsUI(payload.id);
-            showMapNotification(`Saved map view: ${viewName}`, '#6f42c1');
+            showMapNotification('Map view saved to file', '#6f42c1');
         }
 
         function renderLoadedMapViewSummary(view) {
@@ -9460,132 +9370,15 @@
             resultDiv.innerHTML = `
                 <div style="background: var(--input-bg); padding: 15px; border-radius: 8px; border: 1px solid var(--input-border);">
                     <div style="font-size: 1.05em; font-weight: 600; color: var(--header-color); margin-bottom: 8px;">
-                        Loaded Saved Map View: ${view.name}
+                        Loaded Map View: ${view.name}
                     </div>
                     <div style="font-size: 0.92em; color: var(--text-color); line-height: 1.6;">
-                        Updated: ${formatSavedViewDate(view.updatedAt)}<br>
                         Buildings: ${buildingCount}<br>
                         Devices: ${deviceCount}
                     </div>
                 </div>
             `;
             resultDiv.style.display = 'block';
-        }
-
-        function loadSavedMapView(viewId, openMapIfClosed = true) {
-            const views = getSavedMapViews();
-            const view = views.find(v => v.id === viewId);
-            if (!view) {
-                alert('Saved view not found.');
-                return;
-            }
-
-            window.lastBulkSearchResults = view.lastBulkSearchResults || null;
-            setMapFavorites(view.favorites || {});
-            setMapHidden(view.hidden || {});
-            const restoredMonthLabels = (Array.isArray(view.monthAssignments) && view.monthAssignments.length > 0)
-                ? monthLabelsFromAssignments(view.monthAssignments)
-                : (view.monthLabels || {});
-            localStorage.setItem(MAP_MONTH_LABELS_KEY, JSON.stringify(restoredMonthLabels));
-            setAdditionalLocations(view.additionalLocations || []);
-
-            const textarea = document.getElementById('bulkDeviceNumbers');
-            if (textarea) {
-                textarea.value = view.bulkDeviceNumbers || '';
-            }
-            const mapTabTextarea = document.getElementById('mapTabBulkDeviceNumbers');
-            if (mapTabTextarea) {
-                mapTabTextarea.value = view.bulkDeviceNumbers || '';
-            }
-
-            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                const exportBtn = document.getElementById('exportButton');
-                const mapBtn = document.getElementById('mapButton');
-                if (exportBtn) exportBtn.style.display = 'block';
-                if (mapBtn) mapBtn.style.display = 'block';
-                const mapTabExportBtn = document.getElementById('mapTabExportButton');
-                const mapTabMapBtn = document.getElementById('mapTabMapButton');
-                if (mapTabExportBtn) mapTabExportBtn.style.display = 'block';
-                if (mapTabMapBtn) mapTabMapBtn.style.display = 'block';
-                renderLoadedMapViewSummary(view);
-            }
-
-            pendingLoadedMapViewState = view.mapState || null;
-
-            const modal = document.getElementById('buildingMapModal');
-            const isMapOpen = modal && modal.style.display === 'flex';
-            if (isMapOpen && buildingMap && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                initBuildingMap(window.lastBulkSearchResults.binGroups, false);
-            } else if (openMapIfClosed && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                showBuildingMap();
-            }
-
-            refreshSavedMapViewsUI(viewId);
-            showMapNotification(`Loaded map view: ${view.name}`, '#17a2b8');
-        }
-
-        function loadSelectedMapView() {
-            const select = document.getElementById('savedMapViewsSelect');
-            if (!select || !select.value) {
-                alert('Select a saved view first.');
-                return;
-            }
-            loadSavedMapView(select.value, true);
-        }
-
-        function deleteSelectedMapView() {
-            const select = document.getElementById('savedMapViewsSelect');
-            if (!select || !select.value) {
-                alert('Select a saved view first.');
-                return;
-            }
-
-            const views = getSavedMapViews();
-            const view = views.find(v => v.id === select.value);
-            if (!view) {
-                alert('Saved view not found.');
-                refreshSavedMapViewsUI();
-                return;
-            }
-
-            if (!confirm(`Delete saved view "${view.name}"?`)) {
-                return;
-            }
-
-            const remaining = views.filter(v => v.id !== view.id);
-            setSavedMapViews(remaining);
-            refreshSavedMapViewsUI();
-            showMapNotification(`Deleted map view: ${view.name}`, '#ff6b6b');
-        }
-
-        function openSavedMapViewPicker() {
-            const views = getSavedMapViews().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-            if (views.length === 0) {
-                const importWhenEmpty = confirm('No local saved map views found. Do you want to load a downloaded map view file?');
-                if (importWhenEmpty) {
-                    triggerMapViewImport('import-and-load');
-                }
-                return;
-            }
-
-            const optionsText = views
-                .map((view, index) => `${index + 1}. ${view.name} (${formatSavedViewDate(view.updatedAt)})`)
-                .join('\n');
-            const selection = prompt(`Load which saved map view?\n\n${optionsText}\n\nEnter a number, or type F to load a downloaded file:`);
-            if (!selection) return;
-
-            if (selection.trim().toUpperCase() === 'F') {
-                triggerMapViewImport('import-and-load');
-                return;
-            }
-
-            const index = parseInt(selection, 10) - 1;
-            if (Number.isNaN(index) || index < 0 || index >= views.length) {
-                alert('Invalid selection.');
-                return;
-            }
-
-            loadSavedMapView(views[index].id, true);
         }
 
         function sanitizeMapViewForExport(view) {
@@ -9611,46 +9404,9 @@
             };
         }
 
-        function exportSelectedMapView() {
-            const select = document.getElementById('savedMapViewsSelect');
-            if (!select || !select.value) {
-                alert('Select a saved view first.');
-                return;
-            }
-
-            const views = getSavedMapViews();
-            const view = views.find(v => v.id === select.value);
-            if (!view) {
-                alert('Saved view not found.');
-                refreshSavedMapViewsUI();
-                return;
-            }
-
-            const exportPayload = sanitizeMapViewForExport(view);
-            const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-
-            const safeName = (view.name || 'map-view')
-                .replace(/[^a-z0-9]+/gi, '-')
-                .replace(/^-+|-+$/g, '')
-                .toLowerCase() || 'map-view';
-            const fileName = `${safeName}-${new Date().toISOString().slice(0, 10)}.json`;
-
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-
-            showMapNotification(`Exported map view: ${view.name}`, '#4CAF50');
-        }
-
-        function triggerMapViewImport(mode = 'import-only') {
-            const fileInput = document.getElementById('mapViewImportInput');
+        function triggerMapViewLoad() {
+            const fileInput = document.getElementById('mapViewImportInput') || document.getElementById('mapTabMapViewImportInput');
             if (!fileInput) return;
-            mapViewImportMode = mode;
             fileInput.value = '';
             fileInput.click();
         }
@@ -9667,7 +9423,7 @@
             const now = Date.now();
             return {
                 id: source.id || `view_${now}_${Math.floor(Math.random() * 100000)}`,
-                name: source.name || `Imported View ${new Date(now).toLocaleString()}`,
+                name: source.name || `Loaded View ${new Date(now).toLocaleString()}`,
                 createdAt: source.createdAt || now,
                 updatedAt: now,
                 bulkDeviceNumbers: source.bulkDeviceNumbers || '',
@@ -9681,6 +9437,44 @@
             };
         }
 
+        function restoreMapViewState(view) {
+            window.lastBulkSearchResults = view.lastBulkSearchResults || null;
+            setMapFavorites(view.favorites || {});
+            setMapHidden(view.hidden || {});
+            const restoredMonthLabels = (Array.isArray(view.monthAssignments) && view.monthAssignments.length > 0)
+                ? monthLabelsFromAssignments(view.monthAssignments)
+                : (view.monthLabels || {});
+            mapMonthLabels = restoredMonthLabels;
+            setAdditionalLocations(view.additionalLocations || []);
+
+            const textarea = document.getElementById('bulkDeviceNumbers');
+            if (textarea) textarea.value = view.bulkDeviceNumbers || '';
+            const mapTabTextarea = document.getElementById('mapTabBulkDeviceNumbers');
+            if (mapTabTextarea) mapTabTextarea.value = view.bulkDeviceNumbers || '';
+
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                const exportBtn = document.getElementById('exportButton');
+                const mapBtn = document.getElementById('mapButton');
+                if (exportBtn) exportBtn.style.display = 'block';
+                if (mapBtn) mapBtn.style.display = 'block';
+                const mapTabExportBtn = document.getElementById('mapTabExportButton');
+                const mapTabMapBtn = document.getElementById('mapTabMapButton');
+                if (mapTabExportBtn) mapTabExportBtn.style.display = 'block';
+                if (mapTabMapBtn) mapTabMapBtn.style.display = 'block';
+                renderLoadedMapViewSummary(view);
+            }
+
+            pendingLoadedMapViewState = view.mapState || null;
+
+            const modal = document.getElementById('buildingMapModal');
+            const isMapOpen = modal && modal.style.display === 'flex';
+            if (isMapOpen && buildingMap && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, false);
+            } else if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                showBuildingMap();
+            }
+        }
+
         async function handleMapViewImport(event) {
             const file = event && event.target && event.target.files ? event.target.files[0] : null;
             if (!file) return;
@@ -9688,43 +9482,14 @@
             try {
                 const text = await file.text();
                 const parsed = JSON.parse(text);
-                const importedView = normalizeImportedMapView(parsed);
-
-                const views = getSavedMapViews();
-                const existingByName = views.find(v => (v.name || '').toLowerCase() === importedView.name.toLowerCase());
-                const existingById = views.find(v => v.id === importedView.id);
-                const existing = existingById || existingByName;
-
-                if (existing) {
-                    if (!confirm(`A saved view named "${existing.name}" already exists. Overwrite it with imported data?`)) {
-                        return;
-                    }
-                    importedView.id = existing.id;
-                    importedView.createdAt = existing.createdAt || importedView.createdAt;
-                    const updated = views.map(v => v.id === existing.id ? importedView : v);
-                    setSavedMapViews(updated);
-                } else {
-                    views.push(importedView);
-                    setSavedMapViews(views);
-                }
-
-                refreshSavedMapViewsUI(importedView.id);
-                showMapNotification(`Imported map view: ${importedView.name}`, '#1a73e8');
-
-                if (mapViewImportMode === 'import-and-load') {
-                    loadSavedMapView(importedView.id, true);
-                }
+                const view = normalizeImportedMapView(parsed);
+                restoreMapViewState(view);
+                showMapNotification(`Loaded map view from file`, '#17a2b8');
             } catch (error) {
-                console.error('Error importing map view:', error);
-                alert(`Unable to import file: ${error.message || 'Invalid JSON file.'}`);
-            } finally {
-                mapViewImportMode = 'import-only';
+                console.error('Error loading map view file:', error);
+                alert(`Unable to load file: ${error.message || 'Invalid JSON file.'}`);
             }
         }
-
-        document.addEventListener('DOMContentLoaded', function() {
-            refreshSavedMapViewsUI();
-        });
         
         async function addAdditionalLocation() {
             const input = document.getElementById('additionalLocationInput');
@@ -10210,33 +9975,25 @@
             }
         }
         
-        // Month label functions
+        // Month label functions (in-memory)
         function getMapMonthLabels() {
-            try {
-                return JSON.parse(localStorage.getItem(MAP_MONTH_LABELS_KEY)) || {};
-            } catch (e) {
-                return {};
-            }
+            return mapMonthLabels;
         }
         
         function setMonthLabel(bin, month) {
-            const labels = getMapMonthLabels();
             if (month === '' || month === null) {
-                delete labels[bin];
+                delete mapMonthLabels[bin];
             } else {
-                labels[bin] = month;
+                mapMonthLabels[bin] = month;
             }
-            localStorage.setItem(MAP_MONTH_LABELS_KEY, JSON.stringify(labels));
             updateMonthLabelCounts();
-            // Refresh map so popup content reflects the saved month when reopened
             if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
                 initBuildingMap(window.lastBulkSearchResults.binGroups, true);
             }
         }
         
         function getMonthLabel(bin) {
-            const labels = getMapMonthLabels();
-            return labels[bin] || '';
+            return mapMonthLabels[bin] || '';
         }
         
         function updateMonthLabelCounts() {
@@ -10283,9 +10040,8 @@
         
         function clearAllMonthLabels() {
             if (confirm('Clear all month labels from all buildings?')) {
-                localStorage.setItem(MAP_MONTH_LABELS_KEY, JSON.stringify({}));
+                mapMonthLabels = {};
                 updateMonthLabelCounts();
-                // Refresh map to update markers
                 if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
                     initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                 }
@@ -10293,7 +10049,7 @@
         }
         
         function isHideMonthLabeledActive() {
-            return localStorage.getItem(MAP_HIDE_MONTH_LABELED_KEY) === 'true';
+            return mapHideMonthLabeled;
         }
 
         function applyMonthLabeledVisibility() {
@@ -10312,8 +10068,7 @@
         }
 
         function toggleHideMonthLabeled() {
-            const newState = !isHideMonthLabeledActive();
-            localStorage.setItem(MAP_HIDE_MONTH_LABELED_KEY, String(newState));
+            mapHideMonthLabeled = !mapHideMonthLabeled;
             updateHideMonthLabeledBtn();
             if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
                 initBuildingMap(window.lastBulkSearchResults.binGroups, true);
@@ -10400,39 +10155,19 @@
         }
 
         function getMapFavorites() {
-            try {
-                const stored = localStorage.getItem(MAP_FAVORITES_KEY);
-                return stored ? JSON.parse(stored) : {};
-            } catch (e) {
-                console.error('Error reading map favorites:', e);
-                return {};
-            }
+            return mapFavorites;
         }
 
         function setMapFavorites(favorites) {
-            try {
-                localStorage.setItem(MAP_FAVORITES_KEY, JSON.stringify(favorites));
-            } catch (e) {
-                console.error('Error saving map favorites:', e);
-            }
+            mapFavorites = favorites && typeof favorites === 'object' ? favorites : {};
         }
 
         function getMapHidden() {
-            try {
-                const stored = localStorage.getItem(MAP_HIDDEN_KEY);
-                return stored ? JSON.parse(stored) : {};
-            } catch (e) {
-                console.error('Error reading hidden buildings:', e);
-                return {};
-            }
+            return mapHidden;
         }
 
         function setMapHidden(hidden) {
-            try {
-                localStorage.setItem(MAP_HIDDEN_KEY, JSON.stringify(hidden));
-            } catch (e) {
-                console.error('Error saving hidden buildings:', e);
-            }
+            mapHidden = hidden && typeof hidden === 'object' ? hidden : {};
         }
 
         function toggleMapFavorite(bin, address) {
@@ -10570,8 +10305,6 @@
                 alert('No data to display on map. Please perform a search first.');
                 return;
             }
-
-            refreshSavedMapViewsUI();
 
             const modal = document.getElementById('buildingMapModal');
             modal.style.display = 'flex';
@@ -11496,8 +11229,7 @@
                 // Use CSS variables for theme-aware styling
                 div.style.cssText = 'background: var(--panel-bg, #2c2c2c); padding: 10px 12px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 11px; line-height: 1.8; border: 1px solid var(--input-border, #444);';
                 
-                // Check if legend should be hidden from localStorage
-                const isLegendHidden = localStorage.getItem('mapLegendHidden') === 'true';
+                const isLegendHidden = false;
                 
                 div.innerHTML = `
                     <div id="mapLegendContent" style="display: ${isLegendHidden ? 'none' : 'block'};">
@@ -11536,9 +11268,6 @@
                 const isHidden = content.style.display === 'none';
                 content.style.display = isHidden ? 'block' : 'none';
                 collapsed.style.display = isHidden ? 'none' : 'block';
-                
-                // Save preference to localStorage
-                localStorage.setItem('mapLegendHidden', !isHidden);
             }
         }
         
