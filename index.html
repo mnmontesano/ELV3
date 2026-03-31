@@ -3085,19 +3085,22 @@
                     const hasPermits = permitResult.success && permitResult.permits && permitResult.permits.length > 0;
                     const permitData = permitResult;
 
-                    // Determine if device is hydraulic (CAT 5 not required)
+                    // Determine if device is hydraulic or wheelchair lift (CAT 5 not required)
                     const deviceTypeLookup = (device.device_type || '').toUpperCase();
                     const machineTypeLookup = (deviceInfo?.machine_type || '').toUpperCase();
+                    const deviceNumberLookup = (device.device_number || deviceNumber || '').toUpperCase();
                     const isHydraulic = deviceTypeLookup.includes('HYDRAULIC') || deviceTypeLookup.includes('HYDRO') ||
                                         machineTypeLookup.includes('HYDRAULIC') || machineTypeLookup.includes('HYDRO');
+                    const isWheelchairLiftLookup = deviceTypeLookup.includes('WHEELCHAIR') || deviceNumberLookup.includes('W');
+                    const cat5NotRequiredLookup = isHydraulic || isWheelchairLiftLookup;
 
                     // Format dates and calculate most recent inspection
                     const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
                     const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
                     const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
 
-                    // Find most recent date (exclude CAT 5 for hydraulic devices since it's not required)
-                    const dates = [cat1Date, isHydraulic ? null : cat5Date, pviDate].filter(date => date !== null);
+                    // Find most recent date (exclude CAT 5 for hydraulic/wheelchair lift devices since it's not required)
+                    const dates = [cat1Date, cat5NotRequiredLookup ? null : cat5Date, pviDate].filter(date => date !== null);
                     const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
 
                     // Calculate days since most recent inspection
@@ -3107,13 +3110,13 @@
 
                     // Format dates for display
                     const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
-                    const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
+                    const cat5Display = cat5NotRequiredLookup ? 'N/A' : (cat5Date ? cat5Date.toLocaleDateString() : 'N/A');
                     const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
                     const mostRecentDisplay = mostRecentDate ? mostRecentDate.toLocaleDateString() : 'N/A';
 
                     // Check if all dates are the same (data quality alert)
-                    // For hydraulic devices, only check CAT 1 and PVI (CAT 5 not required)
-                    const allDatesAreSame = isHydraulic
+                    // For hydraulic/wheelchair lift devices, only check CAT 1 and PVI (CAT 5 not required)
+                    const allDatesAreSame = cat5NotRequiredLookup
                         ? (cat1Date && pviDate && cat1Date.getTime() === pviDate.getTime())
                         : (cat1Date && cat5Date && pviDate && mostRecentDate &&
                             cat1Date.getTime() === cat5Date.getTime() &&
@@ -3275,7 +3278,7 @@
                                 </div>
                                 <div style="margin-bottom: 10px;">
                                     <strong style="color: var(--header-color); display: inline-block; width: 120px;">Latest CAT 5:</strong> 
-                                    ${isHydraulic ? '<span style="color: #888; font-style: italic;">Not required (Hydraulic)</span>' : '<span style="' + dateStyle + '">' + cat5Display + '</span>'}
+                                    ${cat5NotRequiredLookup ? '<span style="color: #888; font-style: italic;">Not required (' + (isHydraulic ? 'Hydraulic' : 'Wheelchair Lift') + ')</span>' : '<span style="' + dateStyle + '">' + cat5Display + '</span>'}
                                 </div>
                                 <div style="margin-bottom: 10px;">
                                     <strong style="color: var(--header-color); display: inline-block; width: 120px;">Latest PVI:</strong> 
@@ -3323,10 +3326,10 @@
                                 </div>
                             ` : ''}
                             
-                            <!-- Hydraulic note -->
-                            ${isHydraulic ? `
+                            <!-- Hydraulic / Wheelchair Lift note -->
+                            ${cat5NotRequiredLookup ? `
                                 <div style="margin-top: 10px; padding: 10px 14px; background: rgba(26, 115, 232, 0.08); border: 1px solid rgba(26, 115, 232, 0.3); border-radius: 6px; color: var(--text-color); font-size: 0.9em;">
-                                    ℹ️ <strong>Hydraulic Device:</strong> This machine type is listed as Hydraulic on the DOB. No CAT 5 testing is required.
+                                    ℹ️ <strong>${isHydraulic ? 'Hydraulic Device' : 'Wheelchair Lift'}:</strong> ${isHydraulic ? 'This machine type is listed as Hydraulic on the DOB.' : 'This device is identified as a Wheelchair Lift.'} No CAT 5 testing is required.
                                 </div>
                             ` : ''}
 
@@ -3525,7 +3528,7 @@
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center;">${d.device_status}</td>
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasPVIThisYear ? '600' : '400'};">${d.pvi_date}</td>
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasCat1ThisYear ? '600' : '400'};">${d.cat1_date}</td>
-                        <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.isHydraulic ? '#888' : (d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)'))}; font-weight: ${!d.isHydraulic && (d.hasCat5ThisYear || d.requiresCat5) ? '600' : '400'}; ${d.isHydraulic ? 'font-style: italic;' : ''}">${d.cat5_date}</td>
+                        <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${(d.isHydraulic || d.isWheelchairLift) ? '#888' : (d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)'))}; font-weight: ${!(d.isHydraulic || d.isWheelchairLift) && (d.hasCat5ThisYear || d.requiresCat5) ? '600' : '400'}; ${(d.isHydraulic || d.isWheelchairLift) ? 'font-style: italic;' : ''}">${d.cat5_date}</td>
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '600' : '400'};">${d.next_cat5}</td>
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.completionColor}; font-weight: 600;">${d.completionStatus}</td>
                         <td style="padding: 12px 10px; border: 1px solid var(--input-border); text-align: center; color: ${d.isReadyColor}; font-weight: 600;">${d.isReady}</td>
@@ -4139,7 +4142,7 @@
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${d.device_status}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasPVIThisYear ? '600' : '400'};">${d.pvi_date}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasCat1ThisYear ? '600' : '400'};">${d.cat1_date}</td>
-                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isHydraulic ? '#888' : (d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)'))}; font-weight: ${!d.isHydraulic && (d.hasCat5ThisYear || d.requiresCat5) ? '600' : '400'}; ${d.isHydraulic ? 'font-style: italic;' : ''}">${d.cat5_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${(d.isHydraulic || d.isWheelchairLift) ? '#888' : (d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)'))}; font-weight: ${!(d.isHydraulic || d.isWheelchairLift) && (d.hasCat5ThisYear || d.requiresCat5) ? '600' : '400'}; ${(d.isHydraulic || d.isWheelchairLift) ? 'font-style: italic;' : ''}">${d.cat5_date}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '600' : '400'};">${d.next_cat5}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.completionColor}; font-weight: 600;">${d.completionStatus}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isReadyColor}; font-weight: 600;">${d.isReady}</td>
@@ -4218,7 +4221,7 @@
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${d.device_status}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasPVIThisYear ? '600' : '400'};">${d.pvi_date}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasCat1ThisYear ? '600' : '400'};">${d.cat1_date}</td>
-                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isHydraulic ? '#888' : (d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)'))}; font-weight: ${!d.isHydraulic && (d.hasCat5ThisYear || d.requiresCat5) ? '600' : '400'}; ${d.isHydraulic ? 'font-style: italic;' : ''}">${d.cat5_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${(d.isHydraulic || d.isWheelchairLift) ? '#888' : (d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)'))}; font-weight: ${!(d.isHydraulic || d.isWheelchairLift) && (d.hasCat5ThisYear || d.requiresCat5) ? '600' : '400'}; ${(d.isHydraulic || d.isWheelchairLift) ? 'font-style: italic;' : ''}">${d.cat5_date}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '600' : '400'};">${d.next_cat5}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.completionColor}; font-weight: 600;">${d.completionStatus}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isReadyColor}; font-weight: 600;">${d.isReady}</td>
@@ -4345,7 +4348,7 @@
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center;">${d.device_status}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasPVIThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasPVIThisYear ? '600' : '400'};">${d.pvi_date}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.hasCat1ThisYear ? '#4CAF50' : 'var(--text-color)'}; font-weight: ${d.hasCat1ThisYear ? '600' : '400'};">${d.cat1_date}</td>
-                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isHydraulic ? '#888' : (d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)'))}; font-weight: ${!d.isHydraulic && (d.hasCat5ThisYear || d.requiresCat5) ? '600' : '400'}; ${d.isHydraulic ? 'font-style: italic;' : ''}">${d.cat5_date}</td>
+                                    <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${(d.isHydraulic || d.isWheelchairLift) ? '#888' : (d.hasCat5ThisYear ? '#4CAF50' : (d.requiresCat5 ? '#ff9800' : 'var(--text-color)'))}; font-weight: ${!(d.isHydraulic || d.isWheelchairLift) && (d.hasCat5ThisYear || d.requiresCat5) ? '600' : '400'}; ${(d.isHydraulic || d.isWheelchairLift) ? 'font-style: italic;' : ''}">${d.cat5_date}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'}; font-weight: ${d.nextCat5DueYear && d.nextCat5DueYear <= currentYear ? '600' : '400'};">${d.next_cat5}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.completionColor}; font-weight: 600;">${d.completionStatus}</td>
                                     <td style="padding: 8px; border: 1px solid var(--input-border); text-align: center; color: ${d.isReadyColor}; font-weight: 600;">${d.isReady}</td>
@@ -7920,7 +7923,7 @@
                         const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                         const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                         const isConveyor = deviceType.includes('CONVEYOR');
-                        const deviceNumberUpper = (device.device_number || '').toUpperCase();
+                        const deviceNumberUpper = (d.device_number || '').toUpperCase();
                         const isWheelchairLift = deviceType.includes('WHEELCHAIR') || deviceNumberUpper.includes('W');
                         const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO') ||
                                             machineTypeUpper.includes('HYDRAULIC') || machineTypeUpper.includes('HYDRO');
@@ -7928,8 +7931,8 @@
                         const noTestRequired = isRemoved;
                         
                         // Check if all dates are the same (acceptance test indicator)
-                        // For hydraulic devices, only check CAT 1 and PVI (CAT 5 not required)
-                        const allDatesAreSame = isHydraulic
+                        // For hydraulic and wheelchair lift devices, only check CAT 1 and PVI (CAT 5 not required)
+                        const allDatesAreSame = (isHydraulic || isWheelchairLift)
                             ? (cat1Date && pviDate && cat1Date.getTime() === pviDate.getTime())
                             : (cat1Date && cat5Date && pviDate &&
                                 cat1Date.getTime() === cat5Date.getTime() &&
@@ -8012,7 +8015,7 @@
                             violations: d.violations || [],
                             pvi_date: pviDate ? pviDate.toLocaleDateString() : '—',
                             cat1_date: cat1Date ? cat1Date.toLocaleDateString() : '—',
-                            cat5_date: isHydraulic ? 'N/A' : (cat5Date ? cat5Date.toLocaleDateString() : '—'),
+                            cat5_date: (isHydraulic || isWheelchairLift) ? 'N/A' : (cat5Date ? cat5Date.toLocaleDateString() : '—'),
                             next_cat5: cat5NotApplicable ? 'N/A' : (nextCat5DueYear ? nextCat5DueYear : '—'),
                             completionStatus,
                             completionColor,
@@ -8021,11 +8024,12 @@
                             eligibleDate: noTestRequired ? 'N/A' : (eligibilityDate ? eligibilityDate.toLocaleDateString() : '—'),
                             hasPVIThisYear,
                             hasCat1ThisYear,
-                            hasCat5ThisYear: isHydraulic ? false : hasCat5ThisYear,
+                            hasCat5ThisYear: (isHydraulic || isWheelchairLift) ? false : hasCat5ThisYear,
                             requiresCat5,
                             nextCat5DueYear,
                             allDatesAreSame,
                             isHydraulic,
+                            isWheelchairLift,
                             // Preserve raw date fields for getMissedRequiredTests function
                             cat5_latest_report_filed: d.cat5_latest_report_filed,
                             cat1_latest_report_filed: d.cat1_latest_report_filed,
@@ -8052,7 +8056,7 @@
                     const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                     const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
                     const isConveyor = deviceType.includes('CONVEYOR');
-                    const deviceNumberUpper = (device.device_number || '').toUpperCase();
+                    const deviceNumberUpper = (d.device_number || '').toUpperCase();
                     const isWheelchairLift = deviceType.includes('WHEELCHAIR') || deviceNumberUpper.includes('W');
                     const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO') ||
                                         machineTypeUpper.includes('HYDRAULIC') || machineTypeUpper.includes('HYDRO');
@@ -8129,7 +8133,7 @@
                         violations: d.violations || [],
                         pvi_date: pviDate ? pviDate.toLocaleDateString() : '—',
                         cat1_date: cat1Date ? cat1Date.toLocaleDateString() : '—',
-                        cat5_date: cat5Date ? cat5Date.toLocaleDateString() : '—',
+                        cat5_date: (isHydraulic || isWheelchairLift) ? 'N/A' : (cat5Date ? cat5Date.toLocaleDateString() : '—'),
                         next_cat5: cat5NotApplicable ? 'N/A' : (nextCat5DueYear ? nextCat5DueYear : '—'),
                         completionStatus,
                         completionColor,
@@ -8138,9 +8142,11 @@
                         eligibleDate: noTestRequired ? 'N/A' : (eligibilityDate ? eligibilityDate.toLocaleDateString() : '—'),
                         hasPVIThisYear,
                         hasCat1ThisYear,
-                        hasCat5ThisYear,
+                        hasCat5ThisYear: (isHydraulic || isWheelchairLift) ? false : hasCat5ThisYear,
                         requiresCat5,
-                        nextCat5DueYear
+                        nextCat5DueYear,
+                        isHydraulic,
+                        isWheelchairLift
                     };
                 };
                 
@@ -13376,7 +13382,7 @@
                                 </div>
                                 <div style="margin-bottom: 10px;">
                                     <strong style="color: var(--header-color); display: inline-block; width: 120px;">Latest CAT 5:</strong> 
-                                    ${isHydraulic ? '<span style="color: #888; font-style: italic;">Not required (Hydraulic)</span>' : '<span style="' + dateStyle + '">' + cat5Display + '</span>'}
+                                    ${cat5NotRequiredLookup ? '<span style="color: #888; font-style: italic;">Not required (' + (isHydraulic ? 'Hydraulic' : 'Wheelchair Lift') + ')</span>' : '<span style="' + dateStyle + '">' + cat5Display + '</span>'}
                                 </div>
                                 <div style="margin-bottom: 10px;">
                                     <strong style="color: var(--header-color); display: inline-block; width: 120px;">Latest Inspection:</strong> 
@@ -13474,19 +13480,22 @@
                     const hasPermits = permitResult.success && permitResult.permits && permitResult.permits.length > 0;
                     const permitData = permitResult;
 
-                    // Determine if device is hydraulic (CAT 5 not required)
+                    // Determine if device is hydraulic or wheelchair lift (CAT 5 not required)
                     const deviceTypeLookup = (device.device_type || '').toUpperCase();
                     const machineTypeLookup = (deviceInfo?.machine_type || '').toUpperCase();
+                    const deviceNumberLookup = (device.device_number || deviceNumber || '').toUpperCase();
                     const isHydraulic = deviceTypeLookup.includes('HYDRAULIC') || deviceTypeLookup.includes('HYDRO') ||
                                         machineTypeLookup.includes('HYDRAULIC') || machineTypeLookup.includes('HYDRO');
+                    const isWheelchairLiftLookup = deviceTypeLookup.includes('WHEELCHAIR') || deviceNumberLookup.includes('W');
+                    const cat5NotRequiredLookup = isHydraulic || isWheelchairLiftLookup;
 
                     // Format dates and calculate most recent inspection
                     const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
                     const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
                     const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
 
-                    // Find most recent date (exclude CAT 5 for hydraulic devices since it's not required)
-                    const dates = [cat1Date, isHydraulic ? null : cat5Date, pviDate].filter(date => date !== null);
+                    // Find most recent date (exclude CAT 5 for hydraulic/wheelchair lift devices since it's not required)
+                    const dates = [cat1Date, cat5NotRequiredLookup ? null : cat5Date, pviDate].filter(date => date !== null);
                     const mostRecentDate = dates.length > 0 ? new Date(Math.max.apply(null, dates)) : null;
 
                     // Calculate days since most recent inspection
@@ -13496,13 +13505,13 @@
 
                     // Format dates for display
                     const cat1Display = cat1Date ? cat1Date.toLocaleDateString() : 'N/A';
-                    const cat5Display = cat5Date ? cat5Date.toLocaleDateString() : 'N/A';
+                    const cat5Display = cat5NotRequiredLookup ? 'N/A' : (cat5Date ? cat5Date.toLocaleDateString() : 'N/A');
                     const pviDisplay = pviDate ? pviDate.toLocaleDateString() : 'N/A';
                     const mostRecentDisplay = mostRecentDate ? mostRecentDate.toLocaleDateString() : 'N/A';
 
                     // Check if all dates are the same (data quality alert)
-                    // For hydraulic devices, only check CAT 1 and PVI (CAT 5 not required)
-                    const allDatesAreSame = isHydraulic
+                    // For hydraulic/wheelchair lift devices, only check CAT 1 and PVI (CAT 5 not required)
+                    const allDatesAreSame = cat5NotRequiredLookup
                         ? (cat1Date && pviDate && cat1Date.getTime() === pviDate.getTime())
                         : (cat1Date && cat5Date && pviDate && mostRecentDate &&
                             cat1Date.getTime() === cat5Date.getTime() &&
@@ -13712,10 +13721,10 @@
                                 </div>
                             ` : ''}
                             
-                            <!-- Hydraulic note -->
-                            ${isHydraulic ? `
+                            <!-- Hydraulic / Wheelchair Lift note -->
+                            ${cat5NotRequiredLookup ? `
                                 <div style="margin-top: 10px; padding: 10px 14px; background: rgba(26, 115, 232, 0.08); border: 1px solid rgba(26, 115, 232, 0.3); border-radius: 6px; color: var(--text-color); font-size: 0.9em;">
-                                    ℹ️ <strong>Hydraulic Device:</strong> This machine type is listed as Hydraulic on the DOB. No CAT 5 testing is required.
+                                    ℹ️ <strong>${isHydraulic ? 'Hydraulic Device' : 'Wheelchair Lift'}:</strong> ${isHydraulic ? 'This machine type is listed as Hydraulic on the DOB.' : 'This device is identified as a Wheelchair Lift.'} No CAT 5 testing is required.
                                 </div>
                             ` : ''}
 
