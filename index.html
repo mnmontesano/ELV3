@@ -4550,7 +4550,14 @@
                         return `<div style="padding: 12px; background: var(--panel-bg); border-radius: 6px; border-left: 3px solid #e91e63;">
                             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
                                 <div>
-                                    <strong style="color: var(--header-color);">${d.device_number}</strong>
+                                    <strong onclick="copyDeviceNumberToClipboard('${String(d.device_number || '').replace(/'/g, '\\&#39;')}', event)"
+                                            style="color: var(--header-color); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(233, 30, 99, 0.35); transition: background-color 0.2s, color 0.2s, border-color 0.2s;"
+                                            onmouseover="this.style.backgroundColor='rgba(233, 30, 99, 0.12)'"
+                                            onmouseout="this.style.backgroundColor='transparent'"
+                                            title="Click to copy device number">
+                                        ${d.device_number}
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;"><path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                                    </strong>
                                     <span style="opacity: 0.7; margin-left: 8px; font-size: 0.9em;">${d.device_type}</span>
                                     ${d.isDismantled ? '<span style="color: #ffd700; font-weight: bold; margin-left: 8px;">[DISMANTLED]</span>' : ''}
                                 </div>
@@ -17325,6 +17332,57 @@
         }
     }
 
+    async function copyDeviceNumberToClipboard(deviceNumber, event) {
+        try {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+
+            const trimmedDeviceNumber = String(deviceNumber || '').trim();
+            if (!trimmedDeviceNumber || trimmedDeviceNumber === '-') return;
+
+            const trigger = event?.target?.closest('strong');
+
+            try {
+                await navigator.clipboard.writeText(trimmedDeviceNumber);
+            } catch (err) {
+                const textarea = document.createElement('textarea');
+                textarea.value = trimmedDeviceNumber;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            }
+
+            if (trigger) {
+                const originalHTML = trigger.innerHTML;
+                const originalBg = trigger.style.backgroundColor;
+                const originalColor = trigger.style.color;
+                const originalBorder = trigger.style.borderColor;
+
+                trigger.style.backgroundColor = '#e91e63';
+                trigger.style.color = '#fff';
+                trigger.style.borderColor = '#e91e63';
+                trigger.title = 'Copied!';
+                trigger.innerHTML = '✓ Copied!';
+
+                setTimeout(() => {
+                    trigger.innerHTML = originalHTML;
+                    trigger.style.backgroundColor = originalBg;
+                    trigger.style.color = originalColor;
+                    trigger.style.borderColor = originalBorder;
+                    trigger.title = 'Click to copy device number';
+                }, 1600);
+            }
+        } catch (err) {
+            console.error('Failed to copy device number:', err);
+            alert('Failed to copy device number to clipboard');
+        }
+    }
+
     /**
      * Handle file selection (supports multiple files)
      */
@@ -18860,6 +18918,6 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">pre-release version 1.4</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">pre-release version 1.4.1</div>
 </body>
 </html>
