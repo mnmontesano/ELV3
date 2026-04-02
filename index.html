@@ -10396,12 +10396,22 @@
             mapCompleted = completed && typeof completed === 'object' ? completed : {};
         }
 
-        function toggleMapCompleted(bin, address) {
+        function toggleMapCompleted(bin) {
             const completed = getMapCompleted();
             if (completed[bin]) {
                 delete completed[bin];
                 showMapNotification(`Building ${bin} unmarked as completed`, '#ff9800');
             } else {
+                // Look up address directly from search results — avoids onclick string-escaping issues
+                let address = '';
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && window.lastBulkSearchResults.binGroups[bin]) {
+                    address = window.lastBulkSearchResults.binGroups[bin].address || '';
+                }
+                if (!address) {
+                    // Fall back to mapBuildingsData if available
+                    const building = mapBuildingsData.find(b => b.bin === bin);
+                    if (building) address = building.address || '';
+                }
                 completed[bin] = { address, timestamp: Date.now() };
                 showMapNotification(`Building ${bin} marked as completed ✓`, '#27ae60');
             }
@@ -11014,7 +11024,7 @@
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isCompleted ? '#27ae60' : isFavorited ? '#9b59b6' : '#1a73e8'};">
                             <div style="font-weight: bold; font-size: 14px; flex: 1;">${building.address}</div>
                             <div style="display: flex; gap: 4px; margin-left: 8px;">
-                                <button onclick="toggleMapCompleted('${building.bin}', '${escapedAddress}')" 
+                                <button onclick="toggleMapCompleted('${building.bin}')" 
                                         title="${isCompleted ? 'Unmark as completed' : 'Mark as completed'}"
                                         style="background: ${isCompleted ? '#27ae60' : 'rgba(39,174,96,0.1)'}; 
                                                color: ${isCompleted ? 'white' : '#27ae60'}; 
