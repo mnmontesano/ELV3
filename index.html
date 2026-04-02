@@ -299,8 +299,17 @@
             <option value="pdf">PDF Terminal</option>
             <!-- <option value="devices">Device Lookup Terminal</option> -->
         </select>
-        <button onclick="saveSettings()">Save</button>
-        <button onclick="closeSettings()" style="background-color: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; padding: 10px 20px; font-size: 1.2em; transition: background-color 0.3s ease, color 0.3s ease;">Cancel</button>
+        <div style="border-top: 1px solid var(--input-border); margin-top: 14px; padding-top: 14px;">
+            <div style="font-size: 0.95em; font-weight: 600; color: var(--header-color); margin-bottom: 10px;">MAP Settings</div>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.9em; padding: 8px; background: var(--input-bg); border-radius: 6px; border: 1px solid var(--input-border);">
+                <input type="checkbox" id="mapHideCompletedToggle" style="width: 16px; height: 16px; cursor: pointer; accent-color: #27ae60;">
+                <span>Hide completed addresses on the map</span>
+            </label>
+        </div>
+        <div style="margin-top: 16px; display: flex; gap: 10px;">
+            <button onclick="saveSettings()">Save</button>
+            <button onclick="closeSettings()" style="background-color: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; padding: 10px 20px; font-size: 1.2em; transition: background-color 0.3s ease, color 0.3s ease;">Cancel</button>
+        </div>
     </div>
 
     <div id="settingsOverlay" class="reference-overlay"></div>
@@ -1013,6 +1022,18 @@
                             </div>
                             <button onclick="unhideAllBuildings()" style="width: 100%; padding: 8px; background: var(--input-bg); color: #4CAF50; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">Show All Hidden</button>
                         </div>
+
+                        <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
+                            <h4 style="margin: 0 0 12px 0; color: var(--header-color); font-size: 1em; display: flex; align-items: center; gap: 8px;">
+                                <span style="color: #27ae60;">✓</span> Completed (<span id="mapCompletedCount">0</span>)
+                            </h4>
+                            <p style="font-size: 11px; opacity: 0.7; margin: 0 0 10px 0;">Buildings you've manually marked as completed</p>
+                            <div id="completedBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 10px;">
+                                <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No completed buildings</div>
+                            </div>
+                            <button onclick="clearAllCompleted()" style="width: 100%; padding: 8px; background: var(--input-bg); color: #27ae60; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">Clear All Completed</button>
+                            <button id="hideCompletedBtn" onclick="toggleHideCompleted()" style="width: 100%; padding: 8px; margin-top: 6px; background: var(--input-bg); color: #27ae60; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">🚫 Hide Completed Buildings</button>
+                        </div>
                         
                         <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
                             <h4 style="margin: 0 0 12px 0; color: var(--header-color); font-size: 1em; display: flex; align-items: center; gap: 8px;">
@@ -1058,9 +1079,11 @@
                             <h4 style="margin: 0 0 10px 0; color: var(--header-color); font-size: 0.9em;">💡 Tips</h4>
                             <ul style="font-size: 11px; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.6;">
                                 <li>Click a marker to see building details</li>
+                                <li>Use ✓ in popup to mark a building complete</li>
                                 <li>Use ⭐ in popup to favorite a building</li>
                                 <li>Use 👁️ in popup to hide a building</li>
                                 <li>Use 📅 dropdown to assign a month</li>
+                                <li>Completed buildings turn dark green</li>
                                 <li>Favorited buildings turn purple</li>
                                 <li>Add custom locations with the ➕ button</li>
                                 <li><strong>Save your work</strong> — data is not kept between sessions</li>
@@ -2991,9 +3014,12 @@
             modal.style.display = 'block';
             overlay.style.display = 'block';
             
-            // Load current setting
+            // Load current settings
             const savedTab = localStorage.getItem('defaultTab') || 'main';
             document.getElementById('defaultTab').value = savedTab;
+
+            const hideCompletedToggle = document.getElementById('mapHideCompletedToggle');
+            if (hideCompletedToggle) hideCompletedToggle.checked = isHideCompletedActive();
             
             // Close dropdown
             document.getElementById('dropdownContent').style.display = 'none';
@@ -3021,6 +3047,23 @@
         function saveSettings() {
             const defaultTab = document.getElementById('defaultTab').value;
             localStorage.setItem('defaultTab', defaultTab);
+
+            const hideCompletedToggle = document.getElementById('mapHideCompletedToggle');
+            if (hideCompletedToggle) {
+                const newVal = hideCompletedToggle.checked;
+                if (mapHideCompleted !== newVal) {
+                    mapHideCompleted = newVal;
+                    localStorage.setItem('mapHideCompleted', mapHideCompleted ? 'true' : 'false');
+                    updateHideCompletedBtn();
+                    if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                        const modal = document.getElementById('buildingMapModal');
+                        if (modal && modal.style.display === 'flex') {
+                            initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+                        }
+                    }
+                }
+            }
+
             closeSettings();
         }
 
@@ -9275,8 +9318,10 @@
         let mapMonthLabels = {};
         let mapFavorites = {};
         let mapHidden = {};
+        let mapCompleted = {};
         let mapAdditionalLocations = [];
         let mapHideMonthLabeled = false;
+        let mapHideCompleted = localStorage.getItem('mapHideCompleted') === 'true';
 
         let additionalLocationMarkers = [];
         let pendingLoadedMapViewState = null;
@@ -9397,6 +9442,7 @@
                 lastBulkSearchResults: window.lastBulkSearchResults,
                 favorites: getMapFavorites(),
                 hidden: getMapHidden(),
+                completed: getMapCompleted(),
                 monthLabels: scopedMonthLabels,
                 monthAssignments: monthAssignments,
                 additionalLocations: additionalLocations,
@@ -9456,6 +9502,7 @@
                     lastBulkSearchResults: view.lastBulkSearchResults || { binGroups: {}, notFound: [] },
                     favorites: view.favorites || {},
                     hidden: view.hidden || {},
+                    completed: view.completed || {},
                     monthLabels: view.monthLabels || {},
                     monthAssignments: Array.isArray(view.monthAssignments) ? view.monthAssignments : [],
                     additionalLocations: Array.isArray(view.additionalLocations) ? view.additionalLocations : [],
@@ -9490,6 +9537,7 @@
                 lastBulkSearchResults: source.lastBulkSearchResults,
                 favorites: source.favorites || {},
                 hidden: source.hidden || {},
+                completed: source.completed || {},
                 monthLabels: source.monthLabels || {},
                 monthAssignments: Array.isArray(source.monthAssignments) ? source.monthAssignments : [],
                 additionalLocations: Array.isArray(source.additionalLocations) ? source.additionalLocations : [],
@@ -9501,6 +9549,7 @@
             window.lastBulkSearchResults = view.lastBulkSearchResults || null;
             setMapFavorites(view.favorites || {});
             setMapHidden(view.hidden || {});
+            setMapCompleted(view.completed || {});
             const restoredMonthLabels = (Array.isArray(view.monthAssignments) && view.monthAssignments.length > 0)
                 ? monthLabelsFromAssignments(view.monthAssignments)
                 : (view.monthLabels || {});
@@ -10146,6 +10195,29 @@
             btn.style.borderColor = active ? '#17a2b8' : 'var(--input-border)';
         }
 
+        function isHideCompletedActive() {
+            return mapHideCompleted;
+        }
+
+        function toggleHideCompleted() {
+            mapHideCompleted = !mapHideCompleted;
+            localStorage.setItem('mapHideCompleted', mapHideCompleted ? 'true' : 'false');
+            updateHideCompletedBtn();
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
+
+        function updateHideCompletedBtn() {
+            const btn = document.getElementById('hideCompletedBtn');
+            if (!btn) return;
+            const active = isHideCompletedActive();
+            btn.textContent = active ? '👁️ Show Completed Buildings' : '🚫 Hide Completed Buildings';
+            btn.style.background = active ? '#27ae60' : 'var(--input-bg)';
+            btn.style.color = active ? 'white' : '#27ae60';
+            btn.style.borderColor = active ? '#27ae60' : 'var(--input-border)';
+        }
+
         function filterByMonth(month) {
             if (!mapBuildingsData || mapBuildingsData.length === 0) return;
             
@@ -10263,6 +10335,39 @@
             }
         }
 
+        function getMapCompleted() {
+            return mapCompleted;
+        }
+
+        function setMapCompleted(completed) {
+            mapCompleted = completed && typeof completed === 'object' ? completed : {};
+        }
+
+        function toggleMapCompleted(bin, address) {
+            const completed = getMapCompleted();
+            if (completed[bin]) {
+                delete completed[bin];
+                showMapNotification(`Building ${bin} unmarked as completed`, '#ff9800');
+            } else {
+                completed[bin] = { address, timestamp: Date.now() };
+                showMapNotification(`Building ${bin} marked as completed ✓`, '#27ae60');
+            }
+            setMapCompleted(completed);
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
+
+        function clearAllCompleted() {
+            if (confirm('Are you sure you want to clear all completed marks?')) {
+                setMapCompleted({});
+                showMapNotification('All completed marks cleared', '#ff9800');
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                    initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+                }
+            }
+        }
+
         function unhideAllBuildings() {
             setMapHidden({});
             showMapNotification('All buildings are now visible', '#4CAF50');
@@ -10304,15 +10409,20 @@
         function updateMapControlsPanel() {
             const favorites = getMapFavorites();
             const hidden = getMapHidden();
+            const completedMap = getMapCompleted();
             const favoritesCount = Object.keys(favorites).length;
             const hiddenCount = Object.keys(hidden).length;
+            const completedCount = Object.keys(completedMap).length;
 
             const favCountEl = document.getElementById('mapFavoritesCount');
             const hiddenCountEl = document.getElementById('mapHiddenCount');
+            const completedCountEl = document.getElementById('mapCompletedCount');
             const hiddenListEl = document.getElementById('hiddenBuildingsList');
+            const completedListEl = document.getElementById('completedBuildingsList');
 
             if (favCountEl) favCountEl.textContent = favoritesCount;
             if (hiddenCountEl) hiddenCountEl.textContent = hiddenCount;
+            if (completedCountEl) completedCountEl.textContent = completedCount;
 
             if (hiddenListEl) {
                 if (hiddenCount > 0) {
@@ -10328,7 +10438,25 @@
                     hiddenListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No hidden buildings</div>';
                 }
             }
+
+            if (completedListEl) {
+                if (completedCount > 0) {
+                    completedListEl.innerHTML = Object.entries(completedMap).map(([bin, data]) => `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
+                            <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${data.address || bin}">
+                                <span style="color: #27ae60; font-weight: 700;">✓</span> <strong>${bin}</strong>${data.address ? ` - ${data.address.substring(0, 22)}...` : ''}
+                            </span>
+                            <button onclick="toggleMapCompleted('${bin}')" style="background: #ff9800; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px; margin-left: 8px;">Undo</button>
+                        </div>
+                    `).join('');
+                } else {
+                    completedListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No completed buildings</div>';
+                }
+            }
             
+            // Update hide-completed button state
+            updateHideCompletedBtn();
+
             // Update additional locations panel
             updateAdditionalLocationsPanel();
         }
@@ -10534,9 +10662,11 @@
             mapMarkers = [];
             additionalLocationMarkers = [];
 
-            // Get favorites and hidden buildings
+            // Get favorites, hidden, and completed buildings
             const favorites = getMapFavorites();
             const hidden = getMapHidden();
+            const completed = getMapCompleted();
+            const hideCompleted = isHideCompletedActive();
 
             // Update controls panel
             updateMapControlsPanel();
@@ -10549,6 +10679,12 @@
             for (const [bin, group] of Object.entries(binGroups)) {
                 // Skip hidden buildings
                 if (hidden[bin]) {
+                    hiddenCount++;
+                    continue;
+                }
+                
+                // Skip completed buildings if hide setting is on
+                if (hideCompleted && completed[bin]) {
                     hiddenCount++;
                     continue;
                 }
@@ -10663,7 +10799,8 @@
                             violationDetails,
                             readyDevices,
                             notReadyDevices,
-                            removedDeletedDevices
+                            removedDeletedDevices,
+                            isCompleted: !!completed[bin]
                         });
                         totalDevices += group.devices.length;
                     }
@@ -10724,13 +10861,16 @@
             const bounds = L.latLngBounds();
             
             buildingsWithCoords.forEach(building => {
-                // Check if building is favorited
+                // Check if building is favorited or completed
                 const isFavorited = favorites[building.bin] ? true : false;
+                const isCompleted = building.isCompleted;
                 
-                // Determine marker color based on favorite status or testing readiness
+                // Determine marker color based on completed/favorite status or testing readiness
                 let markerColor;
                 
-                if (isFavorited) {
+                if (isCompleted) {
+                    markerColor = '#27ae60'; // Dark green - manually marked complete
+                } else if (isFavorited) {
                     markerColor = '#9b59b6'; // Purple - favorited building
                 } else if (building.notReadyDevices.length === 0 && building.readyDevices.length > 0) {
                     markerColor = '#4CAF50'; // Green - all devices ready to test
@@ -10756,7 +10896,8 @@
                         color: white;
                         font-weight: bold;
                         font-size: 11px;
-                    ">${building.deviceCount}</div>`,
+                        position: relative;
+                    ">${isCompleted ? '✓' : building.deviceCount}${isCompleted ? `<span style="position:absolute;top:-6px;right:-6px;background:#27ae60;border-radius:50%;width:14px;height:14px;font-size:9px;display:flex;align-items:center;justify-content:center;border:2px solid white;"></span>` : ''}</div>`,
                     iconSize: [30, 30],
                     iconAnchor: [15, 15]
                 });
@@ -10810,9 +10951,19 @@
                 
                 const popupContent = `
                     <div class="map-popup-content" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isFavorited ? '#9b59b6' : '#1a73e8'};">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isCompleted ? '#27ae60' : isFavorited ? '#9b59b6' : '#1a73e8'};">
                             <div style="font-weight: bold; font-size: 14px; flex: 1;">${building.address}</div>
                             <div style="display: flex; gap: 4px; margin-left: 8px;">
+                                <button onclick="toggleMapCompleted('${building.bin}', '${escapedAddress}')" 
+                                        title="${isCompleted ? 'Unmark as completed' : 'Mark as completed'}"
+                                        style="background: ${isCompleted ? '#27ae60' : 'rgba(39,174,96,0.1)'}; 
+                                               color: ${isCompleted ? 'white' : '#27ae60'}; 
+                                               border: 1px solid #27ae60; 
+                                               border-radius: 4px; 
+                                               padding: 4px 8px; 
+                                               cursor: pointer; 
+                                               font-size: 14px;
+                                               transition: all 0.2s;">✓</button>
                                 <button onclick="toggleMapFavorite('${building.bin}', '${escapedAddress}')" 
                                         title="${isFavorited ? 'Remove from favorites' : 'Add to favorites'}"
                                         style="background: ${isFavorited ? '#9b59b6' : 'rgba(155,89,182,0.1)'}; 
@@ -10835,6 +10986,11 @@
                                                transition: all 0.2s;">👁️</button>
                             </div>
                         </div>
+                        
+                        ${isCompleted ? `
+                        <div style="font-size: 11px; color: #27ae60; font-weight: 600; margin-bottom: 10px; padding: 4px 8px; background: rgba(39,174,96,0.1); border-radius: 4px; text-align: center;">
+                            ✓ Marked as Completed
+                        </div>` : ''}
                         
                         ${isFavorited ? `
                         <div style="font-size: 11px; color: #9b59b6; font-weight: 600; margin-bottom: 10px; padding: 4px 8px; background: rgba(155,89,182,0.1); border-radius: 4px; text-align: center;">
