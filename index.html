@@ -988,8 +988,12 @@
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span id="mapSearchResultCount" style="color: #4CAF50; font-size: 0.85em; display: none;"></span>
                         <span id="mapBuildingCount" style="color: var(--text-color); font-size: 0.9em;"></span>
-                        <button onclick="downloadMapViewFile()" title="Download map view as file" style="background: #6f42c1; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: white; font-size: 0.85em; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <span>💾</span> <span>Save</span>
+                        <span id="mapActiveFileName" style="display: none; color: #b8b8b8; font-size: 0.78em; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title=""></span>
+                        <button id="mapSaveButton" onclick="downloadMapViewFile()" title="Save map view to file" style="background: #6f42c1; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: white; font-size: 0.85em; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                            <span>💾</span> <span id="mapSaveButtonLabel">Save</span>
+                        </button>
+                        <button id="mapSaveAsButton" onclick="saveMapViewAs()" title="Save map view as a new file" style="background: #5a32a3; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: white; font-size: 0.85em; display: none; align-items: center; gap: 5px; white-space: nowrap;">
+                            <span>📄</span> <span>Save As</span>
                         </button>
                         <button onclick="triggerMapViewLoad()" title="Load map view from file" style="background: #17a2b8; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: white; font-size: 0.85em; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
                             <span>📂</span> <span>Load</span>
@@ -9326,6 +9330,8 @@
 
         let additionalLocationMarkers = [];
         let pendingLoadedMapViewState = null;
+        let currentMapViewFileHandle = null;
+        let currentMapViewFileName = null;
         
         function getAdditionalLocations() {
             return mapAdditionalLocations;
@@ -9415,13 +9421,33 @@
             return labels;
         }
 
-        function downloadMapViewFile() {
-            const hasResults = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
-            if (!hasResults) {
-                alert('No map data to save. Run a bulk lookup or load a save file first.');
-                return;
-            }
+        function updateSaveButtonLabel() {
+            const label = document.getElementById('mapSaveButtonLabel');
+            const saveBtn = document.getElementById('mapSaveButton');
+            const saveAsBtn = document.getElementById('mapSaveAsButton');
+            const fileNameSpan = document.getElementById('mapActiveFileName');
 
+            if (currentMapViewFileHandle || currentMapViewFileName) {
+                if (saveBtn) saveBtn.title = currentMapViewFileHandle
+                    ? `Overwrite "${currentMapViewFileName}"`
+                    : `Save map view to file`;
+                if (saveAsBtn) saveAsBtn.style.display = 'flex';
+                if (fileNameSpan && currentMapViewFileName) {
+                    fileNameSpan.textContent = `📎 ${currentMapViewFileName}`;
+                    fileNameSpan.title = currentMapViewFileHandle
+                        ? `Linked to: ${currentMapViewFileName} (save will overwrite)`
+                        : `Loaded from: ${currentMapViewFileName}`;
+                    fileNameSpan.style.display = 'inline-block';
+                }
+            } else {
+                if (label) label.textContent = 'Save';
+                if (saveBtn) saveBtn.title = 'Save map view to file';
+                if (saveAsBtn) saveAsBtn.style.display = 'none';
+                if (fileNameSpan) fileNameSpan.style.display = 'none';
+            }
+        }
+
+        function buildMapViewExportPayload() {
             const additionalLocations = getAdditionalLocations();
             const scopedMonthLabels = collectScopedMonthLabels(
                 window.lastBulkSearchResults.binGroups || {},
@@ -9436,7 +9462,9 @@
 
             const view = {
                 id: `view_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
-                name: `Map View ${new Date().toLocaleString()}`,
+                name: currentMapViewFileName
+                    ? currentMapViewFileName.replace(/\.json$/i, '')
+                    : `Map View ${new Date().toLocaleString()}`,
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
                 bulkDeviceNumbers: (document.getElementById('bulkDeviceNumbers') || {}).value || '',
@@ -9450,10 +9478,103 @@
                 mapState: getCurrentMapStateForSave()
             };
 
-            const exportPayload = sanitizeMapViewForExport(view);
-            const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
+            return sanitizeMapViewForExport(view);
+        }
 
+        async function downloadMapViewFile() {
+            const hasResults = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
+            if (!hasResults) {
+                alert('No map data to save. Run a bulk lookup or load a save file first.');
+                return;
+            }
+
+            const exportPayload = buildMapViewExportPayload();
+            const jsonString = JSON.stringify(exportPayload, null, 2);
+
+            if (currentMapViewFileHandle) {
+                try {
+                    const writable = await currentMapViewFileHandle.createWritable();
+                    await writable.write(jsonString);
+                    await writable.close();
+                    showMapNotification(`Saved to "${currentMapViewFileName}"`, '#6f42c1');
+                    return;
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                    console.warn('Could not overwrite file, falling back:', err);
+                    currentMapViewFileHandle = null;
+                    updateSaveButtonLabel();
+                }
+            }
+
+            if (window.showSaveFilePicker) {
+                try {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: currentMapViewFileName || `map-view-${new Date().toISOString().slice(0, 10)}.json`,
+                        types: [{ description: 'Map View JSON', accept: { 'application/json': ['.json'] } }]
+                    });
+                    const writable = await handle.createWritable();
+                    await writable.write(jsonString);
+                    await writable.close();
+
+                    currentMapViewFileHandle = handle;
+                    const file = await handle.getFile();
+                    currentMapViewFileName = file.name;
+                    updateSaveButtonLabel();
+                    showMapNotification(`Saved to "${currentMapViewFileName}" — future saves will overwrite`, '#6f42c1');
+                    return;
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                    console.warn('showSaveFilePicker failed, falling back to download:', err);
+                }
+            }
+
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const fileName = currentMapViewFileName || `map-view-${new Date().toISOString().slice(0, 10)}.json`;
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            showMapNotification('Map view saved to file', '#6f42c1');
+        }
+
+        async function saveMapViewAs() {
+            const hasResults = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
+            if (!hasResults) {
+                alert('No map data to save. Run a bulk lookup or load a save file first.');
+                return;
+            }
+
+            const exportPayload = buildMapViewExportPayload();
+            const jsonString = JSON.stringify(exportPayload, null, 2);
+
+            if (window.showSaveFilePicker) {
+                try {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: `map-view-${new Date().toISOString().slice(0, 10)}.json`,
+                        types: [{ description: 'Map View JSON', accept: { 'application/json': ['.json'] } }]
+                    });
+                    const writable = await handle.createWritable();
+                    await writable.write(jsonString);
+                    await writable.close();
+
+                    currentMapViewFileHandle = handle;
+                    const file = await handle.getFile();
+                    currentMapViewFileName = file.name;
+                    updateSaveButtonLabel();
+                    showMapNotification(`Saved to "${currentMapViewFileName}"`, '#6f42c1');
+                    return;
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                    console.warn('showSaveFilePicker failed, falling back to download:', err);
+                }
+            }
+
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
             const fileName = `map-view-${new Date().toISOString().slice(0, 10)}.json`;
             const link = document.createElement('a');
             link.href = url;
@@ -9462,7 +9583,6 @@
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
-
             showMapNotification('Map view saved to file', '#6f42c1');
         }
 
@@ -9512,7 +9632,31 @@
             };
         }
 
-        function triggerMapViewLoad() {
+        async function triggerMapViewLoad() {
+            if (window.showOpenFilePicker) {
+                try {
+                    const [handle] = await window.showOpenFilePicker({
+                        types: [{ description: 'Map View JSON', accept: { 'application/json': ['.json'] } }],
+                        multiple: false
+                    });
+                    const file = await handle.getFile();
+                    const text = await file.text();
+                    const parsed = JSON.parse(text);
+                    const view = normalizeImportedMapView(parsed);
+
+                    currentMapViewFileHandle = handle;
+                    currentMapViewFileName = file.name;
+                    restoreMapViewState(view);
+                    updateSaveButtonLabel();
+                    showMapNotification(`Loaded "${file.name}" — Save will overwrite this file`, '#17a2b8');
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        console.error('Error loading map view file:', err);
+                        alert(`Unable to load file: ${err.message || 'Invalid JSON file.'}`);
+                    }
+                }
+                return;
+            }
             const fileInput = document.getElementById('mapViewImportInput') || document.getElementById('mapTabMapViewImportInput');
             if (!fileInput) return;
             fileInput.value = '';
@@ -9593,8 +9737,11 @@
                 const text = await file.text();
                 const parsed = JSON.parse(text);
                 const view = normalizeImportedMapView(parsed);
+                currentMapViewFileHandle = null;
+                currentMapViewFileName = file.name;
                 restoreMapViewState(view);
-                showMapNotification(`Loaded map view from file`, '#17a2b8');
+                updateSaveButtonLabel();
+                showMapNotification(`Loaded "${file.name}"`, '#17a2b8');
             } catch (error) {
                 console.error('Error loading map view file:', error);
                 alert(`Unable to load file: ${error.message || 'Invalid JSON file.'}`);
@@ -16953,6 +17100,13 @@
                         <p class="elv3-scan-upload-hint">or click to select one or more files</p>
                         <input type="file" id="elv3ScanFileInput" accept=".pdf" multiple style="display: none;" onchange="handleELV3FileScan(event)">
                     </div>
+                    <div class="elv3-scan-url-area" id="elv3ScanUrlArea">
+                        <div class="elv3-scan-url-divider"><span>or paste a PDF link</span></div>
+                        <div class="elv3-scan-url-input-row">
+                            <input type="text" id="elv3ScanUrlInput" placeholder="https://example.com/elv3-form.pdf" spellcheck="false" autocomplete="off">
+                            <button id="elv3ScanUrlBtn" onclick="processELV3ScanFromUrl()">Scan URL</button>
+                        </div>
+                    </div>
                     
                     <div id="elv3ScanProgress" class="elv3-scan-progress" style="display: none;">
                         <div class="elv3-scan-progress-bar">
@@ -17302,6 +17456,10 @@
         
         // Reset state
         document.getElementById('elv3ScanUploadArea').style.display = 'flex';
+        var urlArea = document.getElementById('elv3ScanUrlArea');
+        if (urlArea) urlArea.style.display = '';
+        var urlInput = document.getElementById('elv3ScanUrlInput');
+        if (urlInput) urlInput.value = '';
         document.getElementById('elv3ScanProgress').style.display = 'none';
         document.getElementById('elv3ScanResult').style.display = 'none';
         document.getElementById('elv3ScanError').style.display = 'none';
@@ -17348,6 +17506,14 @@
                 document.getElementById('elv3ScanError').style.display = 'block';
             }
         };
+
+        // Enter key in URL input triggers scan
+        var urlInputEl = document.getElementById('elv3ScanUrlInput');
+        if (urlInputEl) {
+            urlInputEl.onkeydown = function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); processELV3ScanFromUrl(); }
+            };
+        }
     }
 
     /**
@@ -17622,6 +17788,133 @@
     }
 
     /**
+     * Process an ELV3 PDF from a URL
+     */
+    async function processELV3ScanFromUrl() {
+        var urlInput = document.getElementById('elv3ScanUrlInput');
+        var rawUrl = (urlInput ? urlInput.value : '').trim();
+        if (!rawUrl) {
+            var errorDiv = document.getElementById('elv3ScanError');
+            errorDiv.textContent = 'Please enter a PDF URL';
+            errorDiv.style.display = 'block';
+            return;
+        }
+
+        // Basic URL validation
+        try { new URL(rawUrl); } catch (_) {
+            var errorDiv = document.getElementById('elv3ScanError');
+            errorDiv.textContent = 'Invalid URL. Please enter a valid link to a PDF file.';
+            errorDiv.style.display = 'block';
+            return;
+        }
+
+        var uploadArea = document.getElementById('elv3ScanUploadArea');
+        var urlArea = document.getElementById('elv3ScanUrlArea');
+        var progressDiv = document.getElementById('elv3ScanProgress');
+        var progressFill = document.getElementById('elv3ScanProgressFill');
+        var statusText = document.getElementById('elv3ScanStatusText');
+        var resultDiv = document.getElementById('elv3ScanResult');
+        var errorDiv = document.getElementById('elv3ScanError');
+
+        for (var si = 0; si < elv3ScanItems.length; si++) {
+            if (elv3ScanItems[si].blobUrl) URL.revokeObjectURL(elv3ScanItems[si].blobUrl);
+        }
+        elv3ScanItems = [];
+        elv3ScanCurrentIndex = 0;
+
+        document.querySelector('.elv3-scan-left-panel').classList.remove('elv3-scan-upload-centered');
+        uploadArea.style.display = 'none';
+        if (urlArea) urlArea.style.display = 'none';
+        progressDiv.style.display = 'block';
+        resultDiv.style.display = 'none';
+        errorDiv.style.display = 'none';
+        progressFill.classList.add('indeterminate');
+        statusText.textContent = 'Downloading PDF from URL...';
+
+        var arrayBuffer = null;
+        try {
+            // Try direct fetch first
+            var resp = await fetch(rawUrl);
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            arrayBuffer = await resp.arrayBuffer();
+        } catch (directErr) {
+            // CORS fallback via proxy
+            statusText.textContent = 'Retrying via CORS proxy...';
+            try {
+                var proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(rawUrl);
+                var resp2 = await fetch(proxyUrl);
+                if (!resp2.ok) throw new Error('Proxy HTTP ' + resp2.status);
+                arrayBuffer = await resp2.arrayBuffer();
+            } catch (proxyErr) {
+                progressFill.classList.remove('indeterminate');
+                progressDiv.style.display = 'none';
+                errorDiv.textContent = 'Could not download PDF. The server may block external requests. Try downloading the file and uploading it directly.';
+                errorDiv.style.display = 'block';
+                uploadArea.style.display = 'flex';
+                if (urlArea) urlArea.style.display = '';
+                document.querySelector('.elv3-scan-left-panel').classList.add('elv3-scan-upload-centered');
+                return;
+            }
+        }
+
+        // Quick sanity check: PDF files start with %PDF
+        var header = new Uint8Array(arrayBuffer.slice(0, 5));
+        var headerStr = String.fromCharCode.apply(null, header);
+        if (!headerStr.startsWith('%PDF')) {
+            progressFill.classList.remove('indeterminate');
+            progressDiv.style.display = 'none';
+            errorDiv.textContent = 'The URL did not return a valid PDF file. Please check the link.';
+            errorDiv.style.display = 'block';
+            uploadArea.style.display = 'flex';
+            if (urlArea) urlArea.style.display = '';
+            document.querySelector('.elv3-scan-left-panel').classList.add('elv3-scan-upload-centered');
+            return;
+        }
+
+        statusText.textContent = 'Parsing ELV3 form...';
+
+        try {
+            var result = await parseELV3PDFClient(arrayBuffer);
+
+            if (result.devices.length > 0 && !result.bin) {
+                statusText.textContent = 'Looking up BIN number...';
+                var firstDevice = result.devices[0];
+                var deviceNumber = firstDevice.deviceNumber || firstDevice;
+                try {
+                    var apiResp = await fetch('https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=' + encodeURIComponent(deviceNumber));
+                    if (apiResp.ok) {
+                        var apiData = await apiResp.json();
+                        if (apiData && apiData.length > 0 && apiData[0].bin) {
+                            result.bin = apiData[0].bin;
+                            if (!result.address && apiData[0].house_number && apiData[0].street_name) {
+                                result.address = (apiData[0].house_number + ' ' + apiData[0].street_name).trim();
+                            }
+                        }
+                    }
+                } catch (_) { /* BIN lookup is best-effort */ }
+            }
+
+            var blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+            var blobUrl = URL.createObjectURL(blob);
+            elv3ScanItems.push({ file: { name: rawUrl.split('/').pop() || 'url-pdf.pdf' }, result: result, blobUrl: blobUrl });
+        } catch (parseErr) {
+            var blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+            var blobUrl = URL.createObjectURL(blob);
+            elv3ScanItems.push({
+                file: { name: rawUrl.split('/').pop() || 'url-pdf.pdf' },
+                result: { success: false, errorMessage: parseErr.message, violations: [], violationsByDevice: {}, devices: [], satisfactoryDevices: [] },
+                blobUrl: blobUrl
+            });
+        }
+
+        progressFill.classList.remove('indeterminate');
+        progressDiv.style.display = 'none';
+        resultDiv.style.display = '';
+        resultDiv.classList.remove('error');
+        showCurrentELV3Pdf(0);
+    }
+
+    /**
      * Handle file selection (supports multiple files)
      */
     function handleELV3FileScan(event) {
@@ -17862,6 +18155,8 @@
 
         document.querySelector('.elv3-scan-left-panel').classList.remove('elv3-scan-upload-centered');
         uploadArea.style.display = 'none';
+        var _urlArea = document.getElementById('elv3ScanUrlArea');
+        if (_urlArea) _urlArea.style.display = 'none';
         progressDiv.style.display = 'block';
         resultDiv.style.display = 'none';
         errorDiv.style.display = 'none';
@@ -17918,6 +18213,8 @@
             errorDiv.textContent = 'No PDFs could be parsed. Please try valid ELV3 PDF files.';
             errorDiv.style.display = 'block';
             uploadArea.style.display = 'flex';
+            var _urlAreaErr = document.getElementById('elv3ScanUrlArea');
+            if (_urlAreaErr) _urlAreaErr.style.display = '';
             document.querySelector('.elv3-scan-left-panel').classList.add('elv3-scan-upload-centered');
             return;
         }
@@ -17941,6 +18238,8 @@
         // Hide upload area, show progress
         document.querySelector('.elv3-scan-left-panel').classList.remove('elv3-scan-upload-centered');
         uploadArea.style.display = 'none';
+        var _urlArea2 = document.getElementById('elv3ScanUrlArea');
+        if (_urlArea2) _urlArea2.style.display = 'none';
         progressDiv.style.display = 'block';
         resultDiv.style.display = 'none';
         errorDiv.style.display = 'none';
@@ -18001,6 +18300,8 @@
             
             setTimeout(() => {
                 uploadArea.style.display = 'flex';
+                var _urlAreaLeg = document.getElementById('elv3ScanUrlArea');
+                if (_urlAreaLeg) _urlAreaLeg.style.display = '';
                 document.querySelector('.elv3-scan-left-panel').classList.add('elv3-scan-upload-centered');
             }, 2000);
         }
@@ -18014,6 +18315,7 @@
             success: false,
             address: null,
             bin: null,
+            inspectorName: null,
             devices: [],
             violations: [],
             violationsByDevice: {},
@@ -18904,9 +19206,42 @@
             }
         }
         
+        // Step 7: Extract inspector name from form fields
+        // Look for fields with "inspector" or "Inspector_Name" in their name, and common
+        // Page1 text fields that hold the inspector (e.g. TextField1_0_, TextField1_1_).
+        for (const [fieldName, value] of Object.entries(formData)) {
+            if (!value || result.inspectorName) continue;
+            const strValue = value.toString().trim();
+            if (!strValue) continue;
+            const lowerName = fieldName.toLowerCase();
+            if (lowerName.includes('inspector') && !lowerName.includes('inspection_date')) {
+                result.inspectorName = strValue;
+                console.log(`Found inspector name via field "${fieldName}": ${strValue}`);
+            }
+        }
+        // Fallback: on Page1, TextField1_0_ through TextField1_5_ often carry header info.
+        // Try Page1 TextField1_2_ which frequently holds the inspector name in NYC ELV3 forms.
+        if (!result.inspectorName) {
+            for (const [fieldName, value] of Object.entries(formData)) {
+                if (!value) continue;
+                if (!fieldName.includes('Page1')) continue;
+                const strValue = value.toString().trim();
+                if (!strValue) continue;
+                // Page1 TextField1_2_ is commonly the inspector name field
+                if (/TextField1_2_/.test(fieldName)) {
+                    // Sanity check: value should look like a name (letters, spaces, hyphens)
+                    if (/^[A-Za-z\s.\-']{2,60}$/.test(strValue)) {
+                        result.inspectorName = strValue;
+                        console.log(`Found inspector name via Page1 TextField1_2_: ${strValue}`);
+                    }
+                }
+            }
+        }
+        
         console.log('Total violations found:', result.violations.length);
         console.log('Devices with violations:', result.devicesWithViolations.length);
         console.log('Satisfactory devices:', result.satisfactoryDevices.length);
+        if (result.inspectorName) console.log('Inspector name:', result.inspectorName);
     }
 
     /**
@@ -18945,6 +19280,58 @@
         };
     }
 
+    async function copyDeviceViolations(deviceNumber, event) {
+        if (!elv3ScanItems.length) return;
+        var item = elv3ScanItems[elv3ScanCurrentIndex];
+        if (!item || !item.result) return;
+        var data = item.result;
+        var violations = (data.violationsByDevice || {})[deviceNumber];
+        if (!violations || violations.length === 0) return;
+
+        var lines = [];
+        var fieldText = violations[0] && violations[0].deviceFieldText ? ' (' + violations[0].deviceFieldText + ')' : '';
+        lines.push(deviceNumber + fieldText + '  —  ' + violations.length + ' violation' + (violations.length > 1 ? 's' : ''));
+        violations.forEach(function(v) {
+            lines.push('  Part ' + v.partCode + ' | Cond ' + (v.conditionCode || '-') + ' | Remedy ' + (v.remedyCode || '-'));
+            lines.push('  ' + v.partDescription);
+            var details = (v.conditionDescription || '') + ' → ' + (v.remedyDescription || '');
+            if (details.trim() !== '→') lines.push('  ' + details.trim());
+            if (v.comments) lines.push('  "' + v.comments + '"');
+        });
+
+        var text = lines.join('\n');
+
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch (e) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+
+        var target = event && event.currentTarget ? event.currentTarget : (event && event.target ? event.target.closest('.elv3-scan-copy-target') : null);
+        if (target) {
+            target.classList.add('elv3-scan-copied');
+            var hint = target.querySelector('.elv3-scan-copy-hint');
+            if (hint) {
+                hint.textContent = '✓ Copied!';
+                hint.style.color = '#10b981';
+            }
+            setTimeout(function() {
+                target.classList.remove('elv3-scan-copied');
+                if (hint) {
+                    hint.textContent = '📋 Click to copy';
+                    hint.style.color = '';
+                }
+            }, 2000);
+        }
+    }
+
     async function copyAllViolations(event) {
         if (!elv3ScanItems.length) return;
         var item = elv3ScanItems[elv3ScanCurrentIndex];
@@ -18954,6 +19341,7 @@
         var lines = [];
         if (data.address) lines.push('Address: ' + data.address);
         if (data.bin) lines.push('BIN: ' + data.bin);
+        if (data.inspectorName) lines.push('Inspector: ' + data.inspectorName);
         lines.push('Devices Scanned: ' + (data.devices || []).length);
 
         var vbd = data.violationsByDevice || {};
@@ -19060,6 +19448,7 @@
             <div class="elv3-scan-result-details">
                 ${data.address ? `<p><strong>Address:</strong> ${data.address}</p>` : ''}
                 ${data.bin ? `<p><strong>BIN:</strong> <span class="elv3-scan-bin-copy" data-bin="${String(data.bin).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onclick="copyBinToClipboard(this.getAttribute('data-bin'), event)" title="Click to copy">${String(data.bin).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></p>` : ''}
+                ${data.inspectorName ? `<p><strong>Inspector:</strong> ${data.inspectorName}</p>` : ''}
                 <p><strong>Devices Scanned:</strong> ${totalDevices}</p>
                 <p><strong>Devices with Violations:</strong> ${devicesWithViolationsCount}</p>
                 <p><strong>Satisfactory Devices:</strong> ${satisfactoryDevices.length}</p>
@@ -19081,15 +19470,15 @@
             resultHtml += `
                 <h5 class="elv3-scan-section-title violations">⚠ Devices with Violations</h5>
                 ${Object.entries(violationsByDeviceFiltered).map(([deviceNumber, violations]) => {
-                    // Get device field text from first violation (they all share the same device)
                     const deviceFieldText = violations[0]?.deviceFieldText || null;
+                    const escapedDeviceNumber = deviceNumber.replace(/'/g, "\\'");
                     return `
                     <div class="elv3-scan-device-group">
                         <div class="elv3-scan-device-header violations">
                             <span class="elv3-scan-device-number">${deviceNumber}${deviceFieldText ? ` <span class="elv3-scan-device-note">${deviceFieldText}</span>` : ''}</span>
                             <span class="elv3-scan-device-count">${violations.length} violation${violations.length > 1 ? 's' : ''}</span>
                         </div>
-                        <div class="elv3-scan-device-violations">
+                        <div class="elv3-scan-device-violations elv3-scan-copy-target" onclick="copyDeviceViolations('${escapedDeviceNumber}', event)" title="Click to copy this device's violations">
                             ${violations.map(v => `
                                 <div class="elv3-scan-violation-item">
                                     <div class="elv3-scan-violation-codes">
@@ -19102,6 +19491,7 @@
                                     ${v.comments ? `<div class="elv3-scan-violation-comment">"${v.comments}"</div>` : ''}
                                 </div>
                             `).join('')}
+                            <div class="elv3-scan-copy-hint">📋 Click to copy</div>
                         </div>
                     </div>
                 `}).join('')}
@@ -19156,6 +19546,6 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">pre-release version 1.5.5</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 1.6</div>
 </body>
 </html>
