@@ -18408,33 +18408,6 @@
             // Parse the form data
             parseELV3FormData(formData, result, allFieldNames);
 
-            // If inspector name wasn't found by field-name heuristics, search field
-            // tooltips (/TU entry) which often contain the visible label text
-            // e.g. "Inspector's Name (print):"
-            if (!result.inspectorName) {
-                for (const field of fields) {
-                    if (typeof field.getText !== 'function') continue;
-                    const text = field.getText();
-                    if (!text || !text.trim()) continue;
-
-                    try {
-                        const tuEntry = field.acroField.dict.get(PDFLib.PDFName.of('TU'));
-                        if (tuEntry) {
-                            const tooltip = typeof tuEntry.decodeText === 'function'
-                                ? tuEntry.decodeText()
-                                : tuEntry.toString();
-                            if (/inspector/i.test(tooltip) && !/inspection.date/i.test(tooltip)) {
-                                result.inspectorName = text.trim();
-                                console.log(`Found inspector name via tooltip "${tooltip}": ${result.inspectorName}`);
-                                break;
-                            }
-                        }
-                    } catch (e) {
-                        // Tooltip lookup failed for this field, continue
-                    }
-                }
-            }
-            
             // Match server-side logic: success if devices OR violations found
             result.success = result.devices.length > 0 || result.violations.length > 0;
             
@@ -19239,41 +19212,74 @@
         }
         
         // Step 7: Extract inspector name from form fields
-        // Look for fields with "inspector" or "Inspector_Name" in their name, and common
-        // Page1 text fields that hold the inspector (e.g. TextField1_0_, TextField1_1_).
+        // The inspector name is in "Inspector's Name (print):" on Page2,
+        // which maps to TextField1_157_ in the ELV3 form.
+        const namePattern = /^[A-Za-z\s.\-']{2,60}$/;
+
+        // Pass 1: direct match on the known inspector name field (TextField1_157_)
         for (const [fieldName, value] of Object.entries(formData)) {
-            if (!value || result.inspectorName) continue;
+            if (result.inspectorName) break;
+            if (!value) continue;
+            if (!/TextField1_157_/.test(fieldName)) continue;
             const strValue = value.toString().trim();
-            if (!strValue) continue;
-            const lowerName = fieldName.toLowerCase();
-            if (lowerName.includes('inspector') && !lowerName.includes('inspection_date')) {
+            if (strValue) {
                 result.inspectorName = strValue;
-                console.log(`Found inspector name via field "${fieldName}": ${strValue}`);
+                console.log(`Found inspector name via TextField1_157_ "${fieldName}": ${strValue}`);
             }
         }
-        // Fallback: search text fields on ALL pages for the inspector name.
-        // On the ELV3 form, the inspector name is typically on the last page
-        // under "Inspector's Name (print):". Try common TextField positions.
+
+        // Pass 2: field name contains both "inspector" and "name"
+        if (!result.inspectorName) {
+            for (const [fieldName, value] of Object.entries(formData)) {
+                if (result.inspectorName) break;
+                if (!value) continue;
+                const strValue = value.toString().trim();
+                if (!strValue) continue;
+                const lowerName = fieldName.toLowerCase();
+                if (lowerName.includes('inspector') && lowerName.includes('name') && namePattern.test(strValue)) {
+                    result.inspectorName = strValue;
+                    console.log(`Found inspector name via field "${fieldName}": ${strValue}`);
+                }
+            }
+        }
+
+        // Pass 3: field name contains "inspector" (excluding date/license) and value is a name
+        if (!result.inspectorName) {
+            for (const [fieldName, value] of Object.entries(formData)) {
+                if (result.inspectorName) break;
+                if (!value) continue;
+                const strValue = value.toString().trim();
+                if (!strValue) continue;
+                const lowerName = fieldName.toLowerCase();
+                if (lowerName.includes('inspector')
+                    && !lowerName.includes('inspection_date')
+                    && !lowerName.includes('license')
+                    && !lowerName.includes('licence')
+                    && namePattern.test(strValue)) {
+                    result.inspectorName = strValue;
+                    console.log(`Found inspector name via field "${fieldName}": ${strValue}`);
+                }
+            }
+        }
+
+        // Pass 4: scan high-index text fields on the last page for name-like values
         if (!result.inspectorName) {
             const lastPage = sortedPages.length > 0 ? sortedPages[sortedPages.length - 1] : 1;
-            const pagesToCheck = [lastPage, 1];
-            const fieldPatterns = [/TextField1_[012]_/];
-
-            for (const pageNum of pagesToCheck) {
-                if (result.inspectorName) break;
-                for (const [fieldName, value] of Object.entries(formData)) {
-                    if (!value) continue;
-                    if (!fieldName.includes(`Page${pageNum}`)) continue;
-                    const strValue = value.toString().trim();
-                    if (!strValue) continue;
-                    if (fieldPatterns.some(p => p.test(fieldName))) {
-                        if (/^[A-Za-z\s.\-']{2,60}$/.test(strValue)) {
-                            result.inspectorName = strValue;
-                            console.log(`Found inspector name via Page${pageNum} ${fieldName}: ${strValue}`);
-                            break;
-                        }
-                    }
+            const candidates = [];
+            for (const [fieldName, value] of Object.entries(formData)) {
+                if (!value) continue;
+                if (!fieldName.includes(`Page${lastPage}`)) continue;
+                const strValue = value.toString().trim();
+                if (!strValue || !namePattern.test(strValue)) continue;
+                const idxMatch = fieldName.match(/TextField1_(\d+)_/);
+                if (idxMatch) {
+                    candidates.push({ fieldName, value: strValue, idx: parseInt(idxMatch[1]) });
                 }
+            }
+            if (candidates.length > 0) {
+                candidates.sort((a, b) => b.idx - a.idx);
+                result.inspectorName = candidates[0].value;
+                console.log(`Found inspector name via highest Page${lastPage} text field "${candidates[0].fieldName}": ${result.inspectorName}`);
             }
         }
         
@@ -19580,6 +19586,6 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 1.6</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 1.6.1</div>
 </body>
 </html>
