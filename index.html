@@ -18284,11 +18284,23 @@
             progressFill.classList.remove('indeterminate');
             progressDiv.style.display = 'none';
             
-            // Show success result
             resultDiv.style.display = '';
-            resultDiv.classList.remove('error');
+            if (result.success === false) {
+                resultDiv.classList.add('error');
+            } else {
+                resultDiv.classList.remove('error');
+            }
             
             renderELV3ScanResult(result);
+            
+            if (result.success === false) {
+                setTimeout(() => {
+                    uploadArea.style.display = 'flex';
+                    var _urlAreaLeg = document.getElementById('elv3ScanUrlArea');
+                    if (_urlAreaLeg) _urlAreaLeg.style.display = '';
+                    document.querySelector('.elv3-scan-left-panel').classList.add('elv3-scan-upload-centered');
+                }, 2000);
+            }
             
         } catch (error) {
             progressFill.classList.remove('indeterminate');
@@ -18309,6 +18321,91 @@
                 if (_urlAreaLeg) _urlAreaLeg.style.display = '';
                 document.querySelector('.elv3-scan-left-panel').classList.add('elv3-scan-upload-centered');
             }, 2000);
+        }
+    }
+
+    /**
+     * Detect if pdf-lib returned garbled/encrypted field names.
+     * Encrypted PDFs produce non-ASCII binary in field names when pdf-lib
+     * uses ignoreEncryption instead of actual decryption.
+     */
+    function areFieldNamesGarbled(fieldNames) {
+        if (fieldNames.length === 0) return false;
+        var asciiPrintable = /^[\x20-\x7E]*$/;
+        var garbled = 0;
+        var check = Math.min(fieldNames.length, 10);
+        for (var i = 0; i < check; i++) {
+            if (!asciiPrintable.test(fieldNames[i])) garbled++;
+        }
+        return garbled > check * 0.5;
+    }
+
+    /**
+     * Dynamically load pdf.js from CDN (only when needed for encrypted PDFs).
+     */
+    function loadPdfJs() {
+        if (typeof pdfjsLib !== 'undefined') return Promise.resolve(true);
+        return new Promise(function(resolve) {
+            var script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+            script.onload = function() {
+                pdfjsLib.GlobalWorkerOptions.workerSrc =
+                    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                resolve(true);
+            };
+            script.onerror = function() { resolve(false); };
+            document.head.appendChild(script);
+        });
+    }
+
+    /**
+     * Read form field data using pdf.js (handles encrypted PDFs that pdf-lib cannot).
+     * Returns { formData: {name: value}, fieldNames: [name] } or null on failure.
+     */
+    async function extractFormDataWithPdfJs(arrayBuffer) {
+        var loaded = await loadPdfJs();
+        if (!loaded) { console.error('Could not load pdf.js library'); return null; }
+
+        try {
+            var task = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer), password: '' });
+            var pdfDoc = await task.promise;
+            var formData = {};
+            var fieldNames = [];
+            var seen = {};
+
+            for (var pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                var page = await pdfDoc.getPage(pageNum);
+                var annots = await page.getAnnotations();
+
+                for (var i = 0; i < annots.length; i++) {
+                    var a = annots[i];
+                    if (!a.fieldName) continue;
+                    var name = a.fieldName;
+                    var value = null;
+
+                    if (a.fieldType === 'Tx' || a.fieldType === 'Ch') {
+                        value = a.fieldValue || '';
+                    } else if (a.fieldType === 'Btn') {
+                        if (a.checkBox) {
+                            var cv = String(a.fieldValue || '');
+                            value = (cv !== '' && cv !== 'Off' && cv !== 'off') ? true : false;
+                        } else if (a.radioButton) {
+                            value = a.fieldValue || null;
+                        }
+                    }
+
+                    if (!seen[name]) { seen[name] = true; fieldNames.push(name); }
+                    if (value !== null && value !== undefined && value !== '') {
+                        formData[name] = value;
+                    }
+                }
+            }
+
+            console.log('pdf.js extracted ' + fieldNames.length + ' fields (' + Object.keys(formData).length + ' with values)');
+            return { formData: formData, fieldNames: fieldNames };
+        } catch (e) {
+            console.error('pdf.js extraction failed:', e);
+            return null;
         }
     }
 
@@ -18405,25 +18502,68 @@
             console.log('All field names:', allFieldNames);
             console.log('All form data:', formData);
             
-            // Parse the form data
+            // Detect encrypted PDFs where pdf-lib returns garbled field names
+            if (allFieldNames.length > 0 && areFieldNamesGarbled(allFieldNames)) {
+                console.log('=== Field names are garbled (encrypted PDF). Loading pdf.js fallback... ===');
+                var pdfjsResult = await extractFormDataWithPdfJs(arrayBuffer);
+                if (pdfjsResult && pdfjsResult.fieldNames.length > 0) {
+                    // Replace garbled data with properly decrypted pdf.js results
+                    for (var gk in formData) { if (formData.hasOwnProperty(gk)) delete formData[gk]; }
+                    allFieldNames.length = 0;
+                    var pdfjsFD = pdfjsResult.formData;
+                    for (var pk in pdfjsFD) { if (pdfjsFD.hasOwnProperty(pk)) formData[pk] = pdfjsFD[pk]; }
+                    for (var fi = 0; fi < pdfjsResult.fieldNames.length; fi++) {
+                        allFieldNames.push(pdfjsResult.fieldNames[fi]);
+                    }
+                    console.log('Replaced with pdf.js data: ' + allFieldNames.length + ' fields, ' + Object.keys(formData).length + ' with values');
+                    console.log('pdf.js field names:', allFieldNames);
+                    console.log('pdf.js form data:', formData);
+                } else {
+                    console.log('pdf.js fallback failed or returned no fields');
+                }
+            }
+            
+            // Parse the form data using primary parser
             parseELV3FormData(formData, result, allFieldNames);
+            
+            // If primary parser found no devices, try content-based fallback
+            // for alternate ELV3 form variants with different field names
+            if (result.devices.length === 0 && result.violations.length === 0) {
+                console.log('=== Primary parser found no devices. Trying content-based fallback for alternate form variant... ===');
+                parseELV3FormDataFallback(formData, result, allFieldNames);
+            }
+            
+            // Store field diagnostics for debugging (available even on failure)
+            result._fieldDiagnostics = {
+                totalFields: allFieldNames.length,
+                fieldsWithValues: Object.keys(formData).length,
+                sampleFieldNames: allFieldNames.slice(0, 200),
+                allFieldData: Object.entries(formData).map(function(e) {
+                    return e[0] + ' = ' + String(e[1]).substring(0, 100);
+                }).slice(0, 300)
+            };
 
             // Match server-side logic: success if devices OR violations found
             result.success = result.devices.length > 0 || result.violations.length > 0;
             
             if (!result.success) {
-                // Log debug info to help diagnose
-                console.log('=== DEBUG: No devices or violations found ===');
+                console.log('=== DEBUG: No devices or violations found (primary + fallback both failed) ===');
                 console.log('Total fields:', allFieldNames.length);
                 console.log('Fields with values:', Object.keys(formData).length);
+                console.log('All field names:', allFieldNames);
                 
-                // Show more helpful error message
                 if (allFieldNames.length === 0) {
-                    throw new Error('PDF has no form fields. This may not be a fillable ELV3 form.');
+                    result.errorMessage = 'PDF has no form fields. This may not be a fillable ELV3 form.';
                 } else if (Object.keys(formData).length === 0) {
-                    throw new Error('PDF form fields are empty. The form may not be filled out.');
+                    result.errorMessage = 'PDF form fields are empty. The form may not be filled out.';
                 } else {
-                    throw new Error('Could not find device numbers in form. Check browser console (F12) for field names.');
+                    // Check if the form has Device fields but no valid device numbers
+                    var hasDeviceFields = allFieldNames.some(function(n) { return /_\d+_Device/i.test(n); });
+                    if (hasDeviceFields) {
+                        result.errorMessage = 'No valid device numbers found. Device numbers must follow the format: 1 digit + 1 letter + 3-8 digits (e.g., 1P49414). This form may contain placeholder or incomplete device numbers.';
+                    } else {
+                        result.errorMessage = 'Could not recognize this ELV3 form variant. This form uses different field names than expected. Use the "Copy Field Names" button below to share field info for support.';
+                    }
                 }
             }
             
@@ -18549,10 +18689,22 @@
                     }
                 }
                 
-                // Extract address from first Page2 field found
+                // Extract address from TextField1_0_ (may appear on Page1 or Page2 depending on form variant)
                 const lowerName = fieldName.toLowerCase();
-                if (lowerName.includes('textfield1_0_') && pageNum === 2 && !result.address) {
+                if (lowerName.includes('textfield1_0_') && !result.address) {
                     result.address = value.toString().trim();
+                }
+            }
+        }
+        
+        // Extract address from TextField1_0_ on ANY page (some form variants have it on Page1 only)
+        if (!result.address) {
+            for (const [fieldName, value] of Object.entries(formData)) {
+                if (!value || value === '') continue;
+                if (fieldName.toLowerCase().includes('textfield1_0_') && value.toString().trim()) {
+                    result.address = value.toString().trim();
+                    console.log('Found address in "' + fieldName + '": ' + result.address);
+                    break;
                 }
             }
         }
@@ -19141,12 +19293,23 @@
                 }
             }
             
-            // Also check for Comment_N_ patterns
-            const commentMatch = fieldName.match(/Comments?_(\d+)?/i);
-            if (commentMatch && strValue.length > 0) {
-                const deviceIdx = commentMatch[1] ? parseInt(commentMatch[1]) : 1;
+            // Check for Comments_Section_DeviceIdx_Row_ pattern (e.g., Comments_1_5_0_)
+            // In this pattern the device entry is the SECOND number, not the first
+            const commentDetailMatch = fieldName.match(/Comments?_\d+_(\d+)/i);
+            if (commentDetailMatch && strValue.length > 0) {
+                const deviceIdx = parseInt(commentDetailMatch[1]);
                 if (!deviceComments[deviceIdx]) deviceComments[deviceIdx] = [];
                 deviceComments[deviceIdx].push({ row: 0, comment: strValue });
+                console.log('Comment (detail pattern) for device index ' + deviceIdx + ': ' + strValue.substring(0, 50));
+            }
+            // Fallback: Comment_N_ pattern where N is the device index directly
+            else {
+                const commentMatch = fieldName.match(/Comments?_(\d+)?/i);
+                if (commentMatch && strValue.length > 0) {
+                    const deviceIdx = commentMatch[1] ? parseInt(commentMatch[1]) : 1;
+                    if (!deviceComments[deviceIdx]) deviceComments[deviceIdx] = [];
+                    deviceComments[deviceIdx].push({ row: 0, comment: strValue });
+                }
             }
         }
         
@@ -19287,6 +19450,255 @@
         console.log('Devices with violations:', result.devicesWithViolations.length);
         console.log('Satisfactory devices:', result.satisfactoryDevices.length);
         if (result.inspectorName) console.log('Inspector name:', result.inspectorName);
+    }
+
+    /**
+     * Content-based fallback parser for ELV3 form variants with non-standard field names.
+     * Instead of relying on specific field name patterns, this scans field VALUES to find
+     * device numbers, violation triplets (part/condition/remedy), address, inspector, etc.
+     */
+    function parseELV3FormDataFallback(formData, result, allFieldNames) {
+        console.log('=== FALLBACK PARSER: Content-based ELV3 detection ===');
+
+        // Log every field for debugging alternate form variants
+        for (var fn in formData) {
+            if (formData.hasOwnProperty(fn)) {
+                console.log('FIELD: "' + fn + '" = "' + String(formData[fn]).substring(0, 120) + '"');
+            }
+        }
+
+        // Sort all form entries by natural field order (numeric components in name)
+        var entries = [];
+        for (var fn in formData) {
+            if (!formData.hasOwnProperty(fn)) continue;
+            var v = formData[fn];
+            if (v === null || v === undefined || v === '') continue;
+            var nums = fn.match(/\d+/g) || [];
+            var sortKey = nums.map(function(n) { return ('00000000' + n).slice(-8); }).join('.');
+            entries.push({ fieldName: fn, value: String(v).trim(), sortKey: sortKey });
+        }
+        entries.sort(function(a, b) { return a.sortKey.localeCompare(b.sortKey); });
+
+        // ── Step 1: Find all device numbers by scanning every field value ──
+        var devicePositions = [];
+        var seenDevices = {};
+
+        for (var i = 0; i < entries.length; i++) {
+            var dn = extractELV3DeviceNumber(entries[i].value);
+            if (dn) {
+                devicePositions.push({ entryIndex: i, deviceNumber: dn });
+                if (!seenDevices[dn]) {
+                    seenDevices[dn] = true;
+                    result.devices.push({ deviceNumber: dn, satisfactory: false, deviceType: 'Elevator' });
+                    console.log('Fallback device: "' + dn + '" in field "' + entries[i].fieldName + '"');
+                }
+            }
+        }
+
+        if (result.devices.length === 0) {
+            console.log('Fallback: No device numbers found in any field value');
+            return;
+        }
+
+        // Helper: find the device that "owns" a given entry index.
+        // Uses the most recently seen device before (or at) the index.
+        function ownerDevice(idx) {
+            var best = null;
+            for (var j = 0; j < devicePositions.length; j++) {
+                if (devicePositions[j].entryIndex <= idx) {
+                    best = devicePositions[j].deviceNumber;
+                }
+            }
+            return best || devicePositions[0].deviceNumber;
+        }
+
+        var partPat = /^\d{1,3}$/;
+        var condPat = /^[A-Z]{1,2}$/;
+        var remPat  = /^\d{1,3}$/;
+
+        function addViolation(dev, partCode, condCode, remCode) {
+            var pc = partCode.length < 2 ? ('0' + partCode).slice(-2) : partCode;
+            var rc = remCode.length < 2 ? ('0' + remCode).slice(-2) : remCode;
+            var cc = condCode.toUpperCase();
+            for (var vi = 0; vi < result.violations.length; vi++) {
+                var ev = result.violations[vi];
+                if (ev.deviceNumber === dev && ev.partCode === pc && ev.conditionCode === cc && ev.remedyCode === rc) return;
+            }
+            result.violations.push({
+                deviceNumber: dev,
+                partCode: pc,
+                partDescription: getELV3PartDescriptionWithLocation(pc),
+                conditionCode: cc,
+                conditionDescription: ELV3_CONDITION_CODES[cc] || cc,
+                remedyCode: rc,
+                remedyDescription: ELV3_REMEDY_CODES[rc] || ('Remedy ' + rc),
+                comments: null,
+                deviceFieldText: null
+            });
+            console.log('Fallback violation: Device ' + dev + ', Part ' + pc + ', Cond ' + cc + ', Remedy ' + rc);
+        }
+
+        // ── Step 2: Keyword-based violation detection ──
+        // Match fields whose NAME contains part/condition/remedy keywords
+        for (var i = 0; i < entries.length; i++) {
+            var lower = entries[i].fieldName.toLowerCase();
+            var val   = entries[i].value;
+            if (extractELV3DeviceNumber(val)) continue;
+
+            var isPart = (lower.includes('part') || lower.includes('defect') || lower.includes('elev')) && partPat.test(val);
+            if (isPart && i + 2 < entries.length) {
+                var bVal = entries[i + 1].value.toUpperCase();
+                var cVal = entries[i + 2].value;
+                if (condPat.test(bVal) && remPat.test(cVal)) {
+                    addViolation(ownerDevice(i), val, bVal, cVal);
+                    i += 2;
+                }
+            }
+        }
+
+        // ── Step 3: Pure content-based triplet scanning ──
+        // Walk sorted entries looking for consecutive (number, letter(s), number)
+        if (result.violations.length === 0) {
+            for (var i = 0; i < entries.length - 2; i++) {
+                if (extractELV3DeviceNumber(entries[i].value)) continue;
+                var a = entries[i].value;
+                var b = entries[i + 1].value.toUpperCase();
+                var c = entries[i + 2].value;
+                if (partPat.test(a) && condPat.test(b) && remPat.test(c)) {
+                    addViolation(ownerDevice(i), a, b, c);
+                    i += 2;
+                }
+            }
+        }
+
+        // ── Step 4: Extract address ──
+        if (!result.address) {
+            for (var i = 0; i < entries.length; i++) {
+                if (entries[i].fieldName.toLowerCase().includes('address') && entries[i].value.length > 5) {
+                    result.address = entries[i].value;
+                    console.log('Fallback address (by name): "' + result.address + '"');
+                    break;
+                }
+            }
+        }
+        if (!result.address) {
+            var addrRe = /\d+\s+\w+\s+(st|street|ave|avenue|rd|road|blvd|boulevard|pl|place|way|dr|drive|ct|court|ln|lane)/i;
+            for (var i = 0; i < entries.length; i++) {
+                if (entries[i].value.length > 5 && addrRe.test(entries[i].value)) {
+                    result.address = entries[i].value;
+                    console.log('Fallback address (by content): "' + result.address + '"');
+                    break;
+                }
+            }
+        }
+
+        // ── Step 5: Extract inspector name ──
+        if (!result.inspectorName) {
+            var namePat = /^[A-Za-z\s.\-']{2,60}$/;
+            for (var i = 0; i < entries.length; i++) {
+                var lo = entries[i].fieldName.toLowerCase();
+                if ((lo.includes('inspector') || lo.includes('insp')) &&
+                    !lo.includes('date') && !lo.includes('license') && !lo.includes('licence') &&
+                    namePat.test(entries[i].value)) {
+                    result.inspectorName = entries[i].value;
+                    console.log('Fallback inspector: "' + result.inspectorName + '"');
+                    break;
+                }
+            }
+        }
+
+        // ── Step 6: Extract comments ──
+        for (var i = 0; i < entries.length; i++) {
+            var lo = entries[i].fieldName.toLowerCase();
+            if ((lo.includes('comment') || lo.includes('remark') || lo.includes('note')) && entries[i].value.length > 3) {
+                var dev = ownerDevice(i);
+                var devVios = result.violations.filter(function(v) { return v.deviceNumber === dev && !v.comments; });
+                if (devVios.length > 0) devVios[0].comments = entries[i].value;
+            }
+        }
+
+        // ── Step 7: Detect satisfactory/unsatisfactory from checkboxes or keywords ──
+        for (var i = 0; i < entries.length; i++) {
+            var lo  = entries[i].fieldName.toLowerCase();
+            var val = entries[i].value;
+            var isTruthy = (val === 'true' || val === 'Yes' || val === 'X' || val === '1');
+            if (!isTruthy) continue;
+            if (lo.includes('unsatisf') || lo.includes('unsat')) {
+                var dev = ownerDevice(i);
+                var device = result.devices.find(function(d) { return d.deviceNumber === dev; });
+                if (device) { device.satisfactory = false; device.unsatisfactory = true; }
+            } else if (lo.includes('satisf') || lo.includes(' sat')) {
+                var dev = ownerDevice(i);
+                var device = result.devices.find(function(d) { return d.deviceNumber === dev; });
+                if (device) device.satisfactory = true;
+            }
+        }
+
+        // ── Step 8: Group violations by device ──
+        result.violationsByDevice = {};
+        for (var vi = 0; vi < result.violations.length; vi++) {
+            var v = result.violations[vi];
+            if (!result.violationsByDevice[v.deviceNumber]) result.violationsByDevice[v.deviceNumber] = [];
+            result.violationsByDevice[v.deviceNumber].push(v);
+        }
+
+        // ── Step 9: Categorize devices ──
+        result.devicesWithViolations = [];
+        result.satisfactoryDevices = [];
+        result.devicesWithoutStatusCheck = [];
+        for (var di = 0; di < result.devices.length; di++) {
+            var device = result.devices[di];
+            var hasVio = result.violationsByDevice[device.deviceNumber] && result.violationsByDevice[device.deviceNumber].length > 0;
+            if (hasVio) {
+                result.devicesWithViolations.push(device);
+            } else {
+                result.satisfactoryDevices.push({ deviceNumber: device.deviceNumber, satisfactory: true, deviceType: device.deviceType });
+            }
+        }
+
+        console.log('Fallback parser complete: ' + result.devices.length + ' devices, ' + result.violations.length + ' violations');
+    }
+
+    /**
+     * Copy field diagnostics to clipboard for debugging unrecognized ELV3 form variants
+     */
+    function copyFieldDiagnostics() {
+        var item = elv3ScanItems[elv3ScanCurrentIndex];
+        if (!item || !item.result || !item.result._fieldDiagnostics) return;
+        var diag = item.result._fieldDiagnostics;
+        var lines = [
+            '=== ELV3 Form Field Diagnostics ===',
+            'Total fields: ' + diag.totalFields,
+            'Fields with values: ' + diag.fieldsWithValues,
+            '',
+            '--- Field Names & Values ---'
+        ];
+        for (var i = 0; i < diag.allFieldData.length; i++) {
+            lines.push(diag.allFieldData[i]);
+        }
+        if (diag.totalFields > diag.allFieldData.length) {
+            lines.push('... (' + (diag.totalFields - diag.allFieldData.length) + ' more fields)');
+        }
+        var text = lines.join('\n');
+        try {
+            navigator.clipboard.writeText(text);
+        } catch (e) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+        var btn = document.querySelector('.elv3-diag-copy-btn');
+        if (btn) {
+            var orig = btn.textContent;
+            btn.textContent = '✓ Copied to clipboard!';
+            btn.style.background = '#10b981';
+            setTimeout(function() { btn.textContent = orig; btn.style.background = ''; }, 2000);
+        }
     }
 
     /**
@@ -19465,12 +19877,28 @@
         const container = targetEl || document.getElementById('elv3ScanResultContent');
         if (data.success === false) {
             if (container) {
-                container.innerHTML = `
-                    <h4>✗ Scan Failed</h4>
-                    <div class="elv3-scan-result-details">
-                        <p>${data.errorMessage || 'Could not parse this PDF.'}</p>
-                    </div>
-                `;
+                var diagHtml = '';
+                if (data._fieldDiagnostics && data._fieldDiagnostics.totalFields > 0) {
+                    diagHtml = '<div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">'
+                        + '<p style="font-size: 0.85em; color: #999; margin-bottom: 8px;">'
+                        + 'Found ' + data._fieldDiagnostics.totalFields + ' form fields '
+                        + '(' + data._fieldDiagnostics.fieldsWithValues + ' with values)'
+                        + '</p>'
+                        + '<button class="elv3-diag-copy-btn" onclick="copyFieldDiagnostics()" '
+                        + 'style="padding: 6px 14px; background: #2563eb; color: white; border: none; '
+                        + 'border-radius: 4px; cursor: pointer; font-size: 0.85em; transition: background 0.2s;">'
+                        + '📋 Copy Field Names'
+                        + '</button>'
+                        + '<p style="font-size: 0.75em; color: #777; margin-top: 6px;">'
+                        + 'Copy the field names and share them so this form variant can be supported.'
+                        + '</p>'
+                        + '</div>';
+                }
+                container.innerHTML = '<h4>✗ Scan Failed</h4>'
+                    + '<div class="elv3-scan-result-details">'
+                    + '<p>' + (data.errorMessage || 'Could not parse this PDF.') + '</p>'
+                    + diagHtml
+                    + '</div>';
             }
             return;
         }
@@ -19586,6 +20014,6 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 1.6.1</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 1.7</div>
 </body>
 </html>
