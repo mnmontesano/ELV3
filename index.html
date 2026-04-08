@@ -10278,6 +10278,7 @@
             if (!mapBuildingsData || mapBuildingsData.length === 0) return;
 
             const labels = getMapMonthLabels();
+            const favorites = getMapFavorites();
             const resultCount = document.getElementById('mapSearchResultCount');
 
             if (activeMonthFilters.size === 0) {
@@ -10294,9 +10295,10 @@
             }
 
             const matches = mapBuildingsData.filter(b => activeMonthFilters.has(labels[b.bin]));
+            const favoritedCount = mapBuildingsData.filter(b => favorites[b.bin] && !activeMonthFilters.has(labels[b.bin])).length;
             const monthList = [...activeMonthFilters].join(', ');
 
-            if (matches.length === 0) {
+            if (matches.length === 0 && favoritedCount === 0) {
                 if (resultCount) {
                     resultCount.textContent = `No buildings labeled: ${monthList}`;
                     resultCount.style.display = 'inline';
@@ -10309,9 +10311,10 @@
             }
 
             const totalDevices = matches.reduce((sum, b) => sum + (b.deviceCount || 0), 0);
+            const favSuffix = favoritedCount > 0 ? ` + ${favoritedCount} ⭐` : '';
 
             if (resultCount) {
-                resultCount.textContent = `${matches.length} building${matches.length !== 1 ? 's' : ''} · ${totalDevices} device${totalDevices !== 1 ? 's' : ''} — ${monthList}`;
+                resultCount.textContent = `${matches.length} building${matches.length !== 1 ? 's' : ''} · ${totalDevices} device${totalDevices !== 1 ? 's' : ''} — ${monthList}${favSuffix}`;
                 resultCount.style.display = 'inline';
                 resultCount.style.color = '#17a2b8';
             }
@@ -10319,7 +10322,10 @@
             const bounds = L.latLngBounds();
             mapMarkers.forEach((marker, index) => {
                 const building = mapBuildingsData[index];
-                if (building && activeMonthFilters.has(labels[building.bin])) {
+                if (!building) return;
+                const matchesFilter = activeMonthFilters.has(labels[building.bin]);
+                const isFavorited = !!favorites[building.bin];
+                if (matchesFilter || isFavorited) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     bounds.extend(marker.getLatLng());
                 } else {
@@ -11510,8 +11516,11 @@
             updateHideMonthLabeledBtn();
             applyMonthLabeledVisibility();
             
-            // Sync month filter button visual state
+            // Sync month filter button visual state and re-apply active filters
             updateMonthFilterButtons();
+            if (activeMonthFilters.size > 0) {
+                applyMonthFilters();
+            }
 
             // Add legend with hide/show functionality
             const legend = L.control({ position: 'bottomright' });
