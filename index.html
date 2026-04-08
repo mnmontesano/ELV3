@@ -18407,6 +18407,33 @@
             
             // Parse the form data
             parseELV3FormData(formData, result, allFieldNames);
+
+            // If inspector name wasn't found by field-name heuristics, search field
+            // tooltips (/TU entry) which often contain the visible label text
+            // e.g. "Inspector's Name (print):"
+            if (!result.inspectorName) {
+                for (const field of fields) {
+                    if (typeof field.getText !== 'function') continue;
+                    const text = field.getText();
+                    if (!text || !text.trim()) continue;
+
+                    try {
+                        const tuEntry = field.acroField.dict.get(PDFLib.PDFName.of('TU'));
+                        if (tuEntry) {
+                            const tooltip = typeof tuEntry.decodeText === 'function'
+                                ? tuEntry.decodeText()
+                                : tuEntry.toString();
+                            if (/inspector/i.test(tooltip) && !/inspection.date/i.test(tooltip)) {
+                                result.inspectorName = text.trim();
+                                console.log(`Found inspector name via tooltip "${tooltip}": ${result.inspectorName}`);
+                                break;
+                            }
+                        }
+                    } catch (e) {
+                        // Tooltip lookup failed for this field, continue
+                    }
+                }
+            }
             
             // Match server-side logic: success if devices OR violations found
             result.success = result.devices.length > 0 || result.violations.length > 0;
@@ -19224,20 +19251,27 @@
                 console.log(`Found inspector name via field "${fieldName}": ${strValue}`);
             }
         }
-        // Fallback: on Page1, TextField1_0_ through TextField1_5_ often carry header info.
-        // Try Page1 TextField1_2_ which frequently holds the inspector name in NYC ELV3 forms.
+        // Fallback: search text fields on ALL pages for the inspector name.
+        // On the ELV3 form, the inspector name is typically on the last page
+        // under "Inspector's Name (print):". Try common TextField positions.
         if (!result.inspectorName) {
-            for (const [fieldName, value] of Object.entries(formData)) {
-                if (!value) continue;
-                if (!fieldName.includes('Page1')) continue;
-                const strValue = value.toString().trim();
-                if (!strValue) continue;
-                // Page1 TextField1_2_ is commonly the inspector name field
-                if (/TextField1_2_/.test(fieldName)) {
-                    // Sanity check: value should look like a name (letters, spaces, hyphens)
-                    if (/^[A-Za-z\s.\-']{2,60}$/.test(strValue)) {
-                        result.inspectorName = strValue;
-                        console.log(`Found inspector name via Page1 TextField1_2_: ${strValue}`);
+            const lastPage = sortedPages.length > 0 ? sortedPages[sortedPages.length - 1] : 1;
+            const pagesToCheck = [lastPage, 1];
+            const fieldPatterns = [/TextField1_[012]_/];
+
+            for (const pageNum of pagesToCheck) {
+                if (result.inspectorName) break;
+                for (const [fieldName, value] of Object.entries(formData)) {
+                    if (!value) continue;
+                    if (!fieldName.includes(`Page${pageNum}`)) continue;
+                    const strValue = value.toString().trim();
+                    if (!strValue) continue;
+                    if (fieldPatterns.some(p => p.test(fieldName))) {
+                        if (/^[A-Za-z\s.\-']{2,60}$/.test(strValue)) {
+                            result.inspectorName = strValue;
+                            console.log(`Found inspector name via Page${pageNum} ${fieldName}: ${strValue}`);
+                            break;
+                        }
                     }
                 }
             }
@@ -19293,18 +19327,13 @@
         var violations = (data.violationsByDevice || {})[deviceNumber];
         if (!violations || violations.length === 0) return;
 
-        var lines = [];
-        var fieldText = violations[0] && violations[0].deviceFieldText ? ' (' + violations[0].deviceFieldText + ')' : '';
-        lines.push(deviceNumber + fieldText + '  —  ' + violations.length + ' violation' + (violations.length > 1 ? 's' : ''));
-        violations.forEach(function(v) {
-            lines.push('  Part ' + v.partCode + ' | Cond ' + (v.conditionCode || '-') + ' | Remedy ' + (v.remedyCode || '-'));
-            lines.push('  ' + v.partDescription);
-            var details = (v.conditionDescription || '') + ' → ' + (v.remedyDescription || '');
-            if (details.trim() !== '→') lines.push('  ' + details.trim());
-            if (v.comments) lines.push('  "' + v.comments + '"');
-        });
+        var comments = violations
+            .filter(function(v) { return v.comments; })
+            .map(function(v) { return v.comments; });
 
-        var text = lines.join('\n');
+        if (comments.length === 0) return;
+
+        var text = comments.join('\n');
 
         try {
             await navigator.clipboard.writeText(text);
