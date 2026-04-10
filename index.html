@@ -1053,7 +1053,7 @@
                                 <span class="mcp-arrow" id="mcpInProcessArrow">▼</span>
                             </div>
                             <div class="mcp-body" id="mcpInProcess">
-                                <p class="mcp-desc">Buildings marked as currently in process with a date</p>
+                                <p class="mcp-desc">Buildings marked as currently in process</p>
                                 <div id="inProcessBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 8px;">
                                     <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No in-process buildings</div>
                                 </div>
@@ -9794,6 +9794,48 @@
                 throw new Error('Missing map lookup results in file.');
             }
 
+            // Parse "MM/DD/YY" → "YYYY-MM-DD" (used for legacy scheduledDates values)
+            const parseLegacyDateStr = (str) => {
+                const m = str && str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+                if (!m) return null;
+                return `${2000 + parseInt(m[3], 10)}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+            };
+
+            // Build a lookup of scheduled dates per BIN from legacy scheduledDates or existing testDates
+            // Legacy format: { "BIN": "MM/DD/YY" } — convert to arrays of "YYYY-MM-DD"
+            const rawScheduled = source.scheduledDates && typeof source.scheduledDates === 'object' && !Array.isArray(source.scheduledDates)
+                ? source.scheduledDates : {};
+            const scheduledByBin = {};
+            Object.entries(rawScheduled).forEach(([bin, val]) => {
+                const dates = Array.isArray(val) ? val : (typeof val === 'string' ? [parseLegacyDateStr(val)].filter(Boolean) : []);
+                if (dates.length) scheduledByBin[bin] = dates;
+            });
+
+            // Normalize completed: boolean true values → proper object { address, timestamp, scheduledDates }
+            // For completed BINs that also have a scheduled date, embed it inside the completed object
+            // so it shows up in the completed building's popup.
+            const rawCompleted = source.completed || {};
+            const normalizedCompleted = {};
+            Object.entries(rawCompleted).forEach(([bin, val]) => {
+                const embeddedDates = scheduledByBin[bin] || [];
+                if (val === true) {
+                    normalizedCompleted[bin] = { address: '', timestamp: 0, scheduledDates: embeddedDates };
+                } else if (val && typeof val === 'object') {
+                    const existing = Array.isArray(val.scheduledDates) ? val.scheduledDates : [];
+                    const merged = Array.from(new Set([...existing, ...embeddedDates])).sort();
+                    normalizedCompleted[bin] = { ...val, scheduledDates: merged };
+                }
+                // false / null values are intentionally dropped
+            });
+
+            // Remaining scheduled dates (for non-completed buildings) go into testDates
+            const completedBins = new Set(Object.keys(normalizedCompleted));
+            let testDates = source.testDates && typeof source.testDates === 'object' ? { ...source.testDates } : {};
+            Object.entries(scheduledByBin).forEach(([bin, dates]) => {
+                if (completedBins.has(bin)) return; // already embedded above
+                testDates[bin] = Array.from(new Set([...(testDates[bin] || []), ...dates])).sort();
+            });
+
             const now = Date.now();
             return {
                 id: source.id || `view_${now}_${Math.floor(Math.random() * 100000)}`,
@@ -9804,9 +9846,9 @@
                 lastBulkSearchResults: source.lastBulkSearchResults,
                 favorites: source.favorites || {},
                 hidden: source.hidden || {},
-                completed: source.completed || {},
+                completed: normalizedCompleted,
                 inProcess: source.inProcess || {},
-                testDates: source.testDates || {},
+                testDates: testDates,
                 monthLabels: source.monthLabels || {},
                 monthAssignments: Array.isArray(source.monthAssignments) ? source.monthAssignments : [],
                 additionalLocations: Array.isArray(source.additionalLocations) ? source.additionalLocations : [],
@@ -10741,7 +10783,20 @@
                     initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                 }
             } else {
-                showInProcessDatePicker(bin);
+                let address = '';
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && window.lastBulkSearchResults.binGroups[bin]) {
+                    address = window.lastBulkSearchResults.binGroups[bin].address || '';
+                }
+                if (!address) {
+                    const building = mapBuildingsData && mapBuildingsData.find(b => b.bin === bin);
+                    if (building) address = building.address || '';
+                }
+                inProcess[bin] = { address, date: '', timestamp: Date.now() };
+                setMapInProcess(inProcess);
+                showMapNotification(`Building ${bin} marked as In Process`, '#e67e22');
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                    initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+                }
             }
         }
 
