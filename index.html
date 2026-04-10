@@ -10755,6 +10755,56 @@
             }
         }
 
+        function changeMapCompletedDate(bin) {
+            const completed = getMapCompleted();
+            if (!completed[bin]) return;
+            const data = completed[bin];
+            const address = data.address || '';
+
+            const overlay = document.createElement('div');
+            overlay.id = 'completedDateOverlay';
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.5); z-index: 10010;
+                display: flex; align-items: center; justify-content: center;
+            `;
+
+            const currentDate = data.timestamp
+                ? new Date(data.timestamp).toISOString().split('T')[0]
+                : new Date().toISOString().split('T')[0];
+
+            overlay.innerHTML = `
+                <div style="background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 24px; min-width: 300px; max-width: 400px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                    <h3 style="margin: 0 0 6px 0; color: var(--text-color, #fff); font-size: 16px;">✓ Change Completed Date</h3>
+                    <p style="margin: 0 0 16px 0; font-size: 12px; opacity: 0.7; color: var(--text-color, #ccc);">${address || 'BIN ' + bin}</p>
+                    <label style="font-size: 13px; color: var(--text-color, #ccc); display: block; margin-bottom: 6px;">Select the completed date:</label>
+                    <input type="date" id="completedDateInput" value="${currentDate}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); font-size: 14px; box-sizing: border-box; margin-bottom: 16px;">
+                    <div style="display: flex; gap: 8px;">
+                        <button id="completedDateCancelBtn" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #ccc); cursor: pointer; font-size: 13px;">Cancel</button>
+                        <button id="completedDateConfirmBtn" style="flex: 1; padding: 10px; border-radius: 6px; border: none; background: #27ae60; color: white; cursor: pointer; font-size: 13px; font-weight: 600;">Save</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+
+            document.getElementById('completedDateCancelBtn').addEventListener('click', () => overlay.remove());
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+            document.getElementById('completedDateConfirmBtn').addEventListener('click', () => {
+                const dateVal = document.getElementById('completedDateInput').value;
+                if (!dateVal) { showMapNotification('Please select a date', '#ff6b6b'); return; }
+                const newTimestamp = new Date(dateVal + 'T00:00:00').getTime();
+                completed[bin].timestamp = newTimestamp;
+                setMapCompleted(completed);
+                overlay.remove();
+                showMapNotification('Completed date updated', '#27ae60');
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                    initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+                }
+            });
+        }
+
         function clearAllCompleted() {
             if (confirm('Are you sure you want to clear all completed marks?')) {
                 setMapCompleted({});
@@ -11597,7 +11647,10 @@
                             + '</span>'
                             + subLine
                             + '</span>'
-                            + '<button onclick="toggleMapCompleted(\'' + bin + '\')" style="flex-shrink:0; background: #ff9800; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px; margin-left: 8px;">Undo</button>'
+                            + '<span style="display: flex; gap: 4px; flex-shrink: 0; margin-left: 8px;">'
+                            + '<button onclick="changeMapCompletedDate(\'' + bin + '\')" style="flex-shrink:0; background: #1a73e8; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px;">Date</button>'
+                            + '<button onclick="toggleMapCompleted(\'' + bin + '\')" style="flex-shrink:0; background: #ff9800; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px;">Un-Complete</button>'
+                            + '</span>'
                             + '</div>'
                             + datesHtml
                             + '</div>'
@@ -21121,6 +21174,6 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 1.8</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 1.8.1</div>
 </body>
 </html>
