@@ -305,6 +305,10 @@
                 <input type="checkbox" id="mapHideCompletedToggle" style="width: 16px; height: 16px; cursor: pointer; accent-color: #27ae60;">
                 <span>Hide completed addresses on the map</span>
             </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.9em; padding: 8px; background: var(--input-bg); border-radius: 6px; border: 1px solid var(--input-border); margin-top: 6px;">
+                <input type="checkbox" id="mapHideInProcessToggle" style="width: 16px; height: 16px; cursor: pointer; accent-color: #e67e22;">
+                <span>Hide in-process addresses on the map</span>
+            </label>
         </div>
         <div style="margin-top: 16px; display: flex; gap: 10px;">
             <button onclick="saveSettings()">Save</button>
@@ -1038,6 +1042,18 @@
                             <button onclick="clearAllCompleted()" style="width: 100%; padding: 8px; background: var(--input-bg); color: #27ae60; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">Clear All Completed</button>
                             <button id="hideCompletedBtn" onclick="toggleHideCompleted()" style="width: 100%; padding: 8px; margin-top: 6px; background: var(--input-bg); color: #27ae60; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">🚫 Hide Completed Buildings</button>
                         </div>
+
+                        <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
+                            <h4 style="margin: 0 0 12px 0; color: var(--header-color); font-size: 1em; display: flex; align-items: center; gap: 8px;">
+                                <span style="color: #e67e22;">🔄</span> In Process (<span id="mapInProcessCount">0</span>)
+                            </h4>
+                            <p style="font-size: 11px; opacity: 0.7; margin: 0 0 10px 0;">Buildings you've marked as currently in process with a date</p>
+                            <div id="inProcessBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 10px;">
+                                <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No in-process buildings</div>
+                            </div>
+                            <button onclick="clearAllInProcess()" style="width: 100%; padding: 8px; background: var(--input-bg); color: #e67e22; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">Clear All In Process</button>
+                            <button id="hideInProcessBtn" onclick="toggleHideInProcess()" style="width: 100%; padding: 8px; margin-top: 6px; background: var(--input-bg); color: #e67e22; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px;">🚫 Hide In Process Buildings</button>
+                        </div>
                         
                         <div style="border-top: 1px solid var(--input-border); padding-top: 15px; margin-top: 15px;">
                             <h4 style="margin: 0 0 12px 0; color: var(--header-color); font-size: 1em; display: flex; align-items: center; gap: 8px;">
@@ -1084,10 +1100,12 @@
                             <ul style="font-size: 11px; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.6;">
                                 <li>Click a marker to see building details</li>
                                 <li>Use ✓ in popup to mark a building complete</li>
+                                <li>Use 🔄 in popup to mark a building in process</li>
                                 <li>Use ⭐ in popup to favorite a building</li>
                                 <li>Use 👁️ in popup to hide a building</li>
                                 <li>Use 📅 dropdown to assign a month</li>
                                 <li>Completed buildings turn dark green</li>
+                                <li>In-process buildings turn orange</li>
                                 <li>Favorited buildings turn purple</li>
                                 <li>Add custom locations with the ➕ button</li>
                                 <li><strong>Save your work</strong> — data is not kept between sessions</li>
@@ -3029,6 +3047,9 @@
 
             const hideCompletedToggle = document.getElementById('mapHideCompletedToggle');
             if (hideCompletedToggle) hideCompletedToggle.checked = isHideCompletedActive();
+
+            const hideInProcessToggle = document.getElementById('mapHideInProcessToggle');
+            if (hideInProcessToggle) hideInProcessToggle.checked = isHideInProcessActive();
             
             // Close dropdown
             document.getElementById('dropdownContent').style.display = 'none';
@@ -3064,6 +3085,22 @@
                     mapHideCompleted = newVal;
                     localStorage.setItem('mapHideCompleted', mapHideCompleted ? 'true' : 'false');
                     updateHideCompletedBtn();
+                    if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                        const modal = document.getElementById('buildingMapModal');
+                        if (modal && modal.style.display === 'flex') {
+                            initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+                        }
+                    }
+                }
+            }
+
+            const hideInProcessToggle = document.getElementById('mapHideInProcessToggle');
+            if (hideInProcessToggle) {
+                const newVal = hideInProcessToggle.checked;
+                if (mapHideInProcess !== newVal) {
+                    mapHideInProcess = newVal;
+                    localStorage.setItem('mapHideInProcess', mapHideInProcess ? 'true' : 'false');
+                    updateHideInProcessBtn();
                     if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
                         const modal = document.getElementById('buildingMapModal');
                         if (modal && modal.style.display === 'flex') {
@@ -9328,9 +9365,11 @@
         let mapFavorites = {};
         let mapHidden = {};
         let mapCompleted = {};
+        let mapInProcess = {};
         let mapAdditionalLocations = [];
         let mapHideMonthLabeled = false;
         let mapHideCompleted = localStorage.getItem('mapHideCompleted') === 'true';
+        let mapHideInProcess = localStorage.getItem('mapHideInProcess') === 'true';
         let activeMonthFilters = new Set();
 
         let additionalLocationMarkers = [];
@@ -9477,6 +9516,7 @@
                 favorites: getMapFavorites(),
                 hidden: getMapHidden(),
                 completed: getMapCompleted(),
+                inProcess: getMapInProcess(),
                 monthLabels: scopedMonthLabels,
                 monthAssignments: monthAssignments,
                 additionalLocations: additionalLocations,
@@ -9629,6 +9669,7 @@
                     favorites: view.favorites || {},
                     hidden: view.hidden || {},
                     completed: view.completed || {},
+                    inProcess: view.inProcess || {},
                     monthLabels: view.monthLabels || {},
                     monthAssignments: Array.isArray(view.monthAssignments) ? view.monthAssignments : [],
                     additionalLocations: Array.isArray(view.additionalLocations) ? view.additionalLocations : [],
@@ -9688,6 +9729,7 @@
                 favorites: source.favorites || {},
                 hidden: source.hidden || {},
                 completed: source.completed || {},
+                inProcess: source.inProcess || {},
                 monthLabels: source.monthLabels || {},
                 monthAssignments: Array.isArray(source.monthAssignments) ? source.monthAssignments : [],
                 additionalLocations: Array.isArray(source.additionalLocations) ? source.additionalLocations : [],
@@ -9700,6 +9742,7 @@
             setMapFavorites(view.favorites || {});
             setMapHidden(view.hidden || {});
             setMapCompleted(view.completed || {});
+            setMapInProcess(view.inProcess || {});
             const restoredMonthLabels = (Array.isArray(view.monthAssignments) && view.monthAssignments.length > 0)
                 ? monthLabelsFromAssignments(view.monthAssignments)
                 : (view.monthLabels || {});
@@ -10589,6 +10632,138 @@
             }
         }
 
+        function getMapInProcess() {
+            return mapInProcess;
+        }
+
+        function setMapInProcess(inProcess) {
+            mapInProcess = inProcess && typeof inProcess === 'object' ? inProcess : {};
+        }
+
+        function toggleMapInProcess(bin) {
+            const inProcess = getMapInProcess();
+            if (inProcess[bin]) {
+                delete inProcess[bin];
+                showMapNotification(`Building ${bin} removed from In Process`, '#ff9800');
+                setMapInProcess(inProcess);
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                    initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+                }
+            } else {
+                showInProcessDatePicker(bin);
+            }
+        }
+
+        function moveInProcessToCompleted(bin) {
+            const inProcess = getMapInProcess();
+            if (!inProcess[bin]) return;
+
+            let address = inProcess[bin].address || '';
+            delete inProcess[bin];
+            setMapInProcess(inProcess);
+
+            if (!address && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && window.lastBulkSearchResults.binGroups[bin]) {
+                address = window.lastBulkSearchResults.binGroups[bin].address || '';
+            }
+            if (!address) {
+                const building = mapBuildingsData.find(b => b.bin === bin);
+                if (building) address = building.address || '';
+            }
+
+            const completed = getMapCompleted();
+            completed[bin] = { address, timestamp: Date.now() };
+            setMapCompleted(completed);
+
+            showMapNotification(`Building ${bin} moved to Completed ✓`, '#27ae60');
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
+
+        function showInProcessDatePicker(bin) {
+            let address = '';
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && window.lastBulkSearchResults.binGroups[bin]) {
+                address = window.lastBulkSearchResults.binGroups[bin].address || '';
+            }
+            if (!address) {
+                const building = mapBuildingsData.find(b => b.bin === bin);
+                if (building) address = building.address || '';
+            }
+
+            const overlay = document.createElement('div');
+            overlay.id = 'inProcessDateOverlay';
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.5); z-index: 10010;
+                display: flex; align-items: center; justify-content: center;
+            `;
+
+            const today = new Date().toISOString().split('T')[0];
+
+            overlay.innerHTML = `
+                <div style="background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 24px; min-width: 300px; max-width: 400px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                    <h3 style="margin: 0 0 6px 0; color: var(--text-color, #fff); font-size: 16px;">🔄 Mark as In Process</h3>
+                    <p style="margin: 0 0 16px 0; font-size: 12px; opacity: 0.7; color: var(--text-color, #ccc);">${address || 'BIN ' + bin}</p>
+                    <label style="font-size: 13px; color: var(--text-color, #ccc); display: block; margin-bottom: 6px;">Select a date for this building:</label>
+                    <input type="date" id="inProcessDateInput" value="${today}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); font-size: 14px; box-sizing: border-box; margin-bottom: 16px;">
+                    <div style="display: flex; gap: 8px;">
+                        <button id="inProcessCancelBtn" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #ccc); cursor: pointer; font-size: 13px;">Cancel</button>
+                        <button id="inProcessConfirmBtn" style="flex: 1; padding: 10px; border-radius: 6px; border: none; background: #e67e22; color: white; cursor: pointer; font-size: 13px; font-weight: 600;">Confirm</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+
+            document.getElementById('inProcessCancelBtn').addEventListener('click', () => overlay.remove());
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+            document.getElementById('inProcessConfirmBtn').addEventListener('click', () => {
+                const dateVal = document.getElementById('inProcessDateInput').value;
+                const inProcess = getMapInProcess();
+                inProcess[bin] = { address, date: dateVal, timestamp: Date.now() };
+                setMapInProcess(inProcess);
+                overlay.remove();
+                showMapNotification(`Building ${bin} marked as In Process`, '#e67e22');
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                    initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+                }
+            });
+        }
+
+        function clearAllInProcess() {
+            if (confirm('Are you sure you want to clear all In Process marks?')) {
+                setMapInProcess({});
+                showMapNotification('All In Process marks cleared', '#ff9800');
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                    initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+                }
+            }
+        }
+
+        function isHideInProcessActive() {
+            return mapHideInProcess;
+        }
+
+        function toggleHideInProcess() {
+            mapHideInProcess = !mapHideInProcess;
+            localStorage.setItem('mapHideInProcess', mapHideInProcess ? 'true' : 'false');
+            updateHideInProcessBtn();
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
+
+        function updateHideInProcessBtn() {
+            const btn = document.getElementById('hideInProcessBtn');
+            if (!btn) return;
+            const active = isHideInProcessActive();
+            btn.textContent = active ? '👁️ Show In Process Buildings' : '🚫 Hide In Process Buildings';
+            btn.style.background = active ? '#e67e22' : 'var(--input-bg)';
+            btn.style.color = active ? 'white' : '#e67e22';
+            btn.style.borderColor = active ? '#e67e22' : 'var(--input-border)';
+        }
+
         function unhideAllBuildings() {
             setMapHidden({});
             showMapNotification('All buildings are now visible', '#4CAF50');
@@ -10631,19 +10806,24 @@
             const favorites = getMapFavorites();
             const hidden = getMapHidden();
             const completedMap = getMapCompleted();
+            const inProcessMap = getMapInProcess();
             const favoritesCount = Object.keys(favorites).length;
             const hiddenCount = Object.keys(hidden).length;
             const completedCount = Object.keys(completedMap).length;
+            const inProcessCount = Object.keys(inProcessMap).length;
 
             const favCountEl = document.getElementById('mapFavoritesCount');
             const hiddenCountEl = document.getElementById('mapHiddenCount');
             const completedCountEl = document.getElementById('mapCompletedCount');
+            const inProcessCountEl = document.getElementById('mapInProcessCount');
             const hiddenListEl = document.getElementById('hiddenBuildingsList');
             const completedListEl = document.getElementById('completedBuildingsList');
+            const inProcessListEl = document.getElementById('inProcessBuildingsList');
 
             if (favCountEl) favCountEl.textContent = favoritesCount;
             if (hiddenCountEl) hiddenCountEl.textContent = hiddenCount;
             if (completedCountEl) completedCountEl.textContent = completedCount;
+            if (inProcessCountEl) inProcessCountEl.textContent = inProcessCount;
 
             if (hiddenListEl) {
                 if (hiddenCount > 0) {
@@ -10662,28 +10842,67 @@
 
             if (completedListEl) {
                 if (completedCount > 0) {
-                    completedListEl.innerHTML = Object.entries(completedMap).map(([bin, data]) => `
+                    completedListEl.innerHTML = Object.entries(completedMap).map(([bin, data]) => {
+                        let address = (data && data.address) ? data.address : '';
+                        if (!address && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && window.lastBulkSearchResults.binGroups[bin]) {
+                            address = window.lastBulkSearchResults.binGroups[bin].address || '';
+                        }
+                        if (!address && mapBuildingsData && mapBuildingsData.length) {
+                            const b = mapBuildingsData.find(x => x.bin === bin);
+                            if (b) address = b.address || '';
+                        }
+                        const titleAttr = (address || bin).replace(/"/g, '&quot;');
+                        return `
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
-                            <span style="flex: 1; overflow: hidden; min-width: 0;" title="${data.address || bin}">
+                            <span style="flex: 1; overflow: hidden; min-width: 0;" title="${titleAttr}">
                                 <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
                                     <span style="color: #27ae60; font-weight: 700; flex-shrink: 0;">✓</span>
-                                    ${data.address
-                                        ? `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;">${data.address}</span>`
+                                    ${address
+                                        ? `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;">${address}</span>`
                                         : `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6;">BIN ${bin}</span>`
                                     }
                                 </span>
-                                ${data.address ? `<span style="font-size: 10px; opacity: 0.55; padding-left: 18px;">BIN ${bin}</span>` : ''}
+                                ${address ? `<span style="display: block; font-size: 10px; opacity: 0.55; padding-left: 22px;">BIN ${bin}</span>` : ''}
                             </span>
                             <button onclick="toggleMapCompleted('${bin}')" style="flex-shrink:0; background: #ff9800; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px; margin-left: 8px;">Undo</button>
-                        </div>
-                    `).join('');
+                        </div>`;
+                    }).join('');
                 } else {
                     completedListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No completed buildings</div>';
                 }
             }
             
-            // Update hide-completed button state
+            if (inProcessListEl) {
+                if (inProcessCount > 0) {
+                    inProcessListEl.innerHTML = Object.entries(inProcessMap).map(([bin, data]) => {
+                        const dateStr = data.date ? new Date(data.date + 'T00:00:00').toLocaleDateString() : '';
+                        return `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
+                            <span style="flex: 1; overflow: hidden; min-width: 0;" title="${data.address || bin}">
+                                <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
+                                    <span style="color: #e67e22; font-weight: 700; flex-shrink: 0;">🔄</span>
+                                    ${data.address
+                                        ? `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;">${data.address}</span>`
+                                        : `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6;">BIN ${bin}</span>`
+                                    }
+                                </span>
+                                ${dateStr ? `<span style="font-size: 10px; opacity: 0.7; padding-left: 22px; color: #e67e22;">${dateStr}</span>` : ''}
+                                ${data.address ? `<span style="font-size: 10px; opacity: 0.55; padding-left: 22px;">BIN ${bin}</span>` : ''}
+                            </span>
+                            <span style="display: flex; gap: 4px; flex-shrink: 0; margin-left: 8px;">
+                                <button onclick="toggleMapInProcess('${bin}')" style="flex-shrink:0; background: #ff9800; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px;">Undo</button>
+                                <button onclick="moveInProcessToCompleted('${bin}')" style="flex-shrink:0; background: #27ae60; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px;">Completed</button>
+                            </span>
+                        </div>`;
+                    }).join('');
+                } else {
+                    inProcessListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No in-process buildings</div>';
+                }
+            }
+
+            // Update hide-completed and hide-in-process button states
             updateHideCompletedBtn();
+            updateHideInProcessBtn();
 
             // Update additional locations panel
             updateAdditionalLocationsPanel();
@@ -10890,11 +11109,13 @@
             mapMarkers = [];
             additionalLocationMarkers = [];
 
-            // Get favorites, hidden, and completed buildings
+            // Get favorites, hidden, completed, and in-process buildings
             const favorites = getMapFavorites();
             const hidden = getMapHidden();
             const completed = getMapCompleted();
+            const inProcess = getMapInProcess();
             const hideCompleted = isHideCompletedActive();
+            const hideInProcess = isHideInProcessActive();
 
             // Update controls panel
             updateMapControlsPanel();
@@ -10913,6 +11134,12 @@
                 
                 // Skip completed buildings if hide setting is on
                 if (hideCompleted && completed[bin]) {
+                    hiddenCount++;
+                    continue;
+                }
+                
+                // Skip in-process buildings if hide setting is on
+                if (hideInProcess && inProcess[bin]) {
                     hiddenCount++;
                     continue;
                 }
@@ -11028,7 +11255,9 @@
                             readyDevices,
                             notReadyDevices,
                             removedDeletedDevices,
-                            isCompleted: !!completed[bin]
+                            isCompleted: !!completed[bin],
+                            isInProcess: !!inProcess[bin],
+                            inProcessDate: inProcess[bin] ? inProcess[bin].date : null
                         });
                         totalDevices += group.devices.length;
                     }
@@ -11089,15 +11318,18 @@
             const bounds = L.latLngBounds();
             
             buildingsWithCoords.forEach(building => {
-                // Check if building is favorited or completed
+                // Check if building is favorited, completed, or in-process
                 const isFavorited = favorites[building.bin] ? true : false;
                 const isCompleted = building.isCompleted;
+                const isInProcess = building.isInProcess;
                 
-                // Determine marker color based on completed/favorite status or testing readiness
+                // Determine marker color based on status
                 let markerColor;
                 
                 if (isCompleted) {
                     markerColor = '#27ae60'; // Dark green - manually marked complete
+                } else if (isInProcess) {
+                    markerColor = '#e67e22'; // Orange - in process
                 } else if (isFavorited) {
                     markerColor = '#9b59b6'; // Purple - favorited building
                 } else if (building.notReadyDevices.length === 0 && building.readyDevices.length > 0) {
@@ -11124,7 +11356,7 @@
                         color: white;
                         font-weight: bold;
                         font-size: 11px;
-                    ">${isCompleted ? '✓' : building.deviceCount}</div>`,
+                    ">${isCompleted ? '✓' : isInProcess ? '⟳' : building.deviceCount}</div>`,
                     iconSize: [30, 30],
                     iconAnchor: [15, 15]
                 });
@@ -11178,7 +11410,7 @@
                 
                 const popupContent = `
                     <div class="map-popup-content" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isCompleted ? '#27ae60' : isFavorited ? '#9b59b6' : '#1a73e8'};">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isCompleted ? '#27ae60' : isInProcess ? '#e67e22' : isFavorited ? '#9b59b6' : '#1a73e8'};">
                             <div style="font-weight: bold; font-size: 14px; flex: 1;">${building.address}</div>
                             <div style="display: flex; gap: 4px; margin-left: 8px;">
                                 <button onclick="toggleMapCompleted('${building.bin}')" 
@@ -11191,6 +11423,16 @@
                                                cursor: pointer; 
                                                font-size: 14px;
                                                transition: all 0.2s;">✓</button>
+                                <button onclick="toggleMapInProcess('${building.bin}')" 
+                                        title="${isInProcess ? 'Remove from In Process' : 'Mark as In Process'}"
+                                        style="background: ${isInProcess ? '#e67e22' : 'rgba(230,126,34,0.1)'}; 
+                                               color: ${isInProcess ? 'white' : '#e67e22'}; 
+                                               border: 1px solid #e67e22; 
+                                               border-radius: 4px; 
+                                               padding: 4px 8px; 
+                                               cursor: pointer; 
+                                               font-size: 14px;
+                                               transition: all 0.2s;">🔄</button>
                                 <button onclick="toggleMapFavorite('${building.bin}', '${escapedAddress}')" 
                                         title="${isFavorited ? 'Remove from favorites' : 'Add to favorites'}"
                                         style="background: ${isFavorited ? '#9b59b6' : 'rgba(155,89,182,0.1)'}; 
@@ -11217,6 +11459,11 @@
                         ${isCompleted ? `
                         <div style="font-size: 11px; color: #27ae60; font-weight: 600; margin-bottom: 10px; padding: 4px 8px; background: rgba(39,174,96,0.1); border-radius: 4px; text-align: center;">
                             ✓ Marked as Completed
+                        </div>` : ''}
+                        
+                        ${isInProcess ? `
+                        <div style="font-size: 11px; color: #e67e22; font-weight: 600; margin-bottom: 10px; padding: 4px 8px; background: rgba(230,126,34,0.1); border-radius: 4px; text-align: center;">
+                            🔄 In Process${building.inProcessDate ? ' — ' + new Date(building.inProcessDate + 'T00:00:00').toLocaleDateString() : ''}
                         </div>` : ''}
                         
                         ${isFavorited ? `
@@ -20014,6 +20261,6 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 1.7</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 1.7.5</div>
 </body>
 </html>
