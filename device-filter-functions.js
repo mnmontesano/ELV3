@@ -136,11 +136,15 @@ function updateActiveFilterStatus(typeFilter, eligibilityFilter, deviceNumberFil
 
 // Centralized function to apply all filters together
 function applyAllFilters() {
-    const typeFilter = document.getElementById('deviceTypeFilter').value;
+    const typeFilterEl = document.getElementById('deviceTypeFilter');
+    const violationsFilterBtnEl = document.getElementById('violationsFilterBtn');
+    if (!typeFilterEl || !violationsFilterBtnEl) return;
+
+    const typeFilter = typeFilterEl.value;
     const eligibilityFilter = document.getElementById('testEligibilityFilter') ? document.getElementById('testEligibilityFilter').value : 'all';
     const deviceNumberFilter = document.getElementById('deviceNumberFilter') ? document.getElementById('deviceNumberFilter').value.trim().toUpperCase() : '';
     const dateSortFilter = document.getElementById('dateSortFilter') ? document.getElementById('dateSortFilter').value : 'default';
-    const violationsFiltering = document.getElementById('violationsFilterBtn').getAttribute('data-filtering') === 'true';
+    const violationsFiltering = violationsFilterBtnEl.getAttribute('data-filtering') === 'true';
     const deviceItems = document.querySelectorAll('.device-item');
     
     // Update the active filter status indicator
@@ -299,14 +303,18 @@ function applyAllFilters() {
 function resetFilters() {
     // Reset violations filter
     const violationsFilterBtn = document.getElementById('violationsFilterBtn');
+    const violationsFilterText = document.getElementById('violationsFilterText');
+    const deviceTypeFilterEl = document.getElementById('deviceTypeFilter');
+    if (!violationsFilterBtn || !violationsFilterText || !deviceTypeFilterEl) return;
+
     violationsFilterBtn.setAttribute('data-filtering', 'false');
-    document.getElementById('violationsFilterText').textContent = 'Show Only Devices with Violations';
+    violationsFilterText.textContent = 'Show Only Devices with Violations';
     violationsFilterBtn.style.background = 'var(--panel-bg)';
     violationsFilterBtn.style.color = 'var(--text-color)';
     violationsFilterBtn.style.width = '240px';
     
     // Reset type filter
-    document.getElementById('deviceTypeFilter').value = 'all';
+    deviceTypeFilterEl.value = 'all';
     
     // Reset test eligibility filter
     if (document.getElementById('testEligibilityFilter')) {
