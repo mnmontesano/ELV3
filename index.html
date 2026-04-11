@@ -11233,11 +11233,32 @@
                 const exact = matched.filter(r => r.match && r.match.score >= 95);
                 const noMatch = previewResults.filter(r => !r.match || !r.parsedDate);
 
-                // Build table
+                // Build table with checkboxes
                 const tableEl = document.getElementById('schedImportPreviewTable');
+
+                function updateFooterFromCheckboxes() {
+                    const checked = tableEl.querySelectorAll('input.sched-row-cb:checked');
+                    const n = checked.length;
+                    const applyBtn = document.getElementById('schedImportApplyBtn');
+                    applyBtn.textContent = `Apply ${n} Selected Date${n !== 1 ? 's' : ''}`;
+                    applyBtn.style.opacity = n > 0 ? '1' : '0.5';
+                    applyBtn.disabled = n === 0;
+                    document.getElementById('schedImportSummary').textContent = `${n} of ${matched.length} matched row${matched.length !== 1 ? 's' : ''} selected. ${noMatch.length} unmatched row${noMatch.length !== 1 ? 's' : ''} skipped.`;
+                    // Update select-all indeterminate state
+                    const allCbs = tableEl.querySelectorAll('input.sched-row-cb');
+                    const selectAll = document.getElementById('schedSelectAllCb');
+                    if (selectAll) {
+                        selectAll.checked = n === allCbs.length && allCbs.length > 0;
+                        selectAll.indeterminate = n > 0 && n < allCbs.length;
+                    }
+                }
+
                 let html = `<table style="width:100%;border-collapse:collapse;font-size:11px;">
                     <thead>
-                        <tr style="background:var(--input-bg,#2a2a3e);position:sticky;top:0;">
+                        <tr style="background:var(--input-bg,#2a2a3e);position:sticky;top:0;z-index:1;">
+                            <th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--input-border,#444);width:32px;">
+                                <input type="checkbox" id="schedSelectAllCb" title="Select / deselect all matched rows" style="cursor:pointer;width:14px;height:14px;" ${matched.length > 0 ? 'checked' : ''}>
+                            </th>
                             <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--input-border,#444);color:var(--header-color,#ddd);font-weight:600;">Excel Address</th>
                             <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--input-border,#444);color:var(--header-color,#ddd);font-weight:600;">Date</th>
                             <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--input-border,#444);color:var(--header-color,#ddd);font-weight:600;">Match</th>
@@ -11246,9 +11267,11 @@
                     </thead>
                     <tbody>`;
 
-                for (const r of previewResults) {
+                for (let i = 0; i < previewResults.length; i++) {
+                    const r = previewResults[i];
                     let statusIcon, rowBg, matchedAddr = '';
                     if (!r.rawAddr && !r.rawDate) continue;
+                    const isImportable = !!(r.match && r.parsedDate);
                     if (!r.parsedDate) {
                         statusIcon = '⚠️'; rowBg = 'rgba(255,152,0,0.07)'; matchedAddr = 'Date not recognized';
                     } else if (!r.match) {
@@ -11259,7 +11282,12 @@
                         statusIcon = '⚠️'; rowBg = 'rgba(255,193,7,0.07)'; matchedAddr = `~${r.match.score}% — ${r.match.address}`;
                     }
 
+                    const cbHtml = isImportable
+                        ? `<input type="checkbox" class="sched-row-cb" data-idx="${i}" checked style="cursor:pointer;width:14px;height:14px;">`
+                        : `<input type="checkbox" disabled title="Cannot import — no match or invalid date" style="width:14px;height:14px;opacity:0.3;">`;
+
                     html += `<tr style="background:${rowBg};border-bottom:1px solid var(--input-border,#333);">
+                        <td style="padding:5px 8px;text-align:center;">${cbHtml}</td>
                         <td style="padding:5px 8px;color:var(--text-color,#ccc);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.rawAddr.replace(/"/g,'')}">${r.rawAddr || '<em style="opacity:0.5">—</em>'}</td>
                         <td style="padding:5px 8px;color:var(--text-color,#ccc);white-space:nowrap;">${r.parsedDate || (r.rawDate ? '<span style="color:#ff9800">' + r.rawDate + '</span>' : '<em style="opacity:0.5">—</em>')}</td>
                         <td style="padding:5px 8px;text-align:center;">${statusIcon}</td>
@@ -11270,26 +11298,33 @@
                 html += '</tbody></table>';
                 tableEl.innerHTML = html;
 
+                // Select-all toggle
+                const selectAllCb = document.getElementById('schedSelectAllCb');
+                if (selectAllCb) {
+                    selectAllCb.addEventListener('change', () => {
+                        tableEl.querySelectorAll('input.sched-row-cb').forEach(cb => { cb.checked = selectAllCb.checked; });
+                        updateFooterFromCheckboxes();
+                    });
+                }
+                tableEl.addEventListener('change', e => { if (e.target.classList.contains('sched-row-cb')) updateFooterFromCheckboxes(); });
+
                 document.getElementById('schedImportPreviewTitle').textContent = `${previewResults.length} rows parsed — ${exact.length} exact, ${fuzzy.length} fuzzy, ${noMatch.length} unmatched`;
                 document.getElementById('schedImportPreview').style.display = 'block';
-
-                const applyBtn = document.getElementById('schedImportApplyBtn');
-                applyBtn.textContent = `Apply ${matched.length} Matched Date${matched.length !== 1 ? 's' : ''}`;
-                applyBtn.style.opacity = matched.length > 0 ? '1' : '0.5';
-                applyBtn.disabled = matched.length === 0;
-
-                document.getElementById('schedImportSummary').textContent = `${matched.length} date${matched.length !== 1 ? 's' : ''} will be added (${exact.length} exact + ${fuzzy.length} fuzzy). ${noMatch.length} row${noMatch.length !== 1 ? 's' : ''} skipped.`;
                 document.getElementById('schedImportFooter').style.display = 'flex';
+                updateFooterFromCheckboxes();
             };
 
             document.getElementById('schedImportApplyBtn').addEventListener('click', () => {
-                const matched = previewResults.filter(r => r.match && r.parsedDate);
-                if (matched.length === 0) return;
+                const checkedBoxes = document.querySelectorAll('#schedImportPreviewTable input.sched-row-cb:checked');
+                if (checkedBoxes.length === 0) return;
                 let added = 0;
-                for (const r of matched) {
-                    addTestDateForBin(r.match.bin, r.parsedDate);
-                    added++;
-                }
+                checkedBoxes.forEach(cb => {
+                    const r = previewResults[parseInt(cb.dataset.idx)];
+                    if (r && r.match && r.parsedDate) {
+                        addTestDateForBin(r.match.bin, r.parsedDate);
+                        added++;
+                    }
+                });
                 updateTestDatesPanel();
                 if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
                     initBuildingMap(window.lastBulkSearchResults.binGroups, true);
