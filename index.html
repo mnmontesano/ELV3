@@ -1018,7 +1018,15 @@
                 <div style="display: flex; flex: 1; min-height: 0; overflow: hidden;">
                     <div id="buildingMap" style="flex: 1; min-height: 400px;"></div>
                     <!-- Map Controls Panel -->
-                    <div id="mapControlsPanel" style="display: none; width: 280px; background: var(--panel-bg); border-left: 1px solid var(--input-border); padding: 10px; overflow-y: auto; flex-shrink: 0;">
+                    <div id="mapControlsPanel" style="display: none; width: 280px; background: var(--panel-bg); border-left: 1px solid var(--input-border); flex-shrink: 0; flex-direction: column; overflow: hidden; position: relative;">
+                        <div id="mapControlsPanelHeader" style="display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; background: var(--input-bg); border-bottom: 1px solid var(--input-border); flex-shrink: 0; user-select: none; cursor: default;">
+                            <span style="font-size: 12px; font-weight: 600; color: var(--header-color);">⚙️ Settings</span>
+                            <div style="display: flex; gap: 4px; align-items: center;">
+                                <button id="mapControlsPopOutBtn" onclick="popOutControlsPanel()" title="Pop out to a floating, resizable window" style="background: var(--panel-bg); border: 1px solid var(--input-border); border-radius: 4px; padding: 3px 8px; cursor: pointer; color: var(--text-color); font-size: 11px; display: flex; align-items: center; gap: 4px; white-space: nowrap;">↗ Pop Out</button>
+                                <button id="mapControlsDockBtn" onclick="dockControlsPanel()" title="Dock back to sidebar" style="background: var(--panel-bg); border: 1px solid var(--input-border); border-radius: 4px; padding: 3px 8px; cursor: pointer; color: var(--text-color); font-size: 11px; align-items: center; gap: 4px; white-space: nowrap; display: none;">↙ Dock</button>
+                            </div>
+                        </div>
+                        <div id="mapControlsPanelBody" style="padding: 10px; overflow-y: auto; flex: 1; min-height: 0;">
 
                         <!-- helper: toggle a section -->
                         <style>
@@ -1032,6 +1040,22 @@
                             .mcp-body.open { display: block; }
                             .mcp-desc { font-size: 11px; opacity: 0.65; margin: 0 0 10px 0; line-height: 1.4; }
                             .mcp-btn { width: 100%; padding: 7px 8px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px; margin-top: 6px; }
+                            /* Popped-out panel: lift list height caps so content fills available space */
+                            #mapControlsPanel.mcp-popped-out #inProcessBuildingsList,
+                            #mapControlsPanel.mcp-popped-out #hiddenBuildingsList,
+                            #mapControlsPanel.mcp-popped-out #additionalLocationsList,
+                            #mapControlsPanel.mcp-popped-out #completedBuildingsList,
+                            #mapControlsPanel.mcp-popped-out #monthLabelsList,
+                            #mapControlsPanel.mcp-popped-out #testDatesPanelList { max-height: none !important; }
+                            /* Custom resize handles (floating mode only) */
+                            .mcp-rh { display: none; position: absolute; z-index: 10; }
+                            #mapControlsPanel.mcp-popped-out .mcp-rh { display: block; }
+                            .mcp-rh-left   { left: 0;   top: 10px; bottom: 10px; width: 6px;  cursor: ew-resize; }
+                            .mcp-rh-right  { right: 0;  top: 10px; bottom: 10px; width: 6px;  cursor: ew-resize; }
+                            .mcp-rh-bottom { bottom: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
+                            .mcp-rh-top    { top: 0;    left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
+                            .mcp-rh-bl     { bottom: 0; left: 0;  width: 12px; height: 12px; cursor: nesw-resize; }
+                            .mcp-rh-br     { bottom: 0; right: 0; width: 12px; height: 12px; cursor: nwse-resize; }
                         </style>
 
                         <!-- Favorites -->
@@ -1184,6 +1208,14 @@
                             </div>
                         </div>
 
+                        </div>
+                        <!-- Custom resize handles (only active in floating/popped-out mode) -->
+                        <div class="mcp-rh mcp-rh-left"   onmousedown="event.stopPropagation();_startPanelResize(event,'left')"></div>
+                        <div class="mcp-rh mcp-rh-right"  onmousedown="event.stopPropagation();_startPanelResize(event,'right')"></div>
+                        <div class="mcp-rh mcp-rh-bottom" onmousedown="event.stopPropagation();_startPanelResize(event,'bottom')"></div>
+                        <div class="mcp-rh mcp-rh-top"    onmousedown="event.stopPropagation();_startPanelResize(event,'top')"></div>
+                        <div class="mcp-rh mcp-rh-bl"     onmousedown="event.stopPropagation();_startPanelResize(event,'bl')"></div>
+                        <div class="mcp-rh mcp-rh-br"     onmousedown="event.stopPropagation();_startPanelResize(event,'br')"></div>
                     </div>
                 </div>
                 <div style="padding: 10px 20px; background: var(--panel-bg); border-top: 1px solid var(--input-border); font-size: 0.85em; color: var(--text-color); display: flex; justify-content: space-between; align-items: center;">
@@ -11774,6 +11806,9 @@
         }
 
         function closeBuildingMap() {
+            // Dock the panel before closing so it resets cleanly for next open
+            if (mapControlsPanelIsPopped) dockControlsPanel();
+
             const modal = document.getElementById('buildingMapModal');
             modal.style.display = 'none';
             
@@ -11948,16 +11983,176 @@
             if (cornerHandle) cornerHandle.addEventListener('mousedown', (e) => startResize(e, 'corner'));
         }
 
+        var mapControlsPanelIsPopped = false;
+
         function toggleMapControlsPanel() {
             const panel = document.getElementById('mapControlsPanel');
             if (panel) {
                 const isVisible = panel.style.display !== 'none';
-                panel.style.display = isVisible ? 'none' : 'block';
-                // Invalidate map size when panel toggles
-                if (buildingMap) {
+                panel.style.display = isVisible ? 'none' : 'flex';
+                // Invalidate map size when panel toggles (only matters when docked)
+                if (buildingMap && !mapControlsPanelIsPopped) {
                     setTimeout(() => buildingMap.invalidateSize(), 100);
                 }
             }
+        }
+
+        function popOutControlsPanel() {
+            const panel = document.getElementById('mapControlsPanel');
+            const header = document.getElementById('mapControlsPanelHeader');
+            const popBtn = document.getElementById('mapControlsPopOutBtn');
+            const dockBtn = document.getElementById('mapControlsDockBtn');
+            if (!panel) return;
+
+            mapControlsPanelIsPopped = true;
+
+            // Position the floating panel where the sidebar was
+            const rect = panel.getBoundingClientRect();
+            panel.style.position = 'fixed';
+            panel.style.top = Math.max(60, rect.top) + 'px';
+            panel.style.left = Math.max(10, rect.left) + 'px';
+            panel.style.width = '360px';
+            panel.style.height = '70vh';
+            panel.style.minWidth = '260px';
+            panel.style.minHeight = '200px';
+            panel.style.maxHeight = '';
+            panel.style.zIndex = '20000';
+            panel.style.border = '2px solid var(--input-border)';
+            panel.style.borderLeft = '2px solid var(--input-border)';
+            panel.style.borderRadius = '10px';
+            panel.style.boxShadow = '0 8px 32px rgba(0,0,0,0.5)';
+            panel.style.overflow = 'hidden';
+            panel.style.flexShrink = '0';
+            panel.style.display = 'flex';
+
+            // Add class that lifts list height limits and reveals resize handles
+            panel.classList.add('mcp-popped-out');
+
+            // Make header a drag handle
+            if (header) header.style.cursor = 'move';
+
+            // Swap buttons
+            if (popBtn) popBtn.style.display = 'none';
+            if (dockBtn) dockBtn.style.display = 'flex';
+
+            // Attach drag listener
+            if (header) header.addEventListener('mousedown', _mapControlsDragStart);
+
+            // Map expands to fill the freed sidebar space
+            if (buildingMap) setTimeout(() => buildingMap.invalidateSize(), 120);
+        }
+
+        function dockControlsPanel() {
+            const panel = document.getElementById('mapControlsPanel');
+            const header = document.getElementById('mapControlsPanelHeader');
+            const popBtn = document.getElementById('mapControlsPopOutBtn');
+            const dockBtn = document.getElementById('mapControlsDockBtn');
+            if (!panel) return;
+
+            mapControlsPanelIsPopped = false;
+
+            // Remove floating styles — back to sidebar
+            panel.style.position = 'relative';
+            panel.style.top = '';
+            panel.style.left = '';
+            panel.style.width = '280px';
+            panel.style.height = '';
+            panel.style.minWidth = '';
+            panel.style.minHeight = '';
+            panel.style.maxHeight = '';
+            panel.style.zIndex = '';
+            panel.style.border = '';
+            panel.style.borderLeft = '1px solid var(--input-border)';
+            panel.style.borderRadius = '';
+            panel.style.boxShadow = '';
+            panel.style.overflow = 'hidden';
+
+            // Remove class (hides resize handles, restores list height limits)
+            panel.classList.remove('mcp-popped-out');
+
+            // Restore header cursor
+            if (header) header.style.cursor = 'default';
+
+            // Swap buttons
+            if (popBtn) popBtn.style.display = 'flex';
+            if (dockBtn) dockBtn.style.display = 'none';
+
+            // Remove drag listener
+            if (header) header.removeEventListener('mousedown', _mapControlsDragStart);
+
+            // Map shrinks back to share space with sidebar
+            if (buildingMap) setTimeout(() => buildingMap.invalidateSize(), 120);
+        }
+
+        function _startPanelResize(e, direction) {
+            e.preventDefault();
+            e.stopPropagation();
+            const panel = document.getElementById('mapControlsPanel');
+            if (!panel || !mapControlsPanelIsPopped) return;
+
+            const startX = e.clientX;
+            const startY = e.clientY;
+            const startW = panel.offsetWidth;
+            const startH = panel.offsetHeight;
+            const startL = parseInt(panel.style.left) || 0;
+            const startT = parseInt(panel.style.top)  || 0;
+            const minW = 260, minH = 200;
+
+            function onMove(e) {
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                let w = startW, h = startH, l = startL, t = startT;
+
+                if (direction === 'right' || direction === 'br') w = Math.max(minW, startW + dx);
+                if (direction === 'left'  || direction === 'bl') { w = Math.max(minW, startW - dx); l = startL + (startW - w); }
+                if (direction === 'bottom' || direction === 'br' || direction === 'bl') h = Math.max(minH, startH + dy);
+                if (direction === 'top') { h = Math.max(minH, startH - dy); t = startT + (startH - h); }
+
+                panel.style.width  = w + 'px';
+                panel.style.height = h + 'px';
+                panel.style.left   = l + 'px';
+                panel.style.top    = t + 'px';
+            }
+
+            function onUp() {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                document.body.style.userSelect = '';
+            }
+
+            document.body.style.userSelect = 'none';
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        }
+
+        function _mapControlsDragStart(e) {
+            if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+            const panel = document.getElementById('mapControlsPanel');
+            if (!panel || !mapControlsPanelIsPopped) return;
+
+            e.preventDefault();
+
+            const startMouseX = e.clientX;
+            const startMouseY = e.clientY;
+            const startLeft = parseInt(panel.style.left) || 0;
+            const startTop = parseInt(panel.style.top) || 0;
+
+            function onMove(e) {
+                const dx = e.clientX - startMouseX;
+                const dy = e.clientY - startMouseY;
+                panel.style.left = Math.max(0, startLeft + dx) + 'px';
+                panel.style.top = Math.max(0, startTop + dy) + 'px';
+            }
+
+            function onUp() {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                document.body.style.userSelect = '';
+            }
+
+            document.body.style.userSelect = 'none';
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
         }
 
         function initBuildingMap(binGroups, preserveView) {
@@ -12797,7 +12992,7 @@
                 const searchInput = document.getElementById('mapSearchInput');
 
                 if (controlsPanel && typeof loadedState.controlsPanelVisible === 'boolean') {
-                    controlsPanel.style.display = loadedState.controlsPanelVisible ? 'block' : 'none';
+                    controlsPanel.style.display = loadedState.controlsPanelVisible ? 'flex' : 'none';
                     setTimeout(() => {
                         if (buildingMap) buildingMap.invalidateSize();
                     }, 100);
@@ -21172,6 +21367,6 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 1.9</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 1.9.1</div>
 </body>
 </html>
