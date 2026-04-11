@@ -1102,6 +1102,18 @@
                             </div>
                         </div>
 
+                        <!-- Import Schedule from Excel -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpScheduleImport')">
+                                <span class="mcp-title"><span style="color:#27ae60;">📋</span> Import Schedule from Excel</span>
+                                <span class="mcp-arrow" id="mcpScheduleImportArrow">▼</span>
+                            </div>
+                            <div class="mcp-body" id="mcpScheduleImport">
+                                <p class="mcp-desc">Copy rows from your Excel schedule sheet and paste them here to bulk-add test dates. Addresses are matched to buildings already on the map.</p>
+                                <button onclick="showScheduleImportModal()" class="mcp-btn" style="background: #27ae60; color: white; border-color: #27ae60; font-weight: 600;">📋 Paste from Excel...</button>
+                            </div>
+                        </div>
+
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpHidden')">
                                 <span class="mcp-title"><span style="color:#888;">👁️</span> Hidden (<span id="mapHiddenCount">0</span>)</span>
@@ -10970,6 +10982,321 @@
                     initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                 }
             }
+        }
+
+        // ---- Schedule Import from Excel ----
+
+        function normalizeAddressForMatch(addr) {
+            if (!addr) return '';
+            const ABBR = {
+                'STREET': 'ST', 'AVENUE': 'AVE', 'BOULEVARD': 'BLVD', 'DRIVE': 'DR',
+                'ROAD': 'RD', 'COURT': 'CT', 'PLACE': 'PL', 'LANE': 'LN',
+                'TERRACE': 'TER', 'PARKWAY': 'PKY', 'HIGHWAY': 'HWY',
+                'NORTH': 'N', 'SOUTH': 'S', 'EAST': 'E', 'WEST': 'W'
+            };
+            let s = addr.toUpperCase().replace(/[.,#]/g, '').replace(/\s+/g, ' ').trim();
+            // Normalize to short abbreviations
+            for (const [long, short] of Object.entries(ABBR)) {
+                s = s.replace(new RegExp('\\b' + long + '\\b', 'g'), short);
+            }
+            return s;
+        }
+
+        function parseExcelDate(raw) {
+            if (!raw || !String(raw).trim()) return null;
+            const s = String(raw).trim();
+            // Already YYYY-MM-DD
+            if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+            // M/D/YYYY or MM/DD/YYYY
+            const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (mdy) {
+                const [, m, d, y] = mdy;
+                return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+            }
+            // M/D/YY
+            const mdyShort = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+            if (mdyShort) {
+                const [, m, d, y] = mdyShort;
+                const year = parseInt(y) >= 50 ? '19'+y : '20'+y;
+                return `${year}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+            }
+            // Try native date parse as last resort
+            try {
+                const d = new Date(s);
+                if (!isNaN(d.getTime())) {
+                    return d.toISOString().slice(0,10);
+                }
+            } catch(e) {}
+            return null;
+        }
+
+        function matchAddressToBin(excelAddr, binGroups) {
+            if (!excelAddr || !binGroups) return null;
+            const normExcel = normalizeAddressForMatch(excelAddr);
+            if (!normExcel) return null;
+
+            let bestBin = null, bestScore = 0, bestAppAddr = '';
+
+            for (const [bin, group] of Object.entries(binGroups)) {
+                const appAddr = group.address || '';
+                const normApp = normalizeAddressForMatch(appAddr);
+
+                // Exact match after normalization
+                if (normApp === normExcel) return { bin, address: appAddr, score: 100 };
+
+                // Strip borough from app address and try again (app always has ", BOROUGH" at end)
+                const normAppNoBorough = normApp.replace(/,\s*[A-Z ]+$/, '').trim();
+                if (normAppNoBorough === normExcel || normExcel === normAppNoBorough) {
+                    return { bin, address: appAddr, score: 95 };
+                }
+
+                // Starts-with matching (Excel may omit borough)
+                if (normApp.startsWith(normExcel) || normExcel.startsWith(normAppNoBorough)) {
+                    const score = 80 + (normExcel.length / Math.max(normApp.length, 1)) * 15;
+                    if (score > bestScore) { bestScore = score; bestBin = bin; bestAppAddr = appAddr; }
+                }
+
+                // Token overlap scoring
+                const excelTokens = normExcel.split(' ');
+                const appTokens = normApp.split(' ');
+                const overlap = excelTokens.filter(t => appTokens.includes(t)).length;
+                const score = (overlap / Math.max(excelTokens.length, appTokens.length)) * 70;
+                if (score > bestScore && score >= 40) {
+                    bestScore = score; bestBin = bin; bestAppAddr = appAddr;
+                }
+            }
+            if (bestBin && bestScore >= 40) return { bin: bestBin, address: bestAppAddr, score: Math.round(bestScore) };
+            return null;
+        }
+
+        function showScheduleImportModal() {
+            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
+            if (!binGroups || Object.keys(binGroups).length === 0) {
+                showMapNotification('No buildings loaded. Perform a search first.', '#ff6b6b');
+                return;
+            }
+
+            const overlay = document.createElement('div');
+            overlay.id = 'scheduleImportOverlay';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:20000;display:flex;align-items:center;justify-content:center;';
+
+            overlay.innerHTML = `
+                <div style="background:var(--card-bg,#1e1e2e);border-radius:12px;padding:0;width:92%;max-width:780px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.5);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden;">
+                    <!-- Header -->
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:var(--panel-bg,#252535);border-bottom:1px solid var(--input-border,#444);flex-shrink:0;">
+                        <div>
+                            <h3 style="margin:0;color:var(--header-color,#fff);font-size:15px;">📋 Import Schedule from Excel</h3>
+                            <p style="margin:3px 0 0;font-size:11px;opacity:0.6;color:var(--text-color,#ccc);">Copy rows from Excel (Ctrl+C / Cmd+C) then paste into the box below</p>
+                        </div>
+                        <button id="schedImportCloseBtn" style="background:none;border:none;color:var(--text-color,#ccc);font-size:22px;cursor:pointer;line-height:1;padding:0;">×</button>
+                    </div>
+
+                    <!-- Body (scrollable) -->
+                    <div style="padding:16px 18px;overflow-y:auto;flex:1;min-height:0;">
+
+                        <!-- Paste area -->
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--header-color,#ddd);margin-bottom:5px;">Paste Excel data here:</label>
+                        <textarea id="schedImportPaste" placeholder="Select rows in Excel, copy (Ctrl+C / Cmd+C), then click here and paste (Ctrl+V / Cmd+V)&#10;&#10;Each row should have at minimum an address column and a date column." style="width:100%;height:110px;box-sizing:border-box;background:var(--input-bg,#2a2a3e);border:1px solid var(--input-border,#555);border-radius:6px;color:var(--text-color,#ccc);padding:8px;font-size:12px;resize:vertical;font-family:monospace;" spellcheck="false"></textarea>
+
+                        <!-- Column selectors (hidden until data pasted) -->
+                        <div id="schedImportColConfig" style="display:none;margin-top:12px;">
+                            <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;">
+                                <div style="display:flex;flex-direction:column;gap:4px;">
+                                    <label style="font-size:11px;font-weight:600;color:var(--header-color,#ddd);">Address column:</label>
+                                    <select id="schedImportAddrCol" style="padding:5px 8px;border-radius:5px;border:1px solid var(--input-border,#555);background:var(--input-bg,#2a2a3e);color:var(--text-color,#ccc);font-size:12px;min-width:160px;"></select>
+                                </div>
+                                <div style="display:flex;flex-direction:column;gap:4px;">
+                                    <label style="font-size:11px;font-weight:600;color:var(--header-color,#ddd);">Date column:</label>
+                                    <select id="schedImportDateCol" style="padding:5px 8px;border-radius:5px;border:1px solid var(--input-border,#555);background:var(--input-bg,#2a2a3e);color:var(--text-color,#ccc);font-size:12px;min-width:160px;"></select>
+                                </div>
+                                <button onclick="runScheduleImportPreview()" style="padding:6px 14px;background:#1a73e8;border:none;border-radius:5px;color:white;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;">🔍 Preview Matches</button>
+                            </div>
+                        </div>
+
+                        <!-- Preview table -->
+                        <div id="schedImportPreview" style="display:none;margin-top:14px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                                <span id="schedImportPreviewTitle" style="font-size:12px;font-weight:600;color:var(--header-color,#ddd);"></span>
+                                <div style="display:flex;gap:8px;font-size:11px;opacity:0.7;color:var(--text-color,#ccc);">
+                                    <span>✅ Exact/strong match</span>
+                                    <span>⚠️ Fuzzy match</span>
+                                    <span>❌ No match</span>
+                                </div>
+                            </div>
+                            <div id="schedImportPreviewTable" style="max-height:260px;overflow-y:auto;border:1px solid var(--input-border,#444);border-radius:6px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div id="schedImportFooter" style="display:none;padding:12px 18px;background:var(--panel-bg,#252535);border-top:1px solid var(--input-border,#444);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;gap:10px;flex-wrap:wrap;">
+                        <span id="schedImportSummary" style="font-size:12px;color:var(--text-color,#ccc);opacity:0.8;"></span>
+                        <div style="display:flex;gap:8px;">
+                            <button id="schedImportCancelBtn" style="padding:7px 16px;background:var(--input-bg,#2a2a3e);border:1px solid var(--input-border,#555);border-radius:6px;color:var(--text-color,#ccc);cursor:pointer;font-size:12px;">Cancel</button>
+                            <button id="schedImportApplyBtn" style="padding:7px 16px;background:#27ae60;border:none;border-radius:6px;color:white;cursor:pointer;font-size:12px;font-weight:600;"></button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+
+            // State
+            let parsedRows = [];
+            let previewResults = [];
+
+            function close() { overlay.remove(); }
+            document.getElementById('schedImportCloseBtn').addEventListener('click', close);
+            document.getElementById('schedImportCancelBtn').addEventListener('click', close);
+            overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+            // Parse paste and populate column selectors
+            const pasteArea = document.getElementById('schedImportPaste');
+            pasteArea.addEventListener('input', () => {
+                const raw = pasteArea.value.trim();
+                if (!raw) {
+                    document.getElementById('schedImportColConfig').style.display = 'none';
+                    document.getElementById('schedImportPreview').style.display = 'none';
+                    document.getElementById('schedImportFooter').style.display = 'none';
+                    return;
+                }
+
+                // Parse tab-separated (Excel copy format)
+                const lines = raw.split(/\r?\n/).filter(l => l.trim());
+                parsedRows = lines.map(l => l.split('\t'));
+                const maxCols = Math.max(...parsedRows.map(r => r.length));
+                if (maxCols < 1) return;
+
+                // Use first row as potential headers
+                const firstRow = parsedRows[0] || [];
+                const addrSel = document.getElementById('schedImportAddrCol');
+                const dateSel = document.getElementById('schedImportDateCol');
+                addrSel.innerHTML = '';
+                dateSel.innerHTML = '';
+
+                let guessAddrIdx = -1, guessDateIdx = -1;
+                for (let i = 0; i < maxCols; i++) {
+                    const headerVal = (firstRow[i] || `Column ${i+1}`).trim();
+                    const opt1 = document.createElement('option');
+                    opt1.value = i; opt1.textContent = `Col ${i+1}: ${headerVal.slice(0,30)}`;
+                    addrSel.appendChild(opt1);
+                    const opt2 = document.createElement('option');
+                    opt2.value = i; opt2.textContent = `Col ${i+1}: ${headerVal.slice(0,30)}`;
+                    dateSel.appendChild(opt2);
+
+                    // Auto-guess address column
+                    const hLow = headerVal.toLowerCase();
+                    if (guessAddrIdx < 0 && (hLow.includes('address') || hLow.includes('location') || hLow.includes('site'))) guessAddrIdx = i;
+                    if (guessDateIdx < 0 && (hLow.includes('date') || hLow.includes('scheduled') || hLow.includes('sched') || hLow.includes('test'))) guessDateIdx = i;
+                }
+
+                // Fallback guesses: look at cell content
+                if (guessAddrIdx < 0) {
+                    for (let i = 0; i < maxCols; i++) {
+                        const sample = (parsedRows[1] || parsedRows[0] || [])[i] || '';
+                        if (/\d+\s+\w/.test(sample.trim()) && sample.length > 6) { guessAddrIdx = i; break; }
+                    }
+                }
+                if (guessDateIdx < 0) {
+                    for (let i = 0; i < maxCols; i++) {
+                        const sample = (parsedRows[1] || parsedRows[0] || [])[i] || '';
+                        if (/\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}/.test(sample.trim())) { guessDateIdx = i; break; }
+                    }
+                }
+
+                if (guessAddrIdx >= 0) addrSel.value = guessAddrIdx;
+                if (guessDateIdx >= 0 && guessDateIdx !== guessAddrIdx) dateSel.value = guessDateIdx;
+
+                document.getElementById('schedImportColConfig').style.display = 'block';
+                document.getElementById('schedImportPreview').style.display = 'none';
+                document.getElementById('schedImportFooter').style.display = 'none';
+            });
+
+            // Run preview
+            window.runScheduleImportPreview = function() {
+                const addrColIdx = parseInt(document.getElementById('schedImportAddrCol').value);
+                const dateColIdx = parseInt(document.getElementById('schedImportDateCol').value);
+                const hasHeader = false;
+
+                const dataRows = hasHeader ? parsedRows.slice(1) : parsedRows;
+                if (dataRows.length === 0) { showMapNotification('No data rows found', '#ff9800'); return; }
+
+                previewResults = dataRows.map(row => {
+                    const rawAddr = (row[addrColIdx] || '').trim();
+                    const rawDate = (row[dateColIdx] || '').trim();
+                    const parsedDate = parseExcelDate(rawDate);
+                    const match = rawAddr ? matchAddressToBin(rawAddr, binGroups) : null;
+                    return { rawAddr, rawDate, parsedDate, match };
+                }).filter(r => r.rawAddr || r.rawDate);
+
+                const matched = previewResults.filter(r => r.match && r.parsedDate);
+                const fuzzy = matched.filter(r => r.match && r.match.score < 95);
+                const exact = matched.filter(r => r.match && r.match.score >= 95);
+                const noMatch = previewResults.filter(r => !r.match || !r.parsedDate);
+
+                // Build table
+                const tableEl = document.getElementById('schedImportPreviewTable');
+                let html = `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+                    <thead>
+                        <tr style="background:var(--input-bg,#2a2a3e);position:sticky;top:0;">
+                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--input-border,#444);color:var(--header-color,#ddd);font-weight:600;">Excel Address</th>
+                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--input-border,#444);color:var(--header-color,#ddd);font-weight:600;">Date</th>
+                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--input-border,#444);color:var(--header-color,#ddd);font-weight:600;">Match</th>
+                            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--input-border,#444);color:var(--header-color,#ddd);font-weight:600;">Matched Building</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+                for (const r of previewResults) {
+                    let statusIcon, rowBg, matchedAddr = '';
+                    if (!r.rawAddr && !r.rawDate) continue;
+                    if (!r.parsedDate) {
+                        statusIcon = '⚠️'; rowBg = 'rgba(255,152,0,0.07)'; matchedAddr = 'Date not recognized';
+                    } else if (!r.match) {
+                        statusIcon = '❌'; rowBg = 'rgba(255,107,107,0.07)'; matchedAddr = 'No matching building';
+                    } else if (r.match.score >= 95) {
+                        statusIcon = '✅'; rowBg = 'rgba(39,174,96,0.07)'; matchedAddr = r.match.address;
+                    } else {
+                        statusIcon = '⚠️'; rowBg = 'rgba(255,193,7,0.07)'; matchedAddr = `~${r.match.score}% — ${r.match.address}`;
+                    }
+
+                    html += `<tr style="background:${rowBg};border-bottom:1px solid var(--input-border,#333);">
+                        <td style="padding:5px 8px;color:var(--text-color,#ccc);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.rawAddr.replace(/"/g,'')}">${r.rawAddr || '<em style="opacity:0.5">—</em>'}</td>
+                        <td style="padding:5px 8px;color:var(--text-color,#ccc);white-space:nowrap;">${r.parsedDate || (r.rawDate ? '<span style="color:#ff9800">' + r.rawDate + '</span>' : '<em style="opacity:0.5">—</em>')}</td>
+                        <td style="padding:5px 8px;text-align:center;">${statusIcon}</td>
+                        <td style="padding:5px 8px;color:var(--text-color,#ccc);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${matchedAddr.replace(/"/g,'')}">${matchedAddr}</td>
+                    </tr>`;
+                }
+
+                html += '</tbody></table>';
+                tableEl.innerHTML = html;
+
+                document.getElementById('schedImportPreviewTitle').textContent = `${previewResults.length} rows parsed — ${exact.length} exact, ${fuzzy.length} fuzzy, ${noMatch.length} unmatched`;
+                document.getElementById('schedImportPreview').style.display = 'block';
+
+                const applyBtn = document.getElementById('schedImportApplyBtn');
+                applyBtn.textContent = `Apply ${matched.length} Matched Date${matched.length !== 1 ? 's' : ''}`;
+                applyBtn.style.opacity = matched.length > 0 ? '1' : '0.5';
+                applyBtn.disabled = matched.length === 0;
+
+                document.getElementById('schedImportSummary').textContent = `${matched.length} date${matched.length !== 1 ? 's' : ''} will be added (${exact.length} exact + ${fuzzy.length} fuzzy). ${noMatch.length} row${noMatch.length !== 1 ? 's' : ''} skipped.`;
+                document.getElementById('schedImportFooter').style.display = 'flex';
+            };
+
+            document.getElementById('schedImportApplyBtn').addEventListener('click', () => {
+                const matched = previewResults.filter(r => r.match && r.parsedDate);
+                if (matched.length === 0) return;
+                let added = 0;
+                for (const r of matched) {
+                    addTestDateForBin(r.match.bin, r.parsedDate);
+                    added++;
+                }
+                updateTestDatesPanel();
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                    initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+                }
+                overlay.remove();
+                showMapNotification(`Added ${added} scheduled date${added !== 1 ? 's' : ''} from Excel`, '#27ae60');
+            });
         }
 
         // ---- Test Dates ----
@@ -21367,6 +21694,6 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 1.9.1</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 1.9.2</div>
 </body>
 </html>
