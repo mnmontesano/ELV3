@@ -1049,6 +1049,7 @@
                             .mcp-desc { font-size: 11px; opacity: 0.65; margin: 0 0 10px 0; line-height: 1.4; }
                             .mcp-btn { width: 100%; padding: 7px 8px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px; margin-top: 6px; }
                             /* Popped-out panel: lift list height caps so content fills available space */
+                            #mapControlsPanel.mcp-popped-out #favoritesBuildingsList,
                             #mapControlsPanel.mcp-popped-out #inProcessBuildingsList,
                             #mapControlsPanel.mcp-popped-out #hiddenBuildingsList,
                             #mapControlsPanel.mcp-popped-out #additionalLocationsList,
@@ -1073,7 +1074,10 @@
                                 <span class="mcp-arrow" id="mcpFavoritesArrow">▼</span>
                             </div>
                             <div class="mcp-body" id="mcpFavorites">
-                                <p class="mcp-desc">Favorited buildings appear in purple on the map</p>
+                                <p class="mcp-desc">Favorited buildings appear in purple on the map and always stay visible even when a month filter is active</p>
+                                <div id="favoritesBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No favorited buildings</div>
+                                </div>
                                 <button onclick="clearAllFavorites()" class="mcp-btn" style="color:#f59e0b;">Clear All Favorites</button>
                             </div>
                         </div>
@@ -11248,7 +11252,9 @@
             function close() { overlay.remove(); }
             document.getElementById('schedImportCloseBtn').addEventListener('click', close);
             document.getElementById('schedImportCancelBtn').addEventListener('click', close);
-            overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+            let _overlayMousedownOnBackdrop = false;
+            overlay.addEventListener('mousedown', e => { _overlayMousedownOnBackdrop = e.target === overlay; });
+            overlay.addEventListener('click', e => { if (e.target === overlay && _overlayMousedownOnBackdrop) close(); });
 
             // Parse paste and populate column selectors
             const pasteArea = document.getElementById('schedImportPaste');
@@ -11877,7 +11883,7 @@
                 return `<div style="margin-bottom: 8px; border-radius: 6px; border: 1px solid ${headerBorder}; overflow: hidden;">
                     <div style="padding: 7px 10px; background: ${headerBg}; display:flex; align-items:center; gap:6px;">
                         <span style="font-size:12px; color:${headerIconColor}; flex-shrink:0;">📍</span>
-                        <span style="font-size:12px; font-weight:600; color:var(--text-color); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${addrEscaped}">
+                        <span style="font-size:12px; font-weight:600; color:var(--text-color); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; text-decoration:underline dotted;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                             ${address || '<span style="opacity:0.55">BIN ' + bin + '</span>'}
                         </span>
                         <span style="font-size:10px; opacity:0.6; flex-shrink:0;">${sortedDates.length} date${sortedDates.length !== 1 ? 's' : ''}</span>
@@ -12112,12 +12118,39 @@
             const completedCountEl = document.getElementById('mapCompletedCount');
             const inProcessCountEl = document.getElementById('mapInProcessCount');
             const holdCountEl = document.getElementById('mapHoldCount');
+            const favoritesListEl = document.getElementById('favoritesBuildingsList');
             const hiddenListEl = document.getElementById('hiddenBuildingsList');
             const completedListEl = document.getElementById('completedBuildingsList');
             const inProcessListEl = document.getElementById('inProcessBuildingsList');
             const holdListEl = document.getElementById('holdBuildingsList');
 
             if (favCountEl) favCountEl.textContent = favoritesCount;
+
+            if (favoritesListEl) {
+                if (favoritesCount > 0) {
+                    favoritesListEl.innerHTML = Object.entries(favorites).map(([bin, data]) => {
+                        const favOn = data.timestamp
+                            ? new Date(data.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                            : '';
+                        return `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
+                            <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
+                                <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
+                                    <span style="color: #9b59b6; font-weight: 700; flex-shrink: 0;">⭐</span>
+                                    ${data.address
+                                        ? `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; text-decoration: underline dotted;">${data.address}</span>`
+                                        : `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6; text-decoration: underline dotted;">BIN ${bin}</span>`
+                                    }
+                                </span>
+                                ${favOn ? `<span style="font-size: 10px; opacity: 0.55; padding-left: 22px;">Since ${favOn}${data.address ? ' · BIN ' + bin : ''}</span>` : (data.address ? `<span style="font-size: 10px; opacity: 0.55; padding-left: 22px;">BIN ${bin}</span>` : '')}
+                            </span>
+                            <button onclick="toggleMapFavorite('${bin}', '${(data.address || '').replace(/'/g, "\\'")}')" style="flex-shrink:0; background: #9b59b6; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px; margin-left: 8px;">Unfavorite</button>
+                        </div>`;
+                    }).join('');
+                } else {
+                    favoritesListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No favorited buildings</div>';
+                }
+            }
             if (hiddenCountEl) hiddenCountEl.textContent = hiddenCount;
             if (completedCountEl) completedCountEl.textContent = completedCount;
             if (inProcessCountEl) inProcessCountEl.textContent = inProcessCount;
@@ -12127,7 +12160,7 @@
                 if (hiddenCount > 0) {
                     hiddenListEl.innerHTML = Object.entries(hidden).map(([bin, data]) => `
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
-                            <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${data.address || bin}">
+                            <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; text-decoration: underline dotted;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                                 <strong>${bin}</strong>${data.address ? ` - ${data.address.substring(0, 25)}...` : ''}
                             </span>
                             <button onclick="toggleMapHidden('${bin}')" style="background: #4CAF50; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px; margin-left: 8px;">Show</button>
@@ -12175,15 +12208,15 @@
                         }
 
                         var addrLine = address
-                            ? '<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;">' + address + '</span>'
-                            : '<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6;">BIN ' + bin + '</span>';
+                            ? '<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; text-decoration: underline dotted;">' + address + '</span>'
+                            : '<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6; text-decoration: underline dotted;">BIN ' + bin + '</span>';
                         var subLine = address
                             ? '<span style="display: block; font-size: 10px; opacity: 0.55; padding-left: 22px;">BIN ' + bin + (completedOn ? ' · Completed ' + completedOn : '') + '</span>'
                             : (completedOn ? '<span style="display: block; font-size: 10px; opacity: 0.55;">Completed ' + completedOn + '</span>' : '');
 
                         completedHtmlParts.push(
                             '<div data-bin="' + bin + '" data-address="' + (address || '').replace(/"/g, '&quot;') + '" style="padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">'
-                            + '<span style="display: block; overflow: hidden; min-width: 0;" title="' + titleAttr + '">'
+                            + '<span style="display: block; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding(\'' + bin + '\')">'
                             + '<span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">'
                             + '<span style="color: #27ae60; font-weight: 700; flex-shrink: 0;">✓</span>'
                             + addrLine
@@ -12215,12 +12248,12 @@
                         const dateStr = data.date ? new Date(data.date + 'T00:00:00').toLocaleDateString() : '';
                         return `
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
-                            <span style="flex: 1; overflow: hidden; min-width: 0;" title="${data.address || bin}">
+                            <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                                 <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
                                     <span style="color: #e67e22; font-weight: 700; flex-shrink: 0;">🔄</span>
                                     ${data.address
-                                        ? `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;">${data.address}</span>`
-                                        : `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6;">BIN ${bin}</span>`
+                                        ? `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; text-decoration: underline dotted;">${data.address}</span>`
+                                        : `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6; text-decoration: underline dotted;">BIN ${bin}</span>`
                                     }
                                 </span>
                                 ${dateStr ? `<span style="font-size: 10px; opacity: 0.7; padding-left: 22px; color: #e67e22;">${dateStr}</span>` : ''}
@@ -12245,12 +12278,12 @@
                             : '';
                         return `
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
-                            <span style="flex: 1; overflow: hidden; min-width: 0;" title="${(data.address || bin).replace(/"/g, '&quot;')}">
+                            <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                                 <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
                                     <span style="color: #607d8b; font-weight: 700; flex-shrink: 0;">⏸</span>
                                     ${data.address
-                                        ? `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;">${data.address}</span>`
-                                        : `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6;">BIN ${bin}</span>`
+                                        ? `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; text-decoration: underline dotted;">${data.address}</span>`
+                                        : `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6; text-decoration: underline dotted;">BIN ${bin}</span>`
                                     }
                                 </span>
                                 ${heldOn ? `<span style="font-size: 10px; opacity: 0.55; padding-left: 22px;">Since ${heldOn}${data.address ? ' · BIN ' + bin : ''}</span>` : (data.address ? `<span style="font-size: 10px; opacity: 0.55; padding-left: 22px;">BIN ${bin}</span>` : '')}
@@ -12273,6 +12306,26 @@
 
             // Update scheduled test dates panel
             updateTestDatesPanel();
+        }
+
+        // Fly to a building on the map by BIN and open its popup
+        function flyToMapBuilding(bin) {
+            if (!buildingMap) return;
+            // Hidden buildings are excluded from mapBuildingsData entirely
+            const hidden = getMapHidden();
+            if (hidden[bin]) {
+                showMapNotification('Building is hidden — click "Show" to reveal it first', '#888');
+                return;
+            }
+            if (!mapBuildingsData) return;
+            const idx = mapBuildingsData.findIndex(b => b.bin === bin);
+            if (idx === -1 || !mapMarkers[idx]) return;
+            const marker = mapMarkers[idx];
+            // Ensure marker is on the map (may be filtered out by month filter)
+            if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+            const latLng = marker.getLatLng();
+            buildingMap.setView([latLng.lat, latLng.lng], 17);
+            marker.openPopup();
         }
 
         // Copy BIN from map popup
@@ -21972,6 +22025,6 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.1</div>
 </body>
 </html>
