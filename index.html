@@ -979,7 +979,7 @@
             <div id="mapModalContainer" style="background: var(--card-bg); border-radius: 12px; width: 85%; max-width: 1400px; height: 80%; min-width: 400px; min-height: 400px; max-height: 95vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid var(--input-border); overflow: hidden; position: relative;">
                 <div style="display: flex; flex-direction: column; border-bottom: 2px solid var(--input-border); background: var(--panel-bg);">
                     <!-- Row 1: Title + file controls -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; gap: 10px; flex-wrap: wrap;">
+                    <div id="mapModalTitleBar" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; gap: 10px; flex-wrap: wrap;">
                         <h3 style="margin: 0; color: var(--header-color); font-size: 1.2em; white-space: nowrap;">📍 Building Locations</h3>
                         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                             <span id="mapSearchResultCount" style="color: #4CAF50; font-size: 0.85em; display: none;"></span>
@@ -995,6 +995,7 @@
                                 <span>📂</span> <span>Load</span>
                             </button>
                             <button id="mapFocusModeBtn" onclick="toggleMapFocusMode()" title="Focus Mode — hide search &amp; controls" style="background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 10px; cursor: pointer; color: var(--text-color); font-size: 1em; display: flex; align-items: center;">⊟</button>
+                            <button id="mapMinimizeBtn" onclick="minimizeMap()" title="Minimize — keep map open in background" style="display: none; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 10px; cursor: pointer; color: var(--text-color); font-size: 1.1em; line-height: 1; align-items: center;">&#8722;</button>
                             <button id="mapFullscreenBtn" onclick="toggleMapFullscreen()" title="Toggle fullscreen" style="background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 10px; cursor: pointer; color: var(--text-color); font-size: 1em; display: flex; align-items: center;">⛶</button>
                             <button onclick="toggleMapControlsPanel()" style="background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 12px; cursor: pointer; color: var(--text-color); font-size: 0.85em; display: flex; align-items: center; gap: 6px;">
                                 <span>⚙️</span> <span style="display: none;" class="controls-btn-text">Controls</span>
@@ -1258,12 +1259,20 @@
                         <div class="mcp-rh mcp-rh-br"     onmousedown="event.stopPropagation();_startPanelResize(event,'br')"></div>
                     </div>
                 </div>
-                <div style="padding: 10px 20px; background: var(--panel-bg); border-top: 1px solid var(--input-border); font-size: 0.85em; color: var(--text-color); display: flex; justify-content: space-between; align-items: center;">
+                <div style="padding: 8px 20px; background: var(--panel-bg); border-top: 1px solid var(--input-border); font-size: 0.85em; color: var(--text-color); display: flex; justify-content: space-between; align-items: center;">
                     <span style="opacity: 0.7;">Click a marker to view building details</span>
                 </div>
-                <!-- Resize handles -->
-                <div class="map-resize-handle map-resize-left" id="mapResizeLeft"></div>
-                <div class="map-resize-handle map-resize-right" id="mapResizeRight"></div>
+                <!-- Resize handles (only shown in windowed mode) -->
+                <style>
+                    .map-resize-handle { display: none; position: absolute; z-index: 20; }
+                    .map-resize-handle.windowed { display: block; }
+                    .map-resize-left   { left: 0;   top: 10px; bottom: 10px; width: 6px;  cursor: ew-resize; }
+                    .map-resize-right  { right: 0;  top: 10px; bottom: 10px; width: 6px;  cursor: ew-resize; }
+                    .map-resize-bottom { bottom: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
+                    .map-resize-corner { bottom: 0; right: 0; width: 16px; height: 16px; cursor: nwse-resize; }
+                </style>
+                <div class="map-resize-handle map-resize-left"   id="mapResizeLeft"></div>
+                <div class="map-resize-handle map-resize-right"  id="mapResizeRight"></div>
                 <div class="map-resize-handle map-resize-bottom" id="mapResizeBottom"></div>
                 <div class="map-resize-handle map-resize-corner" id="mapResizeCorner"></div>
             </div>
@@ -11393,17 +11402,73 @@
                         ? `<input type="checkbox" class="sched-row-cb" data-idx="${i}" checked style="cursor:pointer;width:14px;height:14px;">`
                         : `<input type="checkbox" disabled title="Cannot import — no match or invalid date" style="width:14px;height:14px;opacity:0.3;">`;
 
-                    html += `<tr style="background:${rowBg};border-bottom:1px solid var(--input-border,#333);">
+                    html += `<tr data-row-idx="${i}" style="background:${rowBg};border-bottom:1px solid var(--input-border,#333);">
                         <td style="padding:5px 8px;text-align:center;">${cbHtml}</td>
-                        <td style="padding:5px 8px;color:var(--text-color,#ccc);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.rawAddr.replace(/"/g,'')}">${r.rawAddr || '<em style="opacity:0.5">—</em>'}</td>
+                        <td style="padding:4px 8px;max-width:180px;"><input type="text" class="sched-addr-edit" data-idx="${i}" value="${(r.rawAddr || '').replace(/"/g,'&quot;')}" title="Click to edit address and re-match" style="width:100%;box-sizing:border-box;background:transparent;border:none;border-bottom:1px dashed rgba(255,255,255,0.18);color:var(--text-color,#ccc);font-size:11px;padding:1px 2px;font-family:inherit;cursor:text;outline:none;"></td>
                         <td style="padding:5px 8px;color:var(--text-color,#ccc);white-space:nowrap;">${r.parsedDate || (r.rawDate ? '<span style="color:#ff9800">' + r.rawDate + '</span>' : '<em style="opacity:0.5">—</em>')}</td>
-                        <td style="padding:5px 8px;text-align:center;">${statusIcon}</td>
-                        <td style="padding:5px 8px;color:var(--text-color,#ccc);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${matchedAddr.replace(/"/g,'')}">${matchedAddr}</td>
+                        <td class="sched-status-cell" style="padding:5px 8px;text-align:center;">${statusIcon}</td>
+                        <td class="sched-match-cell" style="padding:5px 8px;color:var(--text-color,#ccc);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${matchedAddr.replace(/"/g,'')}">${matchedAddr}</td>
                     </tr>`;
                 }
 
                 html += '</tbody></table>';
                 tableEl.innerHTML = html;
+
+                // Re-match a single row when its address is edited
+                function rematchRow(idx, newAddr) {
+                    const r = previewResults[idx];
+                    if (!r) return;
+                    r.rawAddr = newAddr;
+                    const match = newAddr ? matchAddressToBin(newAddr, binGroups) : null;
+                    r.match = match;
+
+                    const isImportable = !!(match && r.parsedDate);
+                    let statusIcon, rowBg, matchedAddr = '';
+                    if (!r.parsedDate) {
+                        statusIcon = '⚠️'; rowBg = 'rgba(255,152,0,0.07)'; matchedAddr = 'Date not recognized';
+                    } else if (!match) {
+                        statusIcon = '❌'; rowBg = 'rgba(255,107,107,0.07)'; matchedAddr = 'No matching building';
+                    } else if (match.score >= 95) {
+                        statusIcon = '✅'; rowBg = 'rgba(39,174,96,0.07)'; matchedAddr = match.address;
+                    } else {
+                        statusIcon = '⚠️'; rowBg = 'rgba(255,193,7,0.07)'; matchedAddr = `~${match.score}% — ${match.address}`;
+                    }
+
+                    const row = tableEl.querySelector(`tr[data-row-idx="${idx}"]`);
+                    if (!row) return;
+                    row.style.background = rowBg;
+
+                    const statusCell = row.querySelector('.sched-status-cell');
+                    const matchCell  = row.querySelector('.sched-match-cell');
+                    if (statusCell) statusCell.textContent = statusIcon;
+                    if (matchCell)  { matchCell.textContent = matchedAddr; matchCell.title = matchedAddr; }
+
+                    const cbCell = row.querySelector('td:first-child');
+                    if (cbCell) {
+                        cbCell.innerHTML = isImportable
+                            ? `<input type="checkbox" class="sched-row-cb" data-idx="${idx}" checked style="cursor:pointer;width:14px;height:14px;">`
+                            : `<input type="checkbox" disabled title="Cannot import — no match or invalid date" style="width:14px;height:14px;opacity:0.3;">`;
+                    }
+                    updateFooterFromCheckboxes();
+                }
+
+                // Attach editable-address listeners
+                tableEl.querySelectorAll('input.sched-addr-edit').forEach(input => {
+                    input.addEventListener('focus', () => {
+                        input.style.borderBottomColor = '#1a73e8';
+                        input.style.backgroundColor   = 'rgba(26,115,232,0.07)';
+                        input.style.borderRadius      = '2px';
+                    });
+                    input.addEventListener('blur', () => {
+                        input.style.borderBottomColor = 'rgba(255,255,255,0.18)';
+                        input.style.backgroundColor   = 'transparent';
+                        rematchRow(parseInt(input.dataset.idx), input.value.trim());
+                    });
+                    input.addEventListener('keydown', e => {
+                        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+                        e.stopPropagation(); // don't let Enter/Space close the modal
+                    });
+                });
 
                 // Select-all toggle
                 const selectAllCb = document.getElementById('schedSelectAllCb');
@@ -12368,21 +12433,9 @@
             // Initialize resize handles (safe to call multiple times)
             initMapResizeHandles();
 
-            // Always open in fullscreen — covers the full viewport on load
+            // Always open in fullscreen — covers the full viewport on load.
+            // toggleMapFullscreen handles body-scroll locking and saves _scrollY.
             if (!_mapFullscreen) toggleMapFullscreen();
-
-            // Prevent body scrolling when map modal is open
-            // Compensate for scrollbar disappearance to prevent layout shift on large monitors
-            const scrollY = window.scrollY;
-            const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-            document.body.style.overflow = 'hidden';
-            document.body.style.position = 'fixed';
-            document.body.style.top = `-${scrollY}px`;
-            document.body.style.left = '0';
-            document.body.style.right = '0';
-            document.body.style.width = '100%';
-            document.body.style.paddingRight = scrollbarWidth > 0 ? `${scrollbarWidth}px` : '0';
-            modal._scrollY = scrollY;
 
 
             // Add event listener to close modal on ESC key
@@ -12452,24 +12505,48 @@
             const additionalInput = document.getElementById('additionalLocationInput');
             if (additionalInput) additionalInput.value = '';
 
-            // Reset fullscreen state when map is closed
-            if (typeof _mapFullscreen !== 'undefined' && _mapFullscreen) {
-                _mapFullscreen = false;
-                const overlay = document.getElementById('buildingMapModal');
-                const container = document.getElementById('mapModalContainer');
-                if (overlay) overlay.style.background = 'rgba(0,0,0,0.7)';
-                if (container) {
-                    container.style.width = '85%';
-                    container.style.maxWidth = '1400px';
-                    container.style.height = '80%';
-                    container.style.maxHeight = '95vh';
-                    container.style.minWidth = '400px';
-                    container.style.minHeight = '400px';
-                    container.style.borderRadius = '12px';
-                }
-                const btn = document.getElementById('mapFullscreenBtn');
-                if (btn) { btn.textContent = '⛶'; btn.title = 'Toggle fullscreen'; }
+            // Hide the restore pill in case the map was minimized when closed
+            _mapIsMinimized = false;
+            const pill = document.getElementById('mapRestorePill');
+            if (pill) pill.style.display = 'none';
+
+            // Clean up windowed-mode drag, resize, and overlay state
+            const titleBar = document.getElementById('mapModalTitleBar');
+            if (titleBar) {
+                titleBar.style.cursor = '';
+                titleBar.removeEventListener('mousedown', _mapWindowDragStart);
             }
+            ['mapResizeLeft', 'mapResizeRight', 'mapResizeBottom', 'mapResizeCorner'].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) el.classList.remove('windowed');
+            });
+
+            // Reset modal/container styles so it opens cleanly next time
+            const overlay   = document.getElementById('buildingMapModal');
+            const container = document.getElementById('mapModalContainer');
+            if (overlay) {
+                overlay.style.background    = 'rgba(0,0,0,0.7)';
+                overlay.style.pointerEvents = '';
+            }
+            if (container) {
+                container.style.position   = 'relative';
+                container.style.left       = '';
+                container.style.top        = '';
+                container.style.pointerEvents = '';
+                container.style.width      = '85%';
+                container.style.maxWidth   = '1400px';
+                container.style.height     = '80%';
+                container.style.maxHeight  = '95vh';
+                container.style.minWidth   = '400px';
+                container.style.minHeight  = '400px';
+                container.style.borderRadius = '12px';
+                container._savedStyles     = null;
+            }
+            const btn = document.getElementById('mapFullscreenBtn');
+            if (btn) { btn.textContent = '⛶'; btn.title = 'Toggle fullscreen'; }
+            const minBtn = document.getElementById('mapMinimizeBtn');
+            if (minBtn) minBtn.style.display = 'none';
+            _mapFullscreen = false;
         }
 
         let _mapFullscreen = false;
@@ -12478,12 +12555,15 @@
             const overlay = document.getElementById('buildingMapModal');
             const container = document.getElementById('mapModalContainer');
             const btn = document.getElementById('mapFullscreenBtn');
+            const titleBar = document.getElementById('mapModalTitleBar');
             if (!overlay || !container) return;
 
             _mapFullscreen = !_mapFullscreen;
 
             if (_mapFullscreen) {
-                // Save current styles so we can restore them
+                // --- ENTERING FULLSCREEN from windowed ---
+
+                // Save current windowed position/size so we can restore later
                 container._savedStyles = {
                     width: container.style.width,
                     maxWidth: container.style.maxWidth,
@@ -12492,11 +12572,19 @@
                     minWidth: container.style.minWidth,
                     minHeight: container.style.minHeight,
                     borderRadius: container.style.borderRadius,
+                    left: container.style.left,
+                    top: container.style.top,
                 };
-                overlay._savedBackground = overlay.style.background;
 
-                // Fullscreen: cover the entire viewport
+                // Make overlay blocking again (container covers everything so no dark bg needed)
                 overlay.style.background = 'transparent';
+                overlay.style.pointerEvents = '';
+
+                // Return container to normal flow inside overlay
+                container.style.position = 'relative';
+                container.style.left = '';
+                container.style.top = '';
+                container.style.pointerEvents = '';
                 container.style.width = '100%';
                 container.style.maxWidth = '100%';
                 container.style.height = '100%';
@@ -12505,22 +12593,101 @@
                 container.style.minHeight = '0';
                 container.style.borderRadius = '0';
 
-                if (btn) btn.textContent = '⮼';
-                if (btn) btn.title = 'Exit fullscreen';
+                // Re-lock body scroll so the page behind is frozen
+                const scrollY = window.scrollY;
+                const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+                document.body.style.overflow = 'hidden';
+                document.body.style.position = 'fixed';
+                document.body.style.top = `-${scrollY}px`;
+                document.body.style.left = '0';
+                document.body.style.right = '0';
+                document.body.style.width = '100%';
+                document.body.style.paddingRight = scrollbarWidth > 0 ? `${scrollbarWidth}px` : '0';
+                overlay._scrollY = scrollY;
+
+                // Remove drag from title bar
+                if (titleBar) {
+                    titleBar.style.cursor = '';
+                    titleBar.removeEventListener('mousedown', _mapWindowDragStart);
+                }
+
+                // Hide resize handles
+                ['mapResizeLeft', 'mapResizeRight', 'mapResizeBottom', 'mapResizeCorner'].forEach(function(id) {
+                    var el = document.getElementById(id);
+                    if (el) el.classList.remove('windowed');
+                });
+
+                // Minimize button only relevant in windowed mode
+                var minBtn = document.getElementById('mapMinimizeBtn');
+                if (minBtn) minBtn.style.display = 'none';
+
+                if (btn) { btn.textContent = '⮼'; btn.title = 'Exit fullscreen'; }
+
             } else {
-                // Restore saved styles
+                // --- EXITING FULLSCREEN → windowed mode ---
+
                 const s = container._savedStyles || {};
-                overlay.style.background = overlay._savedBackground || 'rgba(0,0,0,0.7)';
-                container.style.width = s.width || '85%';
+
+                // Make overlay transparent and non-blocking so the page is usable behind
+                overlay.style.background = 'transparent';
+                overlay.style.pointerEvents = 'none';
+                container.style.pointerEvents = 'all';
+
+                // Restore windowed dimensions
+                container.style.width    = s.width    || '85%';
                 container.style.maxWidth = s.maxWidth || '1400px';
-                container.style.height = s.height || '80%';
+                container.style.height   = s.height   || '80%';
                 container.style.maxHeight = s.maxHeight || '95vh';
-                container.style.minWidth = s.minWidth || '400px';
+                container.style.minWidth  = s.minWidth  || '400px';
                 container.style.minHeight = s.minHeight || '400px';
                 container.style.borderRadius = s.borderRadius || '12px';
 
-                if (btn) btn.textContent = '⛶';
-                if (btn) btn.title = 'Toggle fullscreen';
+                // Switch to absolute positioning so it can be dragged
+                container.style.position = 'absolute';
+                if (s.left && s.top) {
+                    // Restore previously saved position
+                    container.style.left = s.left;
+                    container.style.top  = s.top;
+                } else {
+                    // Center in viewport on first windowed open
+                    var containerW = Math.min(window.innerWidth * 0.85, 1400);
+                    var containerH = Math.min(window.innerHeight * 0.80, window.innerHeight * 0.95);
+                    container.style.left = Math.max(0, (window.innerWidth  - containerW) / 2) + 'px';
+                    container.style.top  = Math.max(0, (window.innerHeight - containerH) / 2) + 'px';
+                }
+
+                // Unlock body scroll so the page behind is interactive
+                var scrollY = overlay._scrollY || 0;
+                document.body.style.overflow = '';
+                document.body.style.position = '';
+                document.body.style.top = '';
+                document.body.style.left = '';
+                document.body.style.right = '';
+                document.body.style.width = '';
+                document.body.style.paddingRight = '';
+                window.scrollTo(0, scrollY);
+                // Update saved scroll so closeBuildingMap doesn't jump the page
+                overlay._scrollY = scrollY;
+
+                // Enable drag on the title bar
+                if (titleBar) {
+                    titleBar.style.cursor = 'grab';
+                    titleBar.removeEventListener('mousedown', _mapWindowDragStart); // prevent duplicate
+                    titleBar.addEventListener('mousedown', _mapWindowDragStart);
+                }
+
+                // Show and enable resize handles
+                initMapResizeHandles();
+                ['mapResizeLeft', 'mapResizeRight', 'mapResizeBottom', 'mapResizeCorner'].forEach(function(id) {
+                    var el = document.getElementById(id);
+                    if (el) el.classList.add('windowed');
+                });
+
+                // Show minimize button only in windowed mode
+                var minBtn = document.getElementById('mapMinimizeBtn');
+                if (minBtn) minBtn.style.display = 'flex';
+
+                if (btn) { btn.textContent = '⛶'; btn.title = 'Toggle fullscreen'; }
             }
 
             // Tell Leaflet the container size changed
@@ -12562,62 +12729,133 @@
         }
 
         function initMapResizeHandles() {
-            return; // Resize handles disabled — map opens fullscreen by default
             const container = document.getElementById('mapModalContainer');
             if (!container || container._resizeHandlesInit) return;
             container._resizeHandlesInit = true;
 
             function startResize(e, direction) {
+                if (_mapFullscreen) return;
                 e.preventDefault();
                 e.stopPropagation();
                 const startX = e.clientX;
                 const startY = e.clientY;
-                const startWidth = container.offsetWidth;
+                const startWidth  = container.offsetWidth;
                 const startHeight = container.offsetHeight;
-                const minWidth = 400;
+                const startLeft   = parseInt(container.style.left) || 0;
+                const startTop    = parseInt(container.style.top)  || 0;
+                const minWidth  = 400;
                 const minHeight = 400;
 
                 function onMove(ev) {
                     const dx = ev.clientX - startX;
                     const dy = ev.clientY - startY;
+                    container.style.maxWidth  = 'none';
+                    container.style.maxHeight = 'none';
+
                     if (direction === 'left') {
-                        container.style.maxWidth = 'none';
                         const newWidth = Math.max(minWidth, Math.min(window.innerWidth, startWidth - dx));
                         container.style.width = newWidth + 'px';
+                        // Shift left edge to keep right edge stationary
+                        container.style.left  = (startLeft + startWidth - newWidth) + 'px';
                     } else if (direction === 'right') {
-                        container.style.maxWidth = 'none';
-                        const newWidth = Math.max(minWidth, Math.min(window.innerWidth, startWidth + dx));
+                        const newWidth = Math.max(minWidth, Math.min(window.innerWidth - startLeft, startWidth + dx));
                         container.style.width = newWidth + 'px';
                     } else if (direction === 'bottom') {
-                        const newHeight = Math.max(minHeight, Math.min(window.innerHeight * 0.95, startHeight + dy));
+                        const newHeight = Math.max(minHeight, Math.min(window.innerHeight - startTop, startHeight + dy));
                         container.style.height = newHeight + 'px';
                     } else if (direction === 'corner') {
-                        container.style.maxWidth = 'none';
-                        const newWidth = Math.max(minWidth, Math.min(window.innerWidth, startWidth + dx));
-                        const newHeight = Math.max(minHeight, Math.min(window.innerHeight * 0.95, startHeight + dy));
-                        container.style.width = newWidth + 'px';
+                        const newWidth  = Math.max(minWidth,  Math.min(window.innerWidth  - startLeft, startWidth  + dx));
+                        const newHeight = Math.max(minHeight, Math.min(window.innerHeight - startTop,  startHeight + dy));
+                        container.style.width  = newWidth  + 'px';
                         container.style.height = newHeight + 'px';
                     }
+                    if (buildingMap) buildingMap.invalidateSize();
                 }
 
                 function onUp() {
                     document.removeEventListener('mousemove', onMove);
                     document.removeEventListener('mouseup', onUp);
+                    document.body.style.userSelect = '';
                 }
 
+                document.body.style.userSelect = 'none';
                 document.addEventListener('mousemove', onMove);
                 document.addEventListener('mouseup', onUp);
             }
 
-            const leftHandle = document.getElementById('mapResizeLeft');
-            const rightHandle = document.getElementById('mapResizeRight');
+            const leftHandle   = document.getElementById('mapResizeLeft');
+            const rightHandle  = document.getElementById('mapResizeRight');
             const bottomHandle = document.getElementById('mapResizeBottom');
             const cornerHandle = document.getElementById('mapResizeCorner');
 
-            if (leftHandle) leftHandle.addEventListener('mousedown', (e) => startResize(e, 'left'));
-            if (rightHandle) rightHandle.addEventListener('mousedown', (e) => startResize(e, 'right'));
-            if (bottomHandle) bottomHandle.addEventListener('mousedown', (e) => startResize(e, 'bottom'));
-            if (cornerHandle) cornerHandle.addEventListener('mousedown', (e) => startResize(e, 'corner'));
+            if (leftHandle)   leftHandle.addEventListener('mousedown',   function(e) { startResize(e, 'left');   });
+            if (rightHandle)  rightHandle.addEventListener('mousedown',  function(e) { startResize(e, 'right');  });
+            if (bottomHandle) bottomHandle.addEventListener('mousedown', function(e) { startResize(e, 'bottom'); });
+            if (cornerHandle) cornerHandle.addEventListener('mousedown', function(e) { startResize(e, 'corner'); });
+        }
+
+        function _mapWindowDragStart(e) {
+            // Only drag when in windowed mode and not clicking a button/input
+            if (_mapFullscreen) return;
+            if (e.target.tagName === 'BUTTON' || e.target.closest('button') ||
+                e.target.tagName === 'INPUT'  || e.target.tagName === 'SELECT') return;
+
+            const container = document.getElementById('mapModalContainer');
+            if (!container) return;
+            e.preventDefault();
+
+            const startMouseX = e.clientX;
+            const startMouseY = e.clientY;
+            const startLeft   = parseInt(container.style.left) || 0;
+            const startTop    = parseInt(container.style.top)  || 0;
+            const titleBar    = document.getElementById('mapModalTitleBar');
+            if (titleBar) titleBar.style.cursor = 'grabbing';
+
+            function onMove(ev) {
+                const dx = ev.clientX - startMouseX;
+                const dy = ev.clientY - startMouseY;
+                // Keep the window within the viewport
+                const maxLeft = window.innerWidth  - 120;
+                const maxTop  = window.innerHeight - 40;
+                container.style.left = Math.max(0, Math.min(maxLeft, startLeft + dx)) + 'px';
+                container.style.top  = Math.max(0, Math.min(maxTop,  startTop  + dy)) + 'px';
+            }
+
+            function onUp() {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                document.body.style.userSelect = '';
+                if (titleBar) titleBar.style.cursor = 'grab';
+            }
+
+            document.body.style.userSelect = 'none';
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        }
+
+        let _mapIsMinimized = false;
+
+        function minimizeMap() {
+            if (_mapFullscreen) return; // minimize only available in windowed mode
+            const modal = document.getElementById('buildingMapModal');
+            const pill  = document.getElementById('mapRestorePill');
+            if (!modal) return;
+            _mapIsMinimized = true;
+            modal.style.display = 'none';
+            if (pill) pill.style.display = 'block';
+        }
+
+        function restoreMap() {
+            const modal = document.getElementById('buildingMapModal');
+            const pill  = document.getElementById('mapRestorePill');
+            if (!modal) return;
+            _mapIsMinimized = false;
+            modal.style.display = 'flex';
+            if (pill) pill.style.display = 'none';
+            // Give Leaflet a moment to recalculate after the container is visible again
+            setTimeout(function() {
+                if (buildingMap) buildingMap.invalidateSize();
+            }, 50);
         }
 
         var mapControlsPanelIsPopped = false;
@@ -22025,6 +22263,23 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.1</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.2</div>
+
+    <!-- Map restore pill — shown when the map is minimized -->
+    <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
+        <button onclick="restoreMap()" title="Restore map window"
+                style="display: flex; align-items: center; gap: 8px;
+                       background: #17a2b8; color: #fff;
+                       border: none; border-radius: 24px;
+                       padding: 10px 22px; cursor: pointer;
+                       font-size: 0.92em; font-weight: 600;
+                       box-shadow: 0 4px 18px rgba(0,0,0,0.4);
+                       white-space: nowrap;
+                       transition: background 0.15s, transform 0.15s;">
+            <span style="font-size: 1.1em;">📍</span>
+            <span>Map</span>
+            <span style="font-size: 0.85em; opacity: 0.85;">↑ Restore</span>
+        </button>
+    </div>
 </body>
 </html>
