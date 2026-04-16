@@ -1049,11 +1049,13 @@
                             .mcp-body.open { display: block; }
                             .mcp-desc { font-size: 11px; opacity: 0.65; margin: 0 0 10px 0; line-height: 1.4; }
                             .mcp-btn { width: 100%; padding: 7px 8px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px; margin-top: 6px; }
+                            .mcp-search-input { width: 100%; padding: 7px 10px; border-radius: 5px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 12px; box-sizing: border-box; margin-bottom: 8px; }
                             /* Popped-out panel: lift list height caps so content fills available space */
                             #mapControlsPanel.mcp-popped-out #favoritesBuildingsList,
                             #mapControlsPanel.mcp-popped-out #inProcessBuildingsList,
                             #mapControlsPanel.mcp-popped-out #hiddenBuildingsList,
                             #mapControlsPanel.mcp-popped-out #additionalLocationsList,
+                            #mapControlsPanel.mcp-popped-out #customNamesList,
                             #mapControlsPanel.mcp-popped-out #completedBuildingsList,
                             #mapControlsPanel.mcp-popped-out #monthLabelsList,
                             #mapControlsPanel.mcp-popped-out #testDatesPanelList { max-height: none !important; }
@@ -1076,6 +1078,8 @@
                             </div>
                             <div class="mcp-body" id="mcpFavorites">
                                 <p class="mcp-desc">Favorited buildings appear in purple on the map and always stay visible even when a month filter is active</p>
+                                <input type="text" id="favoritesSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
+                                       oninput="filterMcpBinRowList('favoritesBuildingsList', this.value)">
                                 <div id="favoritesBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 8px;">
                                     <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No favorited buildings</div>
                                 </div>
@@ -1091,6 +1095,8 @@
                             </div>
                             <div class="mcp-body" id="mcpInProcess">
                                 <p class="mcp-desc">Buildings marked as currently in process</p>
+                                <input type="text" id="inProcessSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
+                                       oninput="filterMcpBinRowList('inProcessBuildingsList', this.value)">
                                 <div id="inProcessBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 8px;">
                                     <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No in-process buildings</div>
                                 </div>
@@ -1107,6 +1113,8 @@
                             </div>
                             <div class="mcp-body" id="mcpHold">
                                 <p class="mcp-desc">Buildings placed on hold — scheduling is paused for these addresses</p>
+                                <input type="text" id="holdSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
+                                       oninput="filterMcpBinRowList('holdBuildingsList', this.value)">
                                 <div id="holdBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 8px;">
                                     <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No buildings on hold</div>
                                 </div>
@@ -1124,6 +1132,8 @@
                             </div>
                             <div class="mcp-body" id="mcpTestDates">
                                 <p class="mcp-desc">Past due dates are flagged in red — click ✓ Done to confirm testing was completed</p>
+                                <input type="text" id="testDatesSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or date..."
+                                       oninput="filterMcpBinRowList('testDatesPanelList', this.value)">
                                 <div id="testDatesPanelList" style="max-height: 260px; overflow-y: auto; margin-bottom: 8px;">
                                     <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No scheduled test dates</div>
                                 </div>
@@ -1150,6 +1160,8 @@
                             </div>
                             <div class="mcp-body" id="mcpHidden">
                                 <p class="mcp-desc">Hidden buildings are not shown on the map</p>
+                                <input type="text" id="hiddenSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
+                                       oninput="filterMcpBinRowList('hiddenBuildingsList', this.value)">
                                 <div id="hiddenBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 8px;">
                                     <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No hidden buildings</div>
                                 </div>
@@ -1164,11 +1176,30 @@
                                 <span class="mcp-arrow" id="mcpAdditionalArrow">▼</span>
                             </div>
                             <div class="mcp-body" id="mcpAdditional">
-                                <p class="mcp-desc">Custom locations appear as teal squares on the map. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
+                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
+                                <input type="text" id="additionalLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
+                                       oninput="filterAdditionalLocationsList(this.value)">
                                 <div id="additionalLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
                                     <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No additional locations</div>
                                 </div>
                                 <button onclick="clearAllAdditionalLocations()" class="mcp-btn" style="color:#00bcd4;">Clear All Additional Locations</button>
+                            </div>
+                        </div>
+
+                        <!-- Custom Labels -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpCustomNames')">
+                                <span class="mcp-title"><span style="color:#e64a19;">🏷️</span> Custom (<span id="customNamesCount">0</span>)</span>
+                                <span class="mcp-arrow" id="mcpCustomNamesArrow">▼</span>
+                            </div>
+                            <div class="mcp-body" id="mcpCustomNames">
+                                <p class="mcp-desc">Custom labels assigned to additional locations. Click a marker on the map and use the 🏷️ Custom Name field to label it.</p>
+                                <input type="text" id="customNamesSearchInput" class="mcp-search-input" placeholder="🔍 Search custom name or address..."
+                                       oninput="filterCustomNamesPanelList(this.value)">
+                                <div id="customNamesList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No custom labels assigned</div>
+                                </div>
+                                <button onclick="clearAllCustomNames()" class="mcp-btn" style="color:#e64a19;">Clear All Custom Labels</button>
                             </div>
                         </div>
 
@@ -1180,9 +1211,8 @@
                             </div>
                             <div class="mcp-body" id="mcpCompleted">
                                 <p class="mcp-desc">Buildings manually marked as completed — scheduled test dates are recorded here</p>
-                                <input type="text" id="completedSearchInput" placeholder="🔍 Search by address or BIN..."
-                                       oninput="filterCompletedList(this.value)"
-                                       style="width: 100%; padding: 7px 10px; border-radius: 5px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 12px; box-sizing: border-box; margin-bottom: 8px;">
+                                <input type="text" id="completedSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
+                                       oninput="filterCompletedList(this.value)">
                                 <div id="completedBuildingsList" style="max-height: 320px; overflow-y: auto; margin-bottom: 8px;">
                                     <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No completed buildings</div>
                                 </div>
@@ -1199,6 +1229,8 @@
                             </div>
                             <div class="mcp-body" id="mcpMonths">
                                 <p class="mcp-desc">Click months to filter buildings — select multiple at once.</p>
+                                <input type="text" id="monthLabelsSearchInput" class="mcp-search-input" placeholder="🔍 Filter month summary rows..."
+                                       oninput="filterMonthLabelsSummaryList(this.value)">
                                 <div style="margin-bottom: 8px;">
                                     <div id="monthFilterButtons" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 6px;">
                                         <button onclick="toggleMonthFilter('January')"   id="mfBtn-January"   style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:12px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">January</span><span id="mfCount-January"   style="flex-shrink:0;font-size:10px;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
@@ -1231,7 +1263,9 @@
                                 <span class="mcp-arrow" id="mcpTipsArrow">▼</span>
                             </div>
                             <div class="mcp-body" id="mcpTips">
-                                <ul style="font-size: 11px; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.7;">
+                                <input type="text" id="mcpTipsSearchInput" class="mcp-search-input" placeholder="🔍 Search tips..."
+                                       oninput="filterMcpTipsList(this.value)">
+                                <ul id="mcpTipsList" style="font-size: 11px; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.7;">
                                     <li>Click a marker to see building details</li>
                                     <li>Use ✓ in popup to mark a building complete</li>
                                     <li>Use 🔄 in popup to mark a building in process</li>
@@ -10491,6 +10525,9 @@
                 } else {
                     listEl.innerHTML = locations.map((loc, index) => {
                         const hasBin = loc.bin ? true : false;
+                        const addrEsc = (loc.label || '').replace(/"/g, '&quot;');
+                        const customEsc = (loc.customName || '').replace(/"/g, '&quot;');
+                        const coordsEsc = (Number(loc.latitude).toFixed(5) + ' ' + Number(loc.longitude).toFixed(5)).replace(/"/g, '&quot;');
                         const promoteBtn = hasBin
                             ? `<button class="addloc-promote-btn" onclick="promoteAdditionalLocation(${index})"
                                        title="Fetch all device data for this BIN and move it into the main building list"
@@ -10499,11 +10536,12 @@
                                </button>`
                             : `<div style="margin-top:5px; font-size:10px; opacity:0.5; font-style:italic;">No BIN — cannot move to main buildings</div>`;
                         return `
-                        <div id="addLocCard-${index}" style="background: var(--input-bg); padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid var(--input-border);">
+                        <div id="addLocCard-${index}" data-mcp-add-loc="1" data-bin="${loc.bin || ''}" data-address="${addrEsc}" data-custom="${customEsc}" data-coords="${coordsEsc}" style="background: var(--input-bg); padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid var(--input-border);">
                             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px;">
-                                <div style="flex: 1; min-width: 0;">
-                                    <div style="font-size: 11px; font-weight: 600; color: var(--text-color); margin-bottom: 2px; word-break: break-word;">${loc.label}</div>
-                                    <div style="opacity: 0.55; font-size: 10px;">${hasBin ? 'BIN ' + loc.bin + ' · ' : ''}${loc.latitude.toFixed(5)}, ${loc.longitude.toFixed(5)}</div>
+                                <div style="flex: 1; min-width: 0; cursor: pointer; text-decoration: none;" title="Click to view on map" onclick="flyToAdditionalLocation(${loc.latitude}, ${loc.longitude})">
+                                    ${loc.customName ? `<div style="font-size: 11px; font-weight: 700; color: #e64a19; margin-bottom: 1px; word-break: break-word; text-decoration: underline dotted;">🏷️ ${loc.customName}</div>` : ''}
+                                    <div style="font-size: 11px; font-weight: 600; color: var(--text-color); margin-bottom: 2px; word-break: break-word; text-decoration: underline dotted;">${loc.label}</div>
+                                    <div style="opacity: 0.55; font-size: 10px;">${hasBin ? 'BIN ' + loc.bin + ' · ' : ''}${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}</div>
                                 </div>
                                 <button onclick="removeAdditionalLocation(${index})"
                                         title="Remove location"
@@ -10514,8 +10552,88 @@
                     }).join('');
                 }
             }
+            updateCustomNamesPanel();
+            const alSearch = document.getElementById('additionalLocationsSearchInput');
+            if (alSearch && alSearch.value.trim()) {
+                filterAdditionalLocationsList(alSearch.value);
+            }
         }
         
+        // Custom location name functions
+        function setAdditionalLocationCustomName(lat, lng, name) {
+            const locations = getAdditionalLocations();
+            const idx = locations.findIndex(loc =>
+                Math.abs(loc.latitude - lat) < 0.000001 && Math.abs(loc.longitude - lng) < 0.000001
+            );
+            if (idx === -1) return;
+            if (name && name.trim()) {
+                locations[idx].customName = name.trim();
+            } else {
+                delete locations[idx].customName;
+            }
+            setAdditionalLocations(locations);
+            updateAdditionalLocationsPanel();
+            updateCustomNamesPanel();
+            if (buildingMap && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
+
+        function updateCustomNamesPanel() {
+            const locations = getAdditionalLocations();
+            const named = locations.filter(loc => loc.customName);
+            const countEl = document.getElementById('customNamesCount');
+            const listEl = document.getElementById('customNamesList');
+            if (countEl) countEl.textContent = named.length;
+            if (!listEl) return;
+            if (named.length === 0) {
+                listEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No custom labels assigned</div>';
+                return;
+            }
+            listEl.innerHTML = named.map((loc) => {
+                const addrEsc = (loc.label || '').replace(/"/g, '&quot;');
+                const customEsc = (loc.customName || '').replace(/"/g, '&quot;');
+                return `
+                <div data-mcp-custom-row="1" data-bin="${loc.bin || ''}" data-address="${addrEsc}" data-custom="${customEsc}" style="background: var(--input-bg); padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid rgba(230,74,25,0.35);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; margin-bottom: 4px;">
+                        <div style="flex: 1; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToAdditionalLocation(${loc.latitude}, ${loc.longitude})">
+                            <div style="font-size: 11px; font-weight: 700; color: #e64a19; margin-bottom: 1px; word-break: break-word; text-decoration: underline dotted;">🏷️ ${loc.customName}</div>
+                            <div style="font-size: 10px; opacity: 0.55; word-break: break-word; text-decoration: underline dotted;">${loc.label}</div>
+                        </div>
+                        <button onclick="clearCustomLocationName(${loc.latitude}, ${loc.longitude})"
+                                title="Remove custom label"
+                                style="flex-shrink:0; background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.4); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 11px;">✕</button>
+                    </div>
+                    <input type="text"
+                           value="${loc.customName.replace(/"/g, '&quot;')}"
+                           placeholder="Edit label..."
+                           onchange="setAdditionalLocationCustomName(${loc.latitude}, ${loc.longitude}, this.value)"
+                           style="width: 100%; padding: 4px 7px; border-radius: 4px; border: 1px solid rgba(230,74,25,0.5); background: var(--input-bg); color: var(--text-color); font-size: 11px; box-sizing: border-box; outline: none;"
+                           onfocus="this.style.borderColor='#e64a19'"
+                           onblur="this.style.borderColor='rgba(230,74,25,0.5)'" />
+                </div>`;
+            }).join('');
+            const cnSearch = document.getElementById('customNamesSearchInput');
+            if (cnSearch && cnSearch.value.trim()) {
+                filterCustomNamesPanelList(cnSearch.value);
+            }
+        }
+
+        function clearCustomLocationName(lat, lng) {
+            setAdditionalLocationCustomName(lat, lng, '');
+        }
+
+        function clearAllCustomNames() {
+            const locations = getAdditionalLocations();
+            locations.forEach(loc => { delete loc.customName; });
+            setAdditionalLocations(locations);
+            updateAdditionalLocationsPanel();
+            updateCustomNamesPanel();
+            if (buildingMap && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
+
         // Month label functions (in-memory)
         function getMapMonthLabels() {
             return mapMonthLabels;
@@ -10561,7 +10679,7 @@
                     let html = '';
                     months.forEach(month => {
                         if (counts[month] > 0) {
-                            html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px;">
+                            html += `<div data-month-row="${month}" style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px;">
                                 <span>${month}</span>
                                 <span style="background: var(--input-bg); padding: 2px 8px; border-radius: 10px;">${counts[month]}</span>
                             </div>`;
@@ -10578,6 +10696,10 @@
             }
             updateHideMonthLabeledBtn();
             updateMonthFilterButtons();
+            const mls = document.getElementById('monthLabelsSearchInput');
+            if (mls && mls.value.trim()) {
+                filterMonthLabelsSummaryList(mls.value);
+            }
         }
         
         function clearAllMonthLabels() {
@@ -11906,7 +12028,6 @@
                 const sortedDates = allTestDates[bin].slice().sort();
                 const hasPast = sortedDates.some(d => new Date(d + 'T00:00:00') <= today);
 
-                const addrEscaped = (address || 'BIN ' + bin).replace(/"/g, '&quot;');
                 const headerBg = hasPast ? 'rgba(255,107,107,0.08)' : 'rgba(26,115,232,0.06)';
                 const headerBorder = hasPast ? 'rgba(255,107,107,0.3)' : 'rgba(26,115,232,0.25)';
                 const headerIconColor = hasPast ? '#ff6b6b' : '#1a73e8';
@@ -11945,7 +12066,9 @@
                     </div>`;
                 }).join('');
 
-                return `<div style="margin-bottom: 8px; border-radius: 6px; border: 1px solid ${headerBorder}; overflow: hidden;">
+                const datesForFilter = sortedDates.join(' ').replace(/"/g, '&quot;');
+                const addrForData = (address || '').replace(/"/g, '&quot;');
+                return `<div data-bin="${bin}" data-address="${addrForData}" data-filter-text="${datesForFilter}" style="margin-bottom: 8px; border-radius: 6px; border: 1px solid ${headerBorder}; overflow: hidden;">
                     <div style="padding: 7px 10px; background: ${headerBg}; display:flex; align-items:center; gap:6px;">
                         <span style="font-size:12px; color:${headerIconColor}; flex-shrink:0;">📍</span>
                         <span style="font-size:12px; font-weight:600; color:var(--text-color); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; text-decoration:underline dotted;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
@@ -11962,6 +12085,10 @@
                     </div>
                 </div>`;
             }).join('');
+            const tds = document.getElementById('testDatesSearchInput');
+            if (tds && tds.value.trim()) {
+                filterMcpBinRowList('testDatesPanelList', tds.value);
+            }
         }
 
         function isHideInProcessActive() {
@@ -12028,29 +12155,145 @@
             }
         }
 
-        // --- Completed search filter ---
-        function filterCompletedList(query) {
-            var items = document.querySelectorAll('#completedBuildingsList > div[data-bin]');
+        // --- Map settings sidebar: list search (BIN + address + optional data-filter-text for dates, etc.) ---
+        function filterMcpBinRowList(listId, query, noResultsIdOverride) {
+            var list = document.getElementById(listId);
+            if (!list) return;
             var q = (query || '').toLowerCase().trim();
+            var items = list.querySelectorAll(':scope > div[data-bin]');
             var anyVisible = false;
             items.forEach(function(el) {
-                var text = (el.dataset.address || '') + ' ' + (el.dataset.bin || '');
-                var match = !q || text.toLowerCase().includes(q);
+                var text = ((el.dataset.bin || '') + ' ' + (el.dataset.address || '') + ' ' + (el.dataset.filterText || '')).toLowerCase();
+                var match = !q || text.includes(q);
                 el.style.display = match ? '' : 'none';
                 if (match) anyVisible = true;
             });
-            var noResults = document.getElementById('completedNoResults');
-            if (!anyVisible && q) {
+            var noResultsId = noResultsIdOverride || (listId + 'NoFilterMatch');
+            var noResults = document.getElementById(noResultsId);
+            if (!anyVisible && q && items.length > 0) {
                 if (!noResults) {
-                    var div = document.createElement('div');
-                    div.id = 'completedNoResults';
-                    div.style.cssText = 'font-size:12px;opacity:0.6;text-align:center;padding:8px;';
-                    div.textContent = 'No buildings match "' + query + '"';
-                    document.getElementById('completedBuildingsList').appendChild(div);
-                } else {
-                    noResults.textContent = 'No buildings match "' + query + '"';
-                    noResults.style.display = '';
+                    noResults = document.createElement('div');
+                    noResults.id = noResultsId;
+                    noResults.style.cssText = 'font-size:12px;opacity:0.6;text-align:center;padding:8px;';
+                    list.appendChild(noResults);
                 }
+                noResults.textContent = 'No matches for "' + query + '"';
+                noResults.style.display = '';
+            } else if (noResults) {
+                noResults.style.display = 'none';
+            }
+        }
+
+        function filterCompletedList(query) {
+            filterMcpBinRowList('completedBuildingsList', query, 'completedNoResults');
+        }
+
+        function filterAdditionalLocationsList(query) {
+            var list = document.getElementById('additionalLocationsList');
+            if (!list) return;
+            var q = (query || '').toLowerCase().trim();
+            var items = list.querySelectorAll(':scope > div[data-mcp-add-loc]');
+            var anyVisible = false;
+            items.forEach(function(el) {
+                var text = ((el.dataset.bin || '') + ' ' + (el.dataset.address || '') + ' ' + (el.dataset.custom || '') + ' ' + (el.dataset.coords || '')).toLowerCase();
+                var match = !q || text.includes(q);
+                el.style.display = match ? '' : 'none';
+                if (match) anyVisible = true;
+            });
+            var noResultsId = 'additionalLocationsListNoFilterMatch';
+            var noResults = document.getElementById(noResultsId);
+            if (!anyVisible && q && items.length > 0) {
+                if (!noResults) {
+                    noResults = document.createElement('div');
+                    noResults.id = noResultsId;
+                    noResults.style.cssText = 'font-size:12px;opacity:0.6;text-align:center;padding:8px;';
+                    list.appendChild(noResults);
+                }
+                noResults.textContent = 'No matches for "' + query + '"';
+                noResults.style.display = '';
+            } else if (noResults) {
+                noResults.style.display = 'none';
+            }
+        }
+
+        function filterCustomNamesPanelList(query) {
+            var list = document.getElementById('customNamesList');
+            if (!list) return;
+            var q = (query || '').toLowerCase().trim();
+            var items = list.querySelectorAll(':scope > div[data-mcp-custom-row]');
+            var anyVisible = false;
+            items.forEach(function(el) {
+                var text = ((el.dataset.bin || '') + ' ' + (el.dataset.address || '') + ' ' + (el.dataset.custom || '')).toLowerCase();
+                var match = !q || text.includes(q);
+                el.style.display = match ? '' : 'none';
+                if (match) anyVisible = true;
+            });
+            var noResultsId = 'customNamesListNoFilterMatch';
+            var noResults = document.getElementById(noResultsId);
+            if (!anyVisible && q && items.length > 0) {
+                if (!noResults) {
+                    noResults = document.createElement('div');
+                    noResults.id = noResultsId;
+                    noResults.style.cssText = 'font-size:12px;opacity:0.6;text-align:center;padding:8px;';
+                    list.appendChild(noResults);
+                }
+                noResults.textContent = 'No matches for "' + query + '"';
+                noResults.style.display = '';
+            } else if (noResults) {
+                noResults.style.display = 'none';
+            }
+        }
+
+        function filterMonthLabelsSummaryList(query) {
+            var list = document.getElementById('monthLabelsList');
+            if (!list) return;
+            var q = (query || '').toLowerCase().trim();
+            var items = list.querySelectorAll(':scope > div[data-month-row]');
+            var anyVisible = false;
+            items.forEach(function(el) {
+                var text = (el.dataset.monthRow || el.textContent || '').toLowerCase();
+                var match = !q || text.includes(q);
+                el.style.display = match ? '' : 'none';
+                if (match) anyVisible = true;
+            });
+            var noResultsId = 'monthLabelsListNoFilterMatch';
+            var noResults = document.getElementById(noResultsId);
+            if (!anyVisible && q && items.length > 0) {
+                if (!noResults) {
+                    noResults = document.createElement('div');
+                    noResults.id = noResultsId;
+                    noResults.style.cssText = 'font-size:12px;opacity:0.6;text-align:center;padding:8px;';
+                    list.appendChild(noResults);
+                }
+                noResults.textContent = 'No matches for "' + query + '"';
+                noResults.style.display = '';
+            } else if (noResults) {
+                noResults.style.display = 'none';
+            }
+        }
+
+        function filterMcpTipsList(query) {
+            var ul = document.getElementById('mcpTipsList');
+            if (!ul) return;
+            var q = (query || '').toLowerCase().trim();
+            var items = ul.querySelectorAll(':scope > li');
+            var anyVisible = false;
+            items.forEach(function(el) {
+                var match = !q || (el.textContent || '').toLowerCase().includes(q);
+                el.style.display = match ? '' : 'none';
+                if (match) anyVisible = true;
+            });
+            var noResultsId = 'mcpTipsListNoFilterMatch';
+            var noResults = document.getElementById(noResultsId);
+            if (!anyVisible && q && items.length > 0) {
+                if (!noResults) {
+                    noResults = document.createElement('div');
+                    noResults.id = noResultsId;
+                    noResults.style.cssText = 'font-size:12px;opacity:0.6;text-align:center;padding:8px;margin:0 0 8px 0;';
+                    ul.parentNode.insertBefore(noResults, ul);
+                }
+                noResults.textContent = 'No tips match "' + query + '"';
+                noResults.style.display = '';
             } else if (noResults) {
                 noResults.style.display = 'none';
             }
@@ -12197,8 +12440,9 @@
                         const favOn = data.timestamp
                             ? new Date(data.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                             : '';
+                        const addrEsc = (data.address || '').replace(/"/g, '&quot;');
                         return `
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
+                        <div data-bin="${bin}" data-address="${addrEsc}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
                             <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                                 <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
                                     <span style="color: #9b59b6; font-weight: 700; flex-shrink: 0;">⭐</span>
@@ -12223,14 +12467,17 @@
 
             if (hiddenListEl) {
                 if (hiddenCount > 0) {
-                    hiddenListEl.innerHTML = Object.entries(hidden).map(([bin, data]) => `
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
+                    hiddenListEl.innerHTML = Object.entries(hidden).map(([bin, data]) => {
+                        const fullAddr = (data && data.address) ? data.address : '';
+                        const addrEsc = fullAddr.replace(/"/g, '&quot;');
+                        return `
+                        <div data-bin="${bin}" data-address="${addrEsc}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
                             <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; text-decoration: underline dotted;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
-                                <strong>${bin}</strong>${data.address ? ` - ${data.address.substring(0, 25)}...` : ''}
+                                <strong>${bin}</strong>${fullAddr ? ` - ${fullAddr.substring(0, 25)}${fullAddr.length > 25 ? '...' : ''}` : ''}
                             </span>
                             <button onclick="toggleMapHidden('${bin}')" style="background: #4CAF50; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px; margin-left: 8px;">Show</button>
-                        </div>
-                    `).join('');
+                        </div>`;
+                    }).join('');
                 } else {
                     hiddenListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No hidden buildings</div>';
                 }
@@ -12311,8 +12558,9 @@
                 if (inProcessCount > 0) {
                     inProcessListEl.innerHTML = Object.entries(inProcessMap).map(([bin, data]) => {
                         const dateStr = data.date ? new Date(data.date + 'T00:00:00').toLocaleDateString() : '';
+                        const addrEsc = (data.address || '').replace(/"/g, '&quot;');
                         return `
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
+                        <div data-bin="${bin}" data-address="${addrEsc}" data-filter-text="${dateStr.replace(/"/g, '&quot;')}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
                             <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                                 <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
                                     <span style="color: #e67e22; font-weight: 700; flex-shrink: 0;">🔄</span>
@@ -12341,8 +12589,9 @@
                         const heldOn = data.timestamp
                             ? new Date(data.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                             : '';
+                        const addrEsc = (data.address || '').replace(/"/g, '&quot;');
                         return `
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
+                        <div data-bin="${bin}" data-address="${addrEsc}" data-filter-text="${heldOn.replace(/"/g, '&quot;')}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
                             <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                                 <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
                                     <span style="color: #607d8b; font-weight: 700; flex-shrink: 0;">⏸</span>
@@ -12371,6 +12620,18 @@
 
             // Update scheduled test dates panel
             updateTestDatesPanel();
+
+            function reapplyBinSidebarSearch(inputId, listId) {
+                var inp = document.getElementById(inputId);
+                if (inp && inp.value.trim()) {
+                    filterMcpBinRowList(listId, inp.value, listId === 'completedBuildingsList' ? 'completedNoResults' : undefined);
+                }
+            }
+            reapplyBinSidebarSearch('favoritesSearchInput', 'favoritesBuildingsList');
+            reapplyBinSidebarSearch('hiddenSearchInput', 'hiddenBuildingsList');
+            reapplyBinSidebarSearch('inProcessSearchInput', 'inProcessBuildingsList');
+            reapplyBinSidebarSearch('holdSearchInput', 'holdBuildingsList');
+            reapplyBinSidebarSearch('completedSearchInput', 'completedBuildingsList');
         }
 
         // Fly to a building on the map by BIN and open its popup
@@ -12391,6 +12652,34 @@
             const latLng = marker.getLatLng();
             buildingMap.setView([latLng.lat, latLng.lng], 17);
             marker.openPopup();
+        }
+
+        function flyToAdditionalLocation(lat, lng) {
+            if (!window.lastBulkSearchResults || !window.lastBulkSearchResults.binGroups) {
+                alert('No map data. Perform a bulk search first.');
+                return;
+            }
+            const modal = document.getElementById('buildingMapModal');
+            const go = () => {
+                if (!buildingMap) return;
+                const locations = getAdditionalLocations();
+                const idx = locations.findIndex(loc =>
+                    Math.abs(Number(loc.latitude) - Number(lat)) < 0.000001 &&
+                    Math.abs(Number(loc.longitude) - Number(lng)) < 0.000001
+                );
+                if (idx === -1 || !additionalLocationMarkers[idx]) return;
+                const marker = additionalLocationMarkers[idx];
+                if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                const latLng = marker.getLatLng();
+                buildingMap.setView([latLng.lat, latLng.lng], 17);
+                marker.openPopup();
+            };
+            if (!buildingMap || !modal || modal.style.display !== 'flex') {
+                showBuildingMap();
+                setTimeout(go, 350);
+                return;
+            }
+            go();
         }
 
         // Copy BIN from map popup
@@ -13667,12 +13956,15 @@
                 
                 // Determine icon based on device count
                 const iconText = deviceCount > 0 ? deviceCount : '📍';
+                const hasCustomName = !!(location.customName && String(location.customName).trim());
+                const markerBg = hasCustomName ? '#e64a19' : '#00bcd4';
+                const markerFg = '#ffffff';
                 
-                // Create circular icon for additional locations (same style as building markers but different color)
+                // Create circular icon for additional locations (teal default; purple when a custom label is set)
                 const additionalIcon = L.divIcon({
                     className: 'custom-map-marker-additional',
                     html: `<div style="
-                        background: #00bcd4;
+                        background: ${markerBg};
                         width: 24px;
                         height: 24px;
                         border-radius: 50%;
@@ -13681,7 +13973,7 @@
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        color: white;
+                        color: ${markerFg};
                         font-weight: bold;
                         font-size: 11px;
                     ">${iconText}</div>`,
@@ -13731,12 +14023,13 @@
                 const totalViolations = violationDetails.length;
                 const escapedAddress = location.label.replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 const currentMonthLabel = location.bin ? getMonthLabel(location.bin) : null;
+                const headerAccent = hasCustomName ? '#e64a19' : '#00bcd4';
                 
                 // Build popup content matching building popup format
                 const additionalPopupContent = `
                     <div class="map-popup-content" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #00bcd4;">
-                            <div style="font-weight: bold; font-size: 14px; flex: 1;">${location.label.toUpperCase()}</div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${headerAccent};">
+                            <div style="font-weight: bold; font-size: 14px; flex: 1;">${(location.customName || location.label).toUpperCase()}</div>
                             <div style="display: flex; gap: 4px; margin-left: 8px; flex-wrap: wrap; justify-content: flex-end;">
                                 ${location.bin ? `
                                 <button onclick="promoteAdditionalLocationByCoords(${location.latitude}, ${location.longitude})"
@@ -13806,6 +14099,20 @@
                             </div>
                         </div>
                         ` : ''}
+                        
+                        <div style="margin-bottom: 10px; padding: 8px; background: rgba(230,74,25,0.08); border-radius: 6px; border: 1px solid rgba(230,74,25,0.3);">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 12px; color: #e64a19; font-weight: 600; white-space: nowrap;">🏷️ Custom Name:</span>
+                                <input type="text"
+                                       id="customNameInput-${location.latitude}-${location.longitude}"
+                                       value="${location.customName ? location.customName.replace(/"/g, '&quot;') : ''}"
+                                       placeholder="Enter a custom label..."
+                                       onchange="setAdditionalLocationCustomName(${location.latitude}, ${location.longitude}, this.value)"
+                                       style="flex: 1; padding: 4px 8px; border-radius: 4px; border: 1px solid ${location.customName ? '#e64a19' : 'var(--input-border)'}; background: var(--input-bg); color: var(--text-color); font-size: 11px; outline: none;"
+                                       onfocus="this.style.borderColor='#e64a19'"
+                                       onblur="this.style.borderColor=this.value ? '#e64a19' : 'var(--input-border)'" />
+                            </div>
+                        </div>
                         
                         ${deviceCount > 0 ? `
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
@@ -22263,7 +22570,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.2</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.3</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
