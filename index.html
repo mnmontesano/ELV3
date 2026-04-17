@@ -2469,16 +2469,24 @@
 
                 navigator.clipboard.writeText(inputElement.value).then(function() {
                     if (!copyButton) return;
-                    const originalText = copyButton.textContent;
+                    const originalText = copyButton.dataset.originalText || copyButton.textContent.trim() || 'Copy';
+                    copyButton.dataset.originalText = originalText;
+                    if (copyButton._resetTimer) clearTimeout(copyButton._resetTimer);
+                    if (copyButton._revertClassTimer) clearTimeout(copyButton._revertClassTimer);
+
                     copyButton.textContent = '✓ Copied!';
                     copyButton.classList.remove('copy-reverting');
                     copyButton.classList.add('copy-success');
 
-                    setTimeout(() => {
+                    copyButton._resetTimer = setTimeout(() => {
                         copyButton.classList.remove('copy-success');
                         copyButton.classList.add('copy-reverting');
                         copyButton.textContent = originalText;
-                        setTimeout(() => copyButton.classList.remove('copy-reverting'), 500);
+                        copyButton._revertClassTimer = setTimeout(() => {
+                            copyButton.classList.remove('copy-reverting');
+                            copyButton._revertClassTimer = null;
+                        }, 500);
+                        copyButton._resetTimer = null;
                     }, 1200);
                 }).catch(function(err) {
                     console.error('Failed to copy text: ', err);
