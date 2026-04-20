@@ -1026,7 +1026,7 @@
                     </div>
                 </div>
                 <div style="display: flex; flex: 1; min-height: 0; overflow: hidden;">
-                    <div id="buildingMap" style="flex: 1; min-height: 400px;"></div>
+                    <div id="buildingMap" title="Right-click the map to add a pin at that location" style="flex: 1; min-height: 400px;"></div>
                     <!-- Map Controls Panel -->
                     <div id="mapControlsPanel" style="display: none; width: 280px; background: var(--panel-bg); border-left: 1px solid var(--input-border); flex-shrink: 0; flex-direction: column; overflow: hidden; position: relative;">
                         <div id="mapControlsPanelHeader" style="display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; background: var(--input-bg); border-bottom: 1px solid var(--input-border); flex-shrink: 0; user-select: none; cursor: default;">
@@ -1177,7 +1177,7 @@
                                 <span class="mcp-arrow" id="mcpAdditionalArrow">▼</span>
                             </div>
                             <div class="mcp-body" id="mcpAdditional">
-                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
+                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
                                 <input type="text" id="additionalLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
                                        oninput="filterAdditionalLocationsList(this.value)">
                                 <div id="additionalLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
@@ -10194,6 +10194,38 @@
             clearAdditionalLocationSuggestions();
             addAdditionalLocation();
         }
+
+        /** Add a custom additional location at exact map coordinates (e.g. from right-click). */
+        function addAdditionalLocationAtLatLng(lat, lng) {
+            const latitude = typeof lat === 'number' ? lat : parseFloat(lat);
+            const longitude = typeof lng === 'number' ? lng : parseFloat(lng);
+            if (isNaN(latitude) || isNaN(longitude)) return;
+
+            const locations = getAdditionalLocations();
+            const exists = locations.some(loc =>
+                Math.abs(loc.latitude - latitude) < 0.0001 &&
+                Math.abs(loc.longitude - longitude) < 0.0001
+            );
+            if (exists) {
+                showMapNotification('A location already exists at this spot', '#ff6b6b');
+                return;
+            }
+
+            const label = `Pin · ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+            locations.push({
+                label,
+                latitude,
+                longitude,
+                type: 'pinned'
+            });
+            setAdditionalLocations(locations);
+            showMapNotification('Added pin at clicked location', '#00bcd4');
+            updateAdditionalLocationsPanel();
+
+            if (buildingMap && window.lastBulkSearchResults) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
         
         async function lookupLocationByBin(bin) {
             try {
@@ -13635,6 +13667,19 @@
                 attribution: '© OpenStreetMap contributors',
                 maxZoom: 19
             }).addTo(buildingMap);
+
+            // Right-click empty map area to drop a pin at that exact location
+            buildingMap.on('contextmenu', function (e) {
+                const oe = e.originalEvent;
+                if (oe) {
+                    oe.preventDefault();
+                    if (oe.target && typeof oe.target.closest === 'function' &&
+                        oe.target.closest('.leaflet-marker-icon')) {
+                        return;
+                    }
+                }
+                addAdditionalLocationAtLatLng(e.latlng.lat, e.latlng.lng);
+            });
 
             // Safari can calculate hidden/flex modal dimensions late; reflow map sizing safely.
             setTimeout(() => {
