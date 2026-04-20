@@ -1056,6 +1056,7 @@
                             #mapControlsPanel.mcp-popped-out #inProcessBuildingsList,
                             #mapControlsPanel.mcp-popped-out #hiddenBuildingsList,
                             #mapControlsPanel.mcp-popped-out #additionalLocationsList,
+                            #mapControlsPanel.mcp-popped-out #housesLocationsList,
                             #mapControlsPanel.mcp-popped-out #customNamesList,
                             #mapControlsPanel.mcp-popped-out #completedBuildingsList,
                             #mapControlsPanel.mcp-popped-out #monthLabelsList,
@@ -1177,13 +1178,33 @@
                                 <span class="mcp-arrow" id="mcpAdditionalArrow">▼</span>
                             </div>
                             <div class="mcp-body" id="mcpAdditional">
-                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
+                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> section to manage pins marked as a house. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
                                 <input type="text" id="additionalLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
                                        oninput="filterAdditionalLocationsList(this.value)">
                                 <div id="additionalLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
                                     <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No additional locations</div>
                                 </div>
                                 <button onclick="clearAllAdditionalLocations()" class="mcp-btn" style="color:#00bcd4;">Clear All Additional Locations</button>
+                            </div>
+                        </div>
+
+                        <!-- Houses (additional locations marked as house) -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpHouses')">
+                                <span class="mcp-title" style="display: flex; align-items: center; gap: 8px;">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" class="mcp-houses-header-icon"><path fill="#8d6e63" d="M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg>
+                                    <span>Houses (<span id="housesLocationsCount">0</span>)</span>
+                                </span>
+                                <span class="mcp-arrow" id="mcpHousesArrow">▼</span>
+                            </div>
+                            <div class="mcp-body" id="mcpHouses">
+                                <p class="mcp-desc">Pins you marked as a house use the brown marker color below on the map. Unmark keeps the pin under Additional Locations; Remove deletes the pin entirely.</p>
+                                <input type="text" id="housesLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
+                                       oninput="filterHousesLocationsList(this.value)">
+                                <div id="housesLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No houses</div>
+                                </div>
+                                <button onclick="clearAllHouseTags()" class="mcp-btn" style="color:#8d6e63;">Unmark all houses</button>
                             </div>
                         </div>
 
@@ -1194,7 +1215,7 @@
                                 <span class="mcp-arrow" id="mcpCustomNamesArrow">▼</span>
                             </div>
                             <div class="mcp-body" id="mcpCustomNames">
-                                <p class="mcp-desc">Custom labels assigned to additional locations. Click a marker on the map and use the 🏷️ Custom Name field to label it.</p>
+                                <p class="mcp-desc">Custom labels for additional locations (not marked as houses — those are listed under Houses). Click a marker on the map and use the 🏷️ Custom Name field to label it.</p>
                                 <input type="text" id="customNamesSearchInput" class="mcp-search-input" placeholder="🔍 Search custom name or address..."
                                        oninput="filterCustomNamesPanelList(this.value)">
                                 <div id="customNamesList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
@@ -10674,7 +10695,7 @@
                                </button>`
                             : `<div style="margin-top:5px; font-size:10px; opacity:0.5; font-style:italic;">No BIN — cannot move to main buildings</div>`;
                         return `
-                        <div id="addLocCard-${index}" data-mcp-add-loc="1" data-bin="${loc.bin || ''}" data-address="${addrEsc}" data-custom="${customEsc}" data-coords="${coordsEsc}" style="background: var(--input-bg); padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid var(--input-border);">
+                        <div id="addLocCard-${index}" data-mcp-add-loc="1" data-house="${loc.isHouse ? '1' : ''}" data-bin="${loc.bin || ''}" data-address="${addrEsc}" data-custom="${customEsc}" data-coords="${coordsEsc}" style="background: var(--input-bg); padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid var(--input-border);">
                             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px;">
                                 <div style="flex: 1; min-width: 0; cursor: pointer; text-decoration: none;" title="Click to view on map" onclick="flyToAdditionalLocation(${loc.latitude}, ${loc.longitude})">
                                     ${loc.customName ? `<div style="font-size: 11px; font-weight: 700; color: #e64a19; margin-bottom: 1px; word-break: break-word; text-decoration: underline dotted;">🏷️ ${loc.customName}</div>` : ''}
@@ -10691,9 +10712,114 @@
                 }
             }
             updateCustomNamesPanel();
+            updateHousesLocationsPanel();
             const alSearch = document.getElementById('additionalLocationsSearchInput');
             if (alSearch && alSearch.value.trim()) {
                 filterAdditionalLocationsList(alSearch.value);
+            }
+            const housesSearch = document.getElementById('housesLocationsSearchInput');
+            if (housesSearch && housesSearch.value.trim()) {
+                filterHousesLocationsList(housesSearch.value);
+            }
+        }
+
+        function updateHousesLocationsPanel() {
+            const all = getAdditionalLocations();
+            const houses = all.filter(loc => loc.isHouse);
+            const countEl = document.getElementById('housesLocationsCount');
+            const listEl = document.getElementById('housesLocationsList');
+            if (countEl) countEl.textContent = houses.length;
+            if (listEl) {
+                if (houses.length === 0) {
+                    listEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No houses</div>';
+                } else {
+                    const houseMapColor = '#8d6e63';
+                    const houseIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="${houseMapColor}" d="M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg>`;
+                    listEl.innerHTML = houses.map((loc) => {
+                        const hasBin = loc.bin ? true : false;
+                        const addrEsc = (loc.label || '').replace(/"/g, '&quot;');
+                        const customEsc = (loc.customName || '').replace(/"/g, '&quot;');
+                        const coordsEsc = (Number(loc.latitude).toFixed(5) + ' ' + Number(loc.longitude).toFixed(5)).replace(/"/g, '&quot;');
+                        const promoteBtn = hasBin
+                            ? `<button class="addloc-promote-btn" onclick="promoteAdditionalLocationByCoords(${loc.latitude}, ${loc.longitude})"
+                                       title="Fetch all device data for this BIN and move it into the main building list"
+                                       style="width:100%; margin-top:6px; padding:5px 8px; background:rgba(39,174,96,0.12); color:#27ae60; border:1px solid rgba(39,174,96,0.4); border-radius:4px; cursor:pointer; font-size:11px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:5px;">
+                                   ⬆ Move to Buildings &amp; Fetch Device Data
+                               </button>`
+                            : `<div style="margin-top:5px; font-size:10px; opacity:0.5; font-style:italic;">No BIN — cannot move to main buildings</div>`;
+                        return `
+                        <div data-mcp-house-wrap="1" style="margin-bottom: 6px;">
+                        <div data-mcp-house-row="1" data-house="1" data-bin="${loc.bin || ''}" data-address="${addrEsc}" data-custom="${customEsc}" data-coords="${coordsEsc}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px; border: 1px solid var(--input-border);">
+                            <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToAdditionalLocation(${loc.latitude}, ${loc.longitude})">
+                                <span style="display: flex; align-items: flex-start; gap: 6px; overflow: hidden;">
+                                    <span style="flex-shrink: 0; display: flex; align-items: center; gap: 5px; padding-top: 1px;">
+                                        ${houseIconSvg}
+                                        <span title="Same color as the pin on the map" style="width: 10px; height: 10px; border-radius: 50%; background: ${houseMapColor}; border: 1px solid rgba(0,0,0,0.12); flex-shrink: 0; box-sizing: border-box;"></span>
+                                    </span>
+                                    <span style="flex: 1; min-width: 0; overflow: hidden;">
+                                        ${loc.customName ? `<span style="display: block; font-size: 10px; font-weight: 700; color: #e64a19; margin-bottom: 2px;">🏷️ ${loc.customName}</span>` : ''}
+                                        <span style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; text-decoration: underline dotted; color: var(--text-color);">${loc.label}</span>
+                                        <span style="display: block; font-size: 10px; opacity: 0.55; margin-top: 2px;">${hasBin ? 'BIN ' + loc.bin + ' · ' : ''}${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}</span>
+                                    </span>
+                                </span>
+                            </span>
+                            <button type="button" onclick="removeAdditionalLocationByCoords(${loc.latitude}, ${loc.longitude})"
+                                    title="Remove pin from map"
+                                    style="flex-shrink:0; background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.4); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 11px; margin-left: 8px;">✕</button>
+                        </div>
+                            ${promoteBtn}
+                        </div>`;
+                    }).join('');
+                }
+            }
+        }
+
+        function filterHousesLocationsList(query) {
+            var list = document.getElementById('housesLocationsList');
+            if (!list) return;
+            var q = (query || '').toLowerCase().trim();
+            var items = list.querySelectorAll(':scope > div[data-mcp-house-wrap]');
+            var anyVisible = false;
+            items.forEach(function(wrap) {
+                var el = wrap.querySelector('[data-mcp-house-row]');
+                if (!el) return;
+                var text = ((el.dataset.bin || '') + ' ' + (el.dataset.address || '') + ' ' + (el.dataset.custom || '') + ' ' + (el.dataset.coords || '') + ' house').toLowerCase();
+                var match = !q || text.includes(q);
+                wrap.style.display = match ? '' : 'none';
+                if (match) anyVisible = true;
+            });
+            var noResultsId = 'housesLocationsListNoFilterMatch';
+            var noResults = document.getElementById(noResultsId);
+            if (!anyVisible && q && items.length > 0) {
+                if (!noResults) {
+                    noResults = document.createElement('div');
+                    noResults.id = noResultsId;
+                    noResults.style.cssText = 'font-size:12px;opacity:0.6;text-align:center;padding:8px;';
+                    list.appendChild(noResults);
+                }
+                noResults.textContent = 'No matches for "' + query + '"';
+                noResults.style.display = '';
+            } else if (noResults) {
+                noResults.style.display = 'none';
+            }
+        }
+
+        function clearAllHouseTags() {
+            if (!confirm('Remove the house tag from all pins? Pins stay on the map as regular additional locations.')) return;
+            const locations = getAdditionalLocations();
+            let changed = false;
+            locations.forEach(loc => {
+                if (loc.isHouse) {
+                    delete loc.isHouse;
+                    changed = true;
+                }
+            });
+            if (!changed) return;
+            setAdditionalLocations(locations);
+            showMapNotification('All house tags removed', '#8d6e63');
+            updateAdditionalLocationsPanel();
+            if (buildingMap && window.lastBulkSearchResults) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
             }
         }
         
@@ -10717,9 +10843,27 @@
             }
         }
 
+        function setAdditionalLocationIsHouse(lat, lng, isHouse) {
+            const locations = getAdditionalLocations();
+            const idx = locations.findIndex(loc =>
+                Math.abs(loc.latitude - lat) < 0.000001 && Math.abs(loc.longitude - lng) < 0.000001
+            );
+            if (idx === -1) return;
+            if (isHouse) {
+                locations[idx].isHouse = true;
+            } else {
+                delete locations[idx].isHouse;
+            }
+            setAdditionalLocations(locations);
+            updateAdditionalLocationsPanel();
+            if (buildingMap && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
+
         function updateCustomNamesPanel() {
             const locations = getAdditionalLocations();
-            const named = locations.filter(loc => loc.customName);
+            const named = locations.filter(loc => loc.customName && !loc.isHouse);
             const countEl = document.getElementById('customNamesCount');
             const listEl = document.getElementById('customNamesList');
             if (countEl) countEl.textContent = named.length;
@@ -10763,7 +10907,9 @@
 
         function clearAllCustomNames() {
             const locations = getAdditionalLocations();
-            locations.forEach(loc => { delete loc.customName; });
+            locations.forEach(loc => {
+                if (!loc.isHouse) delete loc.customName;
+            });
             setAdditionalLocations(locations);
             updateAdditionalLocationsPanel();
             updateCustomNamesPanel();
@@ -12333,7 +12479,7 @@
             var items = list.querySelectorAll(':scope > div[data-mcp-add-loc]');
             var anyVisible = false;
             items.forEach(function(el) {
-                var text = ((el.dataset.bin || '') + ' ' + (el.dataset.address || '') + ' ' + (el.dataset.custom || '') + ' ' + (el.dataset.coords || '')).toLowerCase();
+                var text = ((el.dataset.bin || '') + ' ' + (el.dataset.address || '') + ' ' + (el.dataset.custom || '') + ' ' + (el.dataset.coords || '') + ' ' + (el.dataset.house === '1' ? 'house' : '')).toLowerCase();
                 var match = !q || text.includes(q);
                 el.style.display = match ? '' : 'none';
                 if (match) anyVisible = true;
@@ -12770,6 +12916,10 @@
             reapplyBinSidebarSearch('inProcessSearchInput', 'inProcessBuildingsList');
             reapplyBinSidebarSearch('holdSearchInput', 'holdBuildingsList');
             reapplyBinSidebarSearch('completedSearchInput', 'completedBuildingsList');
+            var housesInp = document.getElementById('housesLocationsSearchInput');
+            if (housesInp && housesInp.value.trim()) {
+                filterHousesLocationsList(housesInp.value);
+            }
         }
 
         // Fly to a building on the map by BIN and open its popup
@@ -14105,13 +14255,26 @@
                     });
                 }
                 
-                // Determine icon based on device count
-                const iconText = deviceCount > 0 ? deviceCount : '📍';
                 const hasCustomName = !!(location.customName && String(location.customName).trim());
-                const markerBg = hasCustomName ? '#e64a19' : '#00bcd4';
+                const isHouse = !!location.isHouse;
+                let iconText;
+                if (deviceCount > 0) {
+                    iconText = deviceCount;
+                } else if (isHouse) {
+                    iconText = '🏠';
+                } else {
+                    iconText = '📍';
+                }
+                let markerBg;
+                if (hasCustomName) {
+                    markerBg = '#e64a19';
+                } else if (isHouse) {
+                    markerBg = '#8d6e63';
+                } else {
+                    markerBg = '#00bcd4';
+                }
                 const markerFg = '#ffffff';
-                
-                // Create circular icon for additional locations (teal default; purple when a custom label is set)
+
                 const additionalIcon = L.divIcon({
                     className: 'custom-map-marker-additional',
                     html: `<div style="
@@ -14174,7 +14337,7 @@
                 const totalViolations = violationDetails.length;
                 const escapedAddress = location.label.replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 const currentMonthLabel = location.bin ? getMonthLabel(location.bin) : null;
-                const headerAccent = hasCustomName ? '#e64a19' : '#00bcd4';
+                const headerAccent = hasCustomName ? '#e64a19' : (isHouse ? '#8d6e63' : '#00bcd4');
                 
                 // Build popup content matching building popup format
                 const additionalPopupContent = `
@@ -14263,6 +14426,16 @@
                                        onfocus="this.style.borderColor='#e64a19'"
                                        onblur="this.style.borderColor=this.value ? '#e64a19' : 'var(--input-border)'" />
                             </div>
+                        </div>
+                        
+                        <div style="margin-bottom: 10px; padding: 8px; background: rgba(141,110,99,0.1); border-radius: 6px; border: 1px solid rgba(141,110,99,0.35);">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; color: var(--text-color); user-select: none;">
+                                <input type="checkbox"
+                                       ${location.isHouse ? 'checked' : ''}
+                                       onchange="setAdditionalLocationIsHouse(${location.latitude}, ${location.longitude}, this.checked)"
+                                       style="width: 16px; height: 16px; cursor: pointer; flex-shrink: 0;" />
+                                <span style="font-weight: 600; color: #8d6e63;">🏠 Mark as house</span>
+                            </label>
                         </div>
                         
                         ${deviceCount > 0 ? `
@@ -14401,6 +14574,7 @@
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ffc107; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">Some Devices Ready</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ff6b6b; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">No Devices Ready</span></div>
                         <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #00bcd4; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">📍 Custom Location</span></div>
+                        <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #8d6e63; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">🏠 House (custom)</span></div>
                         <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--input-border, #444); font-size: 10px; color: var(--text-color, #fff); opacity: 0.8;">
                             Ready = 91+ days since last test<br>
                             Click marker for favorite/hide options<br>
@@ -14475,7 +14649,9 @@
                     const devicesMatch = location.devices && location.devices.some(d => 
                         (d.device_number || '').toUpperCase().includes(searchTerm)
                     );
-                    return addressMatch || binMatch || deviceNumberMatch || devicesMatch;
+                    const customNameMatch = (location.customName || '').toUpperCase().includes(searchTerm);
+                    const houseMatch = location.isHouse && (searchTerm === 'HOUSE' || searchTerm === 'HOME');
+                    return addressMatch || binMatch || deviceNumberMatch || devicesMatch || customNameMatch || houseMatch;
                 });
             
             // Combine matches - use consistent format { latitude, longitude, isAdditional, additionalIndex }
@@ -22721,7 +22897,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.3</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.4</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
