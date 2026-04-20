@@ -1022,6 +1022,7 @@
                                 <button onclick="addAdditionalLocation()" title="Add location" style="background: var(--input-bg); border: none; border-left: 1px solid var(--input-border); cursor: pointer; padding: 5px 10px; color: var(--text-color); font-size: 0.9em; display: flex; align-items: center;">➕</button>
                             </div>
                         </div>
+                        <div id="additionalLocationSuggestions" style="display: none; width: 100%; margin-top: 2px; border: 1px solid var(--input-border); border-radius: 8px; background: var(--panel-bg); padding: 8px;"></div>
                     </div>
                 </div>
                 <div style="display: flex; flex: 1; min-height: 0; overflow: hidden;">
@@ -10071,6 +10072,8 @@
                 showMapNotification('Please enter an address, BIN, or device number', '#ff6b6b');
                 return;
             }
+
+            clearAdditionalLocationSuggestions();
             
             // Show loading state
             const originalValue = input.value;
@@ -10081,13 +10084,16 @@
             
             try {
                 let location = null;
+                let lookupType = 'address';
                 
                 // Check if it's a BIN number (numeric, 6-7 digits)
                 if (/^\d{6,7}$/.test(searchTerm)) {
+                    lookupType = 'bin';
                     location = await lookupLocationByBin(searchTerm);
                 }
                 // Check if it's a device number (e.g. 1P764, 2X123, or XXXX-XXXX)
                 else if (/^\d+[A-Z]/i.test(searchTerm) || /^[A-Z0-9]+-[A-Z0-9]+/i.test(searchTerm)) {
+                    lookupType = 'device';
                     location = await lookupLocationByDevice(searchTerm);
                 }
                 // Otherwise treat as address
@@ -10122,7 +10128,17 @@
                         }
                     }
                 } else {
-                    showMapNotification('Could not find location. Please check the address, BIN, or device number.', '#ff6b6b');
+                    if (lookupType === 'address') {
+                        const suggestions = await fetchAddressSuggestions(searchTerm);
+                        if (suggestions.length > 0) {
+                            showAdditionalLocationSuggestions(searchTerm, suggestions);
+                            showMapNotification('Could not find exact location. Choose one of the suggested nearby matches below.', '#ff9800');
+                        } else {
+                            showMapNotification('Could not find location. Please check the address, BIN, or device number.', '#ff6b6b');
+                        }
+                    } else {
+                        showMapNotification('Could not find location. Please check the address, BIN, or device number.', '#ff6b6b');
+                    }
                     input.value = originalValue; // Restore original value
                 }
             } catch (error) {
@@ -10133,6 +10149,50 @@
                 input.disabled = false;
                 input.focus();
             }
+        }
+
+        function clearAdditionalLocationSuggestions() {
+            const container = document.getElementById('additionalLocationSuggestions');
+            if (!container) return;
+            container.style.display = 'none';
+            container.innerHTML = '';
+        }
+
+        function escapeMapSuggestionHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function showAdditionalLocationSuggestions(originalQuery, suggestions) {
+            const container = document.getElementById('additionalLocationSuggestions');
+            if (!container) return;
+            const itemsHtml = suggestions.map((item) => `
+                <button type="button"
+                        onclick="selectAdditionalLocationSuggestion(decodeURIComponent('${encodeURIComponent(item.address)}'))"
+                        style="width: 100%; text-align: left; margin: 0 0 6px 0; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 6px; background: var(--input-bg); color: var(--text-color); cursor: pointer; font-size: 12px;">
+                    <div style="font-weight: 600;">${escapeMapSuggestionHtml(item.address)}</div>
+                    ${item.details ? `<div style="font-size: 11px; opacity: 0.75; margin-top: 2px;">${escapeMapSuggestionHtml(item.details)}</div>` : ''}
+                </button>
+            `).join('');
+            container.innerHTML = `
+                <div style="font-size: 12px; margin-bottom: 8px; color: var(--header-color);">
+                    No exact match for <strong>${escapeMapSuggestionHtml(originalQuery)}</strong>. Try one of these close matches:
+                </div>
+                ${itemsHtml}
+            `;
+            container.style.display = 'block';
+        }
+
+        function selectAdditionalLocationSuggestion(address) {
+            const input = document.getElementById('additionalLocationInput');
+            if (!input) return;
+            input.value = address;
+            clearAdditionalLocationSuggestions();
+            addAdditionalLocation();
         }
         
         async function lookupLocationByBin(bin) {
@@ -10298,11 +10358,35 @@
             }
         }
         
+        async function fetchAddressSuggestions(address, limit = 5) {
+            try {
+                const encodedAddress = encodeURIComponent(address);
+                const nycViewbox = '-74.25909,40.91758,-73.70018,40.4774';
+                const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodedAddress}&limit=${Math.max(1, Math.min(limit, 8))}&viewbox=${nycViewbox}&bounded=0`;
+                const response = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'ELV3-Cheat-Sheet/1.0'
+                    }
+                });
+                if (!response.ok) throw new Error('Suggestion lookup failed');
+                const data = await response.json();
+                if (!Array.isArray(data)) return [];
+                return data.map(item => ({
+                    address: item.display_name || address,
+                    details: item.type ? `${item.type}${item.class ? ` • ${item.class}` : ''}` : ''
+                }));
+            } catch (error) {
+                console.error('Address suggestion error:', error);
+                return [];
+            }
+        }
+
         async function geocodeAddress(address, bin = null, deviceNumber = null) {
             try {
                 // Use Nominatim (OpenStreetMap geocoding) - free and no API key required
-                const encodedAddress = encodeURIComponent(address + ', New York, NY');
-                const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1`;
+                const primaryAddress = encodeURIComponent(address);
+                const nycViewbox = '-74.25909,40.91758,-73.70018,40.4774';
+                let url = `https://nominatim.openstreetmap.org/search?format=json&q=${primaryAddress}&limit=1&viewbox=${nycViewbox}&bounded=0`;
                 
                 const response = await fetch(url, {
                     headers: {
@@ -10311,12 +10395,26 @@
                 });
                 
                 if (!response.ok) throw new Error('Geocoding failed');
-                const data = await response.json();
+                let data = await response.json();
+
+                // Fallback: bias toward NYC phrasing if free-form address had no result
+                if ((!data || data.length === 0) && !/new york|ny\b/i.test(address)) {
+                    const nycFallback = encodeURIComponent(`${address}, New York, NY`);
+                    url = `https://nominatim.openstreetmap.org/search?format=json&q=${nycFallback}&limit=1&viewbox=${nycViewbox}&bounded=0`;
+                    const fallbackResponse = await fetch(url, {
+                        headers: {
+                            'User-Agent': 'ELV3-Cheat-Sheet/1.0'
+                        }
+                    });
+                    if (fallbackResponse.ok) {
+                        data = await fallbackResponse.json();
+                    }
+                }
                 
                 if (data && data.length > 0) {
                     const result = data[0];
                     return {
-                        label: address,
+                        label: result.display_name || address,
                         latitude: parseFloat(result.lat),
                         longitude: parseFloat(result.lon),
                         bin: bin,
