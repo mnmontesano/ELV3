@@ -1188,6 +1188,23 @@
                             </div>
                         </div>
 
+                        <!-- Custom Labels -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpCustomNames')">
+                                <span class="mcp-title"><span style="color:#e64a19;">🏷️</span> Custom (<span id="customNamesCount">0</span>)</span>
+                                <span class="mcp-arrow" id="mcpCustomNamesArrow">▼</span>
+                            </div>
+                            <div class="mcp-body" id="mcpCustomNames">
+                                <p class="mcp-desc">Custom labels for additional locations (not marked as houses — those are listed under Houses below). Click a marker on the map and use the 🏷️ Custom Name field to label it.</p>
+                                <input type="text" id="customNamesSearchInput" class="mcp-search-input" placeholder="🔍 Search custom name or address..."
+                                       oninput="filterCustomNamesPanelList(this.value)">
+                                <div id="customNamesList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No custom labels assigned</div>
+                                </div>
+                                <button onclick="clearAllCustomNames()" class="mcp-btn" style="color:#e64a19;">Clear All Custom Labels</button>
+                            </div>
+                        </div>
+
                         <!-- Houses (additional locations marked as house) -->
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpHouses')">
@@ -1205,23 +1222,6 @@
                                     <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No houses</div>
                                 </div>
                                 <button onclick="clearAllHouseTags()" class="mcp-btn" style="color:#8d6e63;">Unmark all houses</button>
-                            </div>
-                        </div>
-
-                        <!-- Custom Labels -->
-                        <div class="mcp-section">
-                            <div class="mcp-header" onclick="toggleMcpSection('mcpCustomNames')">
-                                <span class="mcp-title"><span style="color:#e64a19;">🏷️</span> Custom (<span id="customNamesCount">0</span>)</span>
-                                <span class="mcp-arrow" id="mcpCustomNamesArrow">▼</span>
-                            </div>
-                            <div class="mcp-body" id="mcpCustomNames">
-                                <p class="mcp-desc">Custom labels for additional locations (not marked as houses — those are listed under Houses). Click a marker on the map and use the 🏷️ Custom Name field to label it.</p>
-                                <input type="text" id="customNamesSearchInput" class="mcp-search-input" placeholder="🔍 Search custom name or address..."
-                                       oninput="filterCustomNamesPanelList(this.value)">
-                                <div id="customNamesList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
-                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No custom labels assigned</div>
-                                </div>
-                                <button onclick="clearAllCustomNames()" class="mcp-btn" style="color:#e64a19;">Clear All Custom Labels</button>
                             </div>
                         </div>
 
@@ -2043,6 +2043,11 @@
         window.savedAddressSuggestions = null;
         window.cameFromSuggestions = false;
         window.originalSearchTerms = { houseNumber: '', streetName: '' };
+
+        // MAP display toggles (localStorage — Settings modal and map control buttons stay in sync)
+        let mapHideCompleted = localStorage.getItem('mapHideCompleted') === 'true';
+        let mapHideInProcess = localStorage.getItem('mapHideInProcess') === 'true';
+        let mapHideHold = localStorage.getItem('mapHideHold') === 'true';
 
         function numberToWord(input) {
             // Convert input to lowercase for case-insensitive comparison
@@ -3300,48 +3305,39 @@
 
             const hideCompletedToggle = document.getElementById('mapHideCompletedToggle');
             if (hideCompletedToggle) {
-                const newVal = hideCompletedToggle.checked;
-                if (mapHideCompleted !== newVal) {
-                    mapHideCompleted = newVal;
-                    localStorage.setItem('mapHideCompleted', mapHideCompleted ? 'true' : 'false');
-                    updateHideCompletedBtn();
-                    if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                        const modal = document.getElementById('buildingMapModal');
-                        if (modal && modal.style.display === 'flex') {
-                            initBuildingMap(window.lastBulkSearchResults.binGroups, true);
-                        }
+                mapHideCompleted = !!hideCompletedToggle.checked;
+                localStorage.setItem('mapHideCompleted', mapHideCompleted ? 'true' : 'false');
+                updateHideCompletedBtn();
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                    const modal = document.getElementById('buildingMapModal');
+                    if (modal && modal.style.display === 'flex') {
+                        initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                     }
                 }
             }
 
             const hideInProcessToggle = document.getElementById('mapHideInProcessToggle');
             if (hideInProcessToggle) {
-                const newVal = hideInProcessToggle.checked;
-                if (mapHideInProcess !== newVal) {
-                    mapHideInProcess = newVal;
-                    localStorage.setItem('mapHideInProcess', mapHideInProcess ? 'true' : 'false');
-                    updateHideInProcessBtn();
-                    if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                        const modal = document.getElementById('buildingMapModal');
-                        if (modal && modal.style.display === 'flex') {
-                            initBuildingMap(window.lastBulkSearchResults.binGroups, true);
-                        }
+                mapHideInProcess = !!hideInProcessToggle.checked;
+                localStorage.setItem('mapHideInProcess', mapHideInProcess ? 'true' : 'false');
+                updateHideInProcessBtn();
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                    const modal = document.getElementById('buildingMapModal');
+                    if (modal && modal.style.display === 'flex') {
+                        initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                     }
                 }
             }
 
             const hideHoldToggle = document.getElementById('mapHideHoldToggle');
             if (hideHoldToggle) {
-                const newVal = hideHoldToggle.checked;
-                if (mapHideHold !== newVal) {
-                    mapHideHold = newVal;
-                    localStorage.setItem('mapHideHold', mapHideHold ? 'true' : 'false');
-                    updateHideHoldBtn();
-                    if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                        const modal = document.getElementById('buildingMapModal');
-                        if (modal && modal.style.display === 'flex') {
-                            initBuildingMap(window.lastBulkSearchResults.binGroups, true);
-                        }
+                mapHideHold = !!hideHoldToggle.checked;
+                localStorage.setItem('mapHideHold', mapHideHold ? 'true' : 'false');
+                updateHideHoldBtn();
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                    const modal = document.getElementById('buildingMapModal');
+                    if (modal && modal.style.display === 'flex') {
+                        initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                     }
                 }
             }
@@ -9606,9 +9602,6 @@
         let mapTestDates = {};
         let mapAdditionalLocations = [];
         let mapHideMonthLabeled = false;
-        let mapHideCompleted = localStorage.getItem('mapHideCompleted') === 'true';
-        let mapHideInProcess = localStorage.getItem('mapHideInProcess') === 'true';
-        let mapHideHold = localStorage.getItem('mapHideHold') === 'true';
         let activeMonthFilters = new Set();
 
         let additionalLocationMarkers = [];
@@ -14266,10 +14259,10 @@
                     iconText = '📍';
                 }
                 let markerBg;
-                if (hasCustomName) {
-                    markerBg = '#e64a19';
-                } else if (isHouse) {
+                if (isHouse) {
                     markerBg = '#8d6e63';
+                } else if (hasCustomName) {
+                    markerBg = '#e64a19';
                 } else {
                     markerBg = '#00bcd4';
                 }
@@ -14337,7 +14330,7 @@
                 const totalViolations = violationDetails.length;
                 const escapedAddress = location.label.replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 const currentMonthLabel = location.bin ? getMonthLabel(location.bin) : null;
-                const headerAccent = hasCustomName ? '#e64a19' : (isHouse ? '#8d6e63' : '#00bcd4');
+                const headerAccent = isHouse ? '#8d6e63' : (hasCustomName ? '#e64a19' : '#00bcd4');
                 
                 // Build popup content matching building popup format
                 const additionalPopupContent = `
@@ -22897,7 +22890,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.4</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.5</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
