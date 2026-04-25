@@ -1028,29 +1028,36 @@
                 <div style="display: flex; flex: 1; min-height: 0; overflow: hidden;">
                     <div id="buildingMap" title="Right-click the map to add a pin at that location" style="flex: 1; min-height: 400px;"></div>
                     <!-- Map Controls Panel -->
-                    <div id="mapControlsPanel" style="display: none; width: 280px; background: var(--panel-bg); border-left: 1px solid var(--input-border); flex-shrink: 0; flex-direction: column; overflow: hidden; position: relative;">
-                        <div id="mapControlsPanelHeader" style="display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; background: var(--input-bg); border-bottom: 1px solid var(--input-border); flex-shrink: 0; user-select: none; cursor: default;">
-                            <span style="font-size: 12px; font-weight: 600; color: var(--header-color);">⚙️ Settings</span>
+                    <div id="mapControlsPanel" style="display: none; width: 280px; min-width: 220px; background: var(--panel-bg); border-left: 1px solid var(--input-border); flex-shrink: 0; flex-direction: column; overflow: hidden; position: relative; font-size: 12.5px;">
+                        <div id="mapControlsDockResizeHandle" class="mcp-dock-resize" title="Drag to resize — wider panel shows larger text" onmousedown="event.stopPropagation(); _startDockedMapControlsResize(event);" ontouchstart="event.stopPropagation(); _startDockedMapControlsResize(event);"></div>
+                        <div id="mapControlsPanelHeader" style="display: flex; align-items: center; justify-content: space-between; padding: 0.5em 0.65em; background: var(--input-bg); border-bottom: 1px solid var(--input-border); flex-shrink: 0; user-select: none; cursor: default;">
+                            <span style="font-size: 1em; font-weight: 600; color: var(--header-color);">⚙️ Settings</span>
                             <div style="display: flex; gap: 4px; align-items: center;">
-                                <button id="mapControlsPopOutBtn" onclick="popOutControlsPanel()" title="Pop out to a floating, resizable window" style="background: var(--panel-bg); border: 1px solid var(--input-border); border-radius: 4px; padding: 3px 8px; cursor: pointer; color: var(--text-color); font-size: 11px; display: flex; align-items: center; gap: 4px; white-space: nowrap;">↗ Pop Out</button>
-                                <button id="mapControlsDockBtn" onclick="dockControlsPanel()" title="Dock back to sidebar" style="background: var(--panel-bg); border: 1px solid var(--input-border); border-radius: 4px; padding: 3px 8px; cursor: pointer; color: var(--text-color); font-size: 11px; align-items: center; gap: 4px; white-space: nowrap; display: none;">↙ Dock</button>
+                                <button id="mapControlsPopOutBtn" onclick="popOutControlsPanel()" title="Pop out to a floating, resizable window" style="background: var(--panel-bg); border: 1px solid var(--input-border); border-radius: 4px; padding: 3px 8px; cursor: pointer; color: var(--text-color); font-size: 0.88em; display: flex; align-items: center; gap: 4px; white-space: nowrap;">↗ Pop Out</button>
+                                <button id="mapControlsDockBtn" onclick="dockControlsPanel()" title="Dock back to sidebar" style="background: var(--panel-bg); border: 1px solid var(--input-border); border-radius: 4px; padding: 3px 8px; cursor: pointer; color: var(--text-color); font-size: 0.88em; align-items: center; gap: 4px; white-space: nowrap; display: none;">↙ Dock</button>
                             </div>
                         </div>
-                        <div id="mapControlsPanelBody" style="padding: 10px; overflow-y: auto; flex: 1; min-height: 0;">
+                        <div id="mapControlsPanelBody" style="padding: 0.65em 0.75em; overflow-y: auto; flex: 1; min-height: 0;">
 
                         <!-- helper: toggle a section -->
                         <style>
+                            #mapControlsPanel { min-width: 220px; }
+                            .mcp-dock-resize { display: none; position: absolute; left: 0; top: 0; bottom: 0; width: 10px; z-index: 12; cursor: ew-resize; background: linear-gradient(90deg, rgba(0,0,0,0.08), rgba(0,0,0,0)); touch-action: none; }
+                            #mapControlsPanel:not(.mcp-popped-out) .mcp-dock-resize { display: block; }
+                            #mapControlsPanel.mcp-popped-out .mcp-dock-resize { display: none !important; }
+                            .mcp-dock-resize:hover { background: linear-gradient(90deg, rgba(26,115,232,0.22), rgba(0,0,0,0)); }
+                            #mapControlsPanel.mcp-resizing .mcp-dock-resize { background: linear-gradient(90deg, rgba(26,115,232,0.34), rgba(26,115,232,0.06)); }
                             .mcp-section { border: 1px solid var(--input-border); border-radius: 6px; margin-bottom: 8px; overflow: hidden; }
-                            .mcp-header { display: flex; align-items: center; gap: 8px; padding: 9px 11px; cursor: pointer; user-select: none; background: var(--input-bg); transition: background 0.15s; }
+                            .mcp-header { display: flex; align-items: center; gap: 8px; padding: 0.6em 0.75em; cursor: pointer; user-select: none; background: var(--input-bg); transition: background 0.15s; }
                             .mcp-header:hover { background: var(--panel-bg); }
-                            .mcp-title { flex: 1; font-size: 13px; font-weight: 600; color: var(--header-color); display: flex; align-items: center; gap: 7px; }
-                            .mcp-arrow { font-size: 10px; color: var(--text-color); opacity: 0.5; transition: transform 0.2s; flex-shrink: 0; }
+                            .mcp-title { flex: 1; font-size: 1.04em; font-weight: 600; color: var(--header-color); display: flex; align-items: center; gap: 7px; }
+                            .mcp-arrow { font-size: 0.8em; color: var(--text-color); opacity: 0.5; transition: transform 0.2s; flex-shrink: 0; }
                             .mcp-arrow.open { transform: rotate(180deg); }
-                            .mcp-body { display: none; padding: 10px 11px 12px; border-top: 1px solid var(--input-border); }
+                            .mcp-body { display: none; padding: 0.65em 0.75em 0.75em; border-top: 1px solid var(--input-border); }
                             .mcp-body.open { display: block; }
-                            .mcp-desc { font-size: 11px; opacity: 0.65; margin: 0 0 10px 0; line-height: 1.4; }
-                            .mcp-btn { width: 100%; padding: 7px 8px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 12px; margin-top: 6px; }
-                            .mcp-search-input { width: 100%; padding: 7px 10px; border-radius: 5px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 12px; box-sizing: border-box; margin-bottom: 8px; }
+                            .mcp-desc { font-size: 0.88em; opacity: 0.65; margin: 0 0 0.6em 0; line-height: 1.4; }
+                            .mcp-btn { width: 100%; padding: 0.5em 0.55em; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 0.96em; margin-top: 0.4em; }
+                            .mcp-search-input { width: 100%; padding: 0.5em 0.6em; border-radius: 5px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 0.96em; box-sizing: border-box; margin-bottom: 0.5em; }
                             /* Popped-out panel: lift list height caps so content fills available space */
                             #mapControlsPanel.mcp-popped-out #favoritesBuildingsList,
                             #mapControlsPanel.mcp-popped-out #inProcessBuildingsList,
@@ -1083,7 +1090,7 @@
                                 <input type="text" id="favoritesSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
                                        oninput="filterMcpBinRowList('favoritesBuildingsList', this.value)">
                                 <div id="favoritesBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 8px;">
-                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No favorited buildings</div>
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No favorited buildings</div>
                                 </div>
                                 <button onclick="clearAllFavorites()" class="mcp-btn" style="color:#f59e0b;">Clear All Favorites</button>
                             </div>
@@ -1100,7 +1107,7 @@
                                 <input type="text" id="inProcessSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
                                        oninput="filterMcpBinRowList('inProcessBuildingsList', this.value)">
                                 <div id="inProcessBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 8px;">
-                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No in-process buildings</div>
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No in-process buildings</div>
                                 </div>
                                 <button onclick="clearAllInProcess()" class="mcp-btn" style="color:#e67e22;">Clear All In Process</button>
                                 <button id="hideInProcessBtn" onclick="toggleHideInProcess()" class="mcp-btn" style="color:#e67e22;">🚫 Hide In Process Buildings</button>
@@ -1118,7 +1125,7 @@
                                 <input type="text" id="holdSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
                                        oninput="filterMcpBinRowList('holdBuildingsList', this.value)">
                                 <div id="holdBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 8px;">
-                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No buildings on hold</div>
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No buildings on hold</div>
                                 </div>
                                 <button onclick="clearAllHold()" class="mcp-btn" style="color:#607d8b;">Clear All Hold</button>
                                 <button id="hideHoldBtn" onclick="toggleHideHold()" class="mcp-btn" style="color:#607d8b;">🚫 Hide Hold Buildings</button>
@@ -1137,7 +1144,7 @@
                                 <input type="text" id="testDatesSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or date..."
                                        oninput="filterMcpBinRowList('testDatesPanelList', this.value)">
                                 <div id="testDatesPanelList" style="max-height: 260px; overflow-y: auto; margin-bottom: 8px;">
-                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No scheduled test dates</div>
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No scheduled test dates</div>
                                 </div>
                                 <button onclick="clearAllTestDates()" class="mcp-btn" style="color:#ff6b6b;">Clear All Test Dates</button>
                             </div>
@@ -1165,7 +1172,7 @@
                                 <input type="text" id="hiddenSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
                                        oninput="filterMcpBinRowList('hiddenBuildingsList', this.value)">
                                 <div id="hiddenBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 8px;">
-                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No hidden buildings</div>
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No hidden buildings</div>
                                 </div>
                                 <button onclick="unhideAllBuildings()" class="mcp-btn" style="color:#4CAF50;">Show All Hidden</button>
                             </div>
@@ -1182,7 +1189,7 @@
                                 <input type="text" id="additionalLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
                                        oninput="filterAdditionalLocationsList(this.value)">
                                 <div id="additionalLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
-                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No additional locations</div>
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No additional locations</div>
                                 </div>
                                 <button onclick="clearAllAdditionalLocations()" class="mcp-btn" style="color:#00bcd4;">Clear All Additional Locations</button>
                             </div>
@@ -1199,7 +1206,7 @@
                                 <input type="text" id="customNamesSearchInput" class="mcp-search-input" placeholder="🔍 Search custom name or address..."
                                        oninput="filterCustomNamesPanelList(this.value)">
                                 <div id="customNamesList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
-                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No custom labels assigned</div>
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No custom labels assigned</div>
                                 </div>
                                 <button onclick="clearAllCustomNames()" class="mcp-btn" style="color:#e64a19;">Clear All Custom Labels</button>
                             </div>
@@ -1219,7 +1226,7 @@
                                 <input type="text" id="housesLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
                                        oninput="filterHousesLocationsList(this.value)">
                                 <div id="housesLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
-                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No houses</div>
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No houses</div>
                                 </div>
                                 <button onclick="clearAllHouseTags()" class="mcp-btn" style="color:#8d6e63;">Unmark all houses</button>
                             </div>
@@ -1236,7 +1243,7 @@
                                 <input type="text" id="completedSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
                                        oninput="filterCompletedList(this.value)">
                                 <div id="completedBuildingsList" style="max-height: 320px; overflow-y: auto; margin-bottom: 8px;">
-                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No completed buildings</div>
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No completed buildings</div>
                                 </div>
                                 <button onclick="clearAllCompleted()" class="mcp-btn" style="color:#27ae60;">Clear All Completed</button>
                                 <button id="hideCompletedBtn" onclick="toggleHideCompleted()" class="mcp-btn" style="color:#27ae60;">🚫 Hide Completed Buildings</button>
@@ -1255,23 +1262,23 @@
                                        oninput="filterMonthLabelsSummaryList(this.value)">
                                 <div style="margin-bottom: 8px;">
                                     <div id="monthFilterButtons" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 6px;">
-                                        <button onclick="toggleMonthFilter('January')"   id="mfBtn-January"   style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:12px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">January</span><span id="mfCount-January"   style="flex-shrink:0;font-size:10px;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
-                                        <button onclick="toggleMonthFilter('February')"  id="mfBtn-February"  style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:12px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">February</span><span id="mfCount-February"  style="flex-shrink:0;font-size:10px;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
-                                        <button onclick="toggleMonthFilter('March')"     id="mfBtn-March"     style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:12px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">March</span><span id="mfCount-March"     style="flex-shrink:0;font-size:10px;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
-                                        <button onclick="toggleMonthFilter('April')"     id="mfBtn-April"     style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:12px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">April</span><span id="mfCount-April"     style="flex-shrink:0;font-size:10px;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
-                                        <button onclick="toggleMonthFilter('May')"       id="mfBtn-May"       style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:12px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">May</span><span id="mfCount-May"       style="flex-shrink:0;font-size:10px;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
-                                        <button onclick="toggleMonthFilter('June')"      id="mfBtn-June"      style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:12px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">June</span><span id="mfCount-June"      style="flex-shrink:0;font-size:10px;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
-                                        <button onclick="toggleMonthFilter('July')"      id="mfBtn-July"      style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:12px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">July</span><span id="mfCount-July"      style="flex-shrink:0;font-size:10px;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
-                                        <button onclick="toggleMonthFilter('August')"    id="mfBtn-August"    style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:12px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">August</span><span id="mfCount-August"    style="flex-shrink:0;font-size:10px;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
-                                        <button onclick="toggleMonthFilter('September')" id="mfBtn-September" style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:12px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">September</span><span id="mfCount-September" style="flex-shrink:0;font-size:10px;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
-                                        <button onclick="toggleMonthFilter('October')"   id="mfBtn-October"   style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:12px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">October</span><span id="mfCount-October"   style="flex-shrink:0;font-size:10px;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
-                                        <button onclick="toggleMonthFilter('November')"  id="mfBtn-November"  style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:12px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">November</span><span id="mfCount-November"  style="flex-shrink:0;font-size:10px;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
-                                        <button onclick="toggleMonthFilter('December')"  id="mfBtn-December"  style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:12px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">December</span><span id="mfCount-December"  style="flex-shrink:0;font-size:10px;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
+                                        <button onclick="toggleMonthFilter('January')"   id="mfBtn-January"   style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">January</span><span id="mfCount-January"   style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
+                                        <button onclick="toggleMonthFilter('February')"  id="mfBtn-February"  style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">February</span><span id="mfCount-February"  style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
+                                        <button onclick="toggleMonthFilter('March')"     id="mfBtn-March"     style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">March</span><span id="mfCount-March"     style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
+                                        <button onclick="toggleMonthFilter('April')"     id="mfBtn-April"     style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">April</span><span id="mfCount-April"     style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
+                                        <button onclick="toggleMonthFilter('May')"       id="mfBtn-May"       style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">May</span><span id="mfCount-May"       style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
+                                        <button onclick="toggleMonthFilter('June')"      id="mfBtn-June"      style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">June</span><span id="mfCount-June"      style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
+                                        <button onclick="toggleMonthFilter('July')"      id="mfBtn-July"      style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">July</span><span id="mfCount-July"      style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
+                                        <button onclick="toggleMonthFilter('August')"    id="mfBtn-August"    style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">August</span><span id="mfCount-August"    style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
+                                        <button onclick="toggleMonthFilter('September')" id="mfBtn-September" style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">September</span><span id="mfCount-September" style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
+                                        <button onclick="toggleMonthFilter('October')"   id="mfBtn-October"   style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">October</span><span id="mfCount-October"   style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
+                                        <button onclick="toggleMonthFilter('November')"  id="mfBtn-November"  style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">November</span><span id="mfCount-November"  style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
+                                        <button onclick="toggleMonthFilter('December')"  id="mfBtn-December"  style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">December</span><span id="mfCount-December"  style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
                                     </div>
-                                    <button onclick="clearMonthFilter()" style="width:100%;padding:5px 8px;font-size:11px;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;opacity:0.65;">✕ Clear Month Filter</button>
+                                    <button onclick="clearMonthFilter()" style="width:100%;padding:5px 8px;font-size:0.88em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;opacity:0.65;">✕ Clear Month Filter</button>
                                 </div>
                                 <div id="monthLabelsList" style="max-height: 150px; overflow-y: auto; margin-bottom: 8px;">
-                                    <div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No buildings labeled</div>
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No buildings labeled</div>
                                 </div>
                                 <button onclick="clearAllMonthLabels()" class="mcp-btn" style="color:#ff6b6b;">Clear All Month Labels</button>
                                 <button id="hideMonthLabeledBtn" onclick="toggleHideMonthLabeled()" class="mcp-btn" style="color:#17a2b8;">🚫 Hide Month-Labeled Buildings</button>
@@ -1287,7 +1294,7 @@
                             <div class="mcp-body" id="mcpTips">
                                 <input type="text" id="mcpTipsSearchInput" class="mcp-search-input" placeholder="🔍 Search tips..."
                                        oninput="filterMcpTipsList(this.value)">
-                                <ul id="mcpTipsList" style="font-size: 11px; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.7;">
+                                <ul id="mcpTipsList" style="font-size: 0.9em; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.7;">
                                     <li>Click a marker to see building details</li>
                                     <li>Use ✓ in popup to mark a building complete</li>
                                     <li>Use 🔄 in popup to mark a building in process</li>
@@ -10673,7 +10680,7 @@
             
             if (listEl) {
                 if (locations.length === 0) {
-                    listEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No additional locations</div>';
+                    listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No additional locations</div>';
                 } else {
                     listEl.innerHTML = locations.map((loc, index) => {
                         const hasBin = loc.bin ? true : false;
@@ -10683,21 +10690,21 @@
                         const promoteBtn = hasBin
                             ? `<button class="addloc-promote-btn" onclick="promoteAdditionalLocation(${index})"
                                        title="Fetch all device data for this BIN and move it into the main building list"
-                                       style="width:100%; margin-top:6px; padding:5px 8px; background:rgba(39,174,96,0.12); color:#27ae60; border:1px solid rgba(39,174,96,0.4); border-radius:4px; cursor:pointer; font-size:11px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:5px;">
+                                       style="width:100%; margin-top:6px; padding:5px 8px; background:rgba(39,174,96,0.12); color:#27ae60; border:1px solid rgba(39,174,96,0.4); border-radius:4px; cursor:pointer; font-size:0.88em; font-weight:600; display:flex; align-items:center; justify-content:center; gap:5px;">
                                    ⬆ Move to Buildings &amp; Fetch Device Data
                                </button>`
-                            : `<div style="margin-top:5px; font-size:10px; opacity:0.5; font-style:italic;">No BIN — cannot move to main buildings</div>`;
+                            : `<div style="margin-top:5px; font-size:0.8em; opacity:0.5; font-style:italic;">No BIN — cannot move to main buildings</div>`;
                         return `
                         <div id="addLocCard-${index}" data-mcp-add-loc="1" data-house="${loc.isHouse ? '1' : ''}" data-bin="${loc.bin || ''}" data-address="${addrEsc}" data-custom="${customEsc}" data-coords="${coordsEsc}" style="background: var(--input-bg); padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid var(--input-border);">
                             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px;">
                                 <div style="flex: 1; min-width: 0; cursor: pointer; text-decoration: none;" title="Click to view on map" onclick="flyToAdditionalLocation(${loc.latitude}, ${loc.longitude})">
-                                    ${loc.customName ? `<div style="font-size: 11px; font-weight: 700; color: #e64a19; margin-bottom: 1px; word-break: break-word; text-decoration: underline dotted;">🏷️ ${loc.customName}</div>` : ''}
-                                    <div style="font-size: 11px; font-weight: 600; color: var(--text-color); margin-bottom: 2px; word-break: break-word; text-decoration: underline dotted;">${loc.label}</div>
-                                    <div style="opacity: 0.55; font-size: 10px;">${hasBin ? 'BIN ' + loc.bin + ' · ' : ''}${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}</div>
+                                    ${loc.customName ? `<div style="font-size: 0.88em; font-weight: 700; color: #e64a19; margin-bottom: 1px; word-break: break-word; text-decoration: underline dotted;">🏷️ ${loc.customName}</div>` : ''}
+                                    <div style="font-size: 0.88em; font-weight: 600; color: var(--text-color); margin-bottom: 2px; word-break: break-word; text-decoration: underline dotted;">${loc.label}</div>
+                                    <div style="opacity: 0.55; font-size: 0.8em;">${hasBin ? 'BIN ' + loc.bin + ' · ' : ''}${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}</div>
                                 </div>
                                 <button onclick="removeAdditionalLocation(${index})"
                                         title="Remove location"
-                                        style="flex-shrink:0; background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.4); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 11px;">✕</button>
+                                        style="flex-shrink:0; background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.4); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 0.88em;">✕</button>
                             </div>
                             ${promoteBtn}
                         </div>`;
@@ -10724,7 +10731,7 @@
             if (countEl) countEl.textContent = houses.length;
             if (listEl) {
                 if (houses.length === 0) {
-                    listEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No houses</div>';
+                    listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No houses</div>';
                 } else {
                     const houseMapColor = '#8d6e63';
                     const houseIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="${houseMapColor}" d="M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg>`;
@@ -10736,13 +10743,13 @@
                         const promoteBtn = hasBin
                             ? `<button class="addloc-promote-btn" onclick="promoteAdditionalLocationByCoords(${loc.latitude}, ${loc.longitude})"
                                        title="Fetch all device data for this BIN and move it into the main building list"
-                                       style="width:100%; margin-top:6px; padding:5px 8px; background:rgba(39,174,96,0.12); color:#27ae60; border:1px solid rgba(39,174,96,0.4); border-radius:4px; cursor:pointer; font-size:11px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:5px;">
+                                       style="width:100%; margin-top:6px; padding:5px 8px; background:rgba(39,174,96,0.12); color:#27ae60; border:1px solid rgba(39,174,96,0.4); border-radius:4px; cursor:pointer; font-size:0.88em; font-weight:600; display:flex; align-items:center; justify-content:center; gap:5px;">
                                    ⬆ Move to Buildings &amp; Fetch Device Data
                                </button>`
-                            : `<div style="margin-top:5px; font-size:10px; opacity:0.5; font-style:italic;">No BIN — cannot move to main buildings</div>`;
+                            : `<div style="margin-top:5px; font-size:0.8em; opacity:0.5; font-style:italic;">No BIN — cannot move to main buildings</div>`;
                         return `
                         <div data-mcp-house-wrap="1" style="margin-bottom: 6px;">
-                        <div data-mcp-house-row="1" data-house="1" data-bin="${loc.bin || ''}" data-address="${addrEsc}" data-custom="${customEsc}" data-coords="${coordsEsc}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px; border: 1px solid var(--input-border);">
+                        <div data-mcp-house-row="1" data-house="1" data-bin="${loc.bin || ''}" data-address="${addrEsc}" data-custom="${customEsc}" data-coords="${coordsEsc}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 1em; border: 1px solid var(--input-border);">
                             <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToAdditionalLocation(${loc.latitude}, ${loc.longitude})">
                                 <span style="display: flex; align-items: flex-start; gap: 6px; overflow: hidden;">
                                     <span style="flex-shrink: 0; display: flex; align-items: center; gap: 5px; padding-top: 1px;">
@@ -10750,15 +10757,15 @@
                                         <span title="Same color as the pin on the map" style="width: 10px; height: 10px; border-radius: 50%; background: ${houseMapColor}; border: 1px solid rgba(0,0,0,0.12); flex-shrink: 0; box-sizing: border-box;"></span>
                                     </span>
                                     <span style="flex: 1; min-width: 0; overflow: hidden;">
-                                        ${loc.customName ? `<span style="display: block; font-size: 10px; font-weight: 700; color: #e64a19; margin-bottom: 2px;">🏷️ ${loc.customName}</span>` : ''}
+                                        ${loc.customName ? `<span style="display: block; font-size: 0.8em; font-weight: 700; color: #e64a19; margin-bottom: 2px;">🏷️ ${loc.customName}</span>` : ''}
                                         <span style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; text-decoration: underline dotted; color: var(--text-color);">${loc.label}</span>
-                                        <span style="display: block; font-size: 10px; opacity: 0.55; margin-top: 2px;">${hasBin ? 'BIN ' + loc.bin + ' · ' : ''}${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}</span>
+                                        <span style="display: block; font-size: 0.8em; opacity: 0.55; margin-top: 2px;">${hasBin ? 'BIN ' + loc.bin + ' · ' : ''}${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}</span>
                                     </span>
                                 </span>
                             </span>
                             <button type="button" onclick="removeAdditionalLocationByCoords(${loc.latitude}, ${loc.longitude})"
                                     title="Remove pin from map"
-                                    style="flex-shrink:0; background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.4); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 11px; margin-left: 8px;">✕</button>
+                                    style="flex-shrink:0; background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.4); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 0.88em; margin-left: 8px;">✕</button>
                         </div>
                             ${promoteBtn}
                         </div>`;
@@ -10787,7 +10794,7 @@
                 if (!noResults) {
                     noResults = document.createElement('div');
                     noResults.id = noResultsId;
-                    noResults.style.cssText = 'font-size:12px;opacity:0.6;text-align:center;padding:8px;';
+                    noResults.style.cssText = 'font-size:1em;opacity:0.6;text-align:center;padding:8px;';
                     list.appendChild(noResults);
                 }
                 noResults.textContent = 'No matches for "' + query + '"';
@@ -10862,7 +10869,7 @@
             if (countEl) countEl.textContent = named.length;
             if (!listEl) return;
             if (named.length === 0) {
-                listEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No custom labels assigned</div>';
+                listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No custom labels assigned</div>';
                 return;
             }
             listEl.innerHTML = named.map((loc) => {
@@ -10872,18 +10879,18 @@
                 <div data-mcp-custom-row="1" data-bin="${loc.bin || ''}" data-address="${addrEsc}" data-custom="${customEsc}" style="background: var(--input-bg); padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid rgba(230,74,25,0.35);">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; margin-bottom: 4px;">
                         <div style="flex: 1; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToAdditionalLocation(${loc.latitude}, ${loc.longitude})">
-                            <div style="font-size: 11px; font-weight: 700; color: #e64a19; margin-bottom: 1px; word-break: break-word; text-decoration: underline dotted;">🏷️ ${loc.customName}</div>
-                            <div style="font-size: 10px; opacity: 0.55; word-break: break-word; text-decoration: underline dotted;">${loc.label}</div>
+                            <div style="font-size: 0.88em; font-weight: 700; color: #e64a19; margin-bottom: 1px; word-break: break-word; text-decoration: underline dotted;">🏷️ ${loc.customName}</div>
+                            <div style="font-size: 0.8em; opacity: 0.55; word-break: break-word; text-decoration: underline dotted;">${loc.label}</div>
                         </div>
                         <button onclick="clearCustomLocationName(${loc.latitude}, ${loc.longitude})"
                                 title="Remove custom label"
-                                style="flex-shrink:0; background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.4); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 11px;">✕</button>
+                                style="flex-shrink:0; background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.4); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 0.88em;">✕</button>
                     </div>
                     <input type="text"
                            value="${loc.customName.replace(/"/g, '&quot;')}"
                            placeholder="Edit label..."
                            onchange="setAdditionalLocationCustomName(${loc.latitude}, ${loc.longitude}, this.value)"
-                           style="width: 100%; padding: 4px 7px; border-radius: 4px; border: 1px solid rgba(230,74,25,0.5); background: var(--input-bg); color: var(--text-color); font-size: 11px; box-sizing: border-box; outline: none;"
+                           style="width: 100%; padding: 4px 7px; border-radius: 4px; border: 1px solid rgba(230,74,25,0.5); background: var(--input-bg); color: var(--text-color); font-size: 0.88em; box-sizing: border-box; outline: none;"
                            onfocus="this.style.borderColor='#e64a19'"
                            onblur="this.style.borderColor='rgba(230,74,25,0.5)'" />
                 </div>`;
@@ -10951,12 +10958,12 @@
             if (listContainer) {
                 const totalLabeled = Object.keys(labels).length;
                 if (totalLabeled === 0) {
-                    listContainer.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No buildings labeled</div>';
+                    listContainer.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No buildings labeled</div>';
                 } else {
                     let html = '';
                     months.forEach(month => {
                         if (counts[month] > 0) {
-                            html += `<div data-month-row="${month}" style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px;">
+                            html += `<div data-month-row="${month}" style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 1em;">
                                 <span>${month}</span>
                                 <span style="background: var(--input-bg); padding: 2px 8px; border-radius: 10px;">${counts[month]}</span>
                             </div>`;
@@ -12277,7 +12284,7 @@
             if (countEl) countEl.textContent = totalDates;
 
             if (bins.length === 0) {
-                listEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No scheduled test dates</div>';
+                listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No scheduled test dates</div>';
                 return;
             }
 
@@ -12317,25 +12324,25 @@
 
                     const rowColor = isToday ? '#e67e22' : isPast ? '#ff6b6b' : 'var(--text-color)';
                     const badge = isToday
-                        ? '<span style="font-size:9px;background:#e67e22;color:white;border-radius:3px;padding:1px 5px;font-weight:700;">TODAY</span>'
+                        ? '<span style="font-size:0.72em;background:#e67e22;color:white;border-radius:3px;padding:1px 5px;font-weight:700;">TODAY</span>'
                         : isPast
-                        ? '<span style="font-size:9px;background:#ff6b6b;color:white;border-radius:3px;padding:1px 5px;font-weight:700;">PAST DUE</span>'
+                        ? '<span style="font-size:0.72em;background:#ff6b6b;color:white;border-radius:3px;padding:1px 5px;font-weight:700;">PAST DUE</span>'
                         : '';
 
                     const removeBtnLarge = `<button onclick="removeTestDateForBin('${bin}','${date}'); updateTestDatesPanel(); if(window.lastBulkSearchResults&&window.lastBulkSearchResults.binGroups){initBuildingMap(window.lastBulkSearchResults.binGroups,true);}"
-                        style="flex-shrink:0; padding:6px 14px; background:rgba(255,107,107,0.1); color:#ff6b6b; border:1px solid rgba(255,107,107,0.3); border-radius:6px; cursor:pointer; font-size:13px; font-weight:600;">✕</button>`;
+                        style="flex-shrink:0; padding:6px 14px; background:rgba(255,107,107,0.1); color:#ff6b6b; border:1px solid rgba(255,107,107,0.3); border-radius:6px; cursor:pointer; font-size:1.04em; font-weight:600;">✕</button>`;
 
                     const removeBtnSmall = `<button onclick="removeTestDateForBin('${bin}','${date}'); updateTestDatesPanel(); if(window.lastBulkSearchResults&&window.lastBulkSearchResults.binGroups){initBuildingMap(window.lastBulkSearchResults.binGroups,true);}"
-                        style="flex-shrink:0; padding:1px 6px; background:rgba(255,107,107,0.1); color:#ff6b6b; border:1px solid rgba(255,107,107,0.3); border-radius:4px; cursor:pointer; font-size:10px; font-weight:600; line-height:1.6;">✕</button>`;
+                        style="flex-shrink:0; padding:1px 6px; background:rgba(255,107,107,0.1); color:#ff6b6b; border:1px solid rgba(255,107,107,0.3); border-radius:4px; cursor:pointer; font-size:0.8em; font-weight:600; line-height:1.6;">✕</button>`;
 
                     const confirmBtn = isPast
                         ? `<button onclick="confirmTestDone('${bin}', '${date}')"
-                            style="flex-shrink:0; padding:6px 14px; background:#27ae60; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600;">✓ Done</button>`
+                            style="flex-shrink:0; padding:6px 14px; background:#27ae60; color:white; border:none; border-radius:6px; cursor:pointer; font-size:1.04em; font-weight:600;">✓ Done</button>`
                         : '';
 
                     return `<div style="display:flex; flex-direction:column; gap:4px; padding:5px 8px; background:${isPast ? 'rgba(255,107,107,0.06)' : isToday ? 'rgba(230,126,34,0.06)' : 'transparent'}; border-radius:4px; margin-bottom:3px;">
                         <div style="display:flex; align-items:center; gap:6px;">
-                            <span style="font-size:11px; color:${rowColor}; font-weight:${isPast ? '600' : '400'}; flex:1;">📅 ${display}</span>
+                            <span style="font-size:0.88em; color:${rowColor}; font-weight:${isPast ? '600' : '400'}; flex:1;">📅 ${display}</span>
                             ${badge}
                             ${!isPast ? removeBtnSmall : ''}
                         </div>
@@ -12347,17 +12354,17 @@
                 const addrForData = (address || '').replace(/"/g, '&quot;');
                 return `<div data-bin="${bin}" data-address="${addrForData}" data-filter-text="${datesForFilter}" style="margin-bottom: 8px; border-radius: 6px; border: 1px solid ${headerBorder}; overflow: hidden;">
                     <div style="padding: 7px 10px; background: ${headerBg}; display:flex; align-items:center; gap:6px;">
-                        <span style="font-size:12px; color:${headerIconColor}; flex-shrink:0;">📍</span>
-                        <span style="font-size:12px; font-weight:600; color:var(--text-color); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; text-decoration:underline dotted;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
+                        <span style="font-size:0.96em; color:${headerIconColor}; flex-shrink:0;">📍</span>
+                        <span style="font-size:0.96em; font-weight:600; color:var(--text-color); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; text-decoration:underline dotted;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                             ${address || '<span style="opacity:0.55">BIN ' + bin + '</span>'}
                         </span>
-                        <span style="font-size:10px; opacity:0.6; flex-shrink:0;">${sortedDates.length} date${sortedDates.length !== 1 ? 's' : ''}</span>
+                        <span style="font-size:0.8em; opacity:0.6; flex-shrink:0;">${sortedDates.length} date${sortedDates.length !== 1 ? 's' : ''}</span>
                     </div>
                     <div style="padding: 6px 8px; background: var(--input-bg);">
                         ${dateRows}
                         <div style="margin-top:4px;">
                             <button onclick="openTestDatesModal('${bin}')"
-                                    style="width:100%; padding:4px; background:rgba(26,115,232,0.1); color:#1a73e8; border:1px solid rgba(26,115,232,0.3); border-radius:4px; cursor:pointer; font-size:10px; font-weight:600;">+ Add / Edit Dates</button>
+                                    style="width:100%; padding:4px; background:rgba(26,115,232,0.1); color:#1a73e8; border:1px solid rgba(26,115,232,0.3); border-radius:4px; cursor:pointer; font-size:0.8em; font-weight:600;">+ Add / Edit Dates</button>
                         </div>
                     </div>
                 </div>`;
@@ -12451,7 +12458,7 @@
                 if (!noResults) {
                     noResults = document.createElement('div');
                     noResults.id = noResultsId;
-                    noResults.style.cssText = 'font-size:12px;opacity:0.6;text-align:center;padding:8px;';
+                    noResults.style.cssText = 'font-size:1em;opacity:0.6;text-align:center;padding:8px;';
                     list.appendChild(noResults);
                 }
                 noResults.textContent = 'No matches for "' + query + '"';
@@ -12483,7 +12490,7 @@
                 if (!noResults) {
                     noResults = document.createElement('div');
                     noResults.id = noResultsId;
-                    noResults.style.cssText = 'font-size:12px;opacity:0.6;text-align:center;padding:8px;';
+                    noResults.style.cssText = 'font-size:1em;opacity:0.6;text-align:center;padding:8px;';
                     list.appendChild(noResults);
                 }
                 noResults.textContent = 'No matches for "' + query + '"';
@@ -12511,7 +12518,7 @@
                 if (!noResults) {
                     noResults = document.createElement('div');
                     noResults.id = noResultsId;
-                    noResults.style.cssText = 'font-size:12px;opacity:0.6;text-align:center;padding:8px;';
+                    noResults.style.cssText = 'font-size:1em;opacity:0.6;text-align:center;padding:8px;';
                     list.appendChild(noResults);
                 }
                 noResults.textContent = 'No matches for "' + query + '"';
@@ -12539,7 +12546,7 @@
                 if (!noResults) {
                     noResults = document.createElement('div');
                     noResults.id = noResultsId;
-                    noResults.style.cssText = 'font-size:12px;opacity:0.6;text-align:center;padding:8px;';
+                    noResults.style.cssText = 'font-size:1em;opacity:0.6;text-align:center;padding:8px;';
                     list.appendChild(noResults);
                 }
                 noResults.textContent = 'No matches for "' + query + '"';
@@ -12566,7 +12573,7 @@
                 if (!noResults) {
                     noResults = document.createElement('div');
                     noResults.id = noResultsId;
-                    noResults.style.cssText = 'font-size:12px;opacity:0.6;text-align:center;padding:8px;margin:0 0 8px 0;';
+                    noResults.style.cssText = 'font-size:1em;opacity:0.6;text-align:center;padding:8px;margin:0 0 8px 0;';
                     ul.parentNode.insertBefore(noResults, ul);
                 }
                 noResults.textContent = 'No tips match "' + query + '"';
@@ -12719,7 +12726,7 @@
                             : '';
                         const addrEsc = (data.address || '').replace(/"/g, '&quot;');
                         return `
-                        <div data-bin="${bin}" data-address="${addrEsc}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
+                        <div data-bin="${bin}" data-address="${addrEsc}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 1em;">
                             <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                                 <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
                                     <span style="color: #9b59b6; font-weight: 700; flex-shrink: 0;">⭐</span>
@@ -12728,13 +12735,13 @@
                                         : `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6; text-decoration: underline dotted;">BIN ${bin}</span>`
                                     }
                                 </span>
-                                ${favOn ? `<span style="font-size: 10px; opacity: 0.55; padding-left: 22px;">Since ${favOn}${data.address ? ' · BIN ' + bin : ''}</span>` : (data.address ? `<span style="font-size: 10px; opacity: 0.55; padding-left: 22px;">BIN ${bin}</span>` : '')}
+                                ${favOn ? `<span style="font-size: 0.8em; opacity: 0.55; padding-left: 22px;">Since ${favOn}${data.address ? ' · BIN ' + bin : ''}</span>` : (data.address ? `<span style="font-size: 0.8em; opacity: 0.55; padding-left: 22px;">BIN ${bin}</span>` : '')}
                             </span>
-                            <button onclick="toggleMapFavorite('${bin}', '${(data.address || '').replace(/'/g, "\\'")}')" style="flex-shrink:0; background: #9b59b6; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px; margin-left: 8px;">Unfavorite</button>
+                            <button onclick="toggleMapFavorite('${bin}', '${(data.address || '').replace(/'/g, "\\'")}')" style="flex-shrink:0; background: #9b59b6; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 0.8em; margin-left: 8px;">Unfavorite</button>
                         </div>`;
                     }).join('');
                 } else {
-                    favoritesListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No favorited buildings</div>';
+                    favoritesListEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No favorited buildings</div>';
                 }
             }
             if (hiddenCountEl) hiddenCountEl.textContent = hiddenCount;
@@ -12748,15 +12755,15 @@
                         const fullAddr = (data && data.address) ? data.address : '';
                         const addrEsc = fullAddr.replace(/"/g, '&quot;');
                         return `
-                        <div data-bin="${bin}" data-address="${addrEsc}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
+                        <div data-bin="${bin}" data-address="${addrEsc}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 1em;">
                             <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; text-decoration: underline dotted;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                                 <strong>${bin}</strong>${fullAddr ? ` - ${fullAddr.substring(0, 25)}${fullAddr.length > 25 ? '...' : ''}` : ''}
                             </span>
-                            <button onclick="toggleMapHidden('${bin}')" style="background: #4CAF50; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px; margin-left: 8px;">Show</button>
+                            <button onclick="toggleMapHidden('${bin}')" style="background: #4CAF50; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 0.8em; margin-left: 8px;">Show</button>
                         </div>`;
                     }).join('');
                 } else {
-                    hiddenListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No hidden buildings</div>';
+                    hiddenListEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No hidden buildings</div>';
                 }
             }
 
@@ -12787,11 +12794,11 @@
                             var dateRows = '';
                             scheduledDates.forEach(function(d) {
                                 var disp = new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-                                dateRows += '<div style="font-size: 11px; padding: 2px 0; color: var(--text-color);">📅 ' + disp + '</div>';
+                                dateRows += '<div style="font-size: 0.88em; padding: 2px 0; color: var(--text-color);">📅 ' + disp + '</div>';
                             });
                             var label = scheduledDates.length !== 1 ? 'Scheduled test dates' : 'Scheduled test date';
                             datesHtml = '<div style="margin-top: 6px; padding: 6px 8px; background: rgba(39,174,96,0.1); border-radius: 4px; border-left: 3px solid #27ae60;">'
-                                + '<div style="font-size: 10px; color: #27ae60; font-weight: 700; margin-bottom: 4px;">🗓️ ' + label + ':</div>'
+                                + '<div style="font-size: 0.8em; color: #27ae60; font-weight: 700; margin-bottom: 4px;">🗓️ ' + label + ':</div>'
                                 + dateRows
                                 + '</div>';
                         }
@@ -12800,11 +12807,11 @@
                             ? '<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; text-decoration: underline dotted;">' + address + '</span>'
                             : '<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6; text-decoration: underline dotted;">BIN ' + bin + '</span>';
                         var subLine = address
-                            ? '<span style="display: block; font-size: 10px; opacity: 0.55; padding-left: 22px;">BIN ' + bin + (completedOn ? ' · Completed ' + completedOn : '') + '</span>'
-                            : (completedOn ? '<span style="display: block; font-size: 10px; opacity: 0.55;">Completed ' + completedOn + '</span>' : '');
+                            ? '<span style="display: block; font-size: 0.8em; opacity: 0.55; padding-left: 22px;">BIN ' + bin + (completedOn ? ' · Completed ' + completedOn : '') + '</span>'
+                            : (completedOn ? '<span style="display: block; font-size: 0.8em; opacity: 0.55;">Completed ' + completedOn + '</span>' : '');
 
                         completedHtmlParts.push(
-                            '<div data-bin="' + bin + '" data-address="' + (address || '').replace(/"/g, '&quot;') + '" style="padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">'
+                            '<div data-bin="' + bin + '" data-address="' + (address || '').replace(/"/g, '&quot;') + '" style="padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 1em;">'
                             + '<span style="display: block; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding(\'' + bin + '\')">'
                             + '<span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">'
                             + '<span style="color: #27ae60; font-weight: 700; flex-shrink: 0;">✓</span>'
@@ -12813,8 +12820,8 @@
                             + subLine
                             + '</span>'
                             + '<div style="display: flex; gap: 4px; margin-top: 5px;">'
-                            + '<button onclick="changeMapCompletedDate(\'' + bin + '\')" style="background: #1a73e8; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px;">Date</button>'
-                            + '<button onclick="toggleMapCompleted(\'' + bin + '\')" style="background: #e53935; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px;">Un-Complete</button>'
+                            + '<button onclick="changeMapCompletedDate(\'' + bin + '\')" style="background: #1a73e8; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 0.8em;">Date</button>'
+                            + '<button onclick="toggleMapCompleted(\'' + bin + '\')" style="background: #e53935; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 0.8em;">Un-Complete</button>'
                             + '</div>'
                             + datesHtml
                             + '</div>'
@@ -12827,7 +12834,7 @@
                         filterCompletedList(searchInput.value);
                     }
                 } else {
-                    completedListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No completed buildings</div>';
+                    completedListEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No completed buildings</div>';
                 }
             }
             
@@ -12837,7 +12844,7 @@
                         const dateStr = data.date ? new Date(data.date + 'T00:00:00').toLocaleDateString() : '';
                         const addrEsc = (data.address || '').replace(/"/g, '&quot;');
                         return `
-                        <div data-bin="${bin}" data-address="${addrEsc}" data-filter-text="${dateStr.replace(/"/g, '&quot;')}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
+                        <div data-bin="${bin}" data-address="${addrEsc}" data-filter-text="${dateStr.replace(/"/g, '&quot;')}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 1em;">
                             <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                                 <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
                                     <span style="color: #e67e22; font-weight: 700; flex-shrink: 0;">🔄</span>
@@ -12846,17 +12853,17 @@
                                         : `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6; text-decoration: underline dotted;">BIN ${bin}</span>`
                                     }
                                 </span>
-                                ${dateStr ? `<span style="font-size: 10px; opacity: 0.7; padding-left: 22px; color: #e67e22;">${dateStr}</span>` : ''}
-                                ${data.address ? `<span style="font-size: 10px; opacity: 0.55; padding-left: 22px;">BIN ${bin}</span>` : ''}
+                                ${dateStr ? `<span style="font-size: 0.8em; opacity: 0.7; padding-left: 22px; color: #e67e22;">${dateStr}</span>` : ''}
+                                ${data.address ? `<span style="font-size: 0.8em; opacity: 0.55; padding-left: 22px;">BIN ${bin}</span>` : ''}
                             </span>
                             <span style="display: flex; gap: 4px; flex-shrink: 0; margin-left: 8px;">
-                                <button onclick="toggleMapInProcess('${bin}')" style="flex-shrink:0; background: #ff9800; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px;">Undo</button>
-                                <button onclick="moveInProcessToCompleted('${bin}')" style="flex-shrink:0; background: #27ae60; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px;">Completed</button>
+                                <button onclick="toggleMapInProcess('${bin}')" style="flex-shrink:0; background: #ff9800; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 0.8em;">Undo</button>
+                                <button onclick="moveInProcessToCompleted('${bin}')" style="flex-shrink:0; background: #27ae60; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 0.8em;">Completed</button>
                             </span>
                         </div>`;
                     }).join('');
                 } else {
-                    inProcessListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No in-process buildings</div>';
+                    inProcessListEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No in-process buildings</div>';
                 }
             }
 
@@ -12868,7 +12875,7 @@
                             : '';
                         const addrEsc = (data.address || '').replace(/"/g, '&quot;');
                         return `
-                        <div data-bin="${bin}" data-address="${addrEsc}" data-filter-text="${heldOn.replace(/"/g, '&quot;')}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 12px;">
+                        <div data-bin="${bin}" data-address="${addrEsc}" data-filter-text="${heldOn.replace(/"/g, '&quot;')}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 1em;">
                             <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                                 <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
                                     <span style="color: #607d8b; font-weight: 700; flex-shrink: 0;">⏸</span>
@@ -12877,13 +12884,13 @@
                                         : `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6; text-decoration: underline dotted;">BIN ${bin}</span>`
                                     }
                                 </span>
-                                ${heldOn ? `<span style="font-size: 10px; opacity: 0.55; padding-left: 22px;">Since ${heldOn}${data.address ? ' · BIN ' + bin : ''}</span>` : (data.address ? `<span style="font-size: 10px; opacity: 0.55; padding-left: 22px;">BIN ${bin}</span>` : '')}
+                                ${heldOn ? `<span style="font-size: 0.8em; opacity: 0.55; padding-left: 22px;">Since ${heldOn}${data.address ? ' · BIN ' + bin : ''}</span>` : (data.address ? `<span style="font-size: 0.8em; opacity: 0.55; padding-left: 22px;">BIN ${bin}</span>` : '')}
                             </span>
-                            <button onclick="toggleMapHold('${bin}')" style="flex-shrink:0; background: #ff9800; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 10px; margin-left: 8px;">Remove</button>
+                            <button onclick="toggleMapHold('${bin}')" style="flex-shrink:0; background: #ff9800; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 0.8em; margin-left: 8px;">Remove</button>
                         </div>`;
                     }).join('');
                 } else {
-                    holdListEl.innerHTML = '<div style="font-size: 12px; opacity: 0.6; text-align: center; padding: 8px;">No buildings on hold</div>';
+                    holdListEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No buildings on hold</div>';
                 }
             }
 
@@ -12912,6 +12919,11 @@
             var housesInp = document.getElementById('housesLocationsSearchInput');
             if (housesInp && housesInp.value.trim()) {
                 filterHousesLocationsList(housesInp.value);
+            }
+
+            var mcpPanel = document.getElementById('mapControlsPanel');
+            if (mcpPanel && mcpPanel.style.display !== 'none') {
+                applyMapControlsPanelContentScale(mcpPanel);
             }
         }
 
@@ -13429,15 +13441,117 @@
         }
 
         var mapControlsPanelIsPopped = false;
+        var mapControlsDockedWidthPx = parseInt(localStorage.getItem('mapControlsDockedWidthPx'), 10) || 280;
+        const MAP_CONTROLS_MIN_PANEL_WIDTH = 220;
+        const MAP_CONTROLS_MIN_MAP_WIDTH = 220;
+        let _mapControlsResizeFrame = null;
+
+        function requestMapResizeAfterControlsChange() {
+            if (!buildingMap) return;
+            if (_mapControlsResizeFrame) cancelAnimationFrame(_mapControlsResizeFrame);
+            _mapControlsResizeFrame = requestAnimationFrame(function() {
+                _mapControlsResizeFrame = null;
+                if (buildingMap) buildingMap.invalidateSize();
+            });
+        }
+
+        function getMaxDockedMapControlsWidth(panel) {
+            const row = panel && panel.parentElement;
+            if (!row || !row.clientWidth) return 640;
+            return Math.max(MAP_CONTROLS_MIN_PANEL_WIDTH, row.clientWidth - MAP_CONTROLS_MIN_MAP_WIDTH);
+        }
+
+        function clampDockedMapControlsWidth(width, panel) {
+            const maxW = getMaxDockedMapControlsWidth(panel);
+            return Math.max(MAP_CONTROLS_MIN_PANEL_WIDTH, Math.min(maxW, Math.round(width || 280)));
+        }
+
+        function setDockedMapControlsWidth(width, panel, persist) {
+            if (!panel) panel = document.getElementById('mapControlsPanel');
+            if (!panel) return;
+            mapControlsDockedWidthPx = clampDockedMapControlsWidth(width, panel);
+            panel.style.width = mapControlsDockedWidthPx + 'px';
+            applyMapControlsPanelContentScale(panel);
+            if (persist) localStorage.setItem('mapControlsDockedWidthPx', String(mapControlsDockedWidthPx));
+        }
+
+        function applyMapControlsPanelContentScale(panel) {
+            if (!panel) return;
+            const w = panel.offsetWidth;
+            if (w < 1) return;
+            // 280px keeps the previous readable baseline; wider panels gently grow.
+            const base = Math.max(11.5, Math.min(16, 12.5 + (w - 280) * 0.013));
+            panel.style.fontSize = base + 'px';
+        }
+
+        window.addEventListener('resize', function() {
+            const panel = document.getElementById('mapControlsPanel');
+            if (!panel || panel.style.display === 'none' || mapControlsPanelIsPopped) return;
+            setDockedMapControlsWidth(mapControlsDockedWidthPx, panel, false);
+            requestMapResizeAfterControlsChange();
+        });
+
+        function _startDockedMapControlsResize(e) {
+            if (mapControlsPanelIsPopped) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const panel = document.getElementById('mapControlsPanel');
+            const row = panel && panel.parentElement;
+            if (!panel || !row) return;
+            const startX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+            const startW = panel.offsetWidth;
+
+            function clientXOf(ev) {
+                if (ev.touches && ev.touches.length) return ev.touches[0].clientX;
+                if (ev.changedTouches && ev.changedTouches.length) return ev.changedTouches[0].clientX;
+                return ev.clientX;
+            }
+
+            function onMove(ev) {
+                if (ev.type === 'touchmove') ev.preventDefault();
+                const dx = clientXOf(ev) - startX;
+                setDockedMapControlsWidth(startW - dx, panel, false);
+                requestMapResizeAfterControlsChange();
+            }
+
+            function onUp() {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                document.removeEventListener('touchmove', onMove);
+                document.removeEventListener('touchend', onUp);
+                document.removeEventListener('touchcancel', onUp);
+                document.body.style.userSelect = '';
+                document.body.style.cursor = '';
+                panel.classList.remove('mcp-resizing');
+                localStorage.setItem('mapControlsDockedWidthPx', String(mapControlsDockedWidthPx));
+                requestMapResizeAfterControlsChange();
+            }
+
+            document.body.style.userSelect = 'none';
+            document.body.style.cursor = 'ew-resize';
+            panel.classList.add('mcp-resizing');
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+            document.addEventListener('touchmove', onMove, { passive: false });
+            document.addEventListener('touchend', onUp);
+            document.addEventListener('touchcancel', onUp);
+        }
 
         function toggleMapControlsPanel() {
             const panel = document.getElementById('mapControlsPanel');
             if (panel) {
                 const isVisible = panel.style.display !== 'none';
-                panel.style.display = isVisible ? 'none' : 'flex';
+                if (isVisible) {
+                    panel.style.display = 'none';
+                } else {
+                    panel.style.display = 'flex';
+                    if (!mapControlsPanelIsPopped) {
+                        setDockedMapControlsWidth(mapControlsDockedWidthPx, panel, false);
+                    }
+                }
                 // Invalidate map size when panel toggles (only matters when docked)
                 if (buildingMap && !mapControlsPanelIsPopped) {
-                    setTimeout(() => buildingMap.invalidateSize(), 100);
+                    setTimeout(requestMapResizeAfterControlsChange, 100);
                 }
             }
         }
@@ -13448,6 +13562,11 @@
             const popBtn = document.getElementById('mapControlsPopOutBtn');
             const dockBtn = document.getElementById('mapControlsDockBtn');
             if (!panel) return;
+
+            if (!mapControlsPanelIsPopped) {
+                const rw = Math.round(panel.getBoundingClientRect().width);
+                if (rw >= MAP_CONTROLS_MIN_PANEL_WIDTH) mapControlsDockedWidthPx = rw;
+            }
 
             mapControlsPanelIsPopped = true;
 
@@ -13476,7 +13595,8 @@
             if (dockBtn) dockBtn.style.display = 'flex';
             if (header) header.addEventListener('mousedown', _mapControlsDragStart);
 
-            if (buildingMap) setTimeout(() => buildingMap.invalidateSize(), 120);
+            applyMapControlsPanelContentScale(panel);
+            if (buildingMap) setTimeout(requestMapResizeAfterControlsChange, 120);
         }
 
         function dockControlsPanel() {
@@ -13491,7 +13611,6 @@
             panel.style.position = 'relative';
             panel.style.top = '';
             panel.style.left = '';
-            panel.style.width = '280px';
             panel.style.height = '';
             panel.style.minWidth = '';
             panel.style.minHeight = '';
@@ -13502,6 +13621,7 @@
             panel.style.borderRadius = '';
             panel.style.boxShadow = '';
             panel.style.overflow = 'hidden';
+            setDockedMapControlsWidth(mapControlsDockedWidthPx, panel, false);
 
             panel.classList.remove('mcp-popped-out');
             if (header) header.style.cursor = 'default';
@@ -13509,7 +13629,8 @@
             if (dockBtn) dockBtn.style.display = 'none';
             if (header) header.removeEventListener('mousedown', _mapControlsDragStart);
 
-            if (buildingMap) setTimeout(() => buildingMap.invalidateSize(), 120);
+            applyMapControlsPanelContentScale(panel);
+            if (buildingMap) setTimeout(requestMapResizeAfterControlsChange, 120);
         }
 
 
@@ -13541,6 +13662,7 @@
                 panel.style.height = h + 'px';
                 panel.style.left   = l + 'px';
                 panel.style.top    = t + 'px';
+                applyMapControlsPanelContentScale(panel);
             }
 
             function onUp() {
@@ -22892,7 +23014,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.6</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.7</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
