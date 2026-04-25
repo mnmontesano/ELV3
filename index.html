@@ -11527,14 +11527,14 @@
             const s = String(raw).trim();
             // Already YYYY-MM-DD
             if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-            // M/D/YYYY or MM/DD/YYYY
-            const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            // M/D/YYYY, MM/DD/YYYY, M-D-YYYY, or MM-DD-YYYY
+            const mdy = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
             if (mdy) {
                 const [, m, d, y] = mdy;
                 return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
             }
-            // M/D/YY
-            const mdyShort = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+            // M/D/YY or M-D-YY
+            const mdyShort = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2})$/);
             if (mdyShort) {
                 const [, m, d, y] = mdyShort;
                 const year = parseInt(y) >= 50 ? '19'+y : '20'+y;
@@ -11548,6 +11548,48 @@
                 }
             } catch(e) {}
             return null;
+        }
+
+        function extractScheduleImportFields(row, addrColIdx, dateColIdx) {
+            const rawAddr = (row[addrColIdx] || '').trim();
+            const rawDate = (row[dateColIdx] || '').trim();
+            const parsedDate = parseExcelDate(rawDate);
+            if (parsedDate) return { rawAddr, rawDate, parsedDate };
+
+            const combined = row.join(' ').replace(/\s+/g, ' ').trim();
+            if (!combined) return { rawAddr, rawDate, parsedDate: null };
+
+            const monthNames = 'jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?';
+            const datePatterns = [
+                /\b\d{4}-\d{1,2}-\d{1,2}\b/,
+                /\b\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}\b/,
+                new RegExp(`\\b(?:${monthNames})\\.?\\s+\\d{1,2},?\\s+\\d{2,4}\\b`, 'i'),
+                new RegExp(`\\b\\d{1,2}\\s+(?:${monthNames})\\.?,?\\s+\\d{2,4}\\b`, 'i')
+            ];
+
+            for (const pattern of datePatterns) {
+                const match = combined.match(pattern);
+                if (!match) continue;
+                const foundDate = match[0].trim();
+                const foundParsedDate = parseExcelDate(foundDate);
+                if (!foundParsedDate) continue;
+
+                const before = combined.slice(0, match.index);
+                const after = combined.slice(match.index + match[0].length);
+                const foundAddr = `${before} ${after}`
+                    .replace(/\s*[-|,;:]\s*$/, '')
+                    .replace(/^\s*[-|,;:]\s*/, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                return {
+                    rawAddr: foundAddr || rawAddr,
+                    rawDate: foundDate,
+                    parsedDate: foundParsedDate
+                };
+            }
+
+            return { rawAddr, rawDate, parsedDate: null };
         }
 
         function matchAddressToBin(excelAddr, binGroups) {
@@ -11606,7 +11648,7 @@
                     <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:var(--panel-bg,#252535);border-bottom:1px solid var(--input-border,#444);flex-shrink:0;">
                         <div>
                             <h3 style="margin:0;color:var(--header-color,#fff);font-size:15px;">📋 Import Schedule from Excel</h3>
-                            <p style="margin:3px 0 0;font-size:11px;opacity:0.6;color:var(--text-color,#ccc);">Copy rows from Excel (Ctrl+C / Cmd+C) then paste into the box below</p>
+                            <p style="margin:3px 0 0;font-size:11px;opacity:0.6;color:var(--text-color,#ccc);">Paste Excel rows, or enter one address and date per line</p>
                         </div>
                         <button id="schedImportCloseBtn" style="background:none;border:none;color:var(--text-color,#ccc);font-size:22px;cursor:pointer;line-height:1;padding:0;">×</button>
                     </div>
@@ -11616,7 +11658,7 @@
 
                         <!-- Paste area -->
                         <label style="display:block;font-size:12px;font-weight:600;color:var(--header-color,#ddd);margin-bottom:5px;">Paste Excel data here:</label>
-                        <textarea id="schedImportPaste" placeholder="Select rows in Excel, copy (Ctrl+C / Cmd+C), then click here and paste (Ctrl+V / Cmd+V)&#10;&#10;Each row should have at minimum an address column and a date column." style="width:100%;height:110px;box-sizing:border-box;background:var(--input-bg,#2a2a3e);border:1px solid var(--input-border,#555);border-radius:6px;color:var(--text-color,#ccc);padding:8px;font-size:12px;resize:vertical;font-family:monospace;" spellcheck="false"></textarea>
+                        <textarea id="schedImportPaste" placeholder="Paste Excel rows, or type one address and date per line.&#10;&#10;Examples:&#10;123 Main St, Brooklyn 4/25/2026&#10;4/25/26 - 123 Main St" style="width:100%;height:110px;box-sizing:border-box;background:var(--input-bg,#2a2a3e);border:1px solid var(--input-border,#555);border-radius:6px;color:var(--text-color,#ccc);padding:8px;font-size:12px;resize:vertical;font-family:monospace;" spellcheck="false"></textarea>
 
                         <!-- Column selectors (hidden until data pasted) -->
                         <div id="schedImportColConfig" style="display:none;margin-top:12px;">
@@ -11743,9 +11785,7 @@
                 if (dataRows.length === 0) { showMapNotification('No data rows found', '#ff9800'); return; }
 
                 previewResults = dataRows.map(row => {
-                    const rawAddr = (row[addrColIdx] || '').trim();
-                    const rawDate = (row[dateColIdx] || '').trim();
-                    const parsedDate = parseExcelDate(rawDate);
+                    const { rawAddr, rawDate, parsedDate } = extractScheduleImportFields(row, addrColIdx, dateColIdx);
                     const match = rawAddr ? matchAddressToBin(rawAddr, binGroups) : null;
                     return { rawAddr, rawDate, parsedDate, match };
                 }).filter(r => r.rawAddr || r.rawDate);
@@ -23014,7 +23054,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.7</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.8</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
