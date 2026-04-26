@@ -1022,6 +1022,7 @@
                                 <button onclick="addAdditionalLocation()" title="Add location" style="background: var(--input-bg); border: none; border-left: 1px solid var(--input-border); cursor: pointer; padding: 5px 10px; color: var(--text-color); font-size: 0.9em; display: flex; align-items: center;">➕</button>
                             </div>
                         </div>
+                        <div id="mapMonthFilterStatus" style="display: none; width: 100%; margin-top: 2px; padding: 5px 9px; border-radius: 6px; background: rgba(23, 162, 184, 0.12); border: 1px solid rgba(23, 162, 184, 0.35); color: #17a2b8; font-size: 0.78em; font-weight: 600;"></div>
                         <div id="additionalLocationSuggestions" style="display: none; width: 100%; margin-top: 2px; border: 1px solid var(--input-border); border-radius: 8px; background: var(--panel-bg); padding: 8px;"></div>
                     </div>
                 </div>
@@ -1274,6 +1275,7 @@
                                         <button onclick="toggleMonthFilter('October')"   id="mfBtn-October"   style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">October</span><span id="mfCount-October"   style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
                                         <button onclick="toggleMonthFilter('November')"  id="mfBtn-November"  style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">November</span><span id="mfCount-November"  style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
                                         <button onclick="toggleMonthFilter('December')"  id="mfBtn-December"  style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">December</span><span id="mfCount-December"  style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
+                                        <button onclick="toggleMonthFilter('REVIEW')"   id="mfBtn-REVIEW"   style="display:flex;justify-content:space-between;align-items:center;height:34px;box-sizing:border-box;padding:0 8px;font-size:0.96em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;transition:all 0.15s;white-space:nowrap;overflow:hidden;"><span style="overflow:hidden;text-overflow:ellipsis;">REVIEW</span><span id="mfCount-REVIEW"   style="flex-shrink:0;font-size:0.8em;background:rgba(0,0,0,0.15);border-radius:10px;padding:1px 6px;min-width:20px;text-align:center;margin-left:4px;">0</span></button>
                                     </div>
                                     <button onclick="clearMonthFilter()" style="width:100%;padding:5px 8px;font-size:0.88em;border-radius:5px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text-color);cursor:pointer;opacity:0.65;">✕ Clear Month Filter</button>
                                 </div>
@@ -10657,9 +10659,10 @@
         }
         
         function clearAllAdditionalLocations() {
-            if (confirm('Are you sure you want to remove all additional locations?')) {
-                setAdditionalLocations([]);
-                showMapNotification('All additional locations cleared', '#00bcd4');
+            if (confirm('Are you sure you want to remove all non-house additional locations? House pins will stay in the Houses section.')) {
+                const houses = getAdditionalLocations().filter(loc => loc.isHouse);
+                setAdditionalLocations(houses);
+                showMapNotification('All non-house additional locations cleared', '#00bcd4');
                 
                 // Update the controls panel
                 updateAdditionalLocationsPanel();
@@ -10673,16 +10676,19 @@
         
         function updateAdditionalLocationsPanel() {
             const locations = getAdditionalLocations();
+            const regularLocations = locations
+                .map((loc, index) => ({ loc, index }))
+                .filter(item => !item.loc.isHouse);
             const countEl = document.getElementById('additionalLocationsCount');
             const listEl = document.getElementById('additionalLocationsList');
             
-            if (countEl) countEl.textContent = locations.length;
+            if (countEl) countEl.textContent = regularLocations.length;
             
             if (listEl) {
-                if (locations.length === 0) {
+                if (regularLocations.length === 0) {
                     listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No additional locations</div>';
                 } else {
-                    listEl.innerHTML = locations.map((loc, index) => {
+                    listEl.innerHTML = regularLocations.map(({ loc, index }) => {
                         const hasBin = loc.bin ? true : false;
                         const addrEsc = (loc.label || '').replace(/"/g, '&quot;');
                         const customEsc = (loc.customName || '').replace(/"/g, '&quot;');
@@ -10943,7 +10949,7 @@
             const labels = getMapMonthLabels();
             const counts = {};
             const months = ['January', 'February', 'March', 'April', 'May', 'June', 
-                           'July', 'August', 'September', 'October', 'November', 'December'];
+                           'July', 'August', 'September', 'October', 'November', 'December', 'REVIEW'];
             
             months.forEach(m => counts[m] = 0);
             
@@ -11056,7 +11062,20 @@
             btn.style.borderColor = active ? '#27ae60' : 'var(--input-border)';
         }
 
-        const ALL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        const ALL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December','REVIEW'];
+
+        function getFilterDeviceCountForBuilding(building, label) {
+            if (!building) return 0;
+            if (label === 'REVIEW') return building.deviceCount || 0;
+            return Array.isArray(building.readyDevices) ? building.readyDevices.length : 0;
+        }
+
+        function getActiveFilterDeviceLabel(activeLabels) {
+            const labels = Array.isArray(activeLabels) ? activeLabels : [...activeLabels];
+            if (labels.length === 1 && labels[0] === 'REVIEW') return 'review device';
+            if (labels.includes('REVIEW')) return 'ready/review device';
+            return 'ready device';
+        }
 
         function toggleMonthFilter(month) {
             if (activeMonthFilters.has(month)) {
@@ -11078,8 +11097,11 @@
             const labels = getMapMonthLabels();
             const counts = {};
             ALL_MONTHS.forEach(m => counts[m] = 0);
-            Object.values(labels).forEach(month => {
-                if (counts[month] !== undefined) counts[month]++;
+            (mapBuildingsData || []).forEach(building => {
+                const month = labels[building.bin];
+                if (counts[month] !== undefined) {
+                    counts[month] += getFilterDeviceCountForBuilding(building, month);
+                }
             });
 
             ALL_MONTHS.forEach(m => {
@@ -11108,11 +11130,39 @@
                     countEl.style.fontWeight = hasBuildings ? '600' : 'normal';
                 }
             });
+            updateMonthFilterStatus();
         }
 
-        function applyMonthFilters() {
+        function updateMonthFilterStatus() {
+            const statusEl = document.getElementById('mapMonthFilterStatus');
+            if (!statusEl) return;
+
+            if (activeMonthFilters.size === 0) {
+                statusEl.style.display = 'none';
+                statusEl.textContent = '';
+                return;
+            }
+
+            const labels = getMapMonthLabels();
+            const favorites = getMapFavorites();
+            const activeMonths = [...activeMonthFilters];
+            const matches = (mapBuildingsData || []).filter(b => activeMonthFilters.has(labels[b.bin]));
+            const favoritedCount = (mapBuildingsData || []).filter(b => favorites[b.bin] && !activeMonthFilters.has(labels[b.bin])).length;
+            const filterDevices = matches.reduce((sum, b) => sum + getFilterDeviceCountForBuilding(b, labels[b.bin]), 0);
+            const monthText = activeMonths.join(', ');
+            const buildingText = `${matches.length} building${matches.length !== 1 ? 's' : ''}`;
+            const deviceLabel = getActiveFilterDeviceLabel(activeMonths);
+            const deviceText = `${filterDevices} ${deviceLabel}${filterDevices !== 1 ? 's' : ''}`;
+            const favoriteText = favoritedCount > 0 ? `, plus ${favoritedCount} favorite${favoritedCount !== 1 ? 's' : ''}` : '';
+
+            statusEl.textContent = `Month filter active: ${monthText} — showing ${buildingText} / ${deviceText}${favoriteText}`;
+            statusEl.style.display = 'block';
+        }
+
+        function applyMonthFilters(options) {
             if (!mapBuildingsData || mapBuildingsData.length === 0) return;
 
+            const shouldFitMap = !options || options.fitMap !== false;
             const labels = getMapMonthLabels();
             const favorites = getMapFavorites();
             const resultCount = document.getElementById('mapSearchResultCount');
@@ -11125,7 +11175,7 @@
                         if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                         bounds.extend(marker.getLatLng());
                     });
-                    if (bounds.isValid()) buildingMap.fitBounds(bounds, { padding: [30, 30] });
+                    if (shouldFitMap && bounds.isValid()) buildingMap.fitBounds(bounds, { padding: [30, 30] });
                 }
                 return;
             }
@@ -11146,11 +11196,12 @@
                 return;
             }
 
-            const totalDevices = matches.reduce((sum, b) => sum + (b.deviceCount || 0), 0);
+            const filterDevices = matches.reduce((sum, b) => sum + getFilterDeviceCountForBuilding(b, labels[b.bin]), 0);
             const favSuffix = favoritedCount > 0 ? ` + ${favoritedCount} ⭐` : '';
+            const deviceLabel = getActiveFilterDeviceLabel(activeMonthFilters);
 
             if (resultCount) {
-                resultCount.textContent = `${matches.length} building${matches.length !== 1 ? 's' : ''} · ${totalDevices} device${totalDevices !== 1 ? 's' : ''} — ${monthList}${favSuffix}`;
+                resultCount.textContent = `${matches.length} building${matches.length !== 1 ? 's' : ''} · ${filterDevices} ${deviceLabel}${filterDevices !== 1 ? 's' : ''} — ${monthList}${favSuffix}`;
                 resultCount.style.display = 'inline';
                 resultCount.style.color = '#17a2b8';
             }
@@ -11169,7 +11220,7 @@
                 }
             });
 
-            if (bounds.isValid() && buildingMap) {
+            if (shouldFitMap && bounds.isValid() && buildingMap) {
                 buildingMap.fitBounds(bounds, { padding: [50, 50] });
             }
         }
@@ -12519,7 +12570,7 @@
             var items = list.querySelectorAll(':scope > div[data-mcp-add-loc]');
             var anyVisible = false;
             items.forEach(function(el) {
-                var text = ((el.dataset.bin || '') + ' ' + (el.dataset.address || '') + ' ' + (el.dataset.custom || '') + ' ' + (el.dataset.coords || '') + ' ' + (el.dataset.house === '1' ? 'house' : '')).toLowerCase();
+                var text = ((el.dataset.bin || '') + ' ' + (el.dataset.address || '') + ' ' + (el.dataset.custom || '') + ' ' + (el.dataset.coords || '')).toLowerCase();
                 var match = !q || text.includes(q);
                 el.style.display = match ? '' : 'none';
                 if (match) anyVisible = true;
@@ -14215,6 +14266,7 @@
                                     <option value="October" ${currentMonthLabel === 'October' ? 'selected' : ''}>October</option>
                                     <option value="November" ${currentMonthLabel === 'November' ? 'selected' : ''}>November</option>
                                     <option value="December" ${currentMonthLabel === 'December' ? 'selected' : ''}>December</option>
+                                    <option value="REVIEW" ${currentMonthLabel === 'REVIEW' ? 'selected' : ''}>REVIEW</option>
                                 </select>
                             </div>
                         </div>
@@ -14566,6 +14618,7 @@
                                     <option value="October" ${currentMonthLabel === 'October' ? 'selected' : ''}>October</option>
                                     <option value="November" ${currentMonthLabel === 'November' ? 'selected' : ''}>November</option>
                                     <option value="December" ${currentMonthLabel === 'December' ? 'selected' : ''}>December</option>
+                                    <option value="REVIEW" ${currentMonthLabel === 'REVIEW' ? 'selected' : ''}>REVIEW</option>
                                 </select>
                             </div>
                         </div>
@@ -14661,7 +14714,7 @@
             // Restore requested view or fit map to show all markers
             if (loadedState && Array.isArray(loadedState.center) && typeof loadedState.zoom === 'number') {
                 buildingMap.setView(loadedState.center, loadedState.zoom);
-            } else if (savedCenter && savedZoom) {
+            } else if (savedCenter && savedZoom !== null && savedZoom !== undefined) {
                 buildingMap.setView(savedCenter, savedZoom);
             } else {
                 const allMarkersCount = buildingsWithCoords.length + additionalLocations.length;
@@ -14695,7 +14748,7 @@
                     activeMonthFilters.clear();
                     monthsToRestore.forEach(m => activeMonthFilters.add(m));
                     updateMonthFilterButtons();
-                    applyMonthFilters();
+                    applyMonthFilters({ fitMap: false });
                 } else if (loadedState.searchTerm) {
                     searchMapBuildings();
                 }
@@ -14708,7 +14761,7 @@
             // Sync month filter button visual state and re-apply active filters
             updateMonthFilterButtons();
             if (activeMonthFilters.size > 0) {
-                applyMonthFilters();
+                applyMonthFilters({ fitMap: false });
             }
 
             // Add legend with hide/show functionality
@@ -23054,7 +23107,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.8</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.0.9</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
