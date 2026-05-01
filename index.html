@@ -1310,6 +1310,10 @@
                             </div>
                         </div>
 
+                        <button id="mapExportExcelButton" onclick="exportMapViewToExcel()" class="mcp-btn" style="background: #28a745; color: white; border-color: #28a745; font-weight: 600; margin-top: 10px;">
+                            Export
+                        </button>
+
                         </div>
                         <!-- Custom resize handles (only active in floating/popped-out mode) -->
                         <div class="mcp-rh mcp-rh-left"   onmousedown="event.stopPropagation();_startPanelResize(event,'left')"></div>
@@ -9879,6 +9883,331 @@
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
             showMapNotification('Map view saved to file', '#6f42c1');
+        }
+
+        const MAP_EXCEL_CELL_LIMIT = 32767;
+        const MAP_EXCEL_CHUNK_SIZE = 30000;
+
+        function mapExcelValue(value) {
+            if (value === null || value === undefined) return '';
+            if (value instanceof Date) return value;
+            if (Array.isArray(value) || typeof value === 'object') {
+                return JSON.stringify(value);
+            }
+            return value;
+        }
+
+        function mapExcelCellValue(value) {
+            if (value === null || value === undefined) return '';
+            if (value instanceof Date || typeof value === 'number' || typeof value === 'boolean') return value;
+
+            const text = String(value);
+            if (text.length <= MAP_EXCEL_CELL_LIMIT) return text;
+
+            const suffix = `\n\n[Cell text truncated to fit Excel's ${MAP_EXCEL_CELL_LIMIT} character limit. See Raw JSON sheet for complete saved map data.]`;
+            return text.slice(0, MAP_EXCEL_CELL_LIMIT - suffix.length) + suffix;
+        }
+
+        function mapExcelTimestamp(value) {
+            if (!value) return '';
+            const date = new Date(value);
+            return isNaN(date.getTime()) ? '' : date.toLocaleString();
+        }
+
+        function mapExcelDate(value) {
+            if (!value) return '';
+            const date = new Date(value);
+            return isNaN(date.getTime()) ? '' : date.toLocaleDateString();
+        }
+
+        function mapExcelSafeSheetName(name, usedNames) {
+            const safeBase = String(name || 'Sheet')
+                .replace(/[\\/?*\[\]:]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 31) || 'Sheet';
+            let safeName = safeBase;
+            let counter = 2;
+            while (usedNames.has(safeName)) {
+                const suffix = ` ${counter}`;
+                safeName = safeBase.slice(0, 31 - suffix.length) + suffix;
+                counter++;
+            }
+            usedNames.add(safeName);
+            return safeName;
+        }
+
+        function appendMapExcelSheet(workbook, usedSheetNames, name, headers, rows) {
+            const safeName = mapExcelSafeSheetName(name, usedSheetNames);
+            const safeHeaders = headers.map(mapExcelCellValue);
+            const normalizedRows = rows && rows.length ? rows : [['']];
+            const safeRows = normalizedRows.map(row => row.map(mapExcelCellValue));
+            const worksheet = XLSX.utils.aoa_to_sheet([safeHeaders, ...safeRows]);
+            worksheet['!cols'] = safeHeaders.map((header, index) => {
+                const values = safeRows.map(row => row[index]);
+                const maxLength = Math.max(
+                    String(header || '').length,
+                    ...values.map(value => String(value === null || value === undefined ? '' : value).length)
+                );
+                return { wch: Math.min(Math.max(maxLength + 2, 12), 80) };
+            });
+            XLSX.utils.book_append_sheet(workbook, worksheet, safeName);
+        }
+
+        function collectMapExcelObjectKeys(items, excludedKeys) {
+            const excluded = new Set(excludedKeys || []);
+            const keys = [];
+            const seen = new Set();
+            (items || []).forEach(item => {
+                if (!item || typeof item !== 'object') return;
+                Object.keys(item).forEach(key => {
+                    if (excluded.has(key) || seen.has(key)) return;
+                    seen.add(key);
+                    keys.push(key);
+                });
+            });
+            return keys;
+        }
+
+        function splitMapExcelJson(jsonString) {
+            const chunks = [];
+            for (let index = 0; index < jsonString.length; index += MAP_EXCEL_CHUNK_SIZE) {
+                chunks.push(jsonString.slice(index, index + MAP_EXCEL_CHUNK_SIZE));
+            }
+            return chunks;
+        }
+
+        function splitMapExcelSectionRows(sectionName, value) {
+            const text = mapExcelValue(value);
+            return splitMapExcelJson(String(text)).map((chunk, index) => [
+                sectionName,
+                index + 1,
+                chunk
+            ]);
+        }
+
+        function getMapExcelBuildingAddress(bin, group, view) {
+            if (group && group.address) return group.address;
+            const stateSources = [view.completed, view.inProcess, view.hold, view.favorites, view.hidden];
+            for (const source of stateSources) {
+                if (source && source[bin] && source[bin].address) return source[bin].address;
+            }
+            return '';
+        }
+
+        function exportMapViewToExcel() {
+            const hasResults = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
+            if (!hasResults) {
+                alert('No map data to export. Run a bulk lookup or load a map view file first.');
+                return;
+            }
+            if (!window.XLSX) {
+                alert('Excel export library is not available. Please check your internet connection and try again.');
+                return;
+            }
+
+            try {
+                const payload = buildMapViewExportPayload();
+                const view = payload.view || {};
+                const binGroups = (view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups) || {};
+                const notFound = (view.lastBulkSearchResults && view.lastBulkSearchResults.notFound) || [];
+                const additionalLocations = Array.isArray(view.additionalLocations) ? view.additionalLocations : [];
+                const workbook = XLSX.utils.book_new();
+                const usedSheetNames = new Set();
+                const jsonString = JSON.stringify(payload, null, 2);
+
+                const buildingEntries = Object.entries(binGroups);
+                const allDevices = [];
+                const allViolations = [];
+                let activeDeviceCount = 0;
+                buildingEntries.forEach(([bin, group]) => {
+                    const devices = Array.isArray(group.devices) ? group.devices : [];
+                    activeDeviceCount += countMapJobDevices(devices);
+                    devices.forEach(device => {
+                        allDevices.push({ bin, group, device });
+                        (Array.isArray(device.violations) ? device.violations : []).forEach(violation => {
+                            allViolations.push({ bin, group, device, violation });
+                        });
+                    });
+                });
+
+                appendMapExcelSheet(workbook, usedSheetNames, 'Summary', ['Field', 'Value'], [
+                    ['View Name', view.name || 'Untitled View'],
+                    ['Source File', currentMapViewFileName || ''],
+                    ['App', payload.app || ''],
+                    ['Type', payload.type || ''],
+                    ['Version', payload.version || ''],
+                    ['Exported At', mapExcelTimestamp(payload.exportedAt)],
+                    ['Created At', mapExcelTimestamp(view.createdAt)],
+                    ['Updated At', mapExcelTimestamp(view.updatedAt)],
+                    ['Buildings', buildingEntries.length],
+                    ['Devices', allDevices.length],
+                    ['Active Map Job Devices', activeDeviceCount],
+                    ['Violations Saved In View', allViolations.length],
+                    ['Not Found Device Numbers', notFound.length],
+                    ['Additional Locations', additionalLocations.length],
+                    ['Favorites', Object.keys(view.favorites || {}).length],
+                    ['Hidden', Object.keys(view.hidden || {}).length],
+                    ['Completed', Object.keys(view.completed || {}).length],
+                    ['In Process', Object.keys(view.inProcess || {}).length],
+                    ['On Hold', Object.keys(view.hold || {}).length],
+                    ['Scheduled Date Buildings', Object.keys(view.testDates || {}).length],
+                    ['Note Buildings', Object.keys(view.notes || {}).length],
+                    ['Month Assignments', Array.isArray(view.monthAssignments) ? view.monthAssignments.length : Object.keys(view.monthLabels || {}).length],
+                    ['Map Center', view.mapState && view.mapState.center ? view.mapState.center.join(', ') : ''],
+                    ['Map Zoom', view.mapState && view.mapState.zoom !== null ? view.mapState.zoom : ''],
+                    ['Map Search Term', view.mapState ? view.mapState.searchTerm || '' : ''],
+                    ['Map Month Filters', view.mapState && Array.isArray(view.mapState.monthFilters) ? view.mapState.monthFilters.join(', ') : '']
+                ]);
+
+                const groupKeys = collectMapExcelObjectKeys(buildingEntries.map(([, group]) => group), ['devices']);
+                const buildingHeaders = [
+                    'BIN', 'Address', 'Latitude', 'Longitude', 'Device Count', 'Active Map Job Device Count',
+                    'Violation Count', 'Favorite', 'Hidden', 'Completed', 'Completed Date', 'In Process',
+                    'In Process Date', 'On Hold', 'Scheduled Test Dates', 'Completed Scheduled Dates',
+                    'Note', 'Month Label', ...groupKeys.map(key => `Group: ${key}`)
+                ];
+                const buildingRows = buildingEntries.map(([bin, group]) => {
+                    const devices = Array.isArray(group.devices) ? group.devices : [];
+                    const completedData = view.completed && view.completed[bin] ? view.completed[bin] : null;
+                    const inProcessData = view.inProcess && view.inProcess[bin] ? view.inProcess[bin] : null;
+                    return [
+                        bin,
+                        getMapExcelBuildingAddress(bin, group, view),
+                        group.latitude || '',
+                        group.longitude || '',
+                        devices.length,
+                        countMapJobDevices(devices),
+                        devices.reduce((sum, device) => sum + (Array.isArray(device.violations) ? device.violations.length : 0), 0),
+                        view.favorites && view.favorites[bin] ? 'Yes' : '',
+                        view.hidden && view.hidden[bin] ? 'Yes' : '',
+                        completedData ? 'Yes' : '',
+                        completedData ? mapExcelTimestamp(completedData.timestamp) : '',
+                        inProcessData ? 'Yes' : '',
+                        inProcessData ? (inProcessData.date || mapExcelTimestamp(inProcessData.timestamp)) : '',
+                        view.hold && view.hold[bin] ? 'Yes' : '',
+                        Array.isArray(view.testDates && view.testDates[bin]) ? view.testDates[bin].join('; ') : '',
+                        completedData && Array.isArray(completedData.scheduledDates) ? completedData.scheduledDates.join('; ') : '',
+                        view.notes && view.notes[bin] ? view.notes[bin] : '',
+                        view.monthLabels && view.monthLabels[bin] ? view.monthLabels[bin] : '',
+                        ...groupKeys.map(key => mapExcelValue(group[key]))
+                    ];
+                });
+                appendMapExcelSheet(workbook, usedSheetNames, 'Buildings', buildingHeaders, buildingRows);
+
+                const deviceKeys = collectMapExcelObjectKeys(allDevices.map(item => item.device), ['violations']);
+                const deviceHeaders = ['BIN', 'Building Address', 'Violation Count', ...deviceKeys];
+                const deviceRows = allDevices.map(({ bin, group, device }) => [
+                    bin,
+                    getMapExcelBuildingAddress(bin, group, view),
+                    Array.isArray(device.violations) ? device.violations.length : 0,
+                    ...deviceKeys.map(key => mapExcelValue(device[key]))
+                ]);
+                appendMapExcelSheet(workbook, usedSheetNames, 'Devices', deviceHeaders, deviceRows);
+
+                const violationKeys = collectMapExcelObjectKeys(allViolations.map(item => item.violation), []);
+                const violationHeaders = ['BIN', 'Building Address', 'Device Number', ...violationKeys];
+                const violationRows = allViolations.map(({ bin, group, device, violation }) => [
+                    bin,
+                    getMapExcelBuildingAddress(bin, group, view),
+                    device.device_number || '',
+                    ...violationKeys.map(key => mapExcelValue(violation[key]))
+                ]);
+                appendMapExcelSheet(workbook, usedSheetNames, 'Violations', violationHeaders, violationRows);
+
+                const additionalKeys = collectMapExcelObjectKeys(additionalLocations, []);
+                appendMapExcelSheet(
+                    workbook,
+                    usedSheetNames,
+                    'Additional Locations',
+                    additionalKeys.length ? additionalKeys : ['Additional Locations'],
+                    additionalLocations.map(location => additionalKeys.map(key => mapExcelValue(location[key])))
+                );
+
+                const mapListRows = [];
+                [
+                    ['Favorite', view.favorites || {}],
+                    ['Hidden', view.hidden || {}],
+                    ['Completed', view.completed || {}],
+                    ['In Process', view.inProcess || {}],
+                    ['On Hold', view.hold || {}]
+                ].forEach(([listName, entries]) => {
+                    Object.entries(entries || {}).forEach(([bin, data]) => {
+                        mapListRows.push([
+                            listName,
+                            bin,
+                            getMapExcelBuildingAddress(bin, binGroups[bin], view),
+                            data && data.date ? data.date : '',
+                            data && data.timestamp ? mapExcelTimestamp(data.timestamp) : '',
+                            data && Array.isArray(data.scheduledDates) ? data.scheduledDates.join('; ') : '',
+                            mapExcelValue(data)
+                        ]);
+                    });
+                });
+                appendMapExcelSheet(workbook, usedSheetNames, 'Map Lists', ['List', 'BIN', 'Address', 'Date', 'Timestamp', 'Scheduled Dates', 'Saved Entry JSON'], mapListRows);
+
+                const dateRows = [];
+                Object.entries(view.testDates || {}).forEach(([bin, dates]) => {
+                    (Array.isArray(dates) ? dates : [dates]).filter(Boolean).forEach(date => {
+                        dateRows.push(['Scheduled Test Date', bin, getMapExcelBuildingAddress(bin, binGroups[bin], view), date, mapExcelDate(date)]);
+                    });
+                });
+                Object.entries(view.completed || {}).forEach(([bin, data]) => {
+                    if (data && Array.isArray(data.scheduledDates)) {
+                        data.scheduledDates.filter(Boolean).forEach(date => {
+                            dateRows.push(['Completed Saved Scheduled Date', bin, getMapExcelBuildingAddress(bin, binGroups[bin], view), date, mapExcelDate(date)]);
+                        });
+                    }
+                });
+                appendMapExcelSheet(workbook, usedSheetNames, 'Dates', ['Date Type', 'BIN', 'Address', 'Saved Date', 'Formatted Date'], dateRows);
+
+                const monthRows = Array.isArray(view.monthAssignments) && view.monthAssignments.length
+                    ? view.monthAssignments.map(item => [item.bin || '', item.address || getMapExcelBuildingAddress(item.bin, binGroups[item.bin], view), item.month || '', item.source || '', mapExcelValue(item)])
+                    : Object.entries(view.monthLabels || {}).map(([bin, month]) => [bin, getMapExcelBuildingAddress(bin, binGroups[bin], view), month, '', '']);
+                appendMapExcelSheet(workbook, usedSheetNames, 'Month Assignments', ['BIN', 'Address', 'Month', 'Source', 'Saved Entry JSON'], monthRows);
+
+                const notFoundRows = (Array.isArray(notFound) ? notFound : []).map(item => {
+                    if (item && typeof item === 'object') {
+                        return [item.device_number || item.deviceNumber || '', mapExcelValue(item)];
+                    }
+                    return [item, ''];
+                });
+                appendMapExcelSheet(workbook, usedSheetNames, 'Not Found', ['Device Number', 'Saved Entry JSON'], notFoundRows);
+
+                const rawSectionRows = [
+                    ...splitMapExcelSectionRows('bulkDeviceNumbers', view.bulkDeviceNumbers || ''),
+                    ...splitMapExcelSectionRows('favorites', view.favorites || {}),
+                    ...splitMapExcelSectionRows('hidden', view.hidden || {}),
+                    ...splitMapExcelSectionRows('completed', view.completed || {}),
+                    ...splitMapExcelSectionRows('inProcess', view.inProcess || {}),
+                    ...splitMapExcelSectionRows('hold', view.hold || {}),
+                    ...splitMapExcelSectionRows('testDates', view.testDates || {}),
+                    ...splitMapExcelSectionRows('notes', view.notes || {}),
+                    ...splitMapExcelSectionRows('monthLabels', view.monthLabels || {}),
+                    ...splitMapExcelSectionRows('monthAssignments', view.monthAssignments || []),
+                    ...splitMapExcelSectionRows('additionalLocations', view.additionalLocations || []),
+                    ...splitMapExcelSectionRows('mapState', view.mapState || {})
+                ];
+                appendMapExcelSheet(workbook, usedSheetNames, 'Raw Saved Sections', ['Saved Section', 'Chunk', 'Value'], rawSectionRows);
+
+                appendMapExcelSheet(
+                    workbook,
+                    usedSheetNames,
+                    'Raw JSON',
+                    ['Chunk', 'JSON'],
+                    splitMapExcelJson(jsonString).map((chunk, index) => [index + 1, chunk])
+                );
+
+                const baseName = (currentMapViewFileName || view.name || 'map-view')
+                    .replace(/\.json$/i, '')
+                    .replace(/[^\w\-]+/g, '-')
+                    .replace(/^-+|-+$/g, '') || 'map-view';
+                XLSX.writeFile(workbook, `${baseName}-map-view-${new Date().toISOString().slice(0, 10)}.xlsx`);
+                showMapNotification('Map view exported to Excel', '#28a745');
+            } catch (error) {
+                console.error('Error exporting map view to Excel:', error);
+                alert(`Error exporting map view to Excel: ${error.message || 'Please try again.'}`);
+            }
         }
 
         function renderLoadedMapViewSummary(view) {
@@ -23705,7 +24034,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.2.1</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.2.2</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
