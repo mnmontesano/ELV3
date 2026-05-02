@@ -11589,6 +11589,7 @@
             const counts = {};
             ALL_MONTHS.forEach(m => counts[m] = 0);
             (mapBuildingsData || []).forEach(building => {
+                if (isBuildingHiddenByMapSettings(building)) return;
                 const month = labels[building.bin];
                 if (counts[month] !== undefined) {
                     counts[month] += getFilterDeviceCountForBuilding(building, month);
@@ -11642,8 +11643,9 @@
             const favorites = getMapFavorites();
             const binGroups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
             const activeMonths = [...activeMonthFilters];
-            const matches = (mapBuildingsData || []).filter(b => activeMonthFilters.has(labels[b.bin]));
-            const favoritedCount = (mapBuildingsData || []).filter(b => favorites[b.bin] && !activeMonthFilters.has(labels[b.bin])).length;
+            const visibleFilterBuildings = (mapBuildingsData || []).filter(b => !isBuildingHiddenByMapSettings(b));
+            const matches = visibleFilterBuildings.filter(b => activeMonthFilters.has(labels[b.bin]));
+            const favoritedCount = visibleFilterBuildings.filter(b => favorites[b.bin] && !activeMonthFilters.has(labels[b.bin])).length;
             const filterDevices = matches.reduce((sum, b) => sum + getFilterDeviceCountForBuilding(b, labels[b.bin]), 0);
             const notices = [];
             const countStateInCurrentView = state => Object.keys(state || {}).filter(bin => !binGroups || Object.keys(binGroups).length === 0 || binGroups[bin]).length;
@@ -11682,6 +11684,28 @@
             statusEl.style.display = 'block';
         }
 
+        function isBuildingHiddenByMapSettings(building) {
+            if (!building) return true;
+            return !!(
+                building.isHidden ||
+                (isHideCompletedActive() && building.isCompleted) ||
+                (isHideInProcessActive() && building.isInProcess) ||
+                (isHideHoldActive() && building.isHold)
+            );
+        }
+
+        function isBuildingVisibleInCurrentMapFilters(building) {
+            if (!building || isBuildingHiddenByMapSettings(building)) return false;
+
+            const labels = getMapMonthLabels();
+            const favorites = getMapFavorites();
+
+            if (isHideMonthLabeledActive() && labels[building.bin]) return false;
+            if (activeMonthFilters.size === 0) return true;
+
+            return activeMonthFilters.has(labels[building.bin]) || !!favorites[building.bin];
+        }
+
         function applyMonthFilters(options) {
             if (!mapBuildingsData || mapBuildingsData.length === 0) return;
 
@@ -11689,7 +11713,6 @@
             const labels = getMapMonthLabels();
             const favorites = getMapFavorites();
             const resultCount = document.getElementById('mapSearchResultCount');
-            const hideCompleted = isHideCompletedActive();
 
             if (activeMonthFilters.size === 0) {
                 if (resultCount) resultCount.style.display = 'none';
@@ -11697,7 +11720,7 @@
                     const bounds = L.latLngBounds();
                     mapMarkers.forEach((marker, index) => {
                         const building = mapBuildingsData[index];
-                        const shouldShow = building && !(hideCompleted && building.isCompleted);
+                        const shouldShow = isBuildingVisibleInCurrentMapFilters(building);
                         if (shouldShow) {
                             if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                             bounds.extend(marker.getLatLng());
@@ -11710,8 +11733,9 @@
                 return;
             }
 
-            const matches = mapBuildingsData.filter(b => activeMonthFilters.has(labels[b.bin]));
-            const favoritedCount = mapBuildingsData.filter(b => favorites[b.bin] && !activeMonthFilters.has(labels[b.bin])).length;
+            const visibleFilterBuildings = mapBuildingsData.filter(b => !isBuildingHiddenByMapSettings(b));
+            const matches = visibleFilterBuildings.filter(b => activeMonthFilters.has(labels[b.bin]));
+            const favoritedCount = visibleFilterBuildings.filter(b => favorites[b.bin] && !activeMonthFilters.has(labels[b.bin])).length;
             const monthList = [...activeMonthFilters].join(', ');
 
             if (matches.length === 0 && favoritedCount === 0) {
@@ -11742,7 +11766,7 @@
                 if (!building) return;
                 const matchesFilter = activeMonthFilters.has(labels[building.bin]);
                 const isFavorited = !!favorites[building.bin];
-                if (matchesFilter || isFavorited) {
+                if ((matchesFilter || isFavorited) && !isBuildingHiddenByMapSettings(building)) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     bounds.extend(marker.getLatLng());
                 } else {
@@ -14907,34 +14931,33 @@
 
             // Get all buildings with valid coordinates
             const buildingsWithCoords = [];
-            let totalDevices = 0;
             let hiddenCount = 0;
             
             for (const [bin, group] of Object.entries(binGroups)) {
-                // Skip hidden buildings
-                if (hidden[bin]) {
-                    hiddenCount++;
-                    continue;
-                }
-                
                 let countedHiddenForBin = false;
 
-                // Keep completed buildings searchable/filterable even when hidden by default.
-                if (hideCompleted && completed[bin]) {
+                // Keep hidden buildings in map data so search can reveal them temporarily.
+                if (hidden[bin]) {
                     hiddenCount++;
                     countedHiddenForBin = true;
                 }
+
+                // Keep completed buildings searchable/filterable even when hidden by default.
+                if (hideCompleted && completed[bin]) {
+                    if (!countedHiddenForBin) hiddenCount++;
+                    countedHiddenForBin = true;
+                }
                 
-                // Skip in-process buildings if hide setting is on
+                // Keep in-process buildings searchable even when hidden by this setting.
                 if (hideInProcess && inProcess[bin]) {
                     if (!countedHiddenForBin) hiddenCount++;
-                    continue;
+                    countedHiddenForBin = true;
                 }
 
-                // Skip hold buildings if hide setting is on
+                // Keep hold buildings searchable even when hidden by this setting.
                 if (hideHold && hold[bin]) {
                     if (!countedHiddenForBin) hiddenCount++;
-                    continue;
+                    countedHiddenForBin = true;
                 }
                 
                 if (group.latitude && group.longitude) {
@@ -15049,20 +15072,22 @@
                             readyDevices,
                             notReadyDevices,
                             removedDeletedDevices,
+                            isHidden: !!hidden[bin],
                             isCompleted: !!completed[bin],
                             isInProcess: !!inProcess[bin],
                             inProcessDate: inProcess[bin] ? inProcess[bin].date : null,
                             isHold: !!hold[bin]
                         });
-                        totalDevices += activeDeviceCount;
                     }
                 }
             }
 
             // Update building count display
             const countDisplay = document.getElementById('mapBuildingCount');
+            const visibleBuildingsWithCoords = buildingsWithCoords.filter(building => !isBuildingHiddenByMapSettings(building));
+            const visibleDevices = visibleBuildingsWithCoords.reduce((sum, building) => sum + building.deviceCount, 0);
             const hiddenText = hiddenCount > 0 ? ` (${hiddenCount} hidden)` : '';
-            countDisplay.textContent = `${buildingsWithCoords.length} buildings with ${totalDevices} devices${hiddenText}`;
+            countDisplay.textContent = `${visibleBuildingsWithCoords.length} buildings with ${visibleDevices} devices${hiddenText}`;
 
             if (buildingsWithCoords.length === 0) {
                 mapContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-color);"><p>No buildings with location data found. The API may not have coordinates for these addresses.</p></div>';
@@ -15176,7 +15201,7 @@
 
                 const marker = L.marker([building.latitude, building.longitude], { icon })
                     .addTo(buildingMap);
-                const hiddenByCompletedFilter = hideCompleted && isCompleted;
+                const hiddenByCurrentSettings = isBuildingHiddenByMapSettings(building);
 
                 // Create popup content with detailed device testing info
                 const readyList = building.readyDevices.slice(0, 5).map(d => 
@@ -15473,7 +15498,7 @@
 
                 marker.bindPopup(popupContent);
                 mapMarkers.push(marker);
-                if (hiddenByCompletedFilter) {
+                if (hiddenByCurrentSettings) {
                     buildingMap.removeLayer(marker);
                 } else {
                     bounds.extend([building.latitude, building.longitude]);
@@ -15942,6 +15967,32 @@
         
         // Store buildings data for search functionality
         let mapBuildingsData = [];
+
+        function restoreMapVisibilityForCurrentFilters(options) {
+            if (!buildingMap) return;
+
+            const shouldFitMap = !options || options.fitMap !== false;
+            const bounds = L.latLngBounds();
+
+            mapMarkers.forEach((marker, index) => {
+                const building = mapBuildingsData[index];
+                if (isBuildingVisibleInCurrentMapFilters(building)) {
+                    if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                    bounds.extend(marker.getLatLng());
+                } else if (buildingMap.hasLayer(marker)) {
+                    buildingMap.removeLayer(marker);
+                }
+            });
+
+            additionalLocationMarkers.forEach(marker => {
+                if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                bounds.extend(marker.getLatLng());
+            });
+
+            if (shouldFitMap && bounds.isValid()) {
+                buildingMap.fitBounds(bounds, { padding: [30, 30] });
+            }
+        }
         
         // Search buildings on the map
         function searchMapBuildings() {
@@ -16005,37 +16056,25 @@
                 resultCount.textContent = 'No matches found';
                 resultCount.style.display = 'inline';
                 resultCount.style.color = '#ff6b6b';
-                if (buildingMap) {
-                    mapMarkers.forEach(marker => {
-                        if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
-                    });
-                    additionalLocationMarkers.forEach(marker => {
-                        if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
-                    });
-                }
+                restoreMapVisibilityForCurrentFilters({ fitMap: false });
                 return;
             }
 
-            // Search acts as a temporary visibility override, so completed buildings
-            // hidden by the default map setting can still be shown when matched.
+            // Search acts as a temporary visibility override. Keep the current
+            // filter view intact, then add matched markers even if filtered out.
             const matchedBuildingBins = new Set(buildingMatches.map(building => building.bin));
-            const matchedAdditionalIndexes = new Set(additionalMatches.map(({ index }) => index));
             if (buildingMap) {
                 mapMarkers.forEach((marker, index) => {
                     const building = mapBuildingsData[index];
                     if (!building) return;
-                    if (matchedBuildingBins.has(building.bin)) {
+                    if (isBuildingVisibleInCurrentMapFilters(building) || matchedBuildingBins.has(building.bin)) {
                         if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     } else if (buildingMap.hasLayer(marker)) {
                         buildingMap.removeLayer(marker);
                     }
                 });
-                additionalLocationMarkers.forEach((marker, index) => {
-                    if (matchedAdditionalIndexes.has(index)) {
-                        if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
-                    } else if (buildingMap.hasLayer(marker)) {
-                        buildingMap.removeLayer(marker);
-                    }
+                additionalLocationMarkers.forEach(marker => {
+                    if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                 });
             }
             
@@ -16084,31 +16123,11 @@
             if (searchInput) searchInput.value = '';
             if (resultCount) resultCount.style.display = 'none';
 
-            // Clear month filter state
-            activeMonthFilters.clear();
-            updateMonthFilterButtons();
-            
-            // Restore default visibility after search/month filters are cleared.
-            if (buildingMap && mapMarkers.length > 0) {
-                const bounds = L.latLngBounds();
-                const hideCompleted = isHideCompletedActive();
-                mapMarkers.forEach((marker, index) => {
-                    const building = mapBuildingsData[index];
-                    const shouldShow = building && !(hideCompleted && building.isCompleted);
-                    if (shouldShow) {
-                        if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
-                        bounds.extend(marker.getLatLng());
-                    } else if (buildingMap.hasLayer(marker)) {
-                        buildingMap.removeLayer(marker);
-                    }
-                });
-                additionalLocationMarkers.forEach(marker => {
-                    if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
-                    bounds.extend(marker.getLatLng());
-                });
-                if (bounds.isValid()) {
-                    buildingMap.fitBounds(bounds, { padding: [30, 30] });
-                }
+            // Restore the user's current filters after removing the temporary search override.
+            if (activeMonthFilters.size > 0) {
+                applyMonthFilters();
+            } else {
+                restoreMapVisibilityForCurrentFilters();
             }
         }
 
@@ -24355,7 +24374,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.3</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.4</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
