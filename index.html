@@ -21599,15 +21599,17 @@
             if (fileInput) fileInput.value = '';
         }
         if (headerUploadBtn) headerUploadBtn.style.display = (!isVisible && elv3ScanItems.length > 0) ? 'inline-block' : 'none';
-        if (leftPanel) leftPanel.classList.toggle('elv3-scan-upload-centered', isVisible && elv3ScanItems.length === 0);
+        if (leftPanel) leftPanel.classList.toggle('elv3-scan-upload-centered', isVisible);
     }
 
     function showELV3ScanUploadControls() {
         var errorDiv = document.getElementById('elv3ScanError');
         var progressDiv = document.getElementById('elv3ScanProgress');
+        var resultDiv = document.getElementById('elv3ScanResult');
 
         if (errorDiv) errorDiv.style.display = 'none';
         if (progressDiv) progressDiv.style.display = 'none';
+        if (resultDiv) resultDiv.style.display = 'none';
         setELV3ScanUploadControlsVisible(true);
     }
 
@@ -23195,8 +23197,15 @@
         }
 
         // Flattened ELV3A continuation pages can expose status text as "Text FieldN"
-        // instead of reliable SAT/UNSAT checkbox names. The field numbers advance by
-        // three per device, so Text Field16/19/22/25 map to devices 6-9 on page 3.
+        // instead of reliable SAT/UNSAT checkbox names. These field numbers reset in
+        // groups around each ELV3/ELV3A sheet, so use the known form map instead of a
+        // simple division formula (for example, Text Field48 is device 16).
+        const flattenedStatusTextFieldDeviceMap = {
+            0: 1, 3: 2, 6: 3, 9: 4, 12: 5,
+            16: 6, 19: 7, 22: 8, 25: 9,
+            28: 10, 31: 11, 34: 12, 37: 13, 40: 14, 43: 15, 48: 16,
+            51: 17, 54: 18
+        };
         for (const [fieldName, value] of Object.entries(formData)) {
             if (!value) continue;
 
@@ -23207,7 +23216,7 @@
             if (statusText !== 'satisfactory' && statusText !== 'unsatisfactory') continue;
 
             const fieldNum = parseInt(textStatusMatch[1]);
-            const deviceIdx = Math.floor(fieldNum / 3) + 1;
+            const deviceIdx = flattenedStatusTextFieldDeviceMap[fieldNum];
             if (!devices[deviceIdx]) continue;
 
             if (!deviceStatus[deviceIdx]) deviceStatus[deviceIdx] = {};
@@ -23353,14 +23362,12 @@
         const bracketViolations = {}; // `${deviceIdx}_${rowIdx}` -> { partCode, conditionCode, remedyCode, deviceIdx, rowIdx }
         
         // Returns { deviceIdx, rowIdx } for a bracket-notation violation field.
-        // Prefix 1-5 → devices 6-10 (one device per prefix, arrayIdx = violation column).
-        // Prefix 6   → devices 11+ (arrayIdx selects the device, not a column).
+        // Prefix 1-5  → devices 6-10  (one device per prefix, arrayIdx = violation column).
+        // Prefix 6+   → devices 11+   (one device per prefix, arrayIdx = violation column).
         const _calcBracketDeviceAndRow = function(prefixStr, arrayIdx) {
             const prefix = prefixStr ? parseInt(prefixStr) : 1; // no prefix ≡ 1
-            if (prefix <= 5) {
+            if (prefix >= 1) {
                 return { deviceIdx: 5 + prefix, rowIdx: arrayIdx };
-            } else if (prefix === 6) {
-                return { deviceIdx: 11 + arrayIdx, rowIdx: 0 };
             }
             return null;
         };
@@ -23796,6 +23803,7 @@
         // Step 6: Separate devices into violations, satisfactory, and missing status check
         result.devicesWithViolations = [];
         result.satisfactoryDevices = [];
+        result.devicesMissingViolationDetails = [];
         const needsStatusCheckSet = new Set(result.devicesWithoutStatusCheck || []);
         
         for (const device of result.devices) {
@@ -23804,8 +23812,12 @@
                 continue;
             }
             const hasViolations = result.violationsByDevice[device.deviceNumber]?.length > 0;
+            const deviceIdx = Object.entries(devices).find(([idx, num]) => num === device.deviceNumber)?.[0];
+            const hasDefectComment = deviceIdx && deviceComments[deviceIdx] && deviceComments[deviceIdx].length > 0;
             if (hasViolations) {
                 result.devicesWithViolations.push(device);
+            } else if (device.unsatisfactory || hasDefectComment) {
+                result.devicesMissingViolationDetails.push(device);
             } else if (device.satisfactory) {
                 result.satisfactoryDevices.push(device);
             } else {
@@ -24230,6 +24242,33 @@
         }
     }
 
+    function toggleELV3ScanFiledDevice(deviceNumber, event) {
+        if (event) event.stopPropagation();
+        if (!elv3ScanItems.length) return;
+
+        var item = elv3ScanItems[elv3ScanCurrentIndex];
+        if (!item || !item.result) return;
+
+        if (!item.result.filedViolationDevices) item.result.filedViolationDevices = {};
+        item.result.filedViolationDevices[deviceNumber] = !item.result.filedViolationDevices[deviceNumber];
+
+        var resultContent = document.getElementById('elv3ScanResultContent');
+        renderELV3ScanResult(item.result, resultContent);
+    }
+
+    function toggleELV3ScanShowFiled(event) {
+        if (event) event.stopPropagation();
+        if (!elv3ScanItems.length) return;
+
+        var item = elv3ScanItems[elv3ScanCurrentIndex];
+        if (!item || !item.result) return;
+
+        item.result.showFiledViolationDevices = event && event.target ? event.target.checked : !item.result.showFiledViolationDevices;
+
+        var resultContent = document.getElementById('elv3ScanResultContent');
+        renderELV3ScanResult(item.result, resultContent);
+    }
+
     async function copyAllViolations(event) {
         if (!elv3ScanItems.length) return;
         var item = elv3ScanItems[elv3ScanCurrentIndex];
@@ -24244,7 +24283,12 @@
 
         var vbd = data.violationsByDevice || {};
         var needsCheck = new Set(data.devicesWithoutStatusCheck || []);
-        var vbdFiltered = objectFromEntriesSafe(Object.entries(vbd).filter(function(e) { return !needsCheck.has(e[0]); }));
+        var missingDetails = data.devicesMissingViolationDetails || [];
+        var filedDevices = data.filedViolationDevices || {};
+        var showFiled = data.showFiledViolationDevices === true;
+        var vbdFiltered = objectFromEntriesSafe(Object.entries(vbd).filter(function(e) {
+            return !needsCheck.has(e[0]) && (showFiled || !filedDevices[e[0]]);
+        }));
         var devicesWithV = Object.keys(vbdFiltered).length;
         var satisfactory = data.satisfactoryDevices || [];
         lines.push('Devices with Violations: ' + devicesWithV);
@@ -24283,6 +24327,14 @@
             lines.push('--- MISSING STATUS CHECK ---');
             needsCheck.forEach(function(dn) {
                 lines.push(dn + '  ⚠ Needs Satisfactory/Unsatisfactory check');
+            });
+            lines.push('');
+        }
+
+        if (missingDetails.length > 0) {
+            lines.push('--- UNSATISFACTORY DEVICES NEED DEFECT DETAILS ---');
+            missingDetails.forEach(function(d) {
+                lines.push(d.deviceNumber + '  ⚠ Unsatisfactory, but no defect details were read');
             });
             lines.push('');
         }
@@ -24349,11 +24401,18 @@
             return;
         }
         const devicesWithoutStatusCheck = data.devicesWithoutStatusCheck || [];
+        const devicesMissingViolationDetails = data.devicesMissingViolationDetails || [];
         const devicesWithoutStatusCheckSet = new Set(devicesWithoutStatusCheck);
         const violationsByDeviceFiltered = objectFromEntriesSafe(
             Object.entries(data.violationsByDevice || {}).filter(([dn]) => !devicesWithoutStatusCheckSet.has(dn))
         );
-        const devicesWithViolationsCount = Object.keys(violationsByDeviceFiltered).length;
+        const filedViolationDevices = data.filedViolationDevices || {};
+        const showFiledViolationDevices = data.showFiledViolationDevices === true;
+        const violationDeviceEntries = Object.entries(violationsByDeviceFiltered);
+        const visibleViolationDeviceEntries = violationDeviceEntries.filter(([dn]) => showFiledViolationDevices || !filedViolationDevices[dn]);
+        const filedViolationDevicesCount = violationDeviceEntries.filter(([dn]) => filedViolationDevices[dn]).length;
+        const devicesWithViolationsCount = visibleViolationDeviceEntries.length;
+        const totalDevicesWithViolationsCount = violationDeviceEntries.length;
         const satisfactoryDevices = data.satisfactoryDevices || [];
         const totalDevices = (data.devices || []).length;
         
@@ -24364,9 +24423,11 @@
                 ${data.bin ? `<p><strong>BIN:</strong> <span class="elv3-scan-bin-copy" data-bin="${String(data.bin).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onclick="copyBinToClipboard(this.getAttribute('data-bin'), event)" title="Click to copy">${String(data.bin).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></p>` : ''}
                 ${data.inspectorName ? `<p><strong>Inspector:</strong> ${data.inspectorName}</p>` : ''}
                 <p><strong>Devices Scanned:</strong> ${totalDevices}</p>
-                <p><strong>Devices with Violations:</strong> ${devicesWithViolationsCount}</p>
+                <p><strong>Devices with Violations:</strong> ${devicesWithViolationsCount}${filedViolationDevicesCount > 0 ? ` of ${totalDevicesWithViolationsCount} remaining` : ''}</p>
+                ${filedViolationDevicesCount > 0 ? `<p><strong>Filed Devices Hidden:</strong> ${showFiledViolationDevices ? 0 : filedViolationDevicesCount}</p>` : ''}
                 <p><strong>Satisfactory Devices:</strong> ${satisfactoryDevices.length}</p>
                 <p><strong>Devices Need Review:</strong> ${devicesWithoutStatusCheck.length}</p>
+                ${devicesMissingViolationDetails.length > 0 ? `<p><strong>Unsatisfactory Missing Details:</strong> ${devicesMissingViolationDetails.length}</p>` : ''}
                 <p><strong>Total Violations:</strong> ${data.violations.length}</p>
             </div>
             <div class="elv3-scan-action-row">
@@ -24374,23 +24435,39 @@
                     <span class="copy-icon">📋</span>
                     <span class="copy-text">Copy All</span>
                 </button>
+                ${filedViolationDevicesCount > 0 ? `
+                    <label class="elv3-scan-show-filed-toggle">
+                        <input type="checkbox" onchange="toggleELV3ScanShowFiled(event)" ${showFiledViolationDevices ? 'checked' : ''}>
+                        <span>Show filed</span>
+                    </label>
+                ` : ''}
             </div>
         `;
         
         resultHtml += `<div class="elv3-scan-results-scroll">`;
         
         // Show devices with violations (excluding devices in Missing Status Check)
-        if (Object.keys(violationsByDeviceFiltered).length > 0) {
+        if (violationDeviceEntries.length > 0) {
             resultHtml += `
-                <h5 class="elv3-scan-section-title violations">⚠ Devices with Violations</h5>
-                ${Object.entries(violationsByDeviceFiltered).map(([deviceNumber, violations]) => {
+                <h5 class="elv3-scan-section-title violations">⚠ Devices with Violations${filedViolationDevicesCount > 0 && !showFiledViolationDevices ? ` (${devicesWithViolationsCount} remaining)` : ''}</h5>
+                ${visibleViolationDeviceEntries.length === 0 ? `
+                    <div class="elv3-scan-all-filed-message">All violation devices are marked filed. Turn on "Show filed" to view them again.</div>
+                ` : ''}
+                ${visibleViolationDeviceEntries.map(([deviceNumber, violations]) => {
                     const deviceFieldText = violations[0]?.deviceFieldText || null;
                     const escapedDeviceNumber = deviceNumber.replace(/'/g, "\\'");
+                    const isFiled = filedViolationDevices[deviceNumber] === true;
                     return `
-                    <div class="elv3-scan-device-group">
+                    <div class="elv3-scan-device-group ${isFiled ? 'elv3-scan-device-filed' : ''}">
                         <div class="elv3-scan-device-header violations">
                             <span class="elv3-scan-device-number">${deviceNumber}${deviceFieldText ? ` <span class="elv3-scan-device-note">${deviceFieldText}</span>` : ''}</span>
-                            <span class="elv3-scan-device-count">${violations.length} violation${violations.length > 1 ? 's' : ''}</span>
+                            <div class="elv3-scan-device-header-actions">
+                                <label class="elv3-scan-filed-toggle" title="Mark this device as filed and hide it">
+                                    <input type="checkbox" onclick="toggleELV3ScanFiledDevice('${escapedDeviceNumber}', event)" ${isFiled ? 'checked' : ''}>
+                                    <span>Filed</span>
+                                </label>
+                                <span class="elv3-scan-device-count">${violations.length} violation${violations.length > 1 ? 's' : ''}</span>
+                            </div>
                         </div>
                         <div class="elv3-scan-device-violations elv3-scan-copy-target" onclick="copyDeviceViolations('${escapedDeviceNumber}', event)" title="Click to copy this device's violations">
                             ${violations.map(v => `
@@ -24421,6 +24498,20 @@
                     <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
                         ${devicesWithoutStatusCheck.map(deviceNumber => `
                             <span style="background: rgba(245, 158, 11, 0.3); padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 13px;">${deviceNumber}</span>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        if (devicesMissingViolationDetails.length > 0) {
+            resultHtml += `
+                <h5 class="elv3-scan-section-title" style="color: #f59e0b;">⚠ Unsatisfactory Devices Need Defect Details</h5>
+                <div class="elv3-scan-warning-box" style="background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; border-radius: 6px; padding: 12px; margin-bottom: 16px;">
+                    <p style="margin: 0 0 8px 0; color: var(--text-color); font-size: 13px;">These device(s) are marked unsatisfactory, but no part/condition/remedy details were read from the PDF:</p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+                        ${devicesMissingViolationDetails.map(device => `
+                            <span style="background: rgba(245, 158, 11, 0.3); padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 13px;">${device.deviceNumber}</span>
                         `).join('')}
                     </div>
                 </div>
@@ -24460,7 +24551,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.6</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.7</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
