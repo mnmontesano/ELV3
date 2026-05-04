@@ -23193,6 +23193,32 @@
                 }
             }
         }
+
+        // Flattened ELV3A continuation pages can expose status text as "Text FieldN"
+        // instead of reliable SAT/UNSAT checkbox names. The field numbers advance by
+        // three per device, so Text Field16/19/22/25 map to devices 6-9 on page 3.
+        for (const [fieldName, value] of Object.entries(formData)) {
+            if (!value) continue;
+
+            const textStatusMatch = fieldName.match(/Text Field(\d+)$/);
+            if (!textStatusMatch) continue;
+
+            const statusText = value.toString().trim().toLowerCase();
+            if (statusText !== 'satisfactory' && statusText !== 'unsatisfactory') continue;
+
+            const fieldNum = parseInt(textStatusMatch[1]);
+            const deviceIdx = Math.floor(fieldNum / 3) + 1;
+            if (!devices[deviceIdx]) continue;
+
+            if (!deviceStatus[deviceIdx]) deviceStatus[deviceIdx] = {};
+            if (statusText === 'satisfactory') {
+                deviceStatus[deviceIdx].satisfactory = true;
+                console.log(`Device ${deviceIdx} marked SATISFACTORY via Text Field${fieldNum}`);
+            } else {
+                deviceStatus[deviceIdx].unsatisfactory = true;
+                console.log(`Device ${deviceIdx} marked UNSATISFACTORY via Text Field${fieldNum}`);
+            }
+        }
         
         // Update device satisfactory status in result
         for (const device of result.devices) {
@@ -23750,6 +23776,21 @@
                 result.violationsByDevice[violation.deviceNumber] = [];
             }
             result.violationsByDevice[violation.deviceNumber].push(violation);
+        }
+
+        // Some ELV3A continuation pages reuse checkbox field names in ways that make
+        // status detection ambiguous. If a device has parsed violation rows, keep it
+        // visible as an unsatisfactory device instead of hiding it as "Missing Status Check."
+        if (Array.isArray(result.devicesWithoutStatusCheck) && result.devicesWithoutStatusCheck.length > 0) {
+            result.devicesWithoutStatusCheck = result.devicesWithoutStatusCheck.filter(function(deviceNumber) {
+                return !result.violationsByDevice[deviceNumber];
+            });
+        }
+        for (const device of result.devices) {
+            if (result.violationsByDevice[device.deviceNumber]) {
+                device.unsatisfactory = true;
+                device.satisfactory = false;
+            }
         }
         
         // Step 6: Separate devices into violations, satisfactory, and missing status check
@@ -24419,7 +24460,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.5</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.6</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
