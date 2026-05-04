@@ -21383,6 +21383,7 @@
         <div class="elv3-scan-modal-content">
             <div class="elv3-scan-modal-header">
                 <h3>Scan ELV3 Inspection Form</h3>
+                <button class="elv3-scan-header-upload-btn" id="headerUploadAnotherPdf" onclick="showELV3ScanUploadControls()" style="display: none;">Upload Another PDF</button>
                 <button class="elv3-scan-header-pdf-toggle" id="headerPdfToggle" onclick="togglePdfPreview()" style="display: none;">📄 Hide PDF</button>
                 <button class="elv3-scan-header-reset-btn" id="headerResetView" onclick="resetScanView()" style="display: none;">↺ Reset View</button>
                 <button class="elv3-scan-close-btn" onclick="closeUploadELV3ScanModal()">&times;</button>
@@ -21581,6 +21582,49 @@
         return name || 'elv3-form.pdf';
     }
 
+    function setELV3ScanUploadControlsVisible(isVisible, options) {
+        options = options || {};
+
+        var uploadArea = document.getElementById('elv3ScanUploadArea');
+        var urlArea = document.getElementById('elv3ScanUrlArea');
+        var urlInput = document.getElementById('elv3ScanUrlInput');
+        var fileInput = document.getElementById('elv3ScanFileInput');
+        var headerUploadBtn = document.getElementById('headerUploadAnotherPdf');
+        var leftPanel = document.querySelector('.elv3-scan-left-panel');
+
+        if (uploadArea) uploadArea.style.display = isVisible ? 'flex' : 'none';
+        if (urlArea) urlArea.style.display = isVisible ? '' : 'none';
+        if (isVisible && options.clearInputs !== false) {
+            if (urlInput) urlInput.value = '';
+            if (fileInput) fileInput.value = '';
+        }
+        if (headerUploadBtn) headerUploadBtn.style.display = (!isVisible && elv3ScanItems.length > 0) ? 'inline-block' : 'none';
+        if (leftPanel) leftPanel.classList.toggle('elv3-scan-upload-centered', isVisible && elv3ScanItems.length === 0);
+    }
+
+    function showELV3ScanUploadControls() {
+        var errorDiv = document.getElementById('elv3ScanError');
+        var progressDiv = document.getElementById('elv3ScanProgress');
+
+        if (errorDiv) errorDiv.style.display = 'none';
+        if (progressDiv) progressDiv.style.display = 'none';
+        setELV3ScanUploadControlsVisible(true);
+    }
+
+    function hasScanFilingInfoValues() {
+        return ['scanOwnerInput', 'scanElevatorCompanyInput', 'scanBinInput', 'scanGroupsInput', 'scanDirectorsInput', 'scanAdditionalInput'].some(function(id) {
+            var el = document.getElementById(id);
+            return el && el.value.trim() !== '';
+        });
+    }
+
+    function confirmScanFilingInfoForNewPdf() {
+        if (!hasScanFilingInfoValues()) return;
+
+        var keepFilingInfo = confirm('Keep the existing Filing Information for the new PDF?\n\nOK = keep Filing Information\nCancel = clear Filing Information');
+        if (!keepFilingInfo) scanClearAllFilingInfo();
+    }
+
     // ELV3 Code Mappings
     const ELV3_PART_CODES = {
         "01": "Emergency Stop Switch",
@@ -21771,11 +21815,7 @@
         document.body.style.overflow = 'hidden';
         
         // Reset state
-        document.getElementById('elv3ScanUploadArea').style.display = 'flex';
-        var urlArea = document.getElementById('elv3ScanUrlArea');
-        if (urlArea) urlArea.style.display = '';
-        var urlInput = document.getElementById('elv3ScanUrlInput');
-        if (urlInput) urlInput.value = '';
+        setELV3ScanUploadControlsVisible(true);
         document.getElementById('elv3ScanProgress').style.display = 'none';
         document.getElementById('elv3ScanResult').style.display = 'none';
         document.getElementById('elv3ScanError').style.display = 'none';
@@ -21867,6 +21907,8 @@
         if (savePdfBtn) savePdfBtn.style.display = 'none';
         var printPdfBtn = document.getElementById('elv3ScanPrintPdfBtn');
         if (printPdfBtn) printPdfBtn.style.display = 'none';
+        var headerUploadBtn = document.getElementById('headerUploadAnotherPdf');
+        if (headerUploadBtn) headerUploadBtn.style.display = 'none';
 
         var modalBody = document.querySelector('.elv3-scan-modal-body');
         if (modalBody) modalBody.classList.remove('elv3-scan-pdf-hidden');
@@ -22132,8 +22174,8 @@
             return;
         }
 
-        var uploadArea = document.getElementById('elv3ScanUploadArea');
-        var urlArea = document.getElementById('elv3ScanUrlArea');
+        confirmScanFilingInfoForNewPdf();
+
         var progressDiv = document.getElementById('elv3ScanProgress');
         var progressFill = document.getElementById('elv3ScanProgressFill');
         var statusText = document.getElementById('elv3ScanStatusText');
@@ -22146,9 +22188,7 @@
         elv3ScanItems = [];
         elv3ScanCurrentIndex = 0;
 
-        document.querySelector('.elv3-scan-left-panel').classList.remove('elv3-scan-upload-centered');
-        uploadArea.style.display = 'none';
-        if (urlArea) urlArea.style.display = 'none';
+        setELV3ScanUploadControlsVisible(false);
         progressDiv.style.display = 'block';
         resultDiv.style.display = 'none';
         errorDiv.style.display = 'none';
@@ -22174,9 +22214,7 @@
                 progressDiv.style.display = 'none';
                 errorDiv.textContent = 'Could not download PDF. The server may block external requests. Try downloading the file and uploading it directly.';
                 errorDiv.style.display = 'block';
-                uploadArea.style.display = 'flex';
-                if (urlArea) urlArea.style.display = '';
-                document.querySelector('.elv3-scan-left-panel').classList.add('elv3-scan-upload-centered');
+                setELV3ScanUploadControlsVisible(true, { clearInputs: false });
                 return;
             }
         }
@@ -22189,9 +22227,7 @@
             progressDiv.style.display = 'none';
             errorDiv.textContent = 'The URL did not return a valid PDF file. Please check the link.';
             errorDiv.style.display = 'block';
-            uploadArea.style.display = 'flex';
-            if (urlArea) urlArea.style.display = '';
-            document.querySelector('.elv3-scan-left-panel').classList.add('elv3-scan-upload-centered');
+            setELV3ScanUploadControlsVisible(true, { clearInputs: false });
             return;
         }
 
@@ -22299,6 +22335,8 @@
         }
         const resetBtn = document.getElementById('headerResetView');
         if (resetBtn) resetBtn.style.display = 'inline-block';
+        const uploadAnotherBtn = document.getElementById('headerUploadAnotherPdf');
+        if (uploadAnotherBtn) uploadAnotherBtn.style.display = 'inline-block';
     }
 
     /**
@@ -22516,7 +22554,6 @@
      * Process and parse multiple ELV3 PDF files
      */
     async function processELV3ScanBatch(files) {
-        const uploadArea = document.getElementById('elv3ScanUploadArea');
         const progressDiv = document.getElementById('elv3ScanProgress');
         const progressFill = document.getElementById('elv3ScanProgressFill');
         const statusText = document.getElementById('elv3ScanStatusText');
@@ -22529,10 +22566,7 @@
         elv3ScanItems = [];
         elv3ScanCurrentIndex = 0;
 
-        document.querySelector('.elv3-scan-left-panel').classList.remove('elv3-scan-upload-centered');
-        uploadArea.style.display = 'none';
-        var _urlArea = document.getElementById('elv3ScanUrlArea');
-        if (_urlArea) _urlArea.style.display = 'none';
+        setELV3ScanUploadControlsVisible(false);
         progressDiv.style.display = 'block';
         resultDiv.style.display = 'none';
         errorDiv.style.display = 'none';
@@ -22540,6 +22574,9 @@
 
         const pdfFiles = Array.from(files).filter(f => f.type === 'application/pdf');
         const total = pdfFiles.length;
+        if (total === 0) return;
+
+        confirmScanFilingInfoForNewPdf();
 
         for (let i = 0; i < pdfFiles.length; i++) {
             const file = pdfFiles[i];
@@ -22588,10 +22625,7 @@
         if (elv3ScanItems.length === 0) {
             errorDiv.textContent = 'No PDFs could be parsed. Please try valid ELV3 PDF files.';
             errorDiv.style.display = 'block';
-            uploadArea.style.display = 'flex';
-            var _urlAreaErr = document.getElementById('elv3ScanUrlArea');
-            if (_urlAreaErr) _urlAreaErr.style.display = '';
-            document.querySelector('.elv3-scan-left-panel').classList.add('elv3-scan-upload-centered');
+            setELV3ScanUploadControlsVisible(true, { clearInputs: false });
             return;
         }
 
@@ -24385,7 +24419,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.4</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.5</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
