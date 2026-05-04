@@ -23005,7 +23005,15 @@
 
             // Match server-side logic: success if devices OR violations found
             result.success = result.devices.length > 0 || result.violations.length > 0;
-            
+
+            if (!result.success && isRecognizedBlankELV3Template(allFieldNames)) {
+                result.success = true;
+                result.blankTemplate = true;
+                result.templateFieldCount = allFieldNames.length;
+                result.errorMessage = null;
+                console.log('Recognized blank ELV3 template with ' + allFieldNames.length + ' fields');
+            }
+
             if (!result.success) {
                 console.log('=== DEBUG: No devices or violations found (primary + fallback both failed) ===');
                 console.log('Total fields:', allFieldNames.length);
@@ -23193,10 +23201,14 @@
             };
         }
 
-        function violationDeviceIndex(prefixStr, page, style) {
+        function violationDeviceIndex(prefixStr, page, style, arrayIndex) {
             const prefix = prefixStr === undefined || prefixStr === null || prefixStr === '' ? 0 : parseInt(prefixStr, 10);
             if (style === 'bracket' && (!page || page === 1)) {
                 return 5 + (prefix || 1);
+            }
+            if (style === 'bracket' && page && page >= 2) {
+                if (prefix === 5) return 10;
+                if (prefix === 6) return 11 + (parseInt(arrayIndex || 0, 10) || 0);
             }
             const slot = prefix === 0 ? 1 : prefix;
             if (page && page >= 2 && slot >= 1 && slot <= 5) {
@@ -23256,10 +23268,17 @@
         function looksLikeComment(value) {
             const str = String(value || '').trim();
             if (str.length < 4) return false;
-            if (/^(satisfactory|unsatisfactory)$/i.test(str)) return false;
+            if (/^(sat|satisfactory|unsat|unsatisfactory)$/i.test(str)) return false;
             if (extractELV3DeviceNumber(str)) return false;
             if (normalizePart(str) || normalizeCondition(str) || normalizeRemedy(str)) return false;
             return /[A-Za-z]/.test(str);
+        }
+
+        function statusFromText(value) {
+            const str = String(value || '').trim().toLowerCase();
+            if (str === 'sat' || str === 'satisfactory') return 'satisfactory';
+            if (str === 'unsat' || str === 'unsatisfactory') return 'unsatisfactory';
+            return null;
         }
 
         // Pass 1: device discovery from named device fields, then a broad fallback.
@@ -23403,8 +23422,8 @@
         })();
 
         entries.forEach(function(entry) {
-            const statusText = entry.value.toLowerCase();
-            if (statusText !== 'satisfactory' && statusText !== 'unsatisfactory') return;
+            const statusText = statusFromText(entry.value);
+            if (!statusText || (statusText !== 'satisfactory' && statusText !== 'unsatisfactory')) return;
             const match = entry.name.match(/Text Field(\d+)$/);
             if (!match) return;
             const fieldNum = parseInt(match[1], 10);
@@ -23421,6 +23440,62 @@
             const values = Array.from(statusTextCandidates[idx]);
             if (values.length === 1) markStatus(parseInt(idx, 10), values[0], 'text-status', 55);
         });
+
+        // Some clean ELV3 variants put compact status text such as "SAT" in the
+        // detail-page comment field instead of using status checkboxes.
+        (function markDetailTextStatuses() {
+            const rowMap = {};
+            entries.forEach(function(entry) {
+                const center = rectCenter(entry.meta);
+                if (!center || !entry.page || entry.page < 2) return;
+                const deviceNumber = extractELV3DeviceNumber(entry.value);
+                if (!deviceNumber || !/_\d+_Device/i.test(entry.name)) return;
+                const deviceIndex = deviceIndexByNumber[deviceNumber];
+                if (!deviceIndex) return;
+                const key = entry.page + '|' + deviceIndex;
+                if (!rowMap[key] || /^Page\d+\./i.test(entry.name)) {
+                    rowMap[key] = {
+                        page: entry.page,
+                        deviceIndex: deviceIndex,
+                        x: center.x,
+                        y: center.y
+                    };
+                }
+            });
+
+            const rows = Object.keys(rowMap).map(function(key) { return rowMap[key]; });
+            if (rows.length === 0) return;
+
+            entries.forEach(function(entry) {
+                const textStatus = statusFromText(entry.value);
+                if (!textStatus) return;
+                if (!/(comment|status|result|remark|note)/i.test(entry.name)) return;
+
+                const center = rectCenter(entry.meta);
+                let best = null;
+                if (center && entry.page) {
+                    rows.forEach(function(row) {
+                        if (row.page !== entry.page) return;
+                        if (center.x <= row.x) return;
+                        const dy = row.y - center.y;
+                        if (dy < 0 || dy > 70) return;
+                        if (!best || dy < best.dy) best = { row: row, dy: dy };
+                    });
+                }
+
+                if (best) {
+                    markStatus(best.row.deviceIndex, textStatus, 'detail-text-status', 97);
+                    return;
+                }
+
+                const detail = entry.name.match(/Comments?_\d+_(\d+)/i);
+                const direct = entry.name.match(/Comments?_(\d+)/i);
+                const deviceIndex = detail ? parseInt(detail[1], 10) : (direct ? parseInt(direct[1], 10) : null);
+                if (deviceIndex && devicesByIndex[deviceIndex]) {
+                    markStatus(deviceIndex, textStatus, 'detail-text-status', 97);
+                }
+            });
+        })();
 
         // Pass 3: structured defect fields.
         const textFieldsByPage = {};
@@ -23441,7 +23516,7 @@
                 const spec = specs[i];
                 const match = entry.name.match(spec.regex);
                 if (!match) continue;
-                const deviceIndex = violationDeviceIndex(match[1], entry.page, spec.style);
+                const deviceIndex = violationDeviceIndex(match[1], entry.page, spec.style, match[2]);
                 addViolationPiece(deviceIndex, spec.style + ':' + (match[2] || 0), spec.kind, entry.value, spec.style);
                 break;
             }
@@ -23575,6 +23650,20 @@
         console.log('ELV3 parser v3 satisfactory:', result.satisfactoryDevices.length);
         console.log('ELV3 parser v3 missing status:', result.devicesWithoutStatusCheck.length);
         console.log('ELV3 parser v3 missing defect details:', result.devicesMissingViolationDetails.length);
+    }
+
+    function isRecognizedBlankELV3Template(allFieldNames) {
+        if (!Array.isArray(allFieldNames) || allFieldNames.length === 0) return false;
+        const names = allFieldNames.map(function(name) { return String(name || ''); });
+        const hasDeviceRows = names.filter(function(name) { return /_\d+_Device/i.test(name); }).length >= 2;
+        const hasDefectFields = names.some(function(name) { return /Elevator_Part/i.test(name); })
+            && names.some(function(name) { return /Violation_Condition/i.test(name); })
+            && names.some(function(name) { return /Suggested_Remedy/i.test(name); });
+        const hasELV3SummaryPage = names.some(function(name) { return /TextField1_33_/i.test(name); })
+            && names.some(function(name) { return /CheckBox1/i.test(name); });
+        const hasELV3AContinuationPage = names.some(function(name) { return /TextField1\[\d+\]/i.test(name); })
+            && names.some(function(name) { return /CheckBox1\[\d+\]/i.test(name); });
+        return hasDeviceRows && hasDefectFields && (hasELV3SummaryPage || hasELV3AContinuationPage);
     }
 
     /**
@@ -24741,8 +24830,8 @@
     function extractELV3DeviceNumber(value) {
         if (!value) return null;
         const str = value.toString().trim().toUpperCase();
-        // Pattern: 1 digit, 1 letter, 3-8 digits (e.g., 1P49414, 1P0989351)
-        const match = str.match(/(\d[A-Z]\d{3,8})/);
+        // Pattern: 1 digit, 1 letter, 2-8 digits (e.g., 1P12, 1P49414, 1P0989351)
+        const match = str.match(/(\d[A-Z]\d{2,8})/);
         return match ? match[1] : null;
     }
     
@@ -24995,6 +25084,7 @@
         let resultHtml = `
             <h4>✓ Scan Complete</h4>
             <div class="elv3-scan-result-details">
+                ${data.blankTemplate ? `<p><strong>Blank ELV3 Template:</strong> Recognized ${data.templateFieldCount || data._fieldDiagnostics?.totalFields || 0} form fields. Fill in device rows and upload again to scan results.</p>` : ''}
                 ${data.address ? `<p><strong>Address:</strong> ${data.address}</p>` : ''}
                 ${data.bin ? `<p><strong>BIN:</strong> <span class="elv3-scan-bin-copy" data-bin="${String(data.bin).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onclick="copyBinToClipboard(this.getAttribute('data-bin'), event)" title="Click to copy">${String(data.bin).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></p>` : ''}
                 ${data.inspectorName ? `<p><strong>Inspector:</strong> ${data.inspectorName}</p>` : ''}
@@ -25127,7 +25217,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.0</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.0.1</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
