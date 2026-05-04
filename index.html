@@ -22778,7 +22778,17 @@
             var pdfDoc = await task.promise;
             var formData = {};
             var fieldNames = [];
+            var fieldMeta = {};
             var seen = {};
+
+            function rememberField(name, value, meta) {
+                if (!name) return;
+                if (!seen[name]) { seen[name] = true; fieldNames.push(name); }
+                if (value !== null && value !== undefined && value !== '') {
+                    formData[name] = value;
+                }
+                if (meta) fieldMeta[name] = meta;
+            }
 
             for (var pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
                 var page = await pdfDoc.getPage(pageNum);
@@ -22801,15 +22811,23 @@
                         }
                     }
 
-                    if (!seen[name]) { seen[name] = true; fieldNames.push(name); }
-                    if (value !== null && value !== undefined && value !== '') {
-                        formData[name] = value;
-                    }
+                    var meta = {
+                        page: pageNum,
+                        rect: Array.isArray(a.rect) ? a.rect.slice() : null,
+                        fieldType: a.fieldType || null
+                    };
+
+                    rememberField(name, value, meta);
+
+                    // Some ELV3 continuation pages reuse short widget names. Keep a
+                    // page-scoped alias so Page3/Page4 values do not overwrite Page2.
+                    var pageScopedName = 'Page' + pageNum + '.' + name;
+                    rememberField(pageScopedName, value, meta);
                 }
             }
 
             console.log('pdf.js extracted ' + fieldNames.length + ' fields (' + Object.keys(formData).length + ' with values)');
-            return { formData: formData, fieldNames: fieldNames };
+            return { formData: formData, fieldNames: fieldNames, fieldMeta: fieldMeta };
         } catch (e) {
             console.error('pdf.js extraction failed:', e);
             return null;
@@ -22858,6 +22876,7 @@
             // Extract all form field values
             const formData = {};
             const allFieldNames = [];
+            const fieldMeta = {};
             
             for (const field of fields) {
                 const name = field.getName();
@@ -22919,6 +22938,12 @@
                     allFieldNames.length = 0;
                     var pdfjsFD = pdfjsResult.formData;
                     for (var pk in pdfjsFD) { if (pdfjsFD.hasOwnProperty(pk)) formData[pk] = pdfjsFD[pk]; }
+                    for (var pmk in fieldMeta) { if (fieldMeta.hasOwnProperty(pmk)) delete fieldMeta[pmk]; }
+                    if (pdfjsResult.fieldMeta) {
+                        for (var pmeta in pdfjsResult.fieldMeta) {
+                            if (pdfjsResult.fieldMeta.hasOwnProperty(pmeta)) fieldMeta[pmeta] = pdfjsResult.fieldMeta[pmeta];
+                        }
+                    }
                     for (var fi = 0; fi < pdfjsResult.fieldNames.length; fi++) {
                         allFieldNames.push(pdfjsResult.fieldNames[fi]);
                     }
@@ -22929,9 +22954,37 @@
                     console.log('pdf.js fallback failed or returned no fields');
                 }
             }
+
+            // pdf-lib exposes logical AcroForm fields, which can collapse repeated
+            // widgets on ELV3A continuation pages. pdf.js reads page annotations, so
+            // always merge page-scoped annotation values for multi-page PDFs.
+            if (!areFieldNamesGarbled(allFieldNames) && pdfDoc.getPageCount && pdfDoc.getPageCount() > 1) {
+                console.log('=== Supplementing pdf-lib fields with page-scoped pdf.js annotations... ===');
+                var pdfjsSupplement = await extractFormDataWithPdfJs(arrayBuffer);
+                if (pdfjsSupplement && pdfjsSupplement.fieldNames.length > 0) {
+                    for (var sk in pdfjsSupplement.formData) {
+                        if (!pdfjsSupplement.formData.hasOwnProperty(sk)) continue;
+                        if (formData[sk] === undefined || /^Page\d+\./i.test(sk)) {
+                            formData[sk] = pdfjsSupplement.formData[sk];
+                        }
+                        if (pdfjsSupplement.fieldMeta && pdfjsSupplement.fieldMeta[sk]) {
+                            fieldMeta[sk] = pdfjsSupplement.fieldMeta[sk];
+                        }
+                    }
+                    var knownFieldNames = new Set(allFieldNames);
+                    for (var sfi = 0; sfi < pdfjsSupplement.fieldNames.length; sfi++) {
+                        var supplementName = pdfjsSupplement.fieldNames[sfi];
+                        if (!knownFieldNames.has(supplementName)) {
+                            knownFieldNames.add(supplementName);
+                            allFieldNames.push(supplementName);
+                        }
+                    }
+                    console.log('After pdf.js supplement: ' + allFieldNames.length + ' fields, ' + Object.keys(formData).length + ' with values');
+                }
+            }
             
             // Parse the form data using primary parser
-            parseELV3FormData(formData, result, allFieldNames);
+            parseELV3FormData(formData, result, allFieldNames, fieldMeta);
             
             // If primary parser found no devices, try content-based fallback
             // for alternate ELV3 form variants with different field names
@@ -22984,9 +23037,550 @@
 
     /**
      * Parse ELV3 form data into structured result
-     * This is a direct port of the server's parseXFAFormFields function
+     * Rewritten scanner parser. It builds devices, statuses, and defect rows as
+     * separate records, then classifies devices from those records.
      */
-    function parseELV3FormData(formData, result, allFieldNames) {
+    function parseELV3FormData(formData, result, allFieldNames, fieldMeta) {
+        console.log('=== ELV3 SCAN PARSER v3 ===');
+        console.log('Parsing form fields, total values:', Object.keys(formData).length);
+        fieldMeta = fieldMeta || {};
+
+        result.devices = [];
+        result.violations = [];
+        result.violationsByDevice = {};
+        result.satisfactoryDevices = [];
+        result.devicesWithViolations = [];
+        result.devicesWithoutStatusCheck = [];
+        result.devicesMissingViolationDetails = [];
+
+        const entries = Object.entries(formData)
+            .filter(function(entry) {
+                return entry[1] !== null && entry[1] !== undefined && String(entry[1]).trim() !== '';
+            })
+            .map(function(entry, order) {
+                const name = entry[0];
+                const value = String(entry[1]).trim();
+                const nums = name.match(/\d+/g) || [];
+                const meta = fieldMeta[name] || null;
+                return {
+                    name: name,
+                    value: value,
+                    lowerName: name.toLowerCase(),
+                    page: getPageNumber(name) || (meta && meta.page ? meta.page : null),
+                    meta: meta,
+                    order: order,
+                    sortKey: nums.map(function(n) { return ('00000000' + n).slice(-8); }).join('.')
+                };
+            })
+            .sort(function(a, b) {
+                const pa = a.page || 999;
+                const pb = b.page || 999;
+                if (pa !== pb) return pa - pb;
+                const sk = a.sortKey.localeCompare(b.sortKey);
+                return sk !== 0 ? sk : a.order - b.order;
+            });
+
+        const pagesFound = new Set();
+        entries.forEach(function(entry) {
+            if (entry.page) pagesFound.add(entry.page);
+        });
+        const sortedPages = Array.from(pagesFound).sort(function(a, b) { return a - b; });
+        const devicesByIndex = {};
+        const deviceIndexByNumber = {};
+        const deviceNotesByIndex = {};
+        const devicePositions = [];
+        const statusByIndex = {};
+        const statusTextCandidates = {};
+        const violationRows = {};
+        const commentsByIndex = {};
+
+        function getPageNumber(name) {
+            const match = String(name || '').match(/Page(\d+)/i);
+            return match ? parseInt(match[1], 10) : null;
+        }
+
+        function isTruthy(value) {
+            if (value === true) return true;
+            const str = String(value || '').trim().toLowerCase();
+            return str === 'true' || str === 'yes' || str === 'on' || str === 'x' || str === '1';
+        }
+
+        function normalizePart(value) {
+            const raw = String(value || '').trim();
+            if (!/^\d{1,3}$/.test(raw)) return null;
+            const code = raw.padStart(2, '0');
+            const n = parseInt(code, 10);
+            return ELV3_PART_CODES[code] || (n >= 1 && n <= 100) ? code : null;
+        }
+
+        function normalizeCondition(value) {
+            const code = String(value || '').trim().toUpperCase();
+            if (!/^[A-Z]{1,2}$/.test(code)) return null;
+            return ELV3_CONDITION_CODES[code] ? code : null;
+        }
+
+        function normalizeRemedy(value) {
+            const raw = String(value || '').trim();
+            if (!/^\d{1,3}$/.test(raw)) return null;
+            const code = raw.padStart(2, '0');
+            return ELV3_REMEDY_CODES[code] ? code : null;
+        }
+
+        function deviceIndexFromDeviceField(name, page) {
+            const match = String(name || '').match(/_(\d+)_Device/i);
+            if (!match) return null;
+            const localIndex = parseInt(match[1], 10);
+            if (page === 1 && localIndex >= 6) return localIndex;
+            if (page && page >= 2) {
+                if (localIndex >= 1 && localIndex <= 5) {
+                    return ((page - 2) * 5) + localIndex;
+                }
+                return localIndex;
+            }
+            return localIndex;
+        }
+
+        function addDevice(deviceIndex, deviceNumber, note, sourceEntry) {
+            if (!deviceNumber) return;
+            let idx = deviceIndex;
+            if (!idx || idx < 1) {
+                idx = deviceIndexByNumber[deviceNumber] || nextDeviceIndex();
+            }
+            if (devicesByIndex[idx] && devicesByIndex[idx] !== deviceNumber) {
+                idx = nextDeviceIndex();
+            }
+            devicesByIndex[idx] = deviceNumber;
+            deviceIndexByNumber[deviceNumber] = idx;
+            if (note) deviceNotesByIndex[idx] = note;
+            if (sourceEntry) {
+                devicePositions.push({ deviceIndex: idx, page: sourceEntry.page, order: sourceEntry.order });
+            }
+        }
+
+        function nextDeviceIndex() {
+            const used = Object.keys(devicesByIndex).map(Number);
+            return used.length ? Math.max.apply(null, used) + 1 : 1;
+        }
+
+        function ownerDeviceIndex(entry) {
+            let best = null;
+            for (let i = 0; i < devicePositions.length; i++) {
+                const pos = devicePositions[i];
+                if (entry.page && pos.page && entry.page !== pos.page) continue;
+                if (pos.order <= entry.order && (!best || pos.order > best.order)) best = pos;
+            }
+            if (best) return best.deviceIndex;
+            for (let i = 0; i < devicePositions.length; i++) {
+                const pos = devicePositions[i];
+                if (pos.order <= entry.order && (!best || pos.order > best.order)) best = pos;
+            }
+            return best ? best.deviceIndex : null;
+        }
+
+        function markStatus(deviceIndex, status, source, confidence) {
+            if (!deviceIndex || !devicesByIndex[deviceIndex]) return;
+            const current = statusByIndex[deviceIndex];
+            if (!current || confidence > current.confidence || (confidence === current.confidence && status === 'unsatisfactory')) {
+                statusByIndex[deviceIndex] = { status: status, source: source, confidence: confidence };
+            }
+        }
+
+        function rectCenter(meta) {
+            if (!meta || !Array.isArray(meta.rect) || meta.rect.length < 4) return null;
+            return {
+                x: (Number(meta.rect[0]) + Number(meta.rect[2])) / 2,
+                y: (Number(meta.rect[1]) + Number(meta.rect[3])) / 2
+            };
+        }
+
+        function violationDeviceIndex(prefixStr, page, style) {
+            const prefix = prefixStr === undefined || prefixStr === null || prefixStr === '' ? 0 : parseInt(prefixStr, 10);
+            if (style === 'bracket' && (!page || page === 1)) {
+                return 5 + (prefix || 1);
+            }
+            const slot = prefix === 0 ? 1 : prefix;
+            if (page && page >= 2 && slot >= 1 && slot <= 5) {
+                return ((page - 2) * 5) + slot;
+            }
+            return slot;
+        }
+
+        function addViolationPiece(deviceIndex, rowKey, kind, rawValue, source) {
+            if (!deviceIndex || !devicesByIndex[deviceIndex]) return;
+            let value = null;
+            if (kind === 'part') value = normalizePart(rawValue);
+            if (kind === 'condition') value = normalizeCondition(rawValue);
+            if (kind === 'remedy') value = normalizeRemedy(rawValue);
+            if (!value) return;
+
+            const key = deviceIndex + '|' + rowKey;
+            if (!violationRows[key]) {
+                violationRows[key] = { deviceIndex: deviceIndex, rowKey: rowKey, source: source };
+            }
+            if (kind === 'part') violationRows[key].partCode = value;
+            if (kind === 'condition') violationRows[key].conditionCode = value;
+            if (kind === 'remedy') violationRows[key].remedyCode = value;
+        }
+
+        function addViolationTriplet(deviceIndex, rowKey, partValue, conditionValue, remedyValue, source) {
+            addViolationPiece(deviceIndex, rowKey, 'part', partValue, source);
+            addViolationPiece(deviceIndex, rowKey, 'condition', conditionValue, source);
+            addViolationPiece(deviceIndex, rowKey, 'remedy', remedyValue, source);
+        }
+
+        function collectTextField(map, page, index, entry) {
+            if (!page) return;
+            if (!map[page]) map[page] = {};
+            if (!map[page][index] || entry.name.indexOf('Page' + page) === 0) {
+                map[page][index] = entry;
+            }
+        }
+
+        function scanTripletMap(map, page, firstDeviceIndex, firstFieldOffset, sourceName) {
+            const fields = map[page] || {};
+            const indexes = Object.keys(fields).map(Number).sort(function(a, b) { return a - b; });
+            const seen = new Set(indexes);
+            for (let i = 0; i < indexes.length; i++) {
+                const idx = indexes[i];
+                if (idx < firstFieldOffset || !seen.has(idx + 1) || !seen.has(idx + 2)) continue;
+                const part = normalizePart(fields[idx].value);
+                const condition = normalizeCondition(fields[idx + 1].value);
+                const remedy = normalizeRemedy(fields[idx + 2].value);
+                if (!part || !condition || !remedy) continue;
+                const offset = idx - firstFieldOffset;
+                const deviceIndex = firstDeviceIndex + Math.floor(offset / 27);
+                addViolationTriplet(deviceIndex, sourceName + ':' + page + ':' + idx, part, condition, remedy, sourceName);
+            }
+        }
+
+        function looksLikeComment(value) {
+            const str = String(value || '').trim();
+            if (str.length < 4) return false;
+            if (/^(satisfactory|unsatisfactory)$/i.test(str)) return false;
+            if (extractELV3DeviceNumber(str)) return false;
+            if (normalizePart(str) || normalizeCondition(str) || normalizeRemedy(str)) return false;
+            return /[A-Za-z]/.test(str);
+        }
+
+        // Pass 1: device discovery from named device fields, then a broad fallback.
+        entries.forEach(function(entry) {
+            if (!/device/i.test(entry.name)) return;
+            const deviceNumber = extractELV3DeviceNumber(entry.value);
+            if (!deviceNumber) return;
+            const fullInfo = extractDeviceFieldFullText(entry.value);
+            addDevice(
+                deviceIndexFromDeviceField(entry.name, entry.page),
+                deviceNumber,
+                fullInfo ? fullInfo.additionalText : null,
+                entry
+            );
+        });
+
+        entries.forEach(function(entry) {
+            const deviceNumber = extractELV3DeviceNumber(entry.value);
+            if (!deviceNumber || deviceIndexByNumber[deviceNumber]) return;
+            const fullInfo = extractDeviceFieldFullText(entry.value);
+            addDevice(null, deviceNumber, fullInfo ? fullInfo.additionalText : null, entry);
+        });
+
+        // Pass 2: reliable status signals. Literal text labels are handled later and
+        // only accepted if they do not conflict for the same device.
+        entries.forEach(function(entry) {
+            if (!isTruthy(entry.value)) return;
+            const named = entry.name.match(/CheckBox1_(\d+)/);
+            if (named && (!entry.page || entry.page === 1)) {
+                const checkboxNum = parseInt(named[1], 10);
+                if (checkboxNum >= 34) {
+                    const adjusted = checkboxNum - 34;
+                    const pos = adjusted % 10;
+                    const deviceIndex = (Math.floor(adjusted / 10) * 5) + (pos % 5) + 1;
+                    markStatus(deviceIndex, pos < 5 ? 'satisfactory' : 'unsatisfactory', 'summary-checkbox', 95);
+                }
+            }
+
+            const bracket = entry.name.match(/CheckBox1\[(\d+)\]/);
+            if (bracket && (!entry.page || entry.page === 1)) {
+                const n = parseInt(bracket[1], 10);
+                const stride = 34;
+                const satOffset = n - 31;
+                const unsatOffset = n - 36;
+                if (satOffset >= 0 && satOffset % stride < 5) {
+                    markStatus(6 + (Math.floor(satOffset / stride) * 5) + (satOffset % stride), 'satisfactory', 'summary-bracket-checkbox', 80);
+                }
+                if (unsatOffset >= 0 && unsatOffset % stride < 5) {
+                    markStatus(6 + (Math.floor(unsatOffset / stride) * 5) + (unsatOffset % stride), 'unsatisfactory', 'summary-bracket-checkbox', 80);
+                }
+            }
+        });
+
+        // Some flattened/combined ELV3 PDFs expose the visible continuation-page
+        // status boxes as generic "Check Box24" names. Use pdf.js annotation
+        // geometry to attach checked boxes to the device row directly above them.
+        (function markGenericContinuationStatuses() {
+            const rowMap = {};
+            const boxMap = {};
+
+            entries.forEach(function(entry) {
+                const center = rectCenter(entry.meta);
+                if (!center || !entry.page || entry.page < 2) return;
+
+                const deviceNumber = extractELV3DeviceNumber(entry.value);
+                if (deviceNumber && /_\d+_Device/i.test(entry.name)) {
+                    const deviceIndex = deviceIndexByNumber[deviceNumber];
+                    if (!deviceIndex) return;
+                    const key = entry.page + '|' + deviceIndex;
+                    if (!rowMap[key] || /^Page\d+\./i.test(entry.name)) {
+                        rowMap[key] = {
+                            page: entry.page,
+                            deviceIndex: deviceIndex,
+                            x: center.x,
+                            y: center.y,
+                            entry: entry
+                        };
+                    }
+                    return;
+                }
+
+                const boxMatch = entry.name.match(/(?:^|\.)(Check Box\d+)$/i);
+                if (!boxMatch) return;
+                const key = entry.page + '|' + boxMatch[1];
+                if (!boxMap[key] || /^Page\d+\./i.test(entry.name)) {
+                    boxMap[key] = {
+                        page: entry.page,
+                        name: boxMatch[1],
+                        x: center.x,
+                        y: center.y,
+                        checked: isTruthy(entry.value),
+                        entry: entry
+                    };
+                }
+            });
+
+            const rows = Object.keys(rowMap).map(function(key) { return rowMap[key]; });
+            const boxes = Object.keys(boxMap).map(function(key) { return boxMap[key]; });
+            if (rows.length === 0 || boxes.length === 0) return;
+
+            const boxesByDevice = {};
+
+            boxes.forEach(function(box) {
+                let best = null;
+                rows.forEach(function(row) {
+                    if (row.page !== box.page) return;
+                    if (box.x <= row.x) return;
+                    const dy = row.y - box.y;
+                    if (dy < 0 || dy > 58) return;
+                    if (!best || dy < best.dy) best = { row: row, dy: dy };
+                });
+                if (!best) return;
+                const idx = best.row.deviceIndex;
+                if (!boxesByDevice[idx]) boxesByDevice[idx] = [];
+                boxesByDevice[idx].push({
+                    page: box.page,
+                    name: box.name,
+                    x: box.x,
+                    y: box.y,
+                    checked: box.checked,
+                    entry: box.entry,
+                    dy: best.dy
+                });
+            });
+
+            Object.keys(boxesByDevice).forEach(function(idx) {
+                const deviceIndex = parseInt(idx, 10);
+                const deviceBoxes = boxesByDevice[idx].sort(function(a, b) {
+                    if (a.dy !== b.dy) return a.dy - b.dy;
+                    return a.x - b.x;
+                });
+                const checkedBox = deviceBoxes.find(function(box) { return box.checked; });
+                if (!checkedBox) return;
+                markStatus(
+                    deviceIndex,
+                    checkedBox.dy <= 22 ? 'satisfactory' : 'unsatisfactory',
+                    'generic-continuation-checkbox',
+                    98
+                );
+            });
+        })();
+
+        entries.forEach(function(entry) {
+            const statusText = entry.value.toLowerCase();
+            if (statusText !== 'satisfactory' && statusText !== 'unsatisfactory') return;
+            const match = entry.name.match(/Text Field(\d+)$/);
+            if (!match) return;
+            const fieldNum = parseInt(match[1], 10);
+            let deviceIndex = null;
+            if (fieldNum <= 12 && fieldNum % 3 === 0) deviceIndex = (fieldNum / 3) + 1;
+            if (fieldNum >= 16 && (fieldNum - 16) % 3 === 0) deviceIndex = 6 + ((fieldNum - 16) / 3);
+            if (fieldNum >= 48 && (fieldNum - 48) % 3 === 0) deviceIndex = 16 + ((fieldNum - 48) / 3);
+            if (!deviceIndex || !devicesByIndex[deviceIndex]) return;
+            if (!statusTextCandidates[deviceIndex]) statusTextCandidates[deviceIndex] = new Set();
+            statusTextCandidates[deviceIndex].add(statusText);
+        });
+
+        Object.keys(statusTextCandidates).forEach(function(idx) {
+            const values = Array.from(statusTextCandidates[idx]);
+            if (values.length === 1) markStatus(parseInt(idx, 10), values[0], 'text-status', 55);
+        });
+
+        // Pass 3: structured defect fields.
+        const textFieldsByPage = {};
+        const bracketTextFieldsByPage = {};
+        entries.forEach(function(entry) {
+            const specs = [
+                { kind: 'part', regex: /Elevator_Part_(\d+)_\[(\d+)\]/i, style: 'underscoreBracket' },
+                { kind: 'condition', regex: /Violation_Condition_(\d+)_\[(\d+)\]/i, style: 'underscoreBracket' },
+                { kind: 'remedy', regex: /Suggested_Remedy_(\d+)_\[(\d+)\]/i, style: 'underscoreBracket' },
+                { kind: 'part', regex: /Elevator_Part(?:_(\d+))?_(\d+)_/i, style: 'named' },
+                { kind: 'condition', regex: /Violation_Condition(?:_(\d+))?_(\d+)_/i, style: 'named' },
+                { kind: 'remedy', regex: /Suggested_Remedy(?:_(\d+))?_(\d+)_/i, style: 'named' },
+                { kind: 'part', regex: /Elevator_Part(?:_(\d+))?\[(\d+)\]/i, style: 'bracket' },
+                { kind: 'condition', regex: /Violation_Condition(?:_(\d+))?\[(\d+)\]/i, style: 'bracket' },
+                { kind: 'remedy', regex: /Suggested_Remedy(?:_(\d+))?\[(\d+)\]/i, style: 'bracket' }
+            ];
+            for (let i = 0; i < specs.length; i++) {
+                const spec = specs[i];
+                const match = entry.name.match(spec.regex);
+                if (!match) continue;
+                const deviceIndex = violationDeviceIndex(match[1], entry.page, spec.style);
+                addViolationPiece(deviceIndex, spec.style + ':' + (match[2] || 0), spec.kind, entry.value, spec.style);
+                break;
+            }
+
+            let tf = entry.name.match(/TextField1_(\d+)_/);
+            if (tf) collectTextField(textFieldsByPage, entry.page, parseInt(tf[1], 10), entry);
+
+            tf = entry.name.match(/TextField1\[(\d+)\]$/);
+            if (tf) collectTextField(bracketTextFieldsByPage, entry.page, parseInt(tf[1], 10), entry);
+        });
+
+        sortedPages.forEach(function(page) {
+            if (page >= 2) {
+                const firstDevice = ((page - 2) * 5) + 1;
+                scanTripletMap(textFieldsByPage, page, firstDevice, 7, 'textfield');
+                scanTripletMap(bracketTextFieldsByPage, page, firstDevice, 0, 'bracket-textfield');
+            } else if (page === 1) {
+                scanTripletMap(bracketTextFieldsByPage, page, 6, 0, 'page1-bracket-textfield');
+            }
+        });
+
+        // Build final violation objects.
+        const seenViolations = new Set();
+        Object.keys(violationRows).forEach(function(key) {
+            const row = violationRows[key];
+            if (!row.partCode) return;
+            const deviceNumber = devicesByIndex[row.deviceIndex];
+            if (!deviceNumber) return;
+            const dedupeKey = [
+                deviceNumber,
+                row.partCode,
+                row.conditionCode || '',
+                row.remedyCode || ''
+            ].join('|');
+            if (seenViolations.has(dedupeKey)) return;
+            seenViolations.add(dedupeKey);
+            result.violations.push({
+                deviceNumber: deviceNumber,
+                partCode: row.partCode,
+                partDescription: getELV3PartDescriptionWithLocation(row.partCode),
+                conditionCode: row.conditionCode || null,
+                conditionDescription: row.conditionCode ? (ELV3_CONDITION_CODES[row.conditionCode] || row.conditionCode) : null,
+                remedyCode: row.remedyCode || null,
+                remedyDescription: row.remedyCode ? (ELV3_REMEDY_CODES[row.remedyCode] || ('Remedy ' + row.remedyCode)) : null,
+                comments: null,
+                deviceFieldText: deviceNotesByIndex[row.deviceIndex] || null
+            });
+        });
+
+        // Pass 4: comments and metadata.
+        entries.forEach(function(entry) {
+            if (!looksLikeComment(entry.value)) return;
+            if (!/(comment|remark|note|Text Field)/i.test(entry.name)) return;
+            let deviceIndex = null;
+            const detail = entry.name.match(/Comments?_\d+_(\d+)/i);
+            const direct = entry.name.match(/Comments?_(\d+)/i);
+            if (detail) deviceIndex = parseInt(detail[1], 10);
+            else if (direct) deviceIndex = parseInt(direct[1], 10);
+            else deviceIndex = ownerDeviceIndex(entry);
+            if (!deviceIndex || !devicesByIndex[deviceIndex]) return;
+            if (!commentsByIndex[deviceIndex]) commentsByIndex[deviceIndex] = [];
+            commentsByIndex[deviceIndex].push(entry.value);
+        });
+
+        result.violations.forEach(function(violation) {
+            const idx = deviceIndexByNumber[violation.deviceNumber];
+            const comments = commentsByIndex[idx] || [];
+            if (comments.length > 0 && !violation.comments) {
+                violation.comments = comments.shift();
+            }
+        });
+
+        if (!result.address) {
+            const addressEntry = entries.find(function(entry) {
+                return /address|TextField1_0_/i.test(entry.name) && entry.value.length > 5 && !extractELV3DeviceNumber(entry.value);
+            });
+            if (addressEntry) result.address = addressEntry.value;
+        }
+
+        if (!result.inspectorName) {
+            const namePattern = /^[A-Za-z\s.\-']{2,60}$/;
+            const inspectorEntry = entries.find(function(entry) {
+                return /inspector/i.test(entry.name) && !/date|license|licence/i.test(entry.name) && namePattern.test(entry.value);
+            });
+            if (inspectorEntry) result.inspectorName = inspectorEntry.value;
+        }
+
+        // Final device and section classification.
+        result.devices = Object.keys(devicesByIndex).map(Number).sort(function(a, b) { return a - b; }).map(function(idx) {
+            const status = statusByIndex[idx] || null;
+            return {
+                deviceNumber: devicesByIndex[idx],
+                satisfactory: status ? status.status === 'satisfactory' : false,
+                unsatisfactory: status ? status.status === 'unsatisfactory' : false,
+                unsatisfactorySource: status && status.status === 'unsatisfactory' ? status.source : null,
+                deviceType: 'Elevator'
+            };
+        });
+
+        result.violationsByDevice = {};
+        result.violations.forEach(function(violation) {
+            if (!result.violationsByDevice[violation.deviceNumber]) result.violationsByDevice[violation.deviceNumber] = [];
+            result.violationsByDevice[violation.deviceNumber].push(violation);
+        });
+
+        result.devices.forEach(function(device) {
+            const idx = deviceIndexByNumber[device.deviceNumber];
+            const hasViolations = !!result.violationsByDevice[device.deviceNumber];
+            const status = statusByIndex[idx] || null;
+            if (hasViolations) {
+                device.satisfactory = false;
+                device.unsatisfactory = true;
+                device.unsatisfactorySource = 'violations';
+                result.devicesWithViolations.push(device);
+            } else if (status && status.status === 'unsatisfactory') {
+                device.satisfactory = false;
+                device.unsatisfactory = true;
+                device.unsatisfactorySource = status.source;
+                result.devicesMissingViolationDetails.push(device);
+            } else if (status && status.status === 'satisfactory') {
+                device.satisfactory = true;
+                device.unsatisfactory = false;
+                result.satisfactoryDevices.push(device);
+            } else {
+                result.devicesWithoutStatusCheck.push(device.deviceNumber);
+            }
+        });
+
+        console.log('ELV3 parser v3 devices:', result.devices.length);
+        console.log('ELV3 parser v3 violations:', result.violations.length);
+        console.log('ELV3 parser v3 satisfactory:', result.satisfactoryDevices.length);
+        console.log('ELV3 parser v3 missing status:', result.devicesWithoutStatusCheck.length);
+        console.log('ELV3 parser v3 missing defect details:', result.devicesMissingViolationDetails.length);
+    }
+
+    /**
+     * Legacy parser retained for reference while the rewritten scanner is active.
+     */
+    function parseELV3FormDataLegacy(formData, result, allFieldNames) {
         console.log('Parsing XFA form fields, total fields:', Object.keys(formData).length);
         
         // Detect which pages exist in the form
@@ -23156,9 +23750,11 @@
                     
                     if (isSatisfactory) {
                         deviceStatus[deviceIdx].satisfactory = true;
+                        deviceStatus[deviceIdx].source = 'named-checkbox';
                         console.log(`Device ${deviceIdx} marked as SATISFACTORY (CheckBox1_${checkboxNum})`);
                     } else {
                         deviceStatus[deviceIdx].unsatisfactory = true;
+                        deviceStatus[deviceIdx].source = 'named-checkbox';
                         console.log(`Device ${deviceIdx} marked as UNSATISFACTORY (CheckBox1_${checkboxNum})`);
                     }
                 }
@@ -23189,45 +23785,21 @@
                     if (posInGroup < 5) {
                         const deviceIdx = BRACKET_FIRST_DEV + (groupNum * 5) + posInGroup;
                         if (!deviceStatus[deviceIdx]) deviceStatus[deviceIdx] = {};
+                        if (deviceStatus[deviceIdx].source === 'named-checkbox' || deviceStatus[deviceIdx].source === 'text-status') {
+                            continue;
+                        }
                         deviceStatus[deviceIdx].unsatisfactory = true;
+                        deviceStatus[deviceIdx].source = 'bracket-checkbox';
                         console.log(`Device ${deviceIdx} marked UNSATISFACTORY via CheckBox1[${cbNum}]`);
                     }
                 }
             }
         }
 
-        // Flattened ELV3A continuation pages can expose status text as "Text FieldN"
-        // instead of reliable SAT/UNSAT checkbox names. These field numbers reset in
-        // groups around each ELV3/ELV3A sheet, so use the known form map instead of a
-        // simple division formula (for example, Text Field48 is device 16).
-        const flattenedStatusTextFieldDeviceMap = {
-            0: 1, 3: 2, 6: 3, 9: 4, 12: 5,
-            16: 6, 19: 7, 22: 8, 25: 9,
-            28: 10, 31: 11, 34: 12, 37: 13, 40: 14, 43: 15, 48: 16,
-            51: 17, 54: 18
-        };
-        for (const [fieldName, value] of Object.entries(formData)) {
-            if (!value) continue;
-
-            const textStatusMatch = fieldName.match(/Text Field(\d+)$/);
-            if (!textStatusMatch) continue;
-
-            const statusText = value.toString().trim().toLowerCase();
-            if (statusText !== 'satisfactory' && statusText !== 'unsatisfactory') continue;
-
-            const fieldNum = parseInt(textStatusMatch[1]);
-            const deviceIdx = flattenedStatusTextFieldDeviceMap[fieldNum];
-            if (!devices[deviceIdx]) continue;
-
-            if (!deviceStatus[deviceIdx]) deviceStatus[deviceIdx] = {};
-            if (statusText === 'satisfactory') {
-                deviceStatus[deviceIdx].satisfactory = true;
-                console.log(`Device ${deviceIdx} marked SATISFACTORY via Text Field${fieldNum}`);
-            } else {
-                deviceStatus[deviceIdx].unsatisfactory = true;
-                console.log(`Device ${deviceIdx} marked UNSATISFACTORY via Text Field${fieldNum}`);
-            }
-        }
+        // Do not infer pass/fail from flattened "Text FieldN" values that literally
+        // say "Satisfactory" or "Unsatisfactory". In flattened/printed ELV3 files
+        // those are often static labels, not checked form values. Final pass/fail
+        // classification below is intentionally driven by parsed defect rows.
         
         // Update device satisfactory status in result
         for (const device of result.devices) {
@@ -23235,6 +23807,7 @@
             if (deviceIdx && deviceStatus[deviceIdx]) {
                 device.satisfactory = deviceStatus[deviceIdx].satisfactory === true && !deviceStatus[deviceIdx].unsatisfactory;
                 device.unsatisfactory = deviceStatus[deviceIdx].unsatisfactory === true;
+                device.unsatisfactorySource = deviceStatus[deviceIdx].unsatisfactory === true ? deviceStatus[deviceIdx].source : null;
             }
         }
         
@@ -23364,8 +23937,17 @@
         // Returns { deviceIdx, rowIdx } for a bracket-notation violation field.
         // Prefix 1-5  → devices 6-10  (one device per prefix, arrayIdx = violation column).
         // Prefix 6+   → devices 11+   (one device per prefix, arrayIdx = violation column).
-        const _calcBracketDeviceAndRow = function(prefixStr, arrayIdx) {
+        const _calcBracketDeviceAndRow = function(prefixStr, arrayIdx, fieldName) {
             const prefix = prefixStr ? parseInt(prefixStr) : 1; // no prefix ≡ 1
+            const pageMatch = String(fieldName || '').match(/Page(\d+)/i);
+            if (pageMatch) {
+                const pageNum = parseInt(pageMatch[1]);
+                if (pageNum >= 2) {
+                    const devicesPerPage = 5;
+                    const pageOffset = (pageNum - 2) * devicesPerPage;
+                    return { deviceIdx: pageOffset + prefix, rowIdx: arrayIdx };
+                }
+            }
             if (prefix >= 1) {
                 return { deviceIdx: 5 + prefix, rowIdx: arrayIdx };
             }
@@ -23377,7 +23959,7 @@
             
             const bPartMatch = fieldName.match(/Elevator_Part(?:_(\d+))?\[(\d+)\]/i);
             if (bPartMatch) {
-                const info = _calcBracketDeviceAndRow(bPartMatch[1], parseInt(bPartMatch[2]));
+                const info = _calcBracketDeviceAndRow(bPartMatch[1], parseInt(bPartMatch[2]), fieldName);
                 if (info !== null) {
                     const key = `${info.deviceIdx}_${info.rowIdx}`;
                     if (!bracketViolations[key]) bracketViolations[key] = { deviceIdx: info.deviceIdx, rowIdx: info.rowIdx };
@@ -23388,7 +23970,7 @@
             
             const bCondMatch = fieldName.match(/Violation_Condition(?:_(\d+))?\[(\d+)\]/i);
             if (bCondMatch) {
-                const info = _calcBracketDeviceAndRow(bCondMatch[1], parseInt(bCondMatch[2]));
+                const info = _calcBracketDeviceAndRow(bCondMatch[1], parseInt(bCondMatch[2]), fieldName);
                 if (info !== null) {
                     const key = `${info.deviceIdx}_${info.rowIdx}`;
                     if (!bracketViolations[key]) bracketViolations[key] = { deviceIdx: info.deviceIdx, rowIdx: info.rowIdx };
@@ -23398,7 +23980,7 @@
             
             const bRemedyMatch = fieldName.match(/Suggested_Remedy(?:_(\d+))?\[(\d+)\]/i);
             if (bRemedyMatch) {
-                const info = _calcBracketDeviceAndRow(bRemedyMatch[1], parseInt(bRemedyMatch[2]));
+                const info = _calcBracketDeviceAndRow(bRemedyMatch[1], parseInt(bRemedyMatch[2]), fieldName);
                 if (info !== null) {
                     const key = `${info.deviceIdx}_${info.rowIdx}`;
                     if (!bracketViolations[key]) bracketViolations[key] = { deviceIdx: info.deviceIdx, rowIdx: info.rowIdx };
@@ -23479,18 +24061,18 @@
             }
         }
         
-        // Step 3b: Collect bracket-notation TextField1[N] values from Pages 1 and 2 separately,
+        // Step 3b: Collect bracket-notation TextField1[N] values from each page separately,
         // then scan each page's values for additional violation triplets (Part / Condition / Remedy).
         //
         // Page 1 bracket TextFields contain additional rows for devices 6-9.
         //   Triplet starting indices: 26, 53, 80, 107 (gap ≈ 27) → devices 6, 7, 8, 9
         //
-        // Page 2 bracket TextFields contain additional rows for devices 10-14.
+        // Page 2+ bracket TextFields contain additional rows for devices 10+.
         //   Triplets start near index 0 and repeat at approximately 27-field intervals.
-        //   We assign them sequentially starting from device 10.
+        //   We assign them sequentially in five-device continuation pages.
         
         const bracketTFByPage = {}; // pageNum -> { fieldNum -> value }
-        for (const pageNum of [1, 2]) {
+        for (const pageNum of sortedPages) {
             const pagePattern = new RegExp(`Page${pageNum}`, 'i');
             bracketTFByPage[pageNum] = {};
             for (const [fieldName, value] of Object.entries(formData)) {
@@ -23561,11 +24143,17 @@
         // Step 3c: Find violation triplets in bracket-notation TextField1[N] fields.
         //
         // Page 1 devices 6-9:  triplet starts at index 26, then +27 per device → devices 6,7,8,9
-        // Page 2 devices 10-14: sequential triplets starting from the smallest found index → devices 10,11,12,…
+        // Page 2+ devices 10+: triplets are grouped in 27-field device blocks.
         //
         // Device numbers that are strings (e.g. "1P19296") will not pass partPattern, so the
         // scanner skips them naturally.
         const bracketTriplets = [];
+        function hasMainViolationForDevice(deviceIndex) {
+            const prefix = deviceIndex + '_';
+            return Object.keys(mainViolations).some(function(key) {
+                return key.indexOf(prefix) === 0 && mainViolations[key].partCode;
+            });
+        }
         
         // Page 1 bracket TFs: use INDEX-BASED device assignment (not sequential counter).
         // Each device section spans 27 fields. The first triplet starts at index 26.
@@ -23583,7 +24171,7 @@
                 var cClean = tfMap[idx3].trim();
                 if (partPattern.test(aClean) && conditionPattern.test(bClean) && remedyPattern.test(cClean)) {
                     var targetDevice = 6 + Math.floor(idx1 / 27);
-                    if (devices[targetDevice] && mainViolations[targetDevice + '_0']) {
+                    if (devices[targetDevice] && hasMainViolationForDevice(targetDevice)) {
                         bracketTriplets.push({
                             fieldStart: idx1,
                             deviceIndex: targetDevice,
@@ -23598,31 +24186,38 @@
             }
         })();
         
-        // Page 2 bracket TFs: sequential counter starting at device 10.
+        // Page 2+ bracket TFs: 27-field blocks following the same detail-page
+        // mapping as the named fields: Page 2 = devices 1-5, Page 3 = 6-10,
+        // Page 4 = 11-15, and so on.
         // Guard: only add if the device already has a confirmed main violation.
-        (function scanPage2BracketTFs() {
-            var tfMap = bracketTFByPage[2] || {};
-            var sorted = Object.keys(tfMap).map(Number).sort(function(a, b) { return a - b; });
-            var deviceCounter = 10;
-            for (var i = 0; i < sorted.length - 2; i++) {
-                var idx1 = sorted[i], idx2 = sorted[i + 1], idx3 = sorted[i + 2];
-                if (idx2 !== idx1 + 1 || idx3 !== idx1 + 2) continue;
-                var aClean = tfMap[idx1].trim();
-                var bClean = tfMap[idx2].trim().toUpperCase();
-                var cClean = tfMap[idx3].trim();
-                if (partPattern.test(aClean) && conditionPattern.test(bClean) && remedyPattern.test(cClean)) {
-                    var targetDevice = deviceCounter++;
-                    if (devices[targetDevice] && mainViolations[targetDevice + '_0']) {
-                        bracketTriplets.push({
-                            fieldStart: idx1,
-                            deviceIndex: targetDevice,
-                            partCode: aClean.padStart(2, '0'),
-                            conditionCode: bClean,
-                            remedyCode: cClean.padStart(2, '0')
-                        });
-                        console.log('Page2 bracket TF violation: TextField1[' + idx1 + '] -> Device ' + targetDevice + ', Part ' + aClean);
+        (function scanContinuationBracketTFs() {
+            var continuationPages = sortedPages.filter(function(pageNum) { return pageNum >= 2; });
+            for (var pageIdx = 0; pageIdx < continuationPages.length; pageIdx++) {
+                var pageNum = continuationPages[pageIdx];
+                var tfMap = bracketTFByPage[pageNum] || {};
+                var sorted = Object.keys(tfMap).map(Number).sort(function(a, b) { return a - b; });
+                var firstDeviceOnPage = 1 + ((pageNum - 2) * 5);
+                for (var i = 0; i < sorted.length - 2; i++) {
+                    var idx1 = sorted[i], idx2 = sorted[i + 1], idx3 = sorted[i + 2];
+                    if (idx2 !== idx1 + 1 || idx3 !== idx1 + 2) continue;
+                    var aClean = tfMap[idx1].trim();
+                    var bClean = tfMap[idx2].trim().toUpperCase();
+                    var cClean = tfMap[idx3].trim();
+                    if (partPattern.test(aClean) && conditionPattern.test(bClean) && remedyPattern.test(cClean)) {
+                        var targetDevice = firstDeviceOnPage + Math.floor(idx1 / FIELDS_PER_DEVICE);
+                        if (devices[targetDevice] && hasMainViolationForDevice(targetDevice)) {
+                            bracketTriplets.push({
+                                page: pageNum,
+                                fieldStart: idx1,
+                                deviceIndex: targetDevice,
+                                partCode: aClean.padStart(2, '0'),
+                                conditionCode: bClean,
+                                remedyCode: cClean.padStart(2, '0')
+                            });
+                            console.log('Page' + pageNum + ' bracket TF violation: TextField1[' + idx1 + '] -> Device ' + targetDevice + ', Part ' + aClean);
+                        }
+                        i += 2;
                     }
-                    i += 2;
                 }
             }
         })();
@@ -23713,6 +24308,7 @@
             
             const strValue = value.toString().trim();
             if (!strValue) continue;
+            if (/^(satisfactory|unsatisfactory)$/i.test(strValue)) continue;
             
             // Look for "Text Field" pattern (with space) - these are the comment fields
             const textFieldMatch = fieldName.match(/Text Field(\d+)/);
@@ -23785,50 +24381,30 @@
             result.violationsByDevice[violation.deviceNumber].push(violation);
         }
 
-        // Some ELV3A continuation pages reuse checkbox field names in ways that make
-        // status detection ambiguous. If a device has parsed violation rows, keep it
-        // visible as an unsatisfactory device instead of hiding it as "Missing Status Check."
-        if (Array.isArray(result.devicesWithoutStatusCheck) && result.devicesWithoutStatusCheck.length > 0) {
-            result.devicesWithoutStatusCheck = result.devicesWithoutStatusCheck.filter(function(deviceNumber) {
-                return !result.violationsByDevice[deviceNumber];
-            });
-        }
         for (const device of result.devices) {
             if (result.violationsByDevice[device.deviceNumber]) {
                 device.unsatisfactory = true;
                 device.satisfactory = false;
+                device.unsatisfactorySource = 'violations';
+            } else {
+                device.unsatisfactory = false;
+                device.unsatisfactorySource = null;
+                device.satisfactory = true;
             }
         }
+        result.devicesWithoutStatusCheck = [];
         
         // Step 6: Separate devices into violations, satisfactory, and missing status check
         result.devicesWithViolations = [];
         result.satisfactoryDevices = [];
         result.devicesMissingViolationDetails = [];
-        const needsStatusCheckSet = new Set(result.devicesWithoutStatusCheck || []);
         
         for (const device of result.devices) {
-            if (needsStatusCheckSet.has(device.deviceNumber)) {
-                // Device in Missing Status Check - exclude from all other sections
-                continue;
-            }
             const hasViolations = result.violationsByDevice[device.deviceNumber]?.length > 0;
-            const deviceIdx = Object.entries(devices).find(([idx, num]) => num === device.deviceNumber)?.[0];
-            const hasDefectComment = deviceIdx && deviceComments[deviceIdx] && deviceComments[deviceIdx].length > 0;
             if (hasViolations) {
                 result.devicesWithViolations.push(device);
-            } else if (device.unsatisfactory || hasDefectComment) {
-                result.devicesMissingViolationDetails.push(device);
-            } else if (device.satisfactory) {
-                result.satisfactoryDevices.push(device);
             } else {
-                // No violation codes found for this device. The checkbox-based SAT/UNSAT
-                // detection in this form is unreliable (the checked boxes often represent device
-                // type or test category, not the inspection result). Rely solely on whether
-                // actual violation codes were parsed: if none were found the device passed.
-                result.satisfactoryDevices.push({
-                    ...device,
-                    satisfactory: true
-                });
+                result.satisfactoryDevices.push(device);
             }
         }
         
@@ -24551,7 +25127,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.7</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 2.9</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
