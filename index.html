@@ -9820,6 +9820,8 @@
         }
 
         function buildMapViewExportPayload() {
+            syncMapNoteDraftsFromDom();
+
             const additionalLocations = getAdditionalLocations();
             const scopedMonthLabels = collectScopedMonthLabels(
                 window.lastBulkSearchResults.binGroups || {},
@@ -11907,6 +11909,24 @@
             return mapNotes[bin] || '';
         }
 
+        function syncMapNoteDraft(bin, value) {
+            const note = String(value || '').trim();
+            if (note) {
+                mapNotes[bin] = note;
+            } else {
+                delete mapNotes[bin];
+            }
+            refreshMapNoteMarkerIcon(bin);
+            return note;
+        }
+
+        function syncMapNoteDraftsFromDom() {
+            document.querySelectorAll('textarea[id^="mapNote_"]').forEach(textarea => {
+                const bin = textarea.id.replace(/^mapNote_/, '');
+                if (bin) syncMapNoteDraft(bin, textarea.value);
+            });
+        }
+
         function toggleMapNoteEditor(bin) {
             const editor = document.getElementById(`mapNoteEditor_${bin}`);
             const arrow = document.getElementById(`mapNoteArrow_${bin}`);
@@ -11928,10 +11948,9 @@
         function saveMapNote(bin) {
             const textarea = document.getElementById(`mapNote_${bin}`);
             if (!textarea) return;
-            const value = textarea.value.trim();
             const hadNote = !!mapNotes[bin];
+            const value = syncMapNoteDraft(bin, textarea.value);
             if (value) {
-                mapNotes[bin] = value;
                 addMapActivity(hadNote ? 'Updated building note' : 'Added building note', {
                     type: 'Note',
                     bin,
@@ -11953,6 +11972,7 @@
             if (textarea) textarea.value = '';
             const hadNote = !!mapNotes[bin];
             delete mapNotes[bin];
+            refreshMapNoteMarkerIcon(bin);
             if (hadNote) addMapActivity('Cleared building note', { type: 'Note', bin });
             showMapNotification('Building note cleared', '#ff9800');
             updateMapControlsPanel();
@@ -14906,6 +14926,65 @@
             document.addEventListener('mouseup', onUp);
         }
 
+        function createBuildingMarkerIcon(building) {
+            const favorites = getMapFavorites();
+            const isFavorited = !!favorites[building.bin];
+            const isCompleted = building.isCompleted;
+            const isInProcess = building.isInProcess;
+            const isHold = building.isHold;
+            const hasBuildingNote = !!getMapNote(building.bin).trim();
+
+            let markerColor;
+            if (isCompleted) {
+                markerColor = '#27ae60'; // Dark green - manually marked complete
+            } else if (isInProcess) {
+                markerColor = '#e67e22'; // Orange - in process
+            } else if (isHold) {
+                markerColor = '#607d8b'; // Blue-gray - on hold
+            } else if (isFavorited) {
+                markerColor = '#9b59b6'; // Purple - favorited building
+            } else if (building.notReadyDevices.length === 0 && building.readyDevices.length > 0) {
+                markerColor = '#4CAF50'; // Green - all devices ready to test
+            } else if (building.readyDevices.length > 0 && building.notReadyDevices.length > 0) {
+                markerColor = '#ffc107'; // Yellow - some devices ready to test
+            } else {
+                markerColor = '#ff6b6b'; // Red - no devices ready to test
+            }
+
+            const hasScheduledTestDates = getTestDatesForBin(building.bin).length > 0;
+            const markerLabel = hasBuildingNote
+                ? '★'
+                : (isCompleted ? '✓' : isInProcess ? '⟳' : isHold ? '⏸' : building.deviceCount);
+
+            return L.divIcon({
+                className: 'custom-map-marker',
+                html: `<div style="
+                    background: ${markerColor};
+                    width: 24px;
+                    height: 24px;
+                    border-radius: ${hasScheduledTestDates ? '4px' : '50%'};
+                    border: 3px solid white;
+                    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-weight: bold;
+                    font-size: ${hasBuildingNote ? '15px' : '11px'};
+                    line-height: 1;
+                ">${markerLabel}</div>`,
+                iconSize: [30, 30],
+                iconAnchor: [15, 15]
+            });
+        }
+
+        function refreshMapNoteMarkerIcon(bin) {
+            if (!buildingMap || !Array.isArray(mapBuildingsData) || !Array.isArray(mapMarkers)) return;
+            const index = mapBuildingsData.findIndex(building => building && building.bin === bin);
+            if (index === -1 || !mapMarkers[index]) return;
+            mapMarkers[index].setIcon(createBuildingMarkerIcon(mapBuildingsData[index]));
+        }
+
         function initBuildingMap(binGroups, preserveView) {
             const mapContainer = document.getElementById('buildingMap');
             const loadedState = pendingLoadedMapViewState;
@@ -14927,8 +15006,7 @@
             mapMarkers = [];
             additionalLocationMarkers = [];
 
-            // Get favorites, hidden, completed, in-process, and hold buildings
-            const favorites = getMapFavorites();
+            // Get hidden, completed, in-process, and hold buildings
             const hidden = getMapHidden();
             const completed = getMapCompleted();
             const inProcess = getMapInProcess();
@@ -15162,53 +15240,12 @@
             const bounds = L.latLngBounds();
             
             buildingsWithCoords.forEach(building => {
-                // Check if building is favorited, completed, in-process, or on hold
-                const isFavorited = favorites[building.bin] ? true : false;
                 const isCompleted = building.isCompleted;
                 const isInProcess = building.isInProcess;
                 const isHold = building.isHold;
-                
-                // Determine marker color based on status
-                let markerColor;
-                
-                if (isCompleted) {
-                    markerColor = '#27ae60'; // Dark green - manually marked complete
-                } else if (isInProcess) {
-                    markerColor = '#e67e22'; // Orange - in process
-                } else if (isHold) {
-                    markerColor = '#607d8b'; // Blue-gray - on hold
-                } else if (isFavorited) {
-                    markerColor = '#9b59b6'; // Purple - favorited building
-                } else if (building.notReadyDevices.length === 0 && building.readyDevices.length > 0) {
-                    markerColor = '#4CAF50'; // Green - all devices ready to test
-                } else if (building.readyDevices.length > 0 && building.notReadyDevices.length > 0) {
-                    markerColor = '#ffc107'; // Yellow - some devices ready to test
-                } else {
-                    markerColor = '#ff6b6b'; // Red - no devices ready to test
-                }
-
-                const hasScheduledTestDates = getTestDatesForBin(building.bin).length > 0;
 
                 // Create custom icon
-                const icon = L.divIcon({
-                    className: 'custom-map-marker',
-                    html: `<div style="
-                        background: ${markerColor};
-                        width: 24px;
-                        height: 24px;
-                        border-radius: ${hasScheduledTestDates ? '4px' : '50%'};
-                        border: 3px solid white;
-                        box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        color: white;
-                        font-weight: bold;
-                        font-size: 11px;
-                    ">${isCompleted ? '✓' : isInProcess ? '⟳' : isHold ? '⏸' : building.deviceCount}</div>`,
-                    iconSize: [30, 30],
-                    iconAnchor: [15, 15]
-                });
+                const icon = createBuildingMarkerIcon(building);
 
                 const marker = L.marker([building.latitude, building.longitude], { icon })
                     .addTo(buildingMap);
@@ -15434,6 +15471,7 @@
                             <div id="mapNoteEditor_${building.bin}" style="display: none; padding: 0 10px 10px 10px;">
                                 <textarea id="mapNote_${building.bin}"
                                           placeholder="Add a note for this building..."
+                                          oninput="syncMapNoteDraft('${building.bin}', this.value)"
                                           style="width: 100%; min-height: 54px; resize: vertical; padding: 7px 8px; border-radius: 5px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 11px; box-sizing: border-box; line-height: 1.35;">${currentBuildingNote}</textarea>
                                 <div style="display: flex; gap: 6px; margin-top: 6px;">
                                     <button onclick="saveMapNote('${building.bin}')"
@@ -25217,7 +25255,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.0.1</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.0.2</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
