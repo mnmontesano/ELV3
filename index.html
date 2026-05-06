@@ -1023,6 +1023,7 @@
                             </div>
                         </div>
                         <div id="mapMonthFilterStatus" style="display: none; width: 100%; margin-top: 2px; padding: 5px 9px; border-radius: 6px; background: rgba(23, 162, 184, 0.12); border: 1px solid rgba(23, 162, 184, 0.35); color: #17a2b8; font-size: 0.78em; font-weight: 600;"></div>
+                        <div id="mapSearchSuggestions" style="display: none; width: 100%; margin-top: 2px; border: 1px solid var(--input-border); border-radius: 8px; background: var(--panel-bg); padding: 8px;"></div>
                         <div id="additionalLocationSuggestions" style="display: none; width: 100%; margin-top: 2px; border: 1px solid var(--input-border); border-radius: 8px; background: var(--panel-bg); padding: 8px;"></div>
                     </div>
                 </div>
@@ -1322,7 +1323,37 @@
                             </div>
                         </div>
 
-                        <button id="mapExportExcelButton" onclick="exportMapViewToExcel()" class="mcp-btn" style="background: #28a745; color: white; border-color: #28a745; font-weight: 600; margin-top: 10px;">
+                        <div style="margin-top: 10px; padding: 8px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px;">
+                            <label for="mapViewFilterSelect" style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:5px;">Map view filter</label>
+                            <select id="mapViewFilterSelect" onchange="applyMapViewDropdownFilter()" style="width:100%; padding:6px 8px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:0.95em;">
+                                <option value="all">Current map view</option>
+                                <option value="visible">Visible with current settings</option>
+                                <option value="active-month-filters">Current active month filter</option>
+                                <option value="favorites">Favorites</option>
+                                <option value="hidden">Hidden</option>
+                                <option value="completed">Completed</option>
+                                <option value="in-process">In Process</option>
+                                <option value="hold">On Hold</option>
+                                <option value="scheduled">Scheduled Test Dates</option>
+                                <option value="notes">Buildings with Notes</option>
+                                <option value="month-labeled">Month-labeled</option>
+                                <option value="no-month">No month label</option>
+                                <option value="month:January">January</option>
+                                <option value="month:February">February</option>
+                                <option value="month:March">March</option>
+                                <option value="month:April">April</option>
+                                <option value="month:May">May</option>
+                                <option value="month:June">June</option>
+                                <option value="month:July">July</option>
+                                <option value="month:August">August</option>
+                                <option value="month:September">September</option>
+                                <option value="month:October">October</option>
+                                <option value="month:November">November</option>
+                                <option value="month:December">December</option>
+                                <option value="month:REVIEW">REVIEW</option>
+                            </select>
+                        </div>
+                        <button id="mapExportExcelButton" onclick="showMapExportModal()" class="mcp-btn" style="background: #28a745; color: white; border-color: #28a745; font-weight: 600; margin-top: 10px;">
                             Export
                         </button>
 
@@ -10075,7 +10106,196 @@
             return '';
         }
 
-        function exportMapViewToExcel() {
+        function getSelectedMapViewFilter() {
+            const select = document.getElementById('mapViewFilterSelect');
+            return select ? select.value : 'all';
+        }
+
+        function getMapViewFilterLabel(filterValue) {
+            if (!filterValue || filterValue === 'all') return 'Current map view';
+            if (filterValue.indexOf('month:') === 0) return filterValue.replace('month:', 'Month: ');
+            const labels = {
+                visible: 'Visible with current settings',
+                'active-month-filters': 'Current active month filter',
+                favorites: 'Favorites',
+                hidden: 'Hidden',
+                completed: 'Completed',
+                'in-process': 'In Process',
+                hold: 'On Hold',
+                scheduled: 'Scheduled Test Dates',
+                notes: 'Buildings with Notes',
+                'month-labeled': 'Month-labeled',
+                'no-month': 'No month label'
+            };
+            return labels[filterValue] || filterValue;
+        }
+
+        function getMapViewVisibleBins(view) {
+            const bins = new Set();
+            if (Array.isArray(mapBuildingsData) && mapBuildingsData.length > 0) {
+                mapBuildingsData.forEach(building => {
+                    if (isBuildingVisibleInCurrentMapFilters(building)) bins.add(String(building.bin));
+                });
+                return bins;
+            }
+
+            const binGroups = (view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups) || {};
+            Object.keys(binGroups).forEach(bin => {
+                const hiddenBySettings = !!(
+                    (view.hidden && view.hidden[bin]) ||
+                    (isHideCompletedActive() && view.completed && view.completed[bin]) ||
+                    (isHideInProcessActive() && view.inProcess && view.inProcess[bin]) ||
+                    (isHideHoldActive() && view.hold && view.hold[bin])
+                );
+                if (!hiddenBySettings) bins.add(String(bin));
+            });
+            return bins;
+        }
+
+        function getMapViewFilterBins(view, filterValue) {
+            const binGroups = (view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups) || {};
+            const allBins = Object.keys(binGroups).map(String);
+            const monthLabels = view.monthLabels || {};
+
+            if (!filterValue || filterValue === 'all') return null;
+            if (filterValue === 'visible') return getMapViewVisibleBins(view);
+            if (filterValue === 'active-month-filters') {
+                const bins = new Set();
+                allBins.forEach(bin => {
+                    if (activeMonthFilters.has(monthLabels[bin])) bins.add(bin);
+                });
+                return bins;
+            }
+            if (filterValue === 'favorites') return new Set(Object.keys(view.favorites || {}).map(String));
+            if (filterValue === 'hidden') return new Set(Object.keys(view.hidden || {}).map(String));
+            if (filterValue === 'completed') return new Set(Object.keys(view.completed || {}).map(String));
+            if (filterValue === 'in-process') return new Set(Object.keys(view.inProcess || {}).map(String));
+            if (filterValue === 'hold') return new Set(Object.keys(view.hold || {}).map(String));
+            if (filterValue === 'scheduled') return new Set(Object.keys(view.testDates || {}).map(String));
+            if (filterValue === 'notes') return new Set(Object.keys(view.notes || {}).map(String));
+            if (filterValue === 'month-labeled') {
+                return new Set(Object.keys(monthLabels).filter(bin => monthLabels[bin]).map(String));
+            }
+            if (filterValue === 'no-month') {
+                return new Set(allBins.filter(bin => !monthLabels[bin]));
+            }
+            if (filterValue.indexOf('month:') === 0) {
+                const month = filterValue.replace('month:', '');
+                return new Set(allBins.filter(bin => monthLabels[bin] === month));
+            }
+            return null;
+        }
+
+        function applyMapViewDropdownFilter() {
+            if (!buildingMap || !Array.isArray(mapMarkers) || !Array.isArray(mapBuildingsData)) return;
+
+            const filterValue = getSelectedMapViewFilter();
+            if (!filterValue || filterValue === 'all') {
+                if (activeMonthFilters.size > 0) {
+                    applyMonthFilters();
+                } else {
+                    restoreMapVisibilityForCurrentFilters();
+                }
+                showMapNotification('Showing current map view', '#17a2b8');
+                return;
+            }
+
+            const payload = buildMapViewExportPayload();
+            const bins = getMapViewFilterBins(payload.view || {}, filterValue) || new Set();
+            const bounds = L.latLngBounds();
+            let shown = 0;
+
+            mapMarkers.forEach((marker, index) => {
+                const building = mapBuildingsData[index];
+                if (!building) return;
+                if (bins.has(String(building.bin))) {
+                    if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                    bounds.extend(marker.getLatLng());
+                    shown++;
+                } else if (buildingMap.hasLayer(marker)) {
+                    buildingMap.removeLayer(marker);
+                }
+            });
+
+            additionalLocationMarkers.forEach(marker => {
+                if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
+            });
+
+            const resultCount = document.getElementById('mapSearchResultCount');
+            if (resultCount) {
+                resultCount.textContent = `${shown} building${shown !== 1 ? 's' : ''} — ${getMapViewFilterLabel(filterValue)}`;
+                resultCount.style.display = 'inline';
+                resultCount.style.color = shown > 0 ? '#17a2b8' : '#ff6b6b';
+            }
+            if (bounds.isValid()) buildingMap.fitBounds(bounds, { padding: [50, 50] });
+        }
+
+        function showMapExportModal() {
+            const existing = document.getElementById('mapExportModal');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'mapExportModal';
+            modal.style.cssText = 'display:flex; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10030; justify-content:center; align-items:center;';
+            modal.innerHTML = `
+                <div style="background: var(--card-bg); border-radius: 12px; padding: 25px; max-width: 460px; width: 90%; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid var(--input-border);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 2px solid var(--input-border);">
+                        <h3 style="margin: 0; color: var(--header-color); font-size: 1.2em;">Export MAP Data</h3>
+                        <button onclick="closeMapExportModal()" style="background: none; border: none; font-size: 1.5em; cursor: pointer; color: var(--text-color); padding: 0; line-height: 1;">&times;</button>
+                    </div>
+                    <div style="margin-bottom: 18px;">
+                        <label style="color: var(--text-color); font-weight: 500; margin-bottom: 10px; display: block;">Workbook Sections:</label>
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 9px; background: var(--panel-bg); border-radius: 6px; border: 1px solid var(--input-border);">
+                                <input id="mapExportIncludeNotesSheet" type="checkbox" checked style="width: 16px; height: 16px; margin: 0;">
+                                <span style="color: var(--text-color); font-size: 0.95em;">Include dedicated Notes sheet</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 9px; background: var(--panel-bg); border-radius: 6px; border: 1px solid var(--input-border);">
+                                <input id="mapExportIncludeActivityLog" type="checkbox" checked style="width: 16px; height: 16px; margin: 0;">
+                                <span style="color: var(--text-color); font-size: 0.95em;">Include Activity Log sheet</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 9px; background: var(--panel-bg); border-radius: 6px; border: 1px solid var(--input-border);">
+                                <input id="mapExportIncludeRawSections" type="checkbox" checked style="width: 16px; height: 16px; margin: 0;">
+                                <span style="color: var(--text-color); font-size: 0.95em;">Include Raw Saved Sections sheet</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 9px; background: var(--panel-bg); border-radius: 6px; border: 1px solid var(--input-border);">
+                                <input id="mapExportIncludeRawJson" type="checkbox" checked style="width: 16px; height: 16px; margin: 0;">
+                                <span style="color: var(--text-color); font-size: 0.95em;">Include complete Raw JSON sheet</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div style="font-size: 0.86em; color: var(--text-color); opacity: 0.75; line-height: 1.45; margin-bottom: 18px;">
+                        Export always uses all saved MAP data. Use the Map view filter in Settings only to change what is shown on the map.
+                    </div>
+                    <div style="display: flex; gap: 10px; justify-content: flex-start;">
+                        <button onclick="runMapExportFromModal()" style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Export</button>
+                        <button onclick="closeMapExportModal()" style="padding: 10px 20px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-weight: 500;">Cancel</button>
+                    </div>
+                </div>
+            `;
+            modal.addEventListener('click', function(event) {
+                if (event.target === modal) closeMapExportModal();
+            });
+            document.body.appendChild(modal);
+        }
+
+        function closeMapExportModal() {
+            const modal = document.getElementById('mapExportModal');
+            if (modal) modal.remove();
+        }
+
+        function runMapExportFromModal() {
+            const options = {
+                includeNotesSheet: !!(document.getElementById('mapExportIncludeNotesSheet') || {}).checked,
+                includeActivityLog: !!(document.getElementById('mapExportIncludeActivityLog') || {}).checked,
+                includeRawSections: !!(document.getElementById('mapExportIncludeRawSections') || {}).checked,
+                includeRawJson: !!(document.getElementById('mapExportIncludeRawJson') || {}).checked
+            };
+            closeMapExportModal();
+            exportMapViewToExcel(options);
+        }
+
+        function exportMapViewToExcel(options) {
             const hasResults = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
             if (!hasResults) {
                 alert('No map data to export. Run a bulk lookup or load a map view file first.');
@@ -10087,6 +10307,12 @@
             }
 
             try {
+                const exportOptions = {
+                    includeNotesSheet: !options || options.includeNotesSheet !== false,
+                    includeActivityLog: !options || options.includeActivityLog !== false,
+                    includeRawSections: !options || options.includeRawSections !== false,
+                    includeRawJson: !options || options.includeRawJson !== false
+                };
                 const payload = buildMapViewExportPayload();
                 const view = payload.view || {};
                 const binGroups = (view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups) || {};
@@ -10135,6 +10361,10 @@
                     ['Note Buildings', Object.keys(view.notes || {}).length],
                     ['Activity Entries', Array.isArray(view.activityLog) ? view.activityLog.length : 0],
                     ['Month Assignments', Array.isArray(view.monthAssignments) ? view.monthAssignments.length : Object.keys(view.monthLabels || {}).length],
+                    ['Notes Sheet Included', exportOptions.includeNotesSheet ? 'Yes' : 'No'],
+                    ['Activity Log Included', exportOptions.includeActivityLog ? 'Yes' : 'No'],
+                    ['Raw Saved Sections Included', exportOptions.includeRawSections ? 'Yes' : 'No'],
+                    ['Raw JSON Included', exportOptions.includeRawJson ? 'Yes' : 'No'],
                     ['Map Center', view.mapState && view.mapState.center ? view.mapState.center.join(', ') : ''],
                     ['Map Zoom', view.mapState && view.mapState.zoom !== null ? view.mapState.zoom : ''],
                     ['Map Search Term', view.mapState ? view.mapState.searchTerm || '' : ''],
@@ -10242,16 +10472,27 @@
                 });
                 appendMapExcelSheet(workbook, usedSheetNames, 'Dates', ['Date Type', 'BIN', 'Address', 'Saved Date', 'Formatted Date'], dateRows);
 
-                const activityRows = (Array.isArray(view.activityLog) ? view.activityLog : []).map(entry => [
-                    mapExcelTimestamp(entry.timestamp),
-                    entry.type || '',
-                    entry.action || '',
-                    entry.bin || '',
-                    entry.address || '',
-                    entry.date || '',
-                    entry.details || ''
+                const noteRows = Object.entries(view.notes || {}).map(([bin, note]) => [
+                    bin,
+                    getMapExcelBuildingAddress(bin, binGroups[bin], view),
+                    note
                 ]);
-                appendMapExcelSheet(workbook, usedSheetNames, 'Activity Log', ['When', 'Type', 'Action', 'BIN', 'Address', 'Date', 'Details'], activityRows);
+                if (exportOptions.includeNotesSheet) {
+                    appendMapExcelSheet(workbook, usedSheetNames, 'Notes', ['BIN', 'Address', 'Note'], noteRows);
+                }
+
+                if (exportOptions.includeActivityLog) {
+                    const activityRows = (Array.isArray(view.activityLog) ? view.activityLog : []).map(entry => [
+                        mapExcelTimestamp(entry.timestamp),
+                        entry.type || '',
+                        entry.action || '',
+                        entry.bin || '',
+                        entry.address || '',
+                        entry.date || '',
+                        entry.details || ''
+                    ]);
+                    appendMapExcelSheet(workbook, usedSheetNames, 'Activity Log', ['When', 'Type', 'Action', 'BIN', 'Address', 'Date', 'Details'], activityRows);
+                }
 
                 const monthRows = Array.isArray(view.monthAssignments) && view.monthAssignments.length
                     ? view.monthAssignments.map(item => [item.bin || '', item.address || getMapExcelBuildingAddress(item.bin, binGroups[item.bin], view), item.month || '', item.source || '', mapExcelValue(item)])
@@ -10268,6 +10509,7 @@
 
                 const rawSectionRows = [
                     ...splitMapExcelSectionRows('bulkDeviceNumbers', view.bulkDeviceNumbers || ''),
+                    ...splitMapExcelSectionRows('lastBulkSearchResults', view.lastBulkSearchResults || {}),
                     ...splitMapExcelSectionRows('favorites', view.favorites || {}),
                     ...splitMapExcelSectionRows('hidden', view.hidden || {}),
                     ...splitMapExcelSectionRows('completed', view.completed || {}),
@@ -10281,15 +10523,19 @@
                     ...splitMapExcelSectionRows('additionalLocations', view.additionalLocations || []),
                     ...splitMapExcelSectionRows('mapState', view.mapState || {})
                 ];
-                appendMapExcelSheet(workbook, usedSheetNames, 'Raw Saved Sections', ['Saved Section', 'Chunk', 'Value'], rawSectionRows);
+                if (exportOptions.includeRawSections) {
+                    appendMapExcelSheet(workbook, usedSheetNames, 'Raw Saved Sections', ['Saved Section', 'Chunk', 'Value'], rawSectionRows);
+                }
 
-                appendMapExcelSheet(
-                    workbook,
-                    usedSheetNames,
-                    'Raw JSON',
-                    ['Chunk', 'JSON'],
-                    splitMapExcelJson(jsonString).map((chunk, index) => [index + 1, chunk])
-                );
+                if (exportOptions.includeRawJson) {
+                    appendMapExcelSheet(
+                        workbook,
+                        usedSheetNames,
+                        'Raw JSON',
+                        ['Chunk', 'JSON'],
+                        splitMapExcelJson(jsonString).map((chunk, index) => [index + 1, chunk])
+                    );
+                }
 
                 const baseName = (currentMapViewFileName || view.name || 'map-view')
                     .replace(/\.json$/i, '')
@@ -16092,6 +16338,160 @@
                 buildingMap.fitBounds(bounds, { padding: [30, 30] });
             }
         }
+
+        function normalizeMapSearchText(value) {
+            return String(value || '')
+                .toUpperCase()
+                .replace(/\b(AVENUE)\b/g, 'AVE')
+                .replace(/\b(STREET)\b/g, 'ST')
+                .replace(/\b(BOULEVARD)\b/g, 'BLVD')
+                .replace(/\b(PLACE)\b/g, 'PL')
+                .replace(/\b(ROAD)\b/g, 'RD')
+                .replace(/\b(DRIVE)\b/g, 'DR')
+                .replace(/\b(EAST)\b/g, 'E')
+                .replace(/\b(WEST)\b/g, 'W')
+                .replace(/\b(NORTH)\b/g, 'N')
+                .replace(/\b(SOUTH)\b/g, 'S')
+                .replace(/[^A-Z0-9 ]+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        function mapSearchEditDistance(a, b) {
+            const left = normalizeMapSearchText(a);
+            const right = normalizeMapSearchText(b);
+            const maxLen = Math.max(left.length, right.length);
+            if (maxLen === 0) return 0;
+            if (left === right) return 0;
+
+            const previous = [];
+            for (let j = 0; j <= right.length; j++) previous[j] = j;
+            for (let i = 1; i <= left.length; i++) {
+                let prevDiagonal = previous[0];
+                previous[0] = i;
+                for (let j = 1; j <= right.length; j++) {
+                    const temp = previous[j];
+                    const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+                    previous[j] = Math.min(
+                        previous[j] + 1,
+                        previous[j - 1] + 1,
+                        prevDiagonal + cost
+                    );
+                    prevDiagonal = temp;
+                }
+            }
+            return previous[right.length] / maxLen;
+        }
+
+        function mapSearchSimilarityScore(query, candidate) {
+            const normalizedQuery = normalizeMapSearchText(query);
+            const normalizedCandidate = normalizeMapSearchText(candidate);
+            if (!normalizedQuery || !normalizedCandidate) return 0;
+            if (normalizedCandidate.includes(normalizedQuery) || normalizedQuery.includes(normalizedCandidate)) return 1;
+
+            const queryTokens = normalizedQuery.split(' ').filter(Boolean);
+            const candidateTokens = normalizedCandidate.split(' ').filter(Boolean);
+            const sharedTokens = queryTokens.filter(token => candidateTokens.includes(token));
+            const tokenScore = queryTokens.length ? sharedTokens.length / queryTokens.length : 0;
+
+            const distanceScore = 1 - mapSearchEditDistance(normalizedQuery, normalizedCandidate);
+            return Math.max(tokenScore, distanceScore);
+        }
+
+        function getMapSearchSuggestionCandidates(query) {
+            const candidates = [];
+            const seen = new Set();
+            (mapBuildingsData || []).forEach(building => {
+                if (!building || !building.address) return;
+                const key = `building:${building.bin || building.address}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                const score = mapSearchSimilarityScore(query, building.address);
+                const deviceNumbers = [
+                    ...(building.readyDevices || []),
+                    ...(building.notReadyDevices || []),
+                    ...(building.removedDeletedDevices || [])
+                ]
+                    .map(device => device && device.number)
+                    .filter(Boolean);
+                const devicePreview = deviceNumbers.slice(0, 6).join(', ');
+                const moreDevices = deviceNumbers.length > 6 ? ` +${deviceNumbers.length - 6} more` : '';
+                candidates.push({
+                    type: 'Building',
+                    label: building.address,
+                    details: `BIN ${building.bin}`,
+                    devicePreview: devicePreview ? `Devices: ${devicePreview}${moreDevices}` : '',
+                    value: building.address,
+                    score
+                });
+            });
+
+            getAdditionalLocations().forEach((location, index) => {
+                const label = location.customName || location.label || location.address || '';
+                if (!label) return;
+                const key = `additional:${location.latitude}:${location.longitude}:${index}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                const score = mapSearchSimilarityScore(query, label);
+                candidates.push({
+                    type: 'Added Location',
+                    label,
+                    details: location.bin ? `BIN ${location.bin}` : (location.type || ''),
+                    devicePreview: Array.isArray(location.devices) && location.devices.length
+                        ? `Devices: ${location.devices.slice(0, 6).map(device => device.device_number).filter(Boolean).join(', ')}${location.devices.length > 6 ? ' +' + (location.devices.length - 6) + ' more' : ''}`
+                        : '',
+                    value: label,
+                    score
+                });
+            });
+
+            return candidates
+                .filter(item => item.score >= 0.48)
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 5);
+        }
+
+        function clearMapSearchSuggestions() {
+            const container = document.getElementById('mapSearchSuggestions');
+            if (!container) return;
+            container.style.display = 'none';
+            container.innerHTML = '';
+        }
+
+        function showMapSearchSuggestions(query, suggestions) {
+            const container = document.getElementById('mapSearchSuggestions');
+            if (!container) return;
+            if (!suggestions || suggestions.length === 0) {
+                clearMapSearchSuggestions();
+                return;
+            }
+
+            const rows = suggestions.map(item => `
+                <button type="button"
+                        onclick="selectMapSearchSuggestion(decodeURIComponent('${encodeURIComponent(item.value)}'))"
+                        style="width: 100%; text-align: left; margin: 0 0 6px 0; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 6px; background: var(--input-bg); color: var(--text-color); cursor: pointer; font-size: 12px;">
+                    <div style="font-weight: 600;">${escapeMapSuggestionHtml(item.label)}</div>
+                    <div style="font-size: 11px; opacity: 0.75; margin-top: 2px;">${escapeMapSuggestionHtml(item.type)}${item.details ? ' - ' + escapeMapSuggestionHtml(item.details) : ''}</div>
+                    ${item.devicePreview ? `<div style="font-size: 11px; opacity: 0.85; margin-top: 3px; color: var(--header-color);">${escapeMapSuggestionHtml(item.devicePreview)}</div>` : ''}
+                </button>
+            `).join('');
+
+            container.innerHTML = `
+                <div style="font-size: 12px; margin-bottom: 8px; color: var(--header-color);">
+                    No exact match for <strong>${escapeMapSuggestionHtml(query)}</strong>. Did you mean one of these locations already on the map?
+                </div>
+                ${rows}
+            `;
+            container.style.display = 'block';
+        }
+
+        function selectMapSearchSuggestion(value) {
+            const input = document.getElementById('mapSearchInput');
+            if (!input) return;
+            input.value = value;
+            clearMapSearchSuggestions();
+            searchMapBuildings();
+        }
         
         // Search buildings on the map
         function searchMapBuildings() {
@@ -16156,8 +16556,11 @@
                 resultCount.style.display = 'inline';
                 resultCount.style.color = '#ff6b6b';
                 restoreMapVisibilityForCurrentFilters({ fitMap: false });
+                showMapSearchSuggestions(searchInput.value.trim(), getMapSearchSuggestionCandidates(searchInput.value.trim()));
                 return;
             }
+
+            clearMapSearchSuggestions();
 
             // Search acts as a temporary visibility override. Keep the current
             // filter view intact, then add matched markers even if filtered out.
@@ -16221,9 +16624,12 @@
 
             if (searchInput) searchInput.value = '';
             if (resultCount) resultCount.style.display = 'none';
+            clearMapSearchSuggestions();
 
             // Restore the user's current filters after removing the temporary search override.
-            if (activeMonthFilters.size > 0) {
+            if (getSelectedMapViewFilter() !== 'all') {
+                applyMapViewDropdownFilter();
+            } else if (activeMonthFilters.size > 0) {
                 applyMonthFilters();
             } else {
                 restoreMapVisibilityForCurrentFilters();
@@ -25305,7 +25711,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.0.4</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.0.5</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
