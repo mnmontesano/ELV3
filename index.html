@@ -9669,6 +9669,8 @@
         let mapAdditionalLocations = [];
         let mapHideMonthLabeled = false;
         let activeMonthFilters = new Set();
+        let pendingMapHideScheduledMonthPrompt = false;
+        let mapHideScheduledMonthSelectionReady = false;
 
         let additionalLocationMarkers = [];
         let pendingLoadedMapViewState = null;
@@ -10154,12 +10156,41 @@
             return bins;
         }
 
-        function mapViewHasScheduledDates(view, bin) {
-            const testDates = view.testDates && Array.isArray(view.testDates[bin]) ? view.testDates[bin] : [];
-            const completedDates = view.completed && view.completed[bin] && Array.isArray(view.completed[bin].scheduledDates)
-                ? view.completed[bin].scheduledDates
+        function mapViewHasScheduledDates(view, bin, building) {
+            const key = String(bin);
+            const testDates = view.testDates && Array.isArray(view.testDates[key]) ? view.testDates[key] : [];
+            const completedDates = view.completed && view.completed[key] && Array.isArray(view.completed[key].scheduledDates)
+                ? view.completed[key].scheduledDates
                 : [];
-            return testDates.length > 0 || completedDates.length > 0;
+            const buildingDates = building && Array.isArray(building.scheduledDates) ? building.scheduledDates : [];
+            const liveDates = getTestDatesForBin(key);
+            return testDates.length > 0 || completedDates.length > 0 || buildingDates.length > 0 || liveDates.length > 0;
+        }
+
+        function mapViewIsCompleted(view, bin, building) {
+            const key = String(bin);
+            return !!((view.completed && view.completed[key]) || (building && building.isCompleted));
+        }
+
+        function mapViewPassesHideScheduledCompletedFilter(view, bin, building) {
+            const key = String(bin);
+            const monthLabels = view.monthLabels || {};
+            if (mapViewHasScheduledDates(view, key, building) || mapViewIsCompleted(view, key, building)) return false;
+            if (activeMonthFilters.size > 0 && !activeMonthFilters.has(monthLabels[key])) return false;
+            return true;
+        }
+
+        function getMapViewFilterDisplayLabel(filterValue) {
+            const baseLabel = getMapViewFilterLabel(filterValue);
+            if (filterValue === 'hide-scheduled' && activeMonthFilters.size > 0) {
+                return `${baseLabel} (${[...activeMonthFilters].join(', ')})`;
+            }
+            return baseLabel;
+        }
+
+        function getMapHideScheduledDefaultMonths() {
+            if (activeMonthFilters.size > 0) return new Set(activeMonthFilters);
+            return new Set(ALL_MONTHS);
         }
 
         function getMapViewFilterBins(view, filterValue) {
@@ -10182,7 +10213,7 @@
             if (filterValue === 'in-process') return new Set(Object.keys(view.inProcess || {}).map(String));
             if (filterValue === 'hold') return new Set(Object.keys(view.hold || {}).map(String));
             if (filterValue === 'scheduled') return new Set(allBins.filter(bin => mapViewHasScheduledDates(view, bin)));
-            if (filterValue === 'hide-scheduled') return new Set(allBins.filter(bin => !mapViewHasScheduledDates(view, bin) && !(view.completed && view.completed[bin])));
+            if (filterValue === 'hide-scheduled') return new Set(allBins.filter(bin => mapViewPassesHideScheduledCompletedFilter(view, bin)));
             if (filterValue === 'notes') return new Set(Object.keys(view.notes || {}).map(String));
             if (filterValue === 'month-labeled') {
                 return new Set(Object.keys(monthLabels).filter(bin => monthLabels[bin]).map(String));
@@ -10197,11 +10228,89 @@
             return null;
         }
 
+        function showMapHideScheduledMonthModal() {
+            const existing = document.getElementById('mapHideScheduledMonthModal');
+            if (existing) existing.remove();
+
+            const defaultMonths = getMapHideScheduledDefaultMonths();
+            const monthOptions = ALL_MONTHS.map(month => `
+                <label style="display:flex; align-items:center; gap:8px; padding:7px 8px; background:var(--input-bg); border:1px solid var(--input-border); border-radius:6px; cursor:pointer;">
+                    <input type="checkbox" class="map-hide-scheduled-month" value="${month}" ${defaultMonths.has(month) ? 'checked' : ''} style="width:16px; height:16px; accent-color:#17a2b8;">
+                    <span style="font-size:0.9em; color:var(--text-color);">${month}</span>
+                </label>
+            `).join('');
+
+            const modal = document.createElement('div');
+            modal.id = 'mapHideScheduledMonthModal';
+            modal.style.cssText = 'display:flex; position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:10035; justify-content:center; align-items:center;';
+            modal.innerHTML = `
+                <div style="background:var(--card-bg); border:1px solid var(--input-border); border-radius:12px; padding:22px; max-width:520px; width:92%; box-shadow:0 12px 42px rgba(0,0,0,0.35);">
+                    <h3 style="margin:0 0 8px 0; color:var(--header-color);">Select Months</h3>
+                    <div style="font-size:0.9em; color:var(--text-color); opacity:0.82; line-height:1.45; margin-bottom:14px;">
+                        Choose which month-labeled buildings should remain visible after hiding scheduled test dates and completed jobs.
+                    </div>
+                    <div style="display:flex; gap:8px; margin-bottom:12px;">
+                        <button onclick="document.querySelectorAll('.map-hide-scheduled-month').forEach(cb => cb.checked = true)" style="padding:7px 10px; border-radius:6px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); cursor:pointer;">Select All</button>
+                        <button onclick="document.querySelectorAll('.map-hide-scheduled-month').forEach(cb => cb.checked = false)" style="padding:7px 10px; border-radius:6px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); cursor:pointer;">Clear</button>
+                    </div>
+                    <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:7px; max-height:310px; overflow-y:auto; margin-bottom:16px;">
+                        ${monthOptions}
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px;">
+                        <button onclick="cancelMapHideScheduledMonthFilter()" style="padding:8px 14px; border-radius:6px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); cursor:pointer;">Cancel</button>
+                        <button onclick="applyMapHideScheduledMonthSelection()" style="padding:8px 14px; border-radius:6px; border:1px solid #17a2b8; background:#17a2b8; color:white; font-weight:700; cursor:pointer;">Apply Filter</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        function cancelMapHideScheduledMonthFilter() {
+            pendingMapHideScheduledMonthPrompt = false;
+            mapHideScheduledMonthSelectionReady = false;
+            const modal = document.getElementById('mapHideScheduledMonthModal');
+            if (modal) modal.remove();
+            const select = document.getElementById('mapViewFilterSelect');
+            if (select) select.value = 'all';
+            applyMapViewDropdownFilter();
+        }
+
+        function applyMapHideScheduledMonthSelection() {
+            const selectedMonths = Array.from(document.querySelectorAll('.map-hide-scheduled-month:checked')).map(cb => cb.value);
+            if (selectedMonths.length === 0) {
+                alert('Please select at least one month.');
+                return;
+            }
+
+            pendingMapHideScheduledMonthPrompt = false;
+            mapHideScheduledMonthSelectionReady = true;
+            activeMonthFilters.clear();
+            selectedMonths.forEach(month => activeMonthFilters.add(month));
+            updateMonthFilterButtons();
+
+            const modal = document.getElementById('mapHideScheduledMonthModal');
+            if (modal) modal.remove();
+            applyMapViewDropdownFilter();
+        }
+
         function applyMapViewDropdownFilter() {
             if (!buildingMap || !Array.isArray(mapMarkers) || !Array.isArray(mapBuildingsData)) return;
 
             const filterValue = getSelectedMapViewFilter();
+            if (filterValue === 'hide-scheduled' && !mapHideScheduledMonthSelectionReady) {
+                if (!pendingMapHideScheduledMonthPrompt) {
+                    pendingMapHideScheduledMonthPrompt = true;
+                    showMapHideScheduledMonthModal();
+                }
+                return;
+            }
+            if (filterValue !== 'hide-scheduled') {
+                pendingMapHideScheduledMonthPrompt = false;
+                mapHideScheduledMonthSelectionReady = false;
+            }
+
             if (!filterValue || filterValue === 'all') {
+                pendingMapHideScheduledMonthPrompt = false;
                 if (activeMonthFilters.size > 0) {
                     applyMonthFilters();
                 } else {
@@ -10220,7 +10329,10 @@
             mapMarkers.forEach((marker, index) => {
                 const building = mapBuildingsData[index];
                 if (!building) return;
-                if (bins.has(String(building.bin))) {
+                const matchesFilter = filterValue === 'hide-scheduled'
+                    ? mapViewPassesHideScheduledCompletedFilter(payload.view || {}, building.bin, building)
+                    : bins.has(String(building.bin));
+                if (matchesFilter) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     bounds.extend(marker.getLatLng());
                     shown++;
@@ -10235,7 +10347,7 @@
 
             const resultCount = document.getElementById('mapSearchResultCount');
             if (resultCount) {
-                resultCount.textContent = `${shown} building${shown !== 1 ? 's' : ''} — ${getMapViewFilterLabel(filterValue)}`;
+                resultCount.textContent = `${shown} building${shown !== 1 ? 's' : ''} — ${getMapViewFilterDisplayLabel(filterValue)}`;
                 resultCount.style.display = 'inline';
                 resultCount.style.color = shown > 0 ? '#17a2b8' : '#ff6b6b';
             }
@@ -10653,11 +10765,17 @@
                 throw new Error('Missing map lookup results in file.');
             }
 
-            // Parse "MM/DD/YY" → "YYYY-MM-DD" (used for legacy scheduledDates values)
-            const parseLegacyDateStr = (str) => {
-                const m = str && str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+            // Normalize saved date values into "YYYY-MM-DD" for legacy and current map files.
+            const normalizeSavedDateStr = (str) => {
+                if (!str || typeof str !== 'string') return null;
+                if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+                const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
                 if (!m) return null;
                 return `${2000 + parseInt(m[3], 10)}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+            };
+            const normalizeSavedDates = (val) => {
+                const rawDates = Array.isArray(val) ? val : (typeof val === 'string' ? [val] : []);
+                return Array.from(new Set(rawDates.map(normalizeSavedDateStr).filter(Boolean))).sort();
             };
 
             // Build a lookup of scheduled dates per BIN from legacy scheduledDates or existing testDates
@@ -10666,7 +10784,7 @@
                 ? source.scheduledDates : {};
             const scheduledByBin = {};
             Object.entries(rawScheduled).forEach(([bin, val]) => {
-                const dates = Array.isArray(val) ? val : (typeof val === 'string' ? [parseLegacyDateStr(val)].filter(Boolean) : []);
+                const dates = normalizeSavedDates(val);
                 if (dates.length) scheduledByBin[bin] = dates;
             });
 
@@ -10680,7 +10798,7 @@
                 if (val === true) {
                     normalizedCompleted[bin] = { address: '', timestamp: 0, scheduledDates: embeddedDates };
                 } else if (val && typeof val === 'object') {
-                    const existing = Array.isArray(val.scheduledDates) ? val.scheduledDates : [];
+                    const existing = normalizeSavedDates(val.scheduledDates);
                     const merged = Array.from(new Set([...existing, ...embeddedDates])).sort();
                     normalizedCompleted[bin] = { ...val, scheduledDates: merged };
                 }
@@ -10689,7 +10807,13 @@
 
             // Remaining scheduled dates (for non-completed buildings) go into testDates
             const completedBins = new Set(Object.keys(normalizedCompleted));
-            let testDates = source.testDates && typeof source.testDates === 'object' ? { ...source.testDates } : {};
+            const testDates = {};
+            if (source.testDates && typeof source.testDates === 'object' && !Array.isArray(source.testDates)) {
+                Object.entries(source.testDates).forEach(([bin, val]) => {
+                    const dates = normalizeSavedDates(val);
+                    if (dates.length) testDates[bin] = dates;
+                });
+            }
             Object.entries(scheduledByBin).forEach(([bin, dates]) => {
                 if (completedBins.has(bin)) return; // already embedded above
                 testDates[bin] = Array.from(new Set([...(testDates[bin] || []), ...dates])).sort();
@@ -11937,7 +12061,7 @@
                     monthLabels: labels
                 };
                 const bins = getMapViewFilterBins(viewForFilter, mapViewFilter) || new Set();
-                notices.push(`Map view filter active: ${getMapViewFilterLabel(mapViewFilter)} — showing ${bins.size} building${bins.size !== 1 ? 's' : ''}`);
+                notices.push(`Map view filter active: ${getMapViewFilterDisplayLabel(mapViewFilter)} — showing ${bins.size} building${bins.size !== 1 ? 's' : ''}`);
             }
 
             if (activeMonthFilters.size > 0) {
@@ -25742,7 +25866,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.0.7</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.0.8</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
