@@ -13296,7 +13296,33 @@
             if (devices.length === 0) {
                 rows = '<div style="text-align:center;opacity:0.6;padding:20px;font-size:13px;">No devices found for this building.</div>';
             } else {
+                const getDeviceReportSortRank = function(device) {
+                    const violationCount = Array.isArray(device.violations) ? device.violations.length : 0;
+                    if (violationCount > 0) return 0;
+
+                    const statusText = (device.device_status || '').toUpperCase();
+                    if (statusText.includes('REMOVED') || statusText.includes('DELETED')) return 3;
+
+                    const pviDate  = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                    const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                    const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                    const isDismantled = statusText.includes('DISMANTLED');
+                    const mostRecent = isDismantled
+                        ? pviDate
+                        : [pviDate, cat1Date, cat5Date].filter(Boolean).reduce((latest, date) => !latest || date > latest ? date : latest, null);
+
+                    if (!mostRecent) return 2;
+                    const eligible = new Date(mostRecent);
+                    eligible.setDate(eligible.getDate() + 91);
+                    eligible.setHours(0,0,0,0);
+                    return eligible > today ? 1 : 2;
+                };
+
                 const sortedDevices = devices.slice().sort(function(a, b) {
+                    const aRank = getDeviceReportSortRank(a);
+                    const bRank = getDeviceReportSortRank(b);
+                    if (aRank !== bRank) return aRank - bRank;
+
                     const aViolations = Array.isArray(a.violations) ? a.violations.length : 0;
                     const bViolations = Array.isArray(b.violations) ? b.violations.length : 0;
                     if (aViolations !== bViolations) return bViolations - aViolations;
@@ -26116,7 +26142,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.2</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.3</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
