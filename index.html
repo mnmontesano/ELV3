@@ -14509,7 +14509,7 @@
                         const noteEsc = escapeMapSuggestionHtml(noteText);
                         return `
                         <div data-bin="${bin}" data-address="${addrEsc}" data-filter-text="${noteEsc}" style="padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 1em;">
-                            <span style="display: block; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuildingWithFreshPopup('${bin}')">
+                            <span style="display: block; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuildingFromNotes('${bin}')">
                                 <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
                                     <span style="color: #ffc107; font-weight: 700; flex-shrink: 0;">📝</span>
                                     ${address
@@ -14739,6 +14739,50 @@
                 return;
             }
             flyToMapBuilding(bin);
+        }
+
+        function flyToMapBuildingFromNotes(bin) {
+            if (!window.lastBulkSearchResults || !window.lastBulkSearchResults.binGroups) {
+                showMapNotification('No map data loaded for this note', '#ff6b6b');
+                return;
+            }
+
+            const modal = document.getElementById('buildingMapModal');
+            const go = () => {
+                if (!buildingMap || !Array.isArray(mapBuildingsData) || !Array.isArray(mapMarkers)) return false;
+                const idx = mapBuildingsData.findIndex(building => building && building.bin === bin);
+                if (idx === -1 || !mapMarkers[idx]) return false;
+
+                const marker = mapMarkers[idx];
+                if (!buildingMap.hasLayer(marker)) {
+                    buildingMap.addLayer(marker);
+                }
+
+                const latLng = marker.getLatLng();
+                buildingMap.setView([latLng.lat, latLng.lng], 17);
+                marker.openPopup();
+
+                const selectedFilter = getSelectedMapViewFilter();
+                if (selectedFilter && selectedFilter !== 'all') {
+                    showMapNotification('Temporarily showing noted building outside the current filter', '#ffc107');
+                }
+                return true;
+            };
+
+            if (!buildingMap || !modal || modal.style.display !== 'flex') {
+                showBuildingMap();
+                setTimeout(() => {
+                    if (!go()) showMapNotification('Building note is not in the current map data', '#ff6b6b');
+                }, 450);
+                return;
+            }
+
+            if (!go() && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+                setTimeout(() => {
+                    if (!go()) showMapNotification('Building note is not in the current map data', '#ff6b6b');
+                }, 250);
+            }
         }
 
         function flyToAdditionalLocation(lat, lng) {
