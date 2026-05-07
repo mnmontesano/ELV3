@@ -14299,12 +14299,12 @@
         function popoutMapDateCalculator() {
             try {
                 const url = new URL(window.location.href);
-                url.searchParams.set('popout', 'map-date-calculator');
-                const features = 'width=420,height=640,resizable=yes,scrollbars=yes';
+                url.searchParams.set('popout', 'dates');
+                const features = 'width=560,height=760,resizable=yes,scrollbars=yes';
                 window.open(url.toString(), '_blank', features);
             } catch (e) {
-                const href = window.location.href + (window.location.search ? '&' : '?') + 'popout=map-date-calculator';
-                window.open(href, '_blank', 'width=420,height=640,resizable=yes,scrollbars=yes');
+                const href = window.location.href + (window.location.search ? '&' : '?') + 'popout=dates';
+                window.open(href, '_blank', 'width=560,height=760,resizable=yes,scrollbars=yes');
             }
         }
 
@@ -20454,24 +20454,23 @@
                 });
             }
 
-            if (params.get('popout') === 'map-date-calculator') {
-                document.body.classList.add('map-date-calculator-popout-mode');
+            if (params.get('popout') === 'dates' || params.get('popout') === 'map-date-calculator') {
+                document.body.classList.add('dates-popout-mode');
                 document.body.style.maxWidth = 'none';
                 document.body.style.margin = '0';
                 document.body.style.padding = '0';
 
-                const calculatorBody = document.getElementById('mcpDateCalculator');
-                const calculatorSection = calculatorBody ? calculatorBody.closest('.mcp-section') : null;
+                const datesContent = document.getElementById('datesContent');
                 const shell = document.createElement('div');
-                shell.id = 'mapDateCalculatorPopoutShell';
+                shell.id = 'datesPopoutShell';
                 shell.style.cssText = 'min-height:100vh; box-sizing:border-box; padding:18px; background:var(--bg-color); color:var(--text-color);';
                 shell.innerHTML = `
-                    <div style="max-width:420px; margin:0 auto; background:var(--card-bg); border:1px solid var(--input-border); border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,0.25); overflow:hidden;">
+                    <div style="max-width:560px; margin:0 auto; background:var(--card-bg); border:1px solid var(--input-border); border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,0.25); overflow:hidden;">
                         <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; background:var(--panel-bg); border-bottom:1px solid var(--input-border);">
-                            <h3 style="margin:0; color:var(--header-color); font-size:1.05em;">Date Calculator</h3>
+                            <h3 style="margin:0; color:var(--header-color); font-size:1.05em;">DATES</h3>
                             <button onclick="window.close()" title="Close window" style="background:none; border:none; color:var(--text-color); cursor:pointer; font-size:1.4em; line-height:1;">&times;</button>
                         </div>
-                        <div id="mapDateCalculatorPopoutContent" style="padding:12px 14px;"></div>
+                        <div id="datesPopoutContent" style="padding:12px 14px;"></div>
                     </div>
                 `;
                 document.body.appendChild(shell);
@@ -20480,20 +20479,18 @@
                     if (child !== shell) child.style.display = 'none';
                 });
 
-                if (calculatorSection) {
-                    const content = document.getElementById('mapDateCalculatorPopoutContent');
-                    calculatorSection.style.display = 'block';
-                    calculatorSection.style.border = 'none';
-                    calculatorSection.style.margin = '0';
-                    if (calculatorBody) calculatorBody.classList.add('open');
-                    const arrow = document.getElementById('mcpDateCalculatorArrow');
-                    if (arrow) arrow.style.display = 'none';
-                    const sectionHeader = calculatorSection.querySelector('.mcp-header');
-                    if (sectionHeader) sectionHeader.style.display = 'none';
-                    const popoutButton = calculatorBody ? calculatorBody.querySelector('button[onclick="popoutMapDateCalculator()"]') : null;
-                    if (popoutButton) popoutButton.style.display = 'none';
-                    content.appendChild(calculatorSection);
-                    refreshMapDateCalculatorSummary();
+                if (datesContent) {
+                    const content = document.getElementById('datesPopoutContent');
+                    datesContent.style.display = 'block';
+                    datesContent.classList.add('active');
+                    datesContent.style.maxWidth = 'none';
+                    datesContent.style.margin = '0';
+                    datesContent.style.padding = '0';
+                    const quickLookupButton = datesContent.querySelector('button[onclick="toggleQuickLookup()"]');
+                    if (quickLookupButton) quickLookupButton.style.display = 'none';
+                    content.appendChild(datesContent);
+                    calculateNinetyDayStart();
+                    calculateTenDaysAfter();
                 }
             }
         });
