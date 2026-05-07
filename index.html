@@ -1184,7 +1184,10 @@
                                 <span class="mcp-arrow" id="mcpDateCalculatorArrow">▼</span>
                             </div>
                             <div class="mcp-body" id="mcpDateCalculator" style="font-size: 0.95em; color: var(--text-color);">
-                                <p class="mcp-desc">Calculate deadlines and date ranges without leaving MAP.</p>
+                                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:8px;">
+                                    <p class="mcp-desc" style="margin:0;">Calculate deadlines and date ranges without leaving MAP.</p>
+                                    <button onclick="popoutMapDateCalculator()" title="Open Date Calculator in a separate window" class="mcp-btn" style="width:auto; margin:0; padding:4px 8px; color:var(--text-color); white-space:nowrap;">↗ Pop Out</button>
+                                </div>
                                 <label for="mapDateCalcInput" style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:5px;">Select Date</label>
                                 <input type="date" id="mapDateCalcInput" class="mcp-search-input" style="color: var(--text-color);" onchange="mapDateCalculatorDateChanged()">
 
@@ -14293,6 +14296,18 @@
             }
         }
 
+        function popoutMapDateCalculator() {
+            try {
+                const url = new URL(window.location.href);
+                url.searchParams.set('popout', 'map-date-calculator');
+                const features = 'width=420,height=640,resizable=yes,scrollbars=yes';
+                window.open(url.toString(), '_blank', features);
+            } catch (e) {
+                const href = window.location.href + (window.location.search ? '&' : '?') + 'popout=map-date-calculator';
+                window.open(href, '_blank', 'width=420,height=640,resizable=yes,scrollbars=yes');
+            }
+        }
+
         function showMapNotification(message, color) {
             const notification = document.createElement('div');
             notification.style.cssText = `
@@ -20437,6 +20452,49 @@
                 hideSelectors.forEach(sel => {
                     document.querySelectorAll(sel).forEach(el => { el.style.display = 'none'; });
                 });
+            }
+
+            if (params.get('popout') === 'map-date-calculator') {
+                document.body.classList.add('map-date-calculator-popout-mode');
+                document.body.style.maxWidth = 'none';
+                document.body.style.margin = '0';
+                document.body.style.padding = '0';
+
+                const calculatorBody = document.getElementById('mcpDateCalculator');
+                const calculatorSection = calculatorBody ? calculatorBody.closest('.mcp-section') : null;
+                const shell = document.createElement('div');
+                shell.id = 'mapDateCalculatorPopoutShell';
+                shell.style.cssText = 'min-height:100vh; box-sizing:border-box; padding:18px; background:var(--bg-color); color:var(--text-color);';
+                shell.innerHTML = `
+                    <div style="max-width:420px; margin:0 auto; background:var(--card-bg); border:1px solid var(--input-border); border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,0.25); overflow:hidden;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; background:var(--panel-bg); border-bottom:1px solid var(--input-border);">
+                            <h3 style="margin:0; color:var(--header-color); font-size:1.05em;">Date Calculator</h3>
+                            <button onclick="window.close()" title="Close window" style="background:none; border:none; color:var(--text-color); cursor:pointer; font-size:1.4em; line-height:1;">&times;</button>
+                        </div>
+                        <div id="mapDateCalculatorPopoutContent" style="padding:12px 14px;"></div>
+                    </div>
+                `;
+                document.body.appendChild(shell);
+
+                Array.from(document.body.children).forEach(child => {
+                    if (child !== shell) child.style.display = 'none';
+                });
+
+                if (calculatorSection) {
+                    const content = document.getElementById('mapDateCalculatorPopoutContent');
+                    calculatorSection.style.display = 'block';
+                    calculatorSection.style.border = 'none';
+                    calculatorSection.style.margin = '0';
+                    if (calculatorBody) calculatorBody.classList.add('open');
+                    const arrow = document.getElementById('mcpDateCalculatorArrow');
+                    if (arrow) arrow.style.display = 'none';
+                    const sectionHeader = calculatorSection.querySelector('.mcp-header');
+                    if (sectionHeader) sectionHeader.style.display = 'none';
+                    const popoutButton = calculatorBody ? calculatorBody.querySelector('button[onclick="popoutMapDateCalculator()"]') : null;
+                    if (popoutButton) popoutButton.style.display = 'none';
+                    content.appendChild(calculatorSection);
+                    refreshMapDateCalculatorSummary();
+                }
             }
         });
 
