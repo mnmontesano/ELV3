@@ -13518,8 +13518,18 @@
                 </div>
                 </div>`;
 
+            let deviceDetailBackdropPointerDown = false;
+            modal.addEventListener('pointerdown', function(e) {
+                deviceDetailBackdropPointerDown = e.target === modal;
+            });
             modal.addEventListener('click', function(e) {
-                if (e.target === modal) modal.remove();
+                if (window.deviceReportSuppressBackdropClose) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+                if (deviceDetailBackdropPointerDown && e.target === modal) modal.remove();
+                deviceDetailBackdropPointerDown = false;
             });
 
             document.body.appendChild(modal);
@@ -13565,6 +13575,8 @@
 
         function startDeviceReportResize(event) {
             event.preventDefault();
+            event.stopPropagation();
+            window.deviceReportSuppressBackdropClose = true;
 
             const shell = document.getElementById('deviceDetailShell');
             const report = document.getElementById('deviceReportPanel');
@@ -13590,6 +13602,9 @@
                 document.body.style.cursor = '';
                 document.body.style.userSelect = '';
                 if (frame) frame.style.pointerEvents = '';
+                setTimeout(() => {
+                    window.deviceReportSuppressBackdropClose = false;
+                }, 250);
             };
 
             document.addEventListener('pointermove', resize);
