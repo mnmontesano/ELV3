@@ -10063,7 +10063,7 @@
         }
 
         function mergeDobDeviceRecord(savedDevice, freshDevice) {
-            if (!savedDevice || !freshDevice) return false;
+            if (!savedDevice || !freshDevice) return [];
 
             const priorDates = {
                 cat1: normalizeDobDateValue(savedDevice.cat1_latest_report_filed),
@@ -10075,6 +10075,20 @@
                 cat5: normalizeDobDateValue(freshDevice.cat5_latest_report_filed),
                 pvi: normalizeDobDateValue(freshDevice.periodic_latest_inspection)
             };
+            const changes = [];
+            [
+                { key: 'cat1', label: 'CAT 1' },
+                { key: 'cat5', label: 'CAT 5' },
+                { key: 'pvi', label: 'PVI' }
+            ].forEach(field => {
+                if (priorDates[field.key] !== nextDates[field.key]) {
+                    changes.push({
+                        field: field.label,
+                        from: priorDates[field.key] || 'blank',
+                        to: nextDates[field.key] || 'blank'
+                    });
+                }
+            });
 
             const existingViolations = savedDevice.violations;
             const existingMachineType = savedDevice.machine_type;
@@ -10082,9 +10096,7 @@
             if (existingViolations !== undefined) savedDevice.violations = existingViolations;
             if (existingMachineType && !savedDevice.machine_type) savedDevice.machine_type = existingMachineType;
 
-            return priorDates.cat1 !== nextDates.cat1 ||
-                priorDates.cat5 !== nextDates.cat5 ||
-                priorDates.pvi !== nextDates.pvi;
+            return changes;
         }
 
         function collectMapDobDeviceRefs() {
@@ -10137,6 +10149,63 @@
             }
         }
 
+        function showDobInfoUpdateChangesModal(changeRows, failedDevices) {
+            const existing = document.getElementById('dobInfoUpdateChangesModal');
+            if (existing) existing.remove();
+
+            const changes = Array.isArray(changeRows) ? changeRows : [];
+            const failures = Array.isArray(failedDevices) ? failedDevices : [];
+            const modal = document.createElement('div');
+            modal.id = 'dobInfoUpdateChangesModal';
+            modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:10045; display:flex; align-items:center; justify-content:center; padding:18px;';
+
+            const rowsHtml = changes.length > 0
+                ? changes.map(row => `
+                    <div style="padding:8px 10px; border-bottom:1px solid var(--input-border);">
+                        <div style="font-weight:700; color:var(--header-color); margin-bottom:3px;">${escapeMapSuggestionHtml(row.deviceNumber)}${row.bin ? ` <span style="font-weight:400; opacity:0.65;">BIN ${escapeMapSuggestionHtml(row.bin)}</span>` : ''}</div>
+                        <div style="font-size:0.9em; opacity:0.8;">${escapeMapSuggestionHtml(row.address || '')}</div>
+                        <div style="margin-top:5px; font-size:0.92em;">
+                            <span style="color:#1a73e8; font-weight:700;">${escapeMapSuggestionHtml(row.field)}</span>:
+                            <span style="color:#ff9800;">${escapeMapSuggestionHtml(row.from)}</span>
+                            <span style="opacity:0.65;">→</span>
+                            <span style="color:#27ae60; font-weight:700;">${escapeMapSuggestionHtml(row.to)}</span>
+                        </div>
+                    </div>
+                `).join('')
+                : '<div style="padding:14px 10px; opacity:0.75; text-align:center;">No CAT 1, CAT 5, or PVI date changes were found.</div>';
+
+            const failuresHtml = failures.length > 0
+                ? `<div style="margin-top:10px; padding:9px 10px; border-radius:8px; background:rgba(255,107,107,0.1); border:1px solid rgba(255,107,107,0.35); color:#ff6b6b; font-size:0.9em;">
+                    Could not update ${failures.length} device${failures.length !== 1 ? 's' : ''}: ${escapeMapSuggestionHtml(failures.join(', '))}
+                </div>`
+                : '';
+
+            modal.innerHTML = `
+                <div style="background:var(--card-bg); color:var(--text-color); border:1px solid var(--input-border); border-radius:12px; width:min(760px, 96vw); max-height:82vh; box-shadow:0 12px 42px rgba(0,0,0,0.38); display:flex; flex-direction:column; overflow:hidden;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:16px 18px; border-bottom:1px solid var(--input-border);">
+                        <div>
+                            <h3 style="margin:0 0 4px 0; color:var(--header-color);">DOB Info Update Changes</h3>
+                            <div style="font-size:0.9em; opacity:0.72;">${changes.length} date change${changes.length !== 1 ? 's' : ''} applied to saved device records.</div>
+                        </div>
+                        <button onclick="document.getElementById('dobInfoUpdateChangesModal')?.remove()" style="background:none; border:none; color:var(--text-color); font-size:24px; line-height:1; cursor:pointer;">×</button>
+                    </div>
+                    <div style="padding:8px 18px 16px; overflow-y:auto;">
+                        <div style="border:1px solid var(--input-border); border-radius:8px; overflow:hidden; background:var(--input-bg);">
+                            ${rowsHtml}
+                        </div>
+                        ${failuresHtml}
+                    </div>
+                    <div style="padding:12px 18px; border-top:1px solid var(--input-border); display:flex; justify-content:flex-end;">
+                        <button onclick="document.getElementById('dobInfoUpdateChangesModal')?.remove()" style="padding:8px 16px; border-radius:6px; border:1px solid #1a73e8; background:#1a73e8; color:white; cursor:pointer; font-weight:700;">Done</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.addEventListener('click', event => {
+                if (event.target === modal) modal.remove();
+            });
+        }
+
         async function updateMapViewDobInfo() {
             if (!window.lastBulkSearchResults || !window.lastBulkSearchResults.binGroups) {
                 alert('No map data loaded. Load a map view file or run a bulk lookup first.');
@@ -10173,11 +10242,22 @@
 
             let dateUpdates = 0;
             let recordsUpdated = 0;
+            const changeRows = [];
             refs.forEach(ref => {
                 const fresh = freshByDevice[ref.deviceNumber];
                 if (!fresh) return;
                 const changedDates = mergeDobDeviceRecord(ref.device, fresh);
-                if (changedDates) dateUpdates++;
+                if (changedDates.length > 0) {
+                    dateUpdates += changedDates.length;
+                    changedDates.forEach(change => {
+                        changeRows.push({
+                            deviceNumber: ref.deviceNumber,
+                            bin: ref.bin,
+                            address: ref.group && (ref.group.address || ref.group.label) ? (ref.group.address || ref.group.label) : '',
+                            ...change
+                        });
+                    });
+                }
                 recordsUpdated++;
             });
 
@@ -10190,6 +10270,7 @@
                 ? ' Click Save to overwrite the linked file.'
                 : ' Save the map view to keep these updates in your file.';
             showMapNotification(`DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${saveHint}`, dateUpdates > 0 ? '#27ae60' : '#17a2b8');
+            setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed), 150);
         }
 
         const MAP_EXCEL_CELL_LIMIT = 32767;
@@ -26484,7 +26565,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.5</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.5.1</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
