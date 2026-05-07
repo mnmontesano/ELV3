@@ -10281,6 +10281,19 @@
             return activeMonthFilters.has(monthLabels[building.bin]);
         }
 
+        function buildingMatchesMapViewFilter(building, filterValue, view, bins, monthLabels) {
+            if (!building) return false;
+            if (!filterValue || filterValue === 'all') return isBuildingVisibleInCurrentMapFilters(building);
+
+            const activeView = view || {};
+            const filterBins = bins || getMapViewFilterBins(activeView, filterValue) || new Set();
+            const matchesFilter = filterValue === 'hide-scheduled'
+                ? mapViewPassesHideScheduledCompletedFilter(activeView, building.bin, building)
+                : filterBins.has(String(building.bin));
+
+            return matchesFilter && mapBuildingMatchesActiveMonthScope(building, monthLabels || activeView.monthLabels);
+        }
+
         function showMapHideScheduledMonthModal() {
             const existing = document.getElementById('mapHideScheduledMonthModal');
             if (existing) existing.remove();
@@ -10384,11 +10397,7 @@
             mapMarkers.forEach((marker, index) => {
                 const building = mapBuildingsData[index];
                 if (!building) return;
-                const matchesFilter = filterValue === 'hide-scheduled'
-                    ? mapViewPassesHideScheduledCompletedFilter(payload.view || {}, building.bin, building)
-                    : bins.has(String(building.bin));
-                const matchesActiveMonths = mapBuildingMatchesActiveMonthScope(building, monthLabels);
-                if (matchesFilter && matchesActiveMonths) {
+                if (buildingMatchesMapViewFilter(building, filterValue, payload.view || {}, bins, monthLabels)) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     bounds.extend(marker.getLatLng());
                     shown++;
@@ -17101,7 +17110,11 @@
                 resultCount.textContent = 'No matches found';
                 resultCount.style.display = 'inline';
                 resultCount.style.color = '#ff6b6b';
-                restoreMapVisibilityForCurrentFilters({ fitMap: false });
+                if (getSelectedMapViewFilter() !== 'all') {
+                    applyMapViewDropdownFilter({ fitMap: false });
+                } else {
+                    restoreMapVisibilityForCurrentFilters({ fitMap: false });
+                }
                 showMapSearchSuggestions(searchInput.value.trim(), getMapSearchSuggestionCandidates(searchInput.value.trim()));
                 return;
             }
@@ -17111,18 +17124,31 @@
             // Search acts as a temporary visibility override. Keep the current
             // filter view intact, then add matched markers even if filtered out.
             const matchedBuildingBins = new Set(buildingMatches.map(building => building.bin));
+            const matchedAdditionalIndexes = new Set(additionalMatches.map(({ index }) => index));
+            const mapViewFilter = getSelectedMapViewFilter();
+            const hasMapViewFilter = !!(mapViewFilter && mapViewFilter !== 'all');
+            const payload = hasMapViewFilter ? buildMapViewExportPayload() : null;
+            const mapView = (payload && payload.view) || {};
+            const mapViewBins = hasMapViewFilter ? getMapViewFilterBins(mapView, mapViewFilter) || new Set() : null;
+            const monthLabels = (mapView && mapView.monthLabels) || getMapMonthLabels();
             if (buildingMap) {
                 mapMarkers.forEach((marker, index) => {
                     const building = mapBuildingsData[index];
                     if (!building) return;
-                    if (isBuildingVisibleInCurrentMapFilters(building) || matchedBuildingBins.has(building.bin)) {
+                    const visibleInCurrentView = buildingMatchesMapViewFilter(building, mapViewFilter, mapView, mapViewBins, monthLabels);
+                    if (visibleInCurrentView || matchedBuildingBins.has(building.bin)) {
                         if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     } else if (buildingMap.hasLayer(marker)) {
                         buildingMap.removeLayer(marker);
                     }
                 });
-                additionalLocationMarkers.forEach(marker => {
-                    if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                additionalLocationMarkers.forEach((marker, index) => {
+                    const shouldShowAdditional = !hasMapViewFilter || matchedAdditionalIndexes.has(index);
+                    if (shouldShowAdditional) {
+                        if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                    } else if (buildingMap.hasLayer(marker)) {
+                        buildingMap.removeLayer(marker);
+                    }
                 });
             }
             
