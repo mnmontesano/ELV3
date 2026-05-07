@@ -1177,6 +1177,46 @@
                             </div>
                         </div>
 
+                        <!-- Date Calculator -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpDateCalculator'); refreshMapDateCalculatorSummary();">
+                                <span class="mcp-title"><span style="color:#1a73e8;">📆</span> Date Calculator</span>
+                                <span class="mcp-arrow" id="mcpDateCalculatorArrow">▼</span>
+                            </div>
+                            <div class="mcp-body" id="mcpDateCalculator" style="font-size: 0.95em; color: var(--text-color);">
+                                <p class="mcp-desc">Calculate deadlines and date ranges without leaving MAP.</p>
+                                <label for="mapDateCalcInput" style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:5px;">Select Date</label>
+                                <input type="date" id="mapDateCalcInput" class="mcp-search-input" style="color: var(--text-color);" onchange="mapDateCalculatorDateChanged()">
+
+                                <div style="display:flex; gap:6px; margin: 0 0 8px 0;">
+                                    <button id="mapDateCalcPriorBtn" onclick="setMapDateCalculatorMode('negative')" class="mcp-btn" style="margin:0; padding:0.45em 0.35em; color: var(--text-color);">Prior</button>
+                                    <button id="mapDateCalcFutureBtn" onclick="setMapDateCalculatorMode('positive')" class="mcp-btn" style="margin:0; padding:0.45em 0.35em; background:#1a73e8; color:white; border-color:#1a73e8;">Future</button>
+                                </div>
+
+                                <div style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:6px;">
+                                    <button onclick="calculateMapDateWithMode(10)" class="mcp-btn" style="margin:0; color: var(--text-color);">10 Days</button>
+                                    <button onclick="calculateMapDateWithMode(30)" class="mcp-btn" style="margin:0; color: var(--text-color);">30 Days</button>
+                                    <button onclick="calculateMapDateWithMode(60)" class="mcp-btn" style="margin:0; color: var(--text-color);">60 Days</button>
+                                    <button onclick="calculateMapDateWithMode(91)" class="mcp-btn" style="margin:0; color: var(--text-color);">91 Days</button>
+                                </div>
+
+                                <div style="display:flex; gap:6px; margin-top:8px;">
+                                    <input type="number" id="mapCustomDays" class="mcp-search-input" placeholder="Custom days" style="margin:0; min-width:0; color: var(--text-color);" oninput="mapCustomDaysChanged()">
+                                    <button onclick="calculateMapCustomDate()" class="mcp-btn" style="margin:0; flex:0 0 40%; color: var(--text-color);">Calculate</button>
+                                </div>
+
+                                <div id="mapDateCalcResult" style="margin-top:10px; padding:8px; border-radius:6px; background:var(--input-bg); border:1px solid var(--input-border); color: var(--text-color); min-height:18px; line-height:1.4;"></div>
+                                <div id="mapDateCalcSpelledResult" style="margin-top:6px; font-size:0.9em; color: var(--text-color); opacity:0.78; line-height:1.4;"></div>
+
+                                <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--input-border); font-size:0.9em; line-height:1.45;">
+                                    <div style="font-weight:700; color:var(--header-color);">91 Days Past</div>
+                                    <div id="mapNinetyDayStart" style="margin:4px 0 8px 0;"></div>
+                                    <div style="font-weight:700; color:var(--header-color);">10 Days After</div>
+                                    <div id="mapTenDaysAfter" style="margin-top:4px;"></div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpHidden')">
                                 <span class="mcp-title"><span style="color:#888;">👁️</span> Hidden - <span id="mapHiddenCount">0</span></span>
@@ -14127,6 +14167,132 @@
             }
         }
 
+        let mapDateCalculatorMode = 'positive';
+        let mapLastDateCalculation = null;
+
+        function parseMapDateCalculatorInput() {
+            const dateInput = document.getElementById('mapDateCalcInput');
+            if (!dateInput || !dateInput.value) return null;
+            return new Date(dateInput.value + 'T12:00:00');
+        }
+
+        function formatMapDateLong(date) {
+            return date.toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+        }
+
+        function setMapDateCalculatorMode(mode) {
+            mapDateCalculatorMode = mode;
+            const priorBtn = document.getElementById('mapDateCalcPriorBtn');
+            const futureBtn = document.getElementById('mapDateCalcFutureBtn');
+            const activeStyle = { backgroundColor: '#1a73e8', color: 'white', borderColor: '#1a73e8' };
+            const inactiveStyle = { backgroundColor: 'var(--input-bg)', color: 'var(--text-color)', borderColor: 'var(--input-border)' };
+
+            if (priorBtn && futureBtn) {
+                Object.assign(priorBtn.style, mode === 'negative' ? activeStyle : inactiveStyle);
+                Object.assign(futureBtn.style, mode === 'positive' ? activeStyle : inactiveStyle);
+            }
+
+            if (mapLastDateCalculation) {
+                if (mapLastDateCalculation.type === 'standard') {
+                    calculateMapDateWithMode(mapLastDateCalculation.days);
+                } else {
+                    calculateMapCustomDate();
+                }
+            }
+        }
+
+        function setMapDateCalculatorMessage(message, spelledMessage) {
+            const resultEl = document.getElementById('mapDateCalcResult');
+            const spelledEl = document.getElementById('mapDateCalcSpelledResult');
+            if (resultEl) resultEl.textContent = message || '';
+            if (spelledEl) spelledEl.textContent = spelledMessage || '';
+        }
+
+        function calculateMapDateWithMode(days) {
+            const customDaysInput = document.getElementById('mapCustomDays');
+            if (customDaysInput) customDaysInput.value = '';
+            mapLastDateCalculation = { type: 'standard', days: days };
+            calculateMapDate(days);
+        }
+
+        function calculateMapDate(days) {
+            const inputDate = parseMapDateCalculatorInput();
+            if (!inputDate) {
+                setMapDateCalculatorMessage('Please select a date.', '');
+                return;
+            }
+
+            const effectiveDays = mapDateCalculatorMode === 'negative' ? -Math.abs(days) : Math.abs(days);
+            const resultDate = new Date(inputDate);
+            resultDate.setDate(resultDate.getDate() + effectiveDays);
+
+            const dayText = effectiveDays > 0 ? ' days after ' : ' days before ';
+            const absDay = Math.abs(effectiveDays);
+            setMapDateCalculatorMessage(
+                absDay + dayText + inputDate.toLocaleDateString() + ' is ' + resultDate.toLocaleDateString(),
+                formatMapDateLong(inputDate) + ' becomes ' + formatMapDateLong(resultDate)
+            );
+        }
+
+        function calculateMapCustomDate() {
+            const customDaysInput = document.getElementById('mapCustomDays');
+            const days = parseInt(customDaysInput ? customDaysInput.value : '', 10);
+
+            if (isNaN(days)) {
+                setMapDateCalculatorMessage('Please enter a valid number.', '');
+                return;
+            }
+
+            if (Math.abs(days) > 36500) {
+                setMapDateCalculatorMessage('Please enter a more reasonable number of days.', '');
+                return;
+            }
+
+            mapLastDateCalculation = { type: 'custom', days: days };
+            calculateMapDate(days);
+        }
+
+        function mapDateCalculatorDateChanged() {
+            if (!mapLastDateCalculation) return;
+            if (mapLastDateCalculation.type === 'standard') {
+                calculateMapDateWithMode(mapLastDateCalculation.days);
+            } else {
+                calculateMapCustomDate();
+            }
+        }
+
+        function mapCustomDaysChanged() {
+            const dateInput = document.getElementById('mapDateCalcInput');
+            const customDaysInput = document.getElementById('mapCustomDays');
+            if (dateInput && customDaysInput && dateInput.value && customDaysInput.value) {
+                calculateMapCustomDate();
+            }
+        }
+
+        function refreshMapDateCalculatorSummary() {
+            const ninetyDayEl = document.getElementById('mapNinetyDayStart');
+            const tenDaysEl = document.getElementById('mapTenDaysAfter');
+            const today = new Date();
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+
+            if (ninetyDayEl) {
+                const startDate = new Date(today);
+                startDate.setDate(today.getDate() - 91);
+                ninetyDayEl.innerHTML = `<div>Any date on or before: ${startDate.toLocaleDateString()}</div><div style="margin-top:3px;">(${startDate.toLocaleDateString('en-US', options)})</div>`;
+            }
+
+            if (tenDaysEl) {
+                const futureDate = new Date(today);
+                futureDate.setDate(today.getDate() + 10);
+                tenDaysEl.innerHTML = `<div>Date: ${futureDate.toLocaleDateString()}</div><div style="margin-top:3px;">(${futureDate.toLocaleDateString('en-US', options)})</div>`;
+            }
+        }
+
         function showMapNotification(message, color) {
             const notification = document.createElement('div');
             notification.style.cssText = `
@@ -15719,12 +15885,21 @@
                     </div>`
                 ).join('');
                 
-                const notReadyList = building.notReadyDevices.slice(0, 5).map(d => 
-                    `<div style="font-size: 11px; padding: 2px 0; display: flex; justify-content: space-between;">
-                        <span>${d.number}</span>
-                        <span style="opacity: 0.7; font-size: 10px;">${d.daysUntil > 0 ? d.daysUntil + ' days' : ''}</span>
-                    </div>`
-                ).join('');
+                const notReadyList = building.notReadyDevices.slice(0, 5).map(d => {
+                    const eligibleDateText = d.eligibleDate
+                        ? d.eligibleDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : '';
+                    const daysText = d.daysUntil > 0
+                        ? `${d.daysUntil} day${d.daysUntil === 1 ? '' : 's'}`
+                        : '';
+                    return `<div style="font-size: 11px; padding: 4px 0; display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; border-bottom: 1px solid rgba(255,152,0,0.12);">
+                        <span style="font-weight: 600; flex-shrink: 0;">${d.number}</span>
+                        <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; line-height: 1.25;">
+                            ${eligibleDateText ? `<span style="font-size: 10px; color: var(--text-color); opacity: 0.85;">Ready on ${eligibleDateText}</span>` : ''}
+                            ${daysText ? `<span style="font-size: 10px; color: #ff9800; font-weight: 700; background: rgba(255,152,0,0.12); border: 1px solid rgba(255,152,0,0.28); border-radius: 999px; padding: 1px 6px;">${daysText}</span>` : ''}
+                        </span>
+                    </div>`;
+                }).join('');
                 
                 // Generate list for removed/deleted devices (not dismantled - they still need PVI tests)
                 const removedDeletedList = building.removedDeletedDevices.slice(0, 5).map(d => 
@@ -16166,12 +16341,21 @@
                     </div>`
                 ).join('');
                 
-                const notReadyList = notReadyDevices.slice(0, 5).map(d => 
-                    `<div style="font-size: 11px; padding: 2px 0; display: flex; justify-content: space-between;">
-                        <span>${d.number}</span>
-                        <span style="opacity: 0.7; font-size: 10px;">${d.daysUntil > 0 ? d.daysUntil + ' days' : ''}</span>
-                    </div>`
-                ).join('');
+                const notReadyList = notReadyDevices.slice(0, 5).map(d => {
+                    const eligibleDateText = d.eligibleDate
+                        ? d.eligibleDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : '';
+                    const daysText = d.daysUntil > 0
+                        ? `${d.daysUntil} day${d.daysUntil === 1 ? '' : 's'}`
+                        : '';
+                    return `<div style="font-size: 11px; padding: 4px 0; display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; border-bottom: 1px solid rgba(255,152,0,0.12);">
+                        <span style="font-weight: 600; flex-shrink: 0;">${d.number}</span>
+                        <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; line-height: 1.25;">
+                            ${eligibleDateText ? `<span style="font-size: 10px; color: var(--text-color); opacity: 0.85;">Ready on ${eligibleDateText}</span>` : ''}
+                            ${daysText ? `<span style="font-size: 10px; color: #ff9800; font-weight: 700; background: rgba(255,152,0,0.12); border: 1px solid rgba(255,152,0,0.28); border-radius: 999px; padding: 1px 6px;">${daysText}</span>` : ''}
+                        </span>
+                    </div>`;
+                }).join('');
                 
                 const removedDeletedList = removedDeletedDevices.slice(0, 5).map(d => 
                     `<div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between; border-bottom: 1px solid rgba(128,128,128,0.2);">
@@ -25869,7 +26053,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.0.8</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.1</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
