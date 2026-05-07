@@ -991,7 +991,7 @@
                             <button id="mapSaveAsButton" onclick="saveMapViewAs()" title="Save map view as a new file" style="background: #5a32a3; border: none; border-radius: 6px; padding: 4px 9px; cursor: pointer; color: white; font-size: 0.78em; display: none; align-items: center; gap: 4px; white-space: nowrap;">
                                 <span>📄</span> <span>Save As</span>
                             </button>
-                            <button id="mapDobUpdateButton" onclick="updateMapViewDobInfo()" title="Refresh saved device test dates from DOB" style="background: #0d6efd; border: none; border-radius: 6px; padding: 4px 9px; cursor: pointer; color: white; font-size: 0.78em; display: flex; align-items: center; gap: 4px; white-space: nowrap;">
+                            <button id="mapDobUpdateButton" onclick="updateMapViewDobInfo()" title="Refresh saved device test dates from DOB" style="background: #0d6efd; border: none; border-radius: 6px; padding: 4px 9px; cursor: pointer; color: white; font-size: 0.78em; display: flex; align-items: center; gap: 4px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
                                 <span>🔄</span> <span id="mapDobUpdateButtonLabel">DOB Info Update</span>
                             </button>
                             <button onclick="triggerMapViewLoad()" title="Load map view from file" style="background: #17a2b8; border: none; border-radius: 6px; padding: 4px 9px; cursor: pointer; color: white; font-size: 0.78em; display: flex; align-items: center; gap: 4px; white-space: nowrap;">
@@ -10112,15 +10112,29 @@
             return refs;
         }
 
-        function updateDobInfoButtonState(isUpdating, text) {
+        function updateDobInfoButtonState(isUpdating, text, progressPercent) {
             const btn = document.getElementById('mapDobUpdateButton');
             const label = document.getElementById('mapDobUpdateButtonLabel');
             if (btn) {
                 btn.disabled = !!isUpdating;
                 btn.style.opacity = isUpdating ? '0.7' : '1';
                 btn.style.cursor = isUpdating ? 'wait' : 'pointer';
+                if (isUpdating) {
+                    const percent = Math.max(0, Math.min(100, Number(progressPercent) || 0));
+                    btn.style.background = `linear-gradient(90deg, #198754 ${percent}%, #0d6efd ${percent}%)`;
+                } else {
+                    btn.style.background = '#0d6efd';
+                }
             }
             if (label) label.textContent = text || 'DOB Info Update';
+        }
+
+        function refreshMapViewAfterDobInfoUpdate() {
+            if (!window.lastBulkSearchResults || !window.lastBulkSearchResults.binGroups) return;
+            const modal = document.getElementById('buildingMapModal');
+            if (buildingMap || (modal && modal.style.display === 'flex')) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
         }
 
         async function updateMapViewDobInfo() {
@@ -10140,7 +10154,7 @@
                 return;
             }
 
-            updateDobInfoButtonState(true, 'Updating 0%');
+            updateDobInfoButtonState(true, 'Updating 0%', 0);
             showMapNotification('Refreshing DOB device info...', '#0d6efd');
 
             const freshByDevice = {};
@@ -10154,7 +10168,7 @@
                     failed.push(deviceNumber);
                 }
                 const percent = Math.round(((i + 1) / uniqueDeviceNumbers.length) * 100);
-                updateDobInfoButtonState(true, `Updating ${percent}%`);
+                updateDobInfoButtonState(true, `Updating ${percent}%`, percent);
             }
 
             let dateUpdates = 0;
@@ -10167,10 +10181,9 @@
                 recordsUpdated++;
             });
 
+            updateDobInfoButtonState(true, 'Refreshing map...', 100);
             updateMapControlsPanel();
-            if (buildingMap && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
-            }
+            refreshMapViewAfterDobInfoUpdate();
 
             updateDobInfoButtonState(false);
             const saveHint = currentMapViewFileHandle
@@ -26471,7 +26484,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.4.10</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.5</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
