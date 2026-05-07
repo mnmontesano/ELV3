@@ -991,6 +991,9 @@
                             <button id="mapSaveAsButton" onclick="saveMapViewAs()" title="Save map view as a new file" style="background: #5a32a3; border: none; border-radius: 6px; padding: 4px 9px; cursor: pointer; color: white; font-size: 0.78em; display: none; align-items: center; gap: 4px; white-space: nowrap;">
                                 <span>📄</span> <span>Save As</span>
                             </button>
+                            <button id="mapDobUpdateButton" onclick="updateMapViewDobInfo()" title="Refresh saved device test dates from DOB" style="background: #0d6efd; border: none; border-radius: 6px; padding: 4px 9px; cursor: pointer; color: white; font-size: 0.78em; display: flex; align-items: center; gap: 4px; white-space: nowrap;">
+                                <span>🔄</span> <span id="mapDobUpdateButtonLabel">DOB Info Update</span>
+                            </button>
                             <button onclick="triggerMapViewLoad()" title="Load map view from file" style="background: #17a2b8; border: none; border-radius: 6px; padding: 4px 9px; cursor: pointer; color: white; font-size: 0.78em; display: flex; align-items: center; gap: 4px; white-space: nowrap;">
                                 <span>📂</span> <span>Load</span>
                             </button>
@@ -10041,6 +10044,152 @@
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
             showMapNotification('Map view saved to file', '#6f42c1');
+        }
+
+        function normalizeDobDateValue(value) {
+            if (!value) return '';
+            const parsed = new Date(value);
+            return isNaN(parsed.getTime()) ? String(value) : parsed.toISOString().slice(0, 10);
+        }
+
+        async function fetchCurrentDobDeviceRecord(deviceNumber) {
+            const params = new URLSearchParams();
+            params.set('device_number', deviceNumber);
+            params.set('$limit', '1');
+            const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?${params.toString()}`);
+            if (!response.ok) throw new Error(`DOB lookup failed for ${deviceNumber}`);
+            const data = await response.json();
+            return data && data.length > 0 ? data[0] : null;
+        }
+
+        function mergeDobDeviceRecord(savedDevice, freshDevice) {
+            if (!savedDevice || !freshDevice) return false;
+
+            const priorDates = {
+                cat1: normalizeDobDateValue(savedDevice.cat1_latest_report_filed),
+                cat5: normalizeDobDateValue(savedDevice.cat5_latest_report_filed),
+                pvi: normalizeDobDateValue(savedDevice.periodic_latest_inspection)
+            };
+            const nextDates = {
+                cat1: normalizeDobDateValue(freshDevice.cat1_latest_report_filed),
+                cat5: normalizeDobDateValue(freshDevice.cat5_latest_report_filed),
+                pvi: normalizeDobDateValue(freshDevice.periodic_latest_inspection)
+            };
+
+            const existingViolations = savedDevice.violations;
+            const existingMachineType = savedDevice.machine_type;
+            Object.assign(savedDevice, freshDevice);
+            if (existingViolations !== undefined) savedDevice.violations = existingViolations;
+            if (existingMachineType && !savedDevice.machine_type) savedDevice.machine_type = existingMachineType;
+
+            return priorDates.cat1 !== nextDates.cat1 ||
+                priorDates.cat5 !== nextDates.cat5 ||
+                priorDates.pvi !== nextDates.pvi;
+        }
+
+        function collectMapDobDeviceRefs() {
+            const refs = [];
+            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups
+                ? window.lastBulkSearchResults.binGroups
+                : {};
+
+            Object.entries(binGroups).forEach(([bin, group]) => {
+                if (!group || !Array.isArray(group.devices)) return;
+                group.devices.forEach((device, index) => {
+                    const deviceNumber = device && device.device_number ? String(device.device_number).trim().toUpperCase() : '';
+                    if (deviceNumber) refs.push({ deviceNumber, device, group, index, bin });
+                });
+            });
+
+            getAdditionalLocations().forEach(location => {
+                if (!location || !Array.isArray(location.devices)) return;
+                location.devices.forEach((device, index) => {
+                    const deviceNumber = device && device.device_number ? String(device.device_number).trim().toUpperCase() : '';
+                    if (deviceNumber) refs.push({ deviceNumber, device, group: location, index, bin: location.bin || '' });
+                });
+            });
+
+            return refs;
+        }
+
+        function updateDobInfoButtonState(isUpdating, text) {
+            const btn = document.getElementById('mapDobUpdateButton');
+            const label = document.getElementById('mapDobUpdateButtonLabel');
+            if (btn) {
+                btn.disabled = !!isUpdating;
+                btn.style.opacity = isUpdating ? '0.7' : '1';
+                btn.style.cursor = isUpdating ? 'wait' : 'pointer';
+            }
+            if (label) label.textContent = text || 'DOB Info Update';
+        }
+
+        async function updateMapViewDobInfo() {
+            if (!window.lastBulkSearchResults || !window.lastBulkSearchResults.binGroups) {
+                alert('No map data loaded. Load a map view file or run a bulk lookup first.');
+                return;
+            }
+
+            const refs = collectMapDobDeviceRefs();
+            if (refs.length === 0) {
+                showMapNotification('No saved devices found to update', '#ff9800');
+                return;
+            }
+
+            const uniqueDeviceNumbers = Array.from(new Set(refs.map(ref => ref.deviceNumber)));
+            if (!confirm(`Refresh DOB info for ${uniqueDeviceNumbers.length} device${uniqueDeviceNumbers.length !== 1 ? 's' : ''}? This updates the loaded map data with the latest DOB test dates. Save afterward to write it to your file.`)) {
+                return;
+            }
+
+            updateDobInfoButtonState(true, 'Updating 0%');
+            showMapNotification('Refreshing DOB device info...', '#0d6efd');
+
+            const freshByDevice = {};
+            const failed = [];
+            for (let i = 0; i < uniqueDeviceNumbers.length; i++) {
+                const deviceNumber = uniqueDeviceNumbers[i];
+                try {
+                    freshByDevice[deviceNumber] = await fetchCurrentDobDeviceRecord(deviceNumber);
+                } catch (error) {
+                    console.warn('DOB info update failed for device:', deviceNumber, error);
+                    failed.push(deviceNumber);
+                }
+                const percent = Math.round(((i + 1) / uniqueDeviceNumbers.length) * 100);
+                updateDobInfoButtonState(true, `Updating ${percent}%`);
+            }
+
+            let dateUpdates = 0;
+            let recordsUpdated = 0;
+            refs.forEach(ref => {
+                const fresh = freshByDevice[ref.deviceNumber];
+                if (!fresh) return;
+                const changedDates = mergeDobDeviceRecord(ref.device, fresh);
+                if (changedDates) dateUpdates++;
+                recordsUpdated++;
+
+                if (ref.group) {
+                    if (fresh.latitude && !ref.group.latitude) ref.group.latitude = fresh.latitude;
+                    if (fresh.longitude && !ref.group.longitude) ref.group.longitude = fresh.longitude;
+                    if (!ref.group.address && fresh.house_number && fresh.street_name) {
+                        ref.group.address = `${fresh.house_number} ${fresh.street_name}, ${fresh.borough || ''}`.trim();
+                    }
+                }
+            });
+
+            addMapActivity('Updated DOB device info', {
+                type: 'Building',
+                details: `${recordsUpdated} device record${recordsUpdated !== 1 ? 's' : ''} refreshed; ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}${failed.length ? `; ${failed.length} failed` : ''}`
+            });
+
+            updateMapControlsPanel();
+            if (buildingMap && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+
+            updateDobInfoButtonState(false);
+            const saveHint = currentMapViewFileHandle
+                ? ' Click Save to overwrite the linked file.'
+                : ' Save the map view to keep these updates in your file.';
+            showMapNotification(`DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${saveHint}`, dateUpdates > 0 ? '#27ae60' : '#17a2b8');
         }
 
         const MAP_EXCEL_CELL_LIMIT = 32767;
@@ -26335,7 +26484,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.4.8</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.4.9</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
