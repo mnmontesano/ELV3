@@ -13307,6 +13307,8 @@
                     const num    = device.device_number || 'N/A';
                     const type   = device.device_type   || 'Unknown';
                     const status = device.device_status || 'N/A';
+                    const escapedDeviceNumber = escapeMapSuggestionHtml(num);
+                    const deviceNumberForCopy = String(num).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                     const statusUp = status.toUpperCase();
                     const isRemoved = statusUp.includes('REMOVED') || statusUp.includes('DELETED');
                     const isDismantled = statusUp.includes('DISMANTLED');
@@ -13408,7 +13410,11 @@
                     <div style="background:${rowBg};border:1px solid var(--input-border);border-radius:8px;padding:12px;margin-bottom:8px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
                             <div>
-                                <span style="font-weight:700;font-size:16px;">${num}</span>
+                                <strong onclick="copyDeviceNumberToClipboard('${deviceNumberForCopy}', event)"
+                                        title="Click to copy device number"
+                                        style="font-weight:700;font-size:16px;cursor:pointer;padding:2px 7px;border-radius:5px;border:1px solid rgba(26,115,232,0.25);background:rgba(26,115,232,0.08);color:var(--text-color);display:inline-flex;align-items:center;gap:5px;transition:all 0.2s;">
+                                    ${escapedDeviceNumber} <span style="font-size:11px;opacity:0.65;">📋</span>
+                                </strong>
                                 <span style="font-size:13px;opacity:0.65;margin-left:8px;">${type}</span>
                             </div>
                             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -13438,8 +13444,8 @@
             modal.id = 'deviceDetailModal';
             modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.65);z-index:20000;display:flex;align-items:center;justify-content:center;';
             modal.innerHTML = `
-                <div id="deviceDetailShell" style="width:90%;max-width:760px;max-height:88vh;display:flex;gap:12px;align-items:stretch;justify-content:center;">
-                <div id="deviceReportDobNowPanel" style="display:none;order:3;background:var(--card-bg);border-radius:12px;flex:1 1 50%;min-width:360px;max-height:88vh;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,0.4);border:1px solid var(--input-border);overflow:hidden;">
+                <div id="deviceDetailShell" style="width:90%;height:min(760px,88vh);max-width:760px;max-height:calc(100vh - 40px);min-width:420px;min-height:420px;display:flex;gap:12px;align-items:stretch;justify-content:center;resize:both;overflow:hidden;">
+                <div id="deviceReportDobNowPanel" style="display:none;order:3;background:var(--card-bg);border-radius:12px;flex:1 1 50%;min-width:360px;height:100%;max-height:100%;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,0.4);border:1px solid var(--input-border);overflow:hidden;">
                     <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--input-border);background:var(--panel-bg);flex-shrink:0;">
                         <div>
                             <div style="font-weight:700;font-size:15px;color:var(--header-color);">DOB Now</div>
@@ -13461,11 +13467,11 @@
                 </div>
                 <div id="deviceReportResizeHandle"
                      onpointerdown="startDeviceReportResize(event)"
-                     title="Drag to resize panels"
+                     title="Drag sideways to resize report and DOB Now panels. Drag the bottom-right corner to resize the whole window."
                      style="display:none;order:2;width:12px;align-self:stretch;cursor:col-resize;align-items:center;justify-content:center;flex:0 0 12px;">
                     <div style="width:4px;height:56px;border-radius:4px;background:rgba(128,128,128,0.55);box-shadow:0 0 0 1px rgba(255,255,255,0.08);"></div>
                 </div>
-                <div id="deviceReportPanel" style="order:1;background:var(--card-bg);border-radius:12px;flex:1 1 760px;max-width:760px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,0.4);border:1px solid var(--input-border);overflow:hidden;">
+                <div id="deviceReportPanel" style="order:1;background:var(--card-bg);border-radius:12px;flex:1 1 760px;max-width:760px;height:100%;max-height:100%;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,0.4);border:1px solid var(--input-border);overflow:hidden;">
                     <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:2px solid var(--input-border);background:var(--panel-bg);flex-shrink:0;">
                         <div>
                             <div style="font-weight:700;font-size:17px;color:var(--header-color);">📋 Device Report</div>
@@ -13503,6 +13509,7 @@
 
             shell.style.width = '96%';
             shell.style.maxWidth = '1500px';
+            shell.style.minWidth = '760px';
             panel.style.display = 'flex';
             handle.style.display = 'flex';
             report.style.flex = '0 0 50%';
@@ -13524,6 +13531,7 @@
             handle.style.display = 'none';
             shell.style.width = '90%';
             shell.style.maxWidth = '760px';
+            shell.style.minWidth = '420px';
             report.style.flex = '1 1 760px';
             panel.style.flex = '1 1 50%';
             report.style.maxWidth = '760px';
@@ -26108,7 +26116,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.1</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.2</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
