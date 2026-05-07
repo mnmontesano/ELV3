@@ -13291,6 +13291,122 @@
             const currentYear = new Date().getFullYear();
             const today = new Date(); today.setHours(0,0,0,0);
 
+            const getDeviceReportTestInfo = function(device) {
+                const statusText = (device.device_status || '').toUpperCase();
+                const typeText = (device.device_type || '').toUpperCase();
+                const machineText = (device.machine_type || device.machineType || '').toUpperCase();
+                const numberText = (device.device_number || '').toUpperCase();
+                const isRemoved = statusText.includes('REMOVED') || statusText.includes('DELETED');
+                const isDismantled = statusText.includes('DISMANTLED');
+                const isDumbwaiter = typeText.includes('DUMBWAITER') || typeText.includes('DUMWAITER');
+                const isConveyor = typeText.includes('CONVEYOR');
+                const isWheelchairLift = typeText.includes('WHEELCHAIR') || numberText.includes('W');
+                const isHydraulic = typeText.includes('HYDRAULIC') || typeText.includes('HYDRO') || machineText.includes('HYDRAULIC') || machineText.includes('HYDRO');
+                const isEscalator = typeText.includes('ESCALATOR');
+                const pviDate  = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+                const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+                const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                const hasPVI = pviDate && pviDate.getFullYear() === currentYear;
+                const hasCat1 = cat1Date && cat1Date.getFullYear() === currentYear;
+                const hasCat5 = cat5Date && cat5Date.getFullYear() === currentYear;
+                const cat5NotRequired = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled;
+                const requiresCat5 = !cat5NotRequired && cat5Date && (currentYear - cat5Date.getFullYear()) >= 5;
+                const nextCat5DueYear = (!cat5NotRequired && cat5Date) ? cat5Date.getFullYear() + 5 : null;
+                const requiresPVI = !isRemoved && !isConveyor;
+                const requiresCat1 = !isRemoved && !isDismantled;
+
+                return {
+                    isRemoved,
+                    isDismantled,
+                    requiresPVI,
+                    requiresCat1,
+                    requiresCat5,
+                    nextCat5DueYear,
+                    pviDate,
+                    cat1Date,
+                    cat5Date,
+                    hasPVI,
+                    hasCat1,
+                    hasCat5
+                };
+            };
+
+            const activeReportDevices = devices.filter(device => !getDeviceReportTestInfo(device).isRemoved);
+            const reportSummary = activeReportDevices.reduce((summary, device) => {
+                const info = getDeviceReportTestInfo(device);
+                if (info.requiresPVI) {
+                    summary.pviRequired++;
+                    if (info.hasPVI) summary.pviComplete++;
+                    else summary.pviMissing++;
+                }
+                if (info.requiresCat1) {
+                    summary.cat1Required++;
+                    if (info.hasCat1) summary.cat1Complete++;
+                    else summary.cat1Missing++;
+                }
+                if (info.requiresCat5) {
+                    summary.cat5Required++;
+                    if (info.hasCat5) summary.cat5Complete++;
+                    else {
+                        summary.cat5Missing++;
+                        summary.cat5RequiredDevices.push({
+                            number: device.device_number || 'N/A',
+                            type: device.device_type || 'Unknown',
+                            lastCat5: info.cat5Date,
+                            dueYear: info.nextCat5DueYear || currentYear
+                        });
+                    }
+                }
+                return summary;
+            }, {
+                pviRequired: 0,
+                pviComplete: 0,
+                pviMissing: 0,
+                cat1Required: 0,
+                cat1Complete: 0,
+                cat1Missing: 0,
+                cat5Required: 0,
+                cat5Complete: 0,
+                cat5Missing: 0,
+                cat5RequiredDevices: []
+            });
+
+            const cat5RequiredList = reportSummary.cat5RequiredDevices.slice(0, 8).map(device => `
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:5px 0;border-top:1px solid rgba(255,152,0,0.16);">
+                    <span style="font-weight:700;color:var(--text-color);">${escapeMapSuggestionHtml(device.number)}</span>
+                    <span style="text-align:right;font-size:12px;line-height:1.35;">
+                        <span style="display:block;color:var(--text-color);opacity:0.78;">${escapeMapSuggestionHtml(device.type)}</span>
+                        <span style="display:block;color:#ff9800;font-weight:700;">Due ${device.dueYear} · Last CAT 5 ${device.lastCat5 ? device.lastCat5.toLocaleDateString() : 'N/A'}</span>
+                    </span>
+                </div>
+            `).join('');
+
+            const reportSummaryHtml = `
+                <div style="background:rgba(26,115,232,0.08);border:1px solid rgba(26,115,232,0.25);border-radius:10px;padding:12px;margin-bottom:12px;">
+                    <div style="font-size:14px;font-weight:800;color:var(--header-color);margin-bottom:10px;">${currentYear} Test Summary</div>
+                    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px;">
+                        <div style="background:var(--panel-bg);border:1px solid var(--input-border);border-radius:8px;padding:9px;">
+                            <div style="font-size:11px;opacity:0.65;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">PVI</div>
+                            <div style="font-size:13px;"><span style="color:#4CAF50;font-weight:800;">${reportSummary.pviComplete}</span> done · <span style="color:${reportSummary.pviMissing > 0 ? '#ff6b6b' : '#4CAF50'};font-weight:800;">${reportSummary.pviMissing}</span> missing</div>
+                        </div>
+                        <div style="background:var(--panel-bg);border:1px solid var(--input-border);border-radius:8px;padding:9px;">
+                            <div style="font-size:11px;opacity:0.65;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">CAT 1</div>
+                            <div style="font-size:13px;"><span style="color:#4CAF50;font-weight:800;">${reportSummary.cat1Complete}</span> done · <span style="color:${reportSummary.cat1Missing > 0 ? '#ff6b6b' : '#4CAF50'};font-weight:800;">${reportSummary.cat1Missing}</span> missing</div>
+                        </div>
+                        <div style="background:var(--panel-bg);border:1px solid var(--input-border);border-radius:8px;padding:9px;">
+                            <div style="font-size:11px;opacity:0.65;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">CAT 5 Due</div>
+                            <div style="font-size:13px;"><span style="color:#ff9800;font-weight:800;">${reportSummary.cat5Missing}</span> missing · <span style="color:#4CAF50;font-weight:800;">${reportSummary.cat5Complete}</span> done</div>
+                        </div>
+                    </div>
+                    <div style="background:rgba(255,152,0,0.09);border:1px solid rgba(255,152,0,0.25);border-radius:8px;padding:10px;">
+                        <div style="font-size:13px;font-weight:800;color:#ff9800;margin-bottom:6px;">CAT 5 Required</div>
+                        ${reportSummary.cat5RequiredDevices.length > 0
+                            ? `${cat5RequiredList}${reportSummary.cat5RequiredDevices.length > 8 ? `<div style="font-size:11px;opacity:0.65;margin-top:6px;text-align:center;">+${reportSummary.cat5RequiredDevices.length - 8} more CAT 5 required device${reportSummary.cat5RequiredDevices.length - 8 === 1 ? '' : 's'}...</div>` : ''}`
+                            : `<div style="font-size:12px;color:var(--text-color);opacity:0.78;">None are due for this calendar year.</div>`}
+                    </div>
+                </div>
+            `;
+
             // Build a row for each device
             let rows = '';
             if (devices.length === 0) {
@@ -13360,21 +13476,22 @@
                     const escapedDeviceNumber = escapeMapSuggestionHtml(num);
                     const deviceNumberForCopy = String(num).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                     const statusUp = status.toUpperCase();
-                    const isRemoved = statusUp.includes('REMOVED') || statusUp.includes('DELETED');
-                    const isDismantled = statusUp.includes('DISMANTLED');
-
-                    const pviDate  = device.periodic_latest_inspection   ? new Date(device.periodic_latest_inspection)   : null;
-                    const cat1Date = device.cat1_latest_report_filed      ? new Date(device.cat1_latest_report_filed)      : null;
-                    const cat5Date = device.cat5_latest_report_filed      ? new Date(device.cat5_latest_report_filed)      : null;
-
-                    const hasPVI  = pviDate  && pviDate.getFullYear()  === currentYear;
-                    const hasCat1 = cat1Date && cat1Date.getFullYear() === currentYear;
+                    const testInfo = getDeviceReportTestInfo(device);
+                    const isRemoved = testInfo.isRemoved;
+                    const isDismantled = testInfo.isDismantled;
+                    const pviDate = testInfo.pviDate;
+                    const cat1Date = testInfo.cat1Date;
+                    const cat5Date = testInfo.cat5Date;
+                    const hasPVI = testInfo.hasPVI;
+                    const hasCat1 = testInfo.hasCat1;
+                    const hasCat5 = testInfo.hasCat5;
 
                     // Pending tests
                     const pending = [];
                     if (!isRemoved) {
-                        if (!hasPVI)  pending.push('PVI');
-                        if (!hasCat1) pending.push('Cat1');
+                        if (testInfo.requiresPVI && !hasPVI) pending.push('PVI');
+                        if (testInfo.requiresCat1 && !hasCat1) pending.push('CAT 1');
+                        if (testInfo.requiresCat5 && !hasCat5) pending.push('CAT 5');
                     }
 
                     // 91-day eligibility
@@ -13403,9 +13520,15 @@
                     }
 
                     const fmt = d => d ? d.toLocaleDateString() : '—';
-                    const pviHtml  = `<span style="color:${hasPVI  ? '#4CAF50' : '#ff6b6b'}">${hasPVI  ? '✓' : '✗'}</span> ${fmt(pviDate)}`;
-                    const cat1Html = `<span style="color:${hasCat1 ? '#4CAF50' : '#ff6b6b'}">${hasCat1 ? '✓' : '✗'}</span> ${fmt(cat1Date)}`;
-                    const cat5Html = fmt(cat5Date);
+                    const pviHtml = testInfo.requiresPVI
+                        ? `<span style="color:${hasPVI ? '#4CAF50' : '#ff6b6b'}">${hasPVI ? '✓' : '✗'}</span> ${fmt(pviDate)}`
+                        : `<span style="color:#888;font-style:italic;">Not required</span>`;
+                    const cat1Html = testInfo.requiresCat1
+                        ? `<span style="color:${hasCat1 ? '#4CAF50' : '#ff6b6b'}">${hasCat1 ? '✓' : '✗'}</span> ${fmt(cat1Date)}`
+                        : `<span style="color:#888;font-style:italic;">Not required</span>`;
+                    const cat5Html = testInfo.requiresCat5
+                        ? `<span style="color:${hasCat5 ? '#4CAF50' : '#ff9800'};font-weight:700;">${hasCat5 ? '✓' : '⚠'} ${fmt(cat5Date)}</span>${!hasCat5 ? `<br><span style="font-size:10px;color:#ff9800;font-weight:700;">Due ${testInfo.nextCat5DueYear || currentYear}</span>` : ''}`
+                        : fmt(cat5Date);
 
                     const pendingHtml = isRemoved
                         ? `<span style="color:#888;font-style:italic;">N/A (${statusUp.includes('DELETED') ? 'Deleted' : 'Removed'})</span>`
@@ -13511,6 +13634,7 @@
                         </div>
                     </div>
                     <div style="overflow-y:auto;padding:16px;flex:1;">
+                        ${reportSummaryHtml}
                         ${rows}
                     </div>
                 </div>
@@ -26145,7 +26269,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.4.2</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.4.3</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
