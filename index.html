@@ -15071,8 +15071,14 @@
                             ? new Date(data.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                             : '';
                         const addrEsc = (data.address || '').replace(/"/g, '&quot;');
+                        const noteText = String(notesMap[bin] || '').trim();
+                        const notePreview = noteText.length > 110 ? noteText.substring(0, 110) + '...' : noteText;
+                        const noteEsc = escapeMapSuggestionHtml(noteText);
+                        const noteHtml = noteText
+                            ? `<span style="display:block;font-size:0.84em;opacity:0.78;padding-left:22px;line-height:1.35;white-space:normal;"><strong>Note:</strong> ${escapeMapSuggestionHtml(notePreview)}</span>`
+                            : '';
                         return `
-                        <div data-bin="${bin}" data-address="${addrEsc}" data-filter-text="${heldOn.replace(/"/g, '&quot;')}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 1em;">
+                        <div data-bin="${bin}" data-address="${addrEsc}" data-filter-text="${heldOn.replace(/"/g, '&quot;')} ${noteEsc}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 1em;">
                             <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}', { temporarilyShowHidden: true })">
                                 <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
                                     <span style="color: #607d8b; font-weight: 700; flex-shrink: 0;">⏸</span>
@@ -15082,6 +15088,7 @@
                                     }
                                 </span>
                                 ${heldOn ? `<span style="font-size: 0.8em; opacity: 0.55; padding-left: 22px;">Since ${heldOn}${data.address ? ' · BIN ' + bin : ''}</span>` : (data.address ? `<span style="font-size: 0.8em; opacity: 0.55; padding-left: 22px;">BIN ${bin}</span>` : '')}
+                                ${noteHtml}
                             </span>
                             <button onclick="toggleMapHold('${bin}')" style="flex-shrink:0; background: #ff9800; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 0.8em; margin-left: 8px;">Remove</button>
                         </div>`;
@@ -26568,7 +26575,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.5.2</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.5.3</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
