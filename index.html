@@ -22680,10 +22680,24 @@
                 mainBinValue.textContent = binNumber;
                 updateMainBinDisplayStyle();
 
+                let deviceCountLine = '';
+                if (binNumber && binNumber !== 'Not available') {
+                    try {
+                        const binResponse = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?bin=${encodeURIComponent(binNumber)}`);
+                        if (binResponse.ok) {
+                            const binData = await binResponse.json();
+                            const deviceCount = binData.length;
+                            deviceCountLine = `<br><strong>Devices:</strong> ${deviceCount} device${deviceCount !== 1 ? 's' : ''}`;
+                        }
+                    } catch (countError) {
+                        console.error('Error fetching building device count:', countError);
+                    }
+                }
+
                 // Show device result (address only; BIN is in copy area above)
                 resultDiv.innerHTML = `
                     <div style="font-size: 12px; line-height: 1.3;">
-                        <strong>Address:</strong> ${address}
+                        <strong>Address:</strong> ${address}${deviceCountLine}
                     </div>
                 `;
 
