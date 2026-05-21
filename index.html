@@ -26323,7 +26323,11 @@
         item.result.filedViolationDevices[deviceNumber] = !item.result.filedViolationDevices[deviceNumber];
 
         var resultContent = document.getElementById('elv3ScanResultContent');
-        renderELV3ScanResult(item.result, resultContent);
+        renderELV3ScanResult(item.result, resultContent, {
+            preserveScroll: true,
+            anchorDeviceNumber: deviceNumber,
+            anchorWillHide: item.result.filedViolationDevices[deviceNumber] === true && item.result.showFiledViolationDevices !== true
+        });
     }
 
     function toggleELV3ScanShowFiled(event) {
@@ -26336,7 +26340,83 @@
         item.result.showFiledViolationDevices = event && event.target ? event.target.checked : !item.result.showFiledViolationDevices;
 
         var resultContent = document.getElementById('elv3ScanResultContent');
-        renderELV3ScanResult(item.result, resultContent);
+        renderELV3ScanResult(item.result, resultContent, { preserveScroll: true });
+    }
+
+    function captureELV3ScanScrollState(container, anchorDeviceNumber, anchorWillHide) {
+        if (!container) return null;
+
+        var scrollEl = container.querySelector('.elv3-scan-results-scroll');
+        var leftPanel = container.closest('.elv3-scan-left-panel');
+        var state = {
+            resultsScrollTop: scrollEl ? scrollEl.scrollTop : 0,
+            leftPanelScrollTop: leftPanel ? leftPanel.scrollTop : 0,
+            anchorDeviceNumber: null,
+            anchorOffsetTop: null
+        };
+
+        if (scrollEl && anchorDeviceNumber) {
+            var deviceEls = Array.prototype.slice.call(scrollEl.querySelectorAll('[data-elv3-device]'));
+            var anchorIndex = deviceEls.findIndex(function(el) {
+                return el.getAttribute('data-elv3-device') === String(anchorDeviceNumber);
+            });
+            var anchorEl = anchorIndex >= 0 ? deviceEls[anchorIndex] : null;
+            var targetEl = anchorEl;
+
+            if (anchorWillHide && anchorIndex >= 0) {
+                targetEl = deviceEls[anchorIndex + 1] || deviceEls[anchorIndex - 1] || null;
+            }
+
+            if (targetEl) {
+                state.anchorDeviceNumber = targetEl.getAttribute('data-elv3-device');
+                state.anchorOffsetTop = targetEl.offsetTop - scrollEl.scrollTop;
+            }
+        }
+
+        return state;
+    }
+
+    function findELV3ScanDeviceEl(scrollEl, deviceNumber) {
+        if (!scrollEl || deviceNumber == null) return null;
+        var deviceEls = scrollEl.querySelectorAll('[data-elv3-device]');
+        for (var i = 0; i < deviceEls.length; i++) {
+            if (deviceEls[i].getAttribute('data-elv3-device') === String(deviceNumber)) {
+                return deviceEls[i];
+            }
+        }
+        return null;
+    }
+
+    function restoreELV3ScanScrollState(container, scrollState) {
+        if (!container || !scrollState) return;
+
+        var applyScroll = function() {
+            var scrollEl = container.querySelector('.elv3-scan-results-scroll');
+            var leftPanel = container.closest('.elv3-scan-left-panel');
+            var restored = false;
+
+            if (scrollEl) {
+                if (scrollState.anchorDeviceNumber && scrollState.anchorOffsetTop != null) {
+                    var anchorEl = findELV3ScanDeviceEl(scrollEl, scrollState.anchorDeviceNumber);
+                    if (anchorEl) {
+                        scrollEl.scrollTop = Math.max(0, anchorEl.offsetTop - scrollState.anchorOffsetTop);
+                        restored = true;
+                    }
+                }
+                if (!restored) {
+                    scrollEl.scrollTop = scrollState.resultsScrollTop;
+                }
+            }
+
+            if (leftPanel) {
+                leftPanel.scrollTop = scrollState.leftPanelScrollTop;
+            }
+        };
+
+        requestAnimationFrame(function() {
+            applyScroll();
+            requestAnimationFrame(applyScroll);
+        });
     }
 
     async function copyAllViolations(event) {
@@ -26360,7 +26440,9 @@
             return !needsCheck.has(e[0]) && (showFiled || !filedDevices[e[0]]);
         }));
         var devicesWithV = Object.keys(vbdFiltered).length;
-        var satisfactory = data.satisfactoryDevices || [];
+        var satisfactory = (data.satisfactoryDevices || []).filter(function(d) {
+            return showFiled || !filedDevices[d.deviceNumber];
+        });
         lines.push('Devices with Violations: ' + devicesWithV);
         lines.push('Satisfactory Devices: ' + satisfactory.length);
         lines.push('Total Violations: ' + (data.violations || []).length);
@@ -26441,8 +26523,12 @@
     /**
      * Render the ELV3 scan result
      */
-    function renderELV3ScanResult(data, targetEl) {
+    function renderELV3ScanResult(data, targetEl, renderOptions) {
         const container = targetEl || document.getElementById('elv3ScanResultContent');
+        const scrollState = (renderOptions && renderOptions.preserveScroll && container)
+            ? captureELV3ScanScrollState(container, renderOptions.anchorDeviceNumber, renderOptions.anchorWillHide === true)
+            : null;
+
         if (data.success === false) {
             if (container) {
                 var diagHtml = '';
@@ -26484,6 +26570,9 @@
         const devicesWithViolationsCount = visibleViolationDeviceEntries.length;
         const totalDevicesWithViolationsCount = violationDeviceEntries.length;
         const satisfactoryDevices = data.satisfactoryDevices || [];
+        const visibleSatisfactoryDevices = satisfactoryDevices.filter(d => showFiledViolationDevices || !filedViolationDevices[d.deviceNumber]);
+        const filedSatisfactoryDevicesCount = satisfactoryDevices.filter(d => filedViolationDevices[d.deviceNumber]).length;
+        const totalFiledDevicesCount = filedViolationDevicesCount + filedSatisfactoryDevicesCount;
         const totalDevices = (data.devices || []).length;
         
         let resultHtml = `
@@ -26495,8 +26584,8 @@
                 ${data.inspectorName ? `<p><strong>Inspector:</strong> ${data.inspectorName}</p>` : ''}
                 <p><strong>Devices Scanned:</strong> ${totalDevices}</p>
                 <p><strong>Devices with Violations:</strong> ${devicesWithViolationsCount}${filedViolationDevicesCount > 0 ? ` of ${totalDevicesWithViolationsCount} remaining` : ''}</p>
-                ${filedViolationDevicesCount > 0 ? `<p><strong>Filed Devices Hidden:</strong> ${showFiledViolationDevices ? 0 : filedViolationDevicesCount}</p>` : ''}
-                <p><strong>Satisfactory Devices:</strong> ${satisfactoryDevices.length}</p>
+                ${totalFiledDevicesCount > 0 ? `<p><strong>Filed Devices Hidden:</strong> ${showFiledViolationDevices ? 0 : totalFiledDevicesCount}</p>` : ''}
+                <p><strong>Satisfactory Devices:</strong> ${visibleSatisfactoryDevices.length}${filedSatisfactoryDevicesCount > 0 ? ` of ${satisfactoryDevices.length} remaining` : ''}</p>
                 <p><strong>Devices Need Review:</strong> ${devicesWithoutStatusCheck.length}</p>
                 ${devicesMissingViolationDetails.length > 0 ? `<p><strong>Unsatisfactory Missing Details:</strong> ${devicesMissingViolationDetails.length}</p>` : ''}
                 <p><strong>Total Violations:</strong> ${data.violations.length}</p>
@@ -26506,7 +26595,7 @@
                     <span class="copy-icon">📋</span>
                     <span class="copy-text">Copy All</span>
                 </button>
-                ${filedViolationDevicesCount > 0 ? `
+                ${totalFiledDevicesCount > 0 ? `
                     <label class="elv3-scan-show-filed-toggle">
                         <input type="checkbox" onchange="toggleELV3ScanShowFiled(event)" ${showFiledViolationDevices ? 'checked' : ''}>
                         <span>Show filed</span>
@@ -26529,7 +26618,7 @@
                     const escapedDeviceNumber = deviceNumber.replace(/'/g, "\\'");
                     const isFiled = filedViolationDevices[deviceNumber] === true;
                     return `
-                    <div class="elv3-scan-device-group ${isFiled ? 'elv3-scan-device-filed' : ''}">
+                    <div class="elv3-scan-device-group ${isFiled ? 'elv3-scan-device-filed' : ''}" data-elv3-device="${deviceNumber.replace(/"/g, '&quot;')}">
                         <div class="elv3-scan-device-header violations">
                             <span class="elv3-scan-device-number">${deviceNumber}${deviceFieldText ? ` <span class="elv3-scan-device-note">${deviceFieldText}</span>` : ''}</span>
                             <div class="elv3-scan-device-header-actions">
@@ -26592,21 +26681,36 @@
         // Show satisfactory devices
         if (satisfactoryDevices.length > 0) {
             resultHtml += `
-                <h5 class="elv3-scan-section-title satisfactory">✓ Satisfactory Devices</h5>
+                <h5 class="elv3-scan-section-title satisfactory">✓ Satisfactory Devices${filedSatisfactoryDevicesCount > 0 && !showFiledViolationDevices ? ` (${visibleSatisfactoryDevices.length} remaining)` : ''}</h5>
+                ${visibleSatisfactoryDevices.length === 0 ? `
+                    <div class="elv3-scan-all-filed-message">All satisfactory devices are marked filed. Turn on "Show filed" to view them again.</div>
+                ` : ''}
                 <div class="elv3-scan-satisfactory-list">
-                    ${satisfactoryDevices.map(device => `
-                        <div class="elv3-scan-satisfactory-item">
+                    ${visibleSatisfactoryDevices.map(device => {
+                        const escapedDeviceNumber = device.deviceNumber.replace(/'/g, "\\'");
+                        const isFiled = filedViolationDevices[device.deviceNumber] === true;
+                        return `
+                        <div class="elv3-scan-satisfactory-item ${isFiled ? 'elv3-scan-device-filed' : ''}" data-elv3-device="${device.deviceNumber.replace(/"/g, '&quot;')}">
                             <span class="elv3-scan-device-number">${device.deviceNumber}</span>
+                            <label class="elv3-scan-filed-toggle" title="Mark this device as filed and hide it">
+                                <input type="checkbox" onclick="toggleELV3ScanFiledDevice('${escapedDeviceNumber}', event)" ${isFiled ? 'checked' : ''}>
+                                <span>Filed</span>
+                            </label>
                             <span class="elv3-scan-satisfactory-badge">✓ Satisfactory</span>
                         </div>
-                    `).join('')}
+                    `}).join('')}
                 </div>
             `;
         }
         
         resultHtml += `</div>`;
         
-        if (container) container.innerHTML = resultHtml;
+        if (container) {
+            container.innerHTML = resultHtml;
+            if (scrollState) {
+                restoreELV3ScanScrollState(container, scrollState);
+            }
+        }
     }
 
     // Close modal on escape key
@@ -26622,7 +26726,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.5.5</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 3.5.6</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
