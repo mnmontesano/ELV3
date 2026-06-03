@@ -10182,6 +10182,17 @@
                 && hasRequiredCat5;
         }
 
+        function getMapNextRequiredTestLabel(device, year) {
+            if (!device || !mapDobDeviceIsActiveForCompletion(device)) return '';
+            const missingTests = [];
+            if (!mapDobDateIsInYear(device.periodic_latest_inspection, year)) missingTests.push('PVI');
+            if (!mapDobDateIsInYear(device.cat1_latest_report_filed, year)) missingTests.push('CAT 1');
+            if (mapDobDeviceRequiresCat5ThisYear(device, year) && !mapDobDateIsInYear(device.cat5_latest_report_filed, year)) {
+                missingTests.push('CAT 5');
+            }
+            return missingTests.length > 0 ? missingTests.join(' + ') : 'All required tests filed';
+        }
+
         function mapDobGroupHasCurrentYearCompletion(group, year) {
             const devices = group && Array.isArray(group.devices) ? group.devices : [];
             const activeDevices = devices.filter(mapDobDeviceIsActiveForCompletion);
@@ -16612,6 +16623,7 @@
                                 status: device.device_status || 'N/A',
                                 hasPVI,
                                 hasCat1,
+                                nextRequiredTest: getMapNextRequiredTestLabel(device, currentYear),
                                 eligibleDate,
                                 daysUntil,
                                 mostRecentTest
@@ -16752,7 +16764,7 @@
                 const hiddenByCurrentSettings = isBuildingHiddenByMapSettings(building);
 
                 // Create popup content with detailed device testing info
-                const readyList = building.readyDevices.slice(0, 5).map(d => 
+                const readyList = building.readyDevices.slice(0, 3).map(d =>
                     `<div style="font-size: 11px; padding: 2px 0;">
                         <span>${d.number}</span>
                     </div>`
@@ -16760,7 +16772,7 @@
                 
                 const notReadyList = building.notReadyDevices.slice()
                     .sort((a, b) => (b.daysUntil || 0) - (a.daysUntil || 0))
-                    .slice(0, 5)
+                    .slice(0, 3)
                     .map(d => {
                     const eligibleDateText = d.eligibleDate
                         ? d.eligibleDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -16771,6 +16783,7 @@
                     return `<div style="font-size: 11px; padding: 4px 0; display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; border-bottom: 1px solid rgba(255,152,0,0.12);">
                         <span style="font-weight: 600; flex-shrink: 0;">${d.number}</span>
                         <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; line-height: 1.25;">
+                            ${d.nextRequiredTest ? `<span style="font-size: 10px; color: #ff9800; font-weight: 700;">${d.nextRequiredTest}</span>` : ''}
                             ${eligibleDateText ? `<span style="font-size: 10px; color: var(--text-color); opacity: 0.85;">Ready on ${eligibleDateText}</span>` : ''}
                             ${daysText ? `<span style="font-size: 10px; color: #ff9800; font-weight: 700; background: rgba(255,152,0,0.12); border: 1px solid rgba(255,152,0,0.28); border-radius: 999px; padding: 1px 6px;">${daysText}</span>` : ''}
                         </span>
@@ -16778,7 +16791,7 @@
                     }).join('');
                 
                 // Generate list for removed/deleted devices (not dismantled - they still need PVI tests)
-                const removedDeletedList = building.removedDeletedDevices.slice(0, 5).map(d => 
+                const removedDeletedList = building.removedDeletedDevices.slice(0, 3).map(d =>
                     `<div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between; border-bottom: 1px solid rgba(128,128,128,0.2);">
                         <span style="font-weight: 500;">${d.number}</span>
                         <span style="color: #ff6b6b; font-size: 10px; font-weight: 500;">
@@ -17038,7 +17051,7 @@
                                 </div>
                                 <div>
                                     ${building.readyDevices.length > 0 ? readyList : '<div style="font-size: 11px; opacity: 0.6;">None</div>'}
-                                    ${building.readyDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${building.readyDevices.length - 5} more...</div>` : ''}
+                                    ${building.readyDevices.length > 3 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${building.readyDevices.length - 3} more...</div>` : ''}
                                 </div>
                             </div>
                             <div style="background: rgba(255,152,0,0.1); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,152,0,0.3);">
@@ -17049,7 +17062,7 @@
                                 </div>
                                 <div>
                                     ${building.notReadyDevices.length > 0 ? notReadyList : '<div style="font-size: 11px; opacity: 0.6;">None</div>'}
-                                    ${building.notReadyDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${building.notReadyDevices.length - 5} more...</div>` : ''}
+                                    ${building.notReadyDevices.length > 3 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${building.notReadyDevices.length - 3} more...</div>` : ''}
                                 </div>
                             </div>
                         </div>`}
@@ -17066,7 +17079,7 @@
                                     These devices no longer require testing
                                 </div>
                                 ${removedDeletedList}
-                                ${building.removedDeletedDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 6px;">+${building.removedDeletedDevices.length - 5} more...</div>` : ''}
+                                ${building.removedDeletedDevices.length > 3 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 6px;">+${building.removedDeletedDevices.length - 3} more...</div>` : ''}
                             </div>
                         </div>` : ''}
 
@@ -17169,6 +17182,7 @@
                             status: device.device_status || 'N/A',
                             hasPVI,
                             hasCat1,
+                            nextRequiredTest: getMapNextRequiredTestLabel(device, currentYear),
                             eligibleDate,
                             daysUntil,
                             mostRecentTest
@@ -17239,7 +17253,7 @@
                     .addTo(buildingMap);
 
                 // Create popup content matching building popup format
-                const readyList = readyDevices.slice(0, 5).map(d => 
+                const readyList = readyDevices.slice(0, 3).map(d =>
                     `<div style="font-size: 11px; padding: 2px 0; display: flex; justify-content: space-between;">
                         <span>${d.number}</span>
                         <span style="opacity: 0.7; font-size: 10px;">${d.hasPVI && d.hasCat1 ? '✓ Done' : 'Needs tests'}</span>
@@ -17248,7 +17262,7 @@
                 
                 const notReadyList = notReadyDevices.slice()
                     .sort((a, b) => (b.daysUntil || 0) - (a.daysUntil || 0))
-                    .slice(0, 5)
+                    .slice(0, 3)
                     .map(d => {
                     const eligibleDateText = d.eligibleDate
                         ? d.eligibleDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -17259,13 +17273,14 @@
                     return `<div style="font-size: 11px; padding: 4px 0; display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; border-bottom: 1px solid rgba(255,152,0,0.12);">
                         <span style="font-weight: 600; flex-shrink: 0;">${d.number}</span>
                         <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; line-height: 1.25;">
+                            ${d.nextRequiredTest ? `<span style="font-size: 10px; color: #ff9800; font-weight: 700;">${d.nextRequiredTest}</span>` : ''}
                             ${eligibleDateText ? `<span style="font-size: 10px; color: var(--text-color); opacity: 0.85;">Ready on ${eligibleDateText}</span>` : ''}
                             ${daysText ? `<span style="font-size: 10px; color: #ff9800; font-weight: 700; background: rgba(255,152,0,0.12); border: 1px solid rgba(255,152,0,0.28); border-radius: 999px; padding: 1px 6px;">${daysText}</span>` : ''}
                         </span>
                     </div>`;
                     }).join('');
                 
-                const removedDeletedList = removedDeletedDevices.slice(0, 5).map(d => 
+                const removedDeletedList = removedDeletedDevices.slice(0, 3).map(d =>
                     `<div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between; border-bottom: 1px solid rgba(128,128,128,0.2);">
                         <span style="font-weight: 500;">${d.number}</span>
                         <span style="color: #ff6b6b; font-size: 10px; font-weight: 500;">
@@ -17426,7 +17441,7 @@
                                 </div>
                                 <div>
                                     ${readyDevices.length > 0 ? readyList : '<div style="font-size: 11px; opacity: 0.6;">None</div>'}
-                                    ${readyDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${readyDevices.length - 5} more...</div>` : ''}
+                                    ${readyDevices.length > 3 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${readyDevices.length - 3} more...</div>` : ''}
                                 </div>
                             </div>
                             <div style="background: rgba(255,152,0,0.1); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,152,0,0.3);">
@@ -17437,7 +17452,7 @@
                                 </div>
                                 <div>
                                     ${notReadyDevices.length > 0 ? notReadyList : '<div style="font-size: 11px; opacity: 0.6;">None</div>'}
-                                    ${notReadyDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${notReadyDevices.length - 5} more...</div>` : ''}
+                                    ${notReadyDevices.length > 3 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${notReadyDevices.length - 3} more...</div>` : ''}
                                 </div>
                             </div>
                         </div>
@@ -17451,7 +17466,7 @@
                                 These devices no longer require testing
                             </div>
                             ${removedDeletedList}
-                            ${removedDeletedDevices.length > 5 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 6px;">+${removedDeletedDevices.length - 5} more...</div>` : ''}
+                            ${removedDeletedDevices.length > 3 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 6px;">+${removedDeletedDevices.length - 3} more...</div>` : ''}
                         </div>` : ''}
                         ` : ''}
                     </div>
