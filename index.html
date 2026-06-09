@@ -10317,26 +10317,47 @@
             modal.id = 'dobInfoUpdateChangesModal';
             modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:10045; display:flex; align-items:center; justify-content:center; padding:18px;';
 
-            const rowsHtml = changes.length > 0
-                ? changes.map(row => `
-                    <div style="padding:8px 10px; border-bottom:1px solid var(--input-border);">
-                        <div style="font-weight:700; color:var(--header-color); margin-bottom:3px;">${escapeMapSuggestionHtml(row.deviceNumber)}${row.bin ? ` <span style="font-weight:400; opacity:0.65;">BIN ${escapeMapSuggestionHtml(row.bin)}</span>` : ''}</div>
-                        <div style="font-size:0.9em; opacity:0.8;">${escapeMapSuggestionHtml(row.address || '')}</div>
-                        <div style="margin-top:5px; font-size:0.92em;">
-                            <span style="color:#1a73e8; font-weight:700;">${escapeMapSuggestionHtml(row.field)}</span>:
-                            <span style="color:#ff9800;">${escapeMapSuggestionHtml(row.from)}</span>
-                            <span style="opacity:0.65;">→</span>
-                            <span style="color:#27ae60; font-weight:700;">${escapeMapSuggestionHtml(row.to)}</span>
-                        </div>
+            const renderDobInfoChangeRows = rows => rows.map(row => `
+                <div style="padding:8px 10px; border-bottom:1px solid var(--input-border);">
+                    <div style="font-weight:700; color:var(--header-color); margin-bottom:3px;">${escapeMapSuggestionHtml(row.deviceNumber)}${row.bin ? ` <span style="font-weight:400; opacity:0.65;">BIN ${escapeMapSuggestionHtml(row.bin)}</span>` : ''}</div>
+                    <div style="font-size:0.9em; opacity:0.8;">${escapeMapSuggestionHtml(row.address || '')}</div>
+                    <div style="margin-top:5px; font-size:0.92em;">
+                        <span style="color:#1a73e8; font-weight:700;">${escapeMapSuggestionHtml(row.field)}</span>:
+                        <span style="color:#ff9800;">${escapeMapSuggestionHtml(row.from)}</span>
+                        <span style="opacity:0.65;">→</span>
+                        <span style="color:#27ae60; font-weight:700;">${escapeMapSuggestionHtml(row.to)}</span>
                     </div>
-                `).join('')
-                : '<div style="padding:14px 10px; opacity:0.75; text-align:center;">No CAT 1, CAT 5, or PVI date changes were found.</div>';
+                </div>
+            `).join('');
 
+            const renderDobInfoChangeSection = (title, rows, emptyMessage, accentColor, isOpen) => `
+                <details ${isOpen ? 'open' : ''} style="border:1px solid var(--input-border); border-radius:8px; overflow:hidden; background:var(--input-bg); margin-bottom:10px;">
+                    <summary style="padding:10px 12px; cursor:pointer; color:${accentColor}; font-weight:700; background:rgba(26,115,232,0.08);">
+                        ${title} (${rows.length} date change${rows.length !== 1 ? 's' : ''})
+                    </summary>
+                    <div>
+                        ${rows.length > 0
+                            ? renderDobInfoChangeRows(rows)
+                            : `<div style="padding:14px 10px; opacity:0.75; text-align:center;">${emptyMessage}</div>`}
+                    </div>
+                </details>
+            `;
+            const catChanges = changes.filter(row => String(row.field || '').toUpperCase().indexOf('CAT') === 0);
+            const pviChanges = changes.filter(row => String(row.field || '').toUpperCase() === 'PVI');
+            const catResultsHtml = renderDobInfoChangeSection('CAT Results', catChanges, 'No CAT 1 or CAT 5 date changes were found.', '#1a73e8', catChanges.length > 0 || changes.length === 0);
+            const pviResultsHtml = renderDobInfoChangeSection('PVI Results', pviChanges, 'No PVI date changes were found.', '#6f42c1', pviChanges.length > 0 || changes.length === 0);
+
+            const currentYear = new Date().getFullYear();
             const autoCompletedHtml = autoCompleted.length > 0
-                ? `<div style="margin-top:10px; padding:9px 10px; border-radius:8px; background:rgba(39,174,96,0.1); border:1px solid rgba(39,174,96,0.35); color:#27ae60; font-size:0.9em;">
-                    <div style="font-weight:700; margin-bottom:5px;">Auto-marked completed from DOB:</div>
-                    ${autoCompleted.map(row => `<div>${escapeMapSuggestionHtml(row.address || ('BIN ' + row.bin))} — ${escapeMapSuggestionHtml(getMapCompletedTestLabel(row.testType))}</div>`).join('')}
-                </div>`
+                ? `<details open style="margin-top:10px; border-radius:8px; background:rgba(39,174,96,0.1); border:1px solid rgba(39,174,96,0.35); color:#27ae60; font-size:0.9em; overflow:hidden;">
+                    <summary style="padding:10px 12px; cursor:pointer; font-weight:700;">
+                        Jobs Marked Completed (${autoCompleted.length})
+                    </summary>
+                    <div style="padding:0 12px 10px;">
+                        <div style="margin-bottom:7px; opacity:0.9;">DOB now shows the PVI and required CAT test filings performed for ${currentYear}.</div>
+                        ${autoCompleted.map(row => `<div style="margin-top:4px;">${escapeMapSuggestionHtml(row.address || ('BIN ' + row.bin))} — ${escapeMapSuggestionHtml(getMapCompletedTestLabel(row.testType))}</div>`).join('')}
+                    </div>
+                </details>`
                 : '';
 
             const failuresHtml = failures.length > 0
@@ -10355,10 +10376,9 @@
                         <button onclick="document.getElementById('dobInfoUpdateChangesModal')?.remove()" style="background:none; border:none; color:var(--text-color); font-size:24px; line-height:1; cursor:pointer;">×</button>
                     </div>
                     <div style="padding:8px 18px 16px; overflow-y:auto;">
-                        <div style="border:1px solid var(--input-border); border-radius:8px; overflow:hidden; background:var(--input-bg);">
-                            ${rowsHtml}
-                        </div>
                         ${autoCompletedHtml}
+                        ${catResultsHtml}
+                        ${pviResultsHtml}
                         ${failuresHtml}
                     </div>
                     <div style="padding:12px 18px; border-top:1px solid var(--input-border); display:flex; justify-content:flex-end;">
@@ -27156,7 +27176,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 4.0</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 4.1</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
