@@ -12993,13 +12993,25 @@
             }
         }
 
+        function getMapCompletionDefaultDate(bin, existing) {
+            const scheduledDates = getTestDatesForBin(bin);
+            if (scheduledDates.length > 0) return scheduledDates[0];
+
+            const savedScheduledDates = existing && Array.isArray(existing.scheduledDates)
+                ? existing.scheduledDates
+                : [];
+            if (savedScheduledDates.length > 0) return savedScheduledDates.slice().sort()[0];
+
+            return new Date().toISOString().split('T')[0];
+        }
+
         function showMapCompletedDetailsPicker(bin, options) {
             const opts = options || {};
             const existing = getMapCompleted()[bin] || {};
             const address = opts.address || existing.address || getMapBuildingAddressForBin(bin);
             const currentDate = existing.timestamp
                 ? new Date(existing.timestamp).toISOString().split('T')[0]
-                : new Date().toISOString().split('T')[0];
+                : getMapCompletionDefaultDate(bin, existing);
             const currentTestType = normalizeMapCompletedTestType(opts.testType || existing.testType) || 'PVI';
             const overlay = document.createElement('div');
             overlay.id = 'completedDetailsOverlay';
