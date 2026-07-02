@@ -932,7 +932,7 @@
             
             <div style="margin-bottom: 15px; padding: 0 5px;">
                 <textarea id="bulkDeviceNumbers" 
-                         placeholder="Enter multiple device numbers (one per line)"
+                         placeholder="Enter device numbers or BINs (one per line)"
                          oninput="this.value = this.value.toUpperCase()"
                          style="width: calc(100% - 10px); height: 100px; padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); resize: vertical;"></textarea>
             </div>
@@ -2099,7 +2099,7 @@
             
             <div style="margin-bottom: 15px; padding: 0 5px;">
                 <textarea id="mapTabBulkDeviceNumbers" 
-                         placeholder="Enter multiple device numbers (one per line)"
+                         placeholder="Enter device numbers or BINs (one per line)"
                          oninput="this.value = this.value.toUpperCase()"
                          style="width: calc(100% - 10px); height: 100px; padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); resize: vertical;"></textarea>
             </div>
@@ -3389,21 +3389,20 @@
 
             const hideHoldToggle = document.getElementById('mapHideHoldToggle');
             if (hideHoldToggle) hideHoldToggle.checked = isHideHoldActive();
-            
-            // Close dropdown
-            document.getElementById('dropdownContent').style.display = 'none';
 
-            // Add click event listener to close settings when clicking outside
-            overlay.addEventListener('click', function(event) {
-                if (event.target === overlay) {
-                    closeSettings();
-                }
-            });
-
-            // Prevent clicks inside the modal from closing it
-            modal.addEventListener('click', function(event) {
-                event.stopPropagation();
-            });
+            // Close settings when clicking outside (attach once to avoid stacking listeners)
+            if (!overlay.dataset.settingsListenersAttached) {
+                overlay.dataset.settingsListenersAttached = 'true';
+                overlay.addEventListener('click', function(event) {
+                    if (event.target === overlay) {
+                        closeSettings();
+                    }
+                });
+                // Prevent clicks inside the modal from closing it
+                modal.addEventListener('click', function(event) {
+                    event.stopPropagation();
+                });
+            }
         }
 
         function closeSettings() {
@@ -3459,15 +3458,8 @@
             closeSettings();
         }
 
-        // Close dropdown when clicking outside
-        window.onclick = function(event) {
-            if (!event.target.matches('.dropdown-button')) {
-                const dropdown = document.getElementById('dropdownContent');
-                if (dropdown.style.display === 'block') {
-                    dropdown.style.display = 'none';
-                }
-            }
-        }
+        // Dropdown menu was removed; the old window.onclick close handler referenced a
+        // non-existent #dropdownContent element and threw a TypeError on every page click.
 
         // Add this new function to your script section
         async function lookupBIN() {
@@ -3488,7 +3480,7 @@
             resultDiv.style.display = 'block';
 
             try {
-                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber)}`);
                 
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
@@ -5685,7 +5677,7 @@
             detailsElement.innerHTML = '<span style="color: var(--text-color);">Loading details...</span>';
             
             try {
-                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber)}`);
                 if (!response.ok) throw new Error('Network response was not ok');
                 const data = await response.json();
                 
@@ -5725,7 +5717,7 @@
                     // Get recent inspections if available
                     let inspectionHistory = '';
                     try {
-                        const inspResponse = await fetch(`https://data.cityofnewyork.us/resource/rzpd-6qkc.json?device_number=${deviceNumber}`);
+                        const inspResponse = await fetch(`https://data.cityofnewyork.us/resource/rzpd-6qkc.json?device_number=${encodeURIComponent(deviceNumber)}`);
                         if (inspResponse.ok) {
                             const inspData = await inspResponse.json();
                             if (inspData && inspData.length > 0) {
@@ -5762,7 +5754,7 @@
                     let permitInfo = '';
                     try {
                         if (binNumber) {
-                            const permitResponse = await fetch(`https://data.cityofnewyork.us/resource/ipu4-2q9a.json?bin=${binNumber}`);
+                            const permitResponse = await fetch(`https://data.cityofnewyork.us/resource/ipu4-2q9a.json?bin=${encodeURIComponent(binNumber)}`);
                             if (permitResponse.ok) {
                                 const permitData = await permitResponse.json();
                                 if (permitData && permitData.length > 0) {
@@ -5911,7 +5903,7 @@
             }
             
             try {
-                const response = await fetch(`https://data.cityofnewyork.us/resource/rzpd-6qkc.json?device_number=${deviceNumber}`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/rzpd-6qkc.json?device_number=${encodeURIComponent(deviceNumber)}`);
                 if (!response.ok) throw new Error('Network response was not ok');
                 const data = await response.json();
                 
@@ -6050,7 +6042,7 @@
                 // Step 1: Fetch device list (0-33%)
                 updateBinProgress(10, 'Step 1 of 3: Retrieving device list...', `Fetching devices for BIN ${binNumber}...`);
                 
-                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?bin=${binNumber}`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?bin=${encodeURIComponent(binNumber)}`);
                 if (!response.ok) throw new Error('Network response was not ok');
                 const data = await response.json();
                 
@@ -8235,7 +8227,7 @@
             
             const percentage = Math.round((processed / total) * 100);
             progressBar.style.width = percentage + '%';
-            progressText.textContent = `Processing device ${processed} of ${total}...`;
+            progressText.textContent = `Processing entry ${processed} of ${total}...`;
             
             // Calculate estimated time remaining based on average time per device
             if (deviceTimes.length >= 3) {
@@ -8272,7 +8264,7 @@
                 .filter(num => num !== '');
 
             if (deviceNumbers.length === 0) {
-                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Please enter at least one device number</span>';
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Please enter at least one device number or BIN</span>';
                 resultDiv.style.display = 'block';
                 return;
             }
@@ -8282,7 +8274,7 @@
                 <div id="bulkProgressContainer" style="padding: 20px; background: var(--input-bg); border-radius: 8px; border: 1px solid var(--input-border);">
                     <div style="margin-bottom: 15px; text-align: center;">
                         <span id="bulkProgressText" style="color: var(--text-color); font-weight: 500; font-size: 1.1em;">
-                            Preparing to look up ${deviceNumbers.length} devices...
+                            Preparing to look up ${deviceNumbers.length} ${deviceNumbers.length === 1 ? 'entry' : 'entries'}...
                         </span>
                     </div>
                     <div style="background: var(--panel-bg); border-radius: 10px; height: 24px; overflow: hidden; border: 1px solid var(--input-border);">
@@ -8304,72 +8296,105 @@
                 let processedCount = 0;
                 const deviceTimes = []; // Track time per device for estimation
 
-                // Look up each device
-                for (const deviceNumber of deviceNumbers) {
-                    const deviceStartTime = Date.now();
-                    
-                    const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
-                    
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
+                // A 7-digit numeric entry is treated as a BIN; anything else as a device number
+                const isBinEntry = entry => /^\d{7}$/.test(entry);
 
-                    const data = await response.json();
-                    
-                    if (data && data.length > 0) {
-                        const device = data[0];
-                        const bin = device.bin || 'Unknown BIN';
-                        
-                        // Fetch violations and device info in parallel
-                        const [violations, deviceInfoData] = await Promise.all([
-                            fetchViolations(deviceNumber),
-                            fetchDeviceInfo(deviceNumber)
-                        ]);
-                        const activeViolations = violations.filter(v => 
-                            v.violation_status?.toUpperCase() === 'ACTIVE' || 
-                            v.violation_status?.toUpperCase() === 'OPEN');
-                        
-                        // Store violations and machine_type with device
-                        device.violations = activeViolations;
-                        device.machine_type = deviceInfoData?.machine_type || '';
-                        if (!binGroups[bin]) {
-                            binGroups[bin] = {
-                                address: `${device.house_number} ${device.street_name}, ${device.borough}`,
-                                devices: [],
-                                latitude: device.latitude || null,
-                                longitude: device.longitude || null
-                            };
-                        }
-                        // Update lat/lng if this device has them and the group doesn't yet
-                        if (!binGroups[bin].latitude && device.latitude) {
-                            binGroups[bin].latitude = device.latitude;
-                            binGroups[bin].longitude = device.longitude;
-                        }
+                function addDeviceToBinGroups(device, fallbackBin) {
+                    const bin = device.bin || fallbackBin || 'Unknown BIN';
+                    if (!binGroups[bin]) {
+                        binGroups[bin] = {
+                            address: `${device.house_number} ${device.street_name}, ${device.borough}`,
+                            devices: [],
+                            latitude: device.latitude || null,
+                            longitude: device.longitude || null
+                        };
+                    }
+                    // Update lat/lng if this device has them and the group doesn't yet
+                    if (!binGroups[bin].latitude && device.latitude) {
+                        binGroups[bin].latitude = device.latitude;
+                        binGroups[bin].longitude = device.longitude;
+                    }
+                    // Skip duplicates (e.g. a device entered alongside its own BIN)
+                    if (!binGroups[bin].devices.some(d => d.device_number === device.device_number)) {
                         binGroups[bin].devices.push(device);
-                        
-                        processedCount++;
-                        const deviceDuration = Date.now() - deviceStartTime;
-                        deviceTimes.push(deviceDuration);
-                        
-                        // Update progress indicator
-                        updateBulkProgress(processedCount, deviceNumbers.length, deviceTimes);
-                    } else {
-                        notFound.push(deviceNumber);
-                        processedCount++;
-                        const deviceDuration = Date.now() - deviceStartTime;
-                        deviceTimes.push(deviceDuration);
-                        
-                        // Update progress indicator
-                        updateBulkProgress(processedCount, deviceNumbers.length, deviceTimes);
                     }
                 }
 
+                // Look up each entry (device number or BIN)
+                for (const deviceNumber of deviceNumbers) {
+                    const deviceStartTime = Date.now();
+
+                    if (isBinEntry(deviceNumber)) {
+                        // BIN entry: fetch every device registered to this building
+                        const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?bin=${encodeURIComponent(deviceNumber)}`);
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        const data = await response.json();
+
+                        if (data && data.length > 0) {
+                            // One batched violations call for the whole BIN, device info in parallel
+                            const [violationsByDevice, deviceInfos] = await Promise.all([
+                                fetchViolationsForBin(deviceNumber),
+                                Promise.all(data.map(d => fetchDeviceInfo(d.device_number)))
+                            ]);
+                            data.forEach((device, i) => {
+                                const violations = violationsByDevice[device.device_number] || [];
+                                device.violations = violations.filter(v =>
+                                    v.violation_status?.toUpperCase() === 'ACTIVE' ||
+                                    v.violation_status?.toUpperCase() === 'OPEN');
+                                device.machine_type = deviceInfos[i]?.machine_type || '';
+                                addDeviceToBinGroups(device, deviceNumber);
+                            });
+                        } else {
+                            notFound.push(`BIN ${deviceNumber}`);
+                        }
+                    } else {
+                        const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber)}`);
+
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+
+                        const data = await response.json();
+
+                        if (data && data.length > 0) {
+                            const device = data[0];
+
+                            // Fetch violations and device info in parallel
+                            const [violations, deviceInfoData] = await Promise.all([
+                                fetchViolations(deviceNumber),
+                                fetchDeviceInfo(deviceNumber)
+                            ]);
+                            const activeViolations = violations.filter(v =>
+                                v.violation_status?.toUpperCase() === 'ACTIVE' ||
+                                v.violation_status?.toUpperCase() === 'OPEN');
+
+                            // Store violations and machine_type with device
+                            device.violations = activeViolations;
+                            device.machine_type = deviceInfoData?.machine_type || '';
+                            addDeviceToBinGroups(device);
+                        } else {
+                            notFound.push(deviceNumber);
+                        }
+                    }
+
+                    processedCount++;
+                    const deviceDuration = Date.now() - deviceStartTime;
+                    deviceTimes.push(deviceDuration);
+
+                    // Update progress indicator
+                    updateBulkProgress(processedCount, deviceNumbers.length, deviceTimes);
+                }
+
+                    const bulkDevicesFoundCount = Object.values(binGroups).reduce((sum, group) => sum + group.devices.length, 0);
                     let html = `
                         <div style="background: var(--input-bg); padding: 25px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
                         <div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid var(--input-border);">
                             <div style="font-size: 1.15em; font-weight: 600; color: var(--header-color);">
-                                Total Devices Searched: 
-                                <span style="color: var(--text-color);">${deviceNumbers.length}</span>
+                                Total Devices Found: 
+                                <span style="color: var(--text-color);">${bulkDevicesFoundCount}</span>
+                                <span style="font-size: 0.8em; font-weight: 400; opacity: 0.7;">(from ${deviceNumbers.length} ${deviceNumbers.length === 1 ? 'entry' : 'entries'})</span>
                             </div>
                         </div>
                 `;
@@ -9818,6 +9843,7 @@
                 searchTerm: mapSearchInput ? mapSearchInput.value.trim() : '',
                 monthFilters: [...activeMonthFilters],
                 monthFilter: [...activeMonthFilters][0] || '',  // backward compat for older file format
+                viewFilter: getSelectedMapViewFilter(),
                 controlsPanelVisible: controlsPanel ? controlsPanel.style.display !== 'none' : false
             };
         }
@@ -10815,6 +10841,8 @@
             const bins = getMapViewFilterBins(payload.view || {}, filterValue) || new Set();
             const monthLabels = (payload.view && payload.view.monthLabels) || getMapMonthLabels();
             const bounds = L.latLngBounds();
+            const viewport = buildingMap.getBounds();
+            let shownInViewport = false;
             let shown = 0;
 
             mapMarkers.forEach((marker, index) => {
@@ -10823,6 +10851,7 @@
                 if (buildingMatchesMapViewFilter(building, filterValue, payload.view || {}, bins, monthLabels)) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     bounds.extend(marker.getLatLng());
+                    if (viewport.contains(marker.getLatLng())) shownInViewport = true;
                     shown++;
                 } else if (buildingMap.hasLayer(marker)) {
                     buildingMap.removeLayer(marker);
@@ -10832,7 +10861,8 @@
             const additionalLocations = getAdditionalLocations();
             additionalLocationMarkers.forEach((marker, index) => {
                 const location = additionalLocations[index];
-                if (location && location.isHouse) {
+                // Houses and right-clicked custom pins stay visible under map view filters
+                if (location && (location.isHouse || location.type === 'pinned')) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     bounds.extend(marker.getLatLng());
                 } else if (buildingMap.hasLayer(marker)) {
@@ -10847,7 +10877,9 @@
                 resultCount.style.color = shown > 0 ? '#17a2b8' : '#ff6b6b';
             }
             updateMonthFilterStatus();
-            if (shouldFitMap && bounds.isValid()) buildingMap.fitBounds(bounds, { padding: [50, 50] });
+            // Only re-zoom when none of the filtered buildings are already on screen,
+            // so changing filters doesn't reset the user's zoom/position.
+            if (shouldFitMap && bounds.isValid() && !shownInViewport) buildingMap.fitBounds(bounds, { padding: [50, 50] });
         }
 
         function showMapExportModal() {
@@ -11588,7 +11620,7 @@
         async function lookupLocationByBin(bin) {
             try {
                 // Use NYC open data to get all devices for this BIN
-                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=bin='${bin}'`;
+                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=${encodeURIComponent(`bin='${String(bin).replace(/'/g, "''")}'`)}`;
                 const response = await fetch(url);
                 if (!response.ok) throw new Error('Network response not ok');
                 const data = await response.json();
@@ -11637,7 +11669,7 @@
         
         async function lookupLocationByDevice(deviceNumber) {
             try {
-                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=UPPER(device_number)='${deviceNumber.toUpperCase()}'&$limit=1`;
+                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=${encodeURIComponent(`UPPER(device_number)='${deviceNumber.toUpperCase().replace(/'/g, "''")}'`)}&$limit=1`;
                 const response = await fetch(url);
                 if (!response.ok) throw new Error('Network response not ok');
                 const data = await response.json();
@@ -12646,17 +12678,21 @@
                 if (resultCount) resultCount.style.display = 'none';
                 if (buildingMap && mapMarkers.length > 0) {
                     const bounds = L.latLngBounds();
+                    const viewport = buildingMap.getBounds();
+                    let shownInViewport = false;
                     mapMarkers.forEach((marker, index) => {
                         const building = mapBuildingsData[index];
                         const shouldShow = isBuildingVisibleInCurrentMapFilters(building);
                         if (shouldShow) {
                             if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                             bounds.extend(marker.getLatLng());
+                            if (viewport.contains(marker.getLatLng())) shownInViewport = true;
                         } else if (buildingMap.hasLayer(marker)) {
                             buildingMap.removeLayer(marker);
                         }
                     });
-                    if (shouldFitMap && bounds.isValid()) buildingMap.fitBounds(bounds, { padding: [30, 30] });
+                    // Keep the user's zoom/position if any visible building is already on screen
+                    if (shouldFitMap && bounds.isValid() && !shownInViewport) buildingMap.fitBounds(bounds, { padding: [30, 30] });
                 }
                 return;
             }
@@ -12689,6 +12725,8 @@
             }
 
             const bounds = L.latLngBounds();
+            const monthViewport = buildingMap ? buildingMap.getBounds() : null;
+            let monthShownInViewport = false;
             mapMarkers.forEach((marker, index) => {
                 const building = mapBuildingsData[index];
                 if (!building) return;
@@ -12697,12 +12735,14 @@
                 if ((matchesFilter || isFavorited) && !isBuildingHiddenByMapSettings(building)) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     bounds.extend(marker.getLatLng());
+                    if (monthViewport && monthViewport.contains(marker.getLatLng())) monthShownInViewport = true;
                 } else {
                     if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
                 }
             });
 
-            if (shouldFitMap && bounds.isValid() && buildingMap) {
+            // Keep the user's zoom/position if any matching building is already on screen
+            if (shouldFitMap && bounds.isValid() && buildingMap && !monthShownInViewport) {
                 buildingMap.fitBounds(bounds, { padding: [50, 50] });
             }
         }
@@ -17553,6 +17593,15 @@
                 } else if (loadedState.searchTerm) {
                     searchMapBuildings({ fitMap: false, openPopup: false });
                 }
+
+                // Restore the map view dropdown filter (e.g. hide-scheduled)
+                if (typeof loadedState.viewFilter === 'string') {
+                    const viewFilterSelect = document.getElementById('mapViewFilterSelect');
+                    if (viewFilterSelect) viewFilterSelect.value = loadedState.viewFilter;
+                    // Skip the month-selection prompt on restore; the saved month
+                    // filters (restored above) already scope the filter.
+                    mapHideScheduledMonthSelectionReady = loadedState.viewFilter === 'hide-scheduled';
+                }
             }
 
             // Apply hide-month-labeled toggle state and update its button
@@ -17630,12 +17679,15 @@
 
             const shouldFitMap = !options || options.fitMap !== false;
             const bounds = L.latLngBounds();
+            const viewport = buildingMap.getBounds();
+            let shownInViewport = false;
 
             mapMarkers.forEach((marker, index) => {
                 const building = mapBuildingsData[index];
                 if (isBuildingVisibleInCurrentMapFilters(building)) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     bounds.extend(marker.getLatLng());
+                    if (viewport.contains(marker.getLatLng())) shownInViewport = true;
                 } else if (buildingMap.hasLayer(marker)) {
                     buildingMap.removeLayer(marker);
                 }
@@ -17646,7 +17698,8 @@
                 bounds.extend(marker.getLatLng());
             });
 
-            if (shouldFitMap && bounds.isValid()) {
+            // Keep the user's zoom/position if any visible building is already on screen
+            if (shouldFitMap && bounds.isValid() && !shownInViewport) {
                 buildingMap.fitBounds(bounds, { padding: [30, 30] });
             }
         }
@@ -17905,7 +17958,7 @@
                 const additionalLocations = getAdditionalLocations();
                 additionalLocationMarkers.forEach((marker, index) => {
                     const location = additionalLocations[index];
-                    const shouldShowAdditional = (location && location.isHouse) || !hasMapViewFilter || matchedAdditionalIndexes.has(index);
+                    const shouldShowAdditional = (location && (location.isHouse || location.type === 'pinned')) || !hasMapViewFilter || matchedAdditionalIndexes.has(index);
                     if (shouldShowAdditional) {
                         if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     } else if (buildingMap.hasLayer(marker)) {
@@ -19254,7 +19307,7 @@
         // Add this function to fetch violations
         async function fetchViolations(deviceNumber) {
             try {
-                const response = await fetch(`https://data.cityofnewyork.us/resource/855j-jady.json?device_number=${deviceNumber}`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/855j-jady.json?device_number=${encodeURIComponent(deviceNumber)}`);
                 const data = await response.json();
                 return data;
             } catch (error) {
@@ -19316,7 +19369,7 @@
         }
 
         // Update the CSV export to include violations
-        function exportDevicesToCSV() {
+        async function exportDevicesToCSV() {
             const deviceData = window.lastSearchResults;
             if (!deviceData || (!deviceData.found || deviceData.found.length === 0) && (!deviceData.notFound || deviceData.notFound.length === 0)) {
                 alert('No data to export. Please perform a search first.');
@@ -19326,14 +19379,14 @@
             // Create CSV content with violations
             let csvContent = 'Device Number,Status,Type,Address,BIN,Violations\n';
 
-            // Add found devices
+            // Add found devices (wait for all violation fetches before building the file)
             if (deviceData.found) {
-                deviceData.found.forEach(async device => {
+                const rows = await Promise.all(deviceData.found.map(async device => {
                     const violations = await fetchViolations(device.device_number);
                     const violationCount = violations.length;
                     const violationStatus = violations.map(v => v.violation_status).join('; ');
-                    
-                    const row = [
+
+                    return [
                         device.device_number,
                         device.device_status || 'N/A',
                         device.device_type || 'N/A',
@@ -19341,8 +19394,8 @@
                         device.bin || 'N/A',
                         `${violationCount} (${violationStatus})`
                     ].map(field => `"${field}"`).join(',');
-                    csvContent += row + '\n';
-                });
+                }));
+                csvContent += rows.join('\n') + (rows.length ? '\n' : '');
             }
 
             // Add not found devices
@@ -19789,7 +19842,7 @@
             detailsContainer.innerHTML = '<span style="color: var(--text-color);">Loading full details...</span>';
             
             try {
-                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber)}`);
                 
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
@@ -20002,7 +20055,7 @@
             resultDiv.style.display = 'block';
 
             try {
-                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber)}`);
                 
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
@@ -20398,7 +20451,7 @@
             resultDiv.style.display = 'block';
 
             try {
-                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?bin=${binNumber}`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?bin=${encodeURIComponent(binNumber)}`);
                 if (!response.ok) throw new Error('Network response was not ok');
                 const data = await response.json();
                 
@@ -20422,6 +20475,18 @@
                          device.device_status.toUpperCase() !== 'DELETED' &&
                          device.device_status.toUpperCase() !== 'DISMANTLED')
                     ).length;
+
+                    // Count real active violations for this BIN (previously showed the device count)
+                    let totalActiveViolations = 0;
+                    const quickViolationsByDevice = await fetchViolationsForBin(binNumber);
+                    const quickDeviceNumbersInBin = new Set(data.map(d => d.device_number));
+                    for (const deviceNum in quickViolationsByDevice) {
+                        if (quickDeviceNumbersInBin.has(deviceNum)) {
+                            totalActiveViolations += quickViolationsByDevice[deviceNum].filter(v =>
+                                v.violation_status?.toUpperCase() === 'ACTIVE' ||
+                                v.violation_status?.toUpperCase() === 'OPEN').length;
+                        }
+                    }
 
                     // Add back the device grouping code
                     const deviceTypes = {};
@@ -20447,8 +20512,8 @@
                                     </div>
                                     <div>
                                         <strong style="color: #4a9eff;">Total Active Violations:</strong> 
-                                        <span style="color: ${activeDevices > 0 ? '#ff6b6b' : 'var(--text-color)'}">
-                                            ${activeDevices > 0 ? activeDevices : 'None'}
+                                        <span style="color: ${totalActiveViolations > 0 ? '#ff6b6b' : 'var(--text-color)'}">
+                                            ${totalActiveViolations > 0 ? totalActiveViolations : 'None'}
                                         </span>
                                     </div>
                                 </div>
@@ -20539,7 +20604,7 @@
 
                 // Look up each device
                 for (const deviceNumber of deviceNumbers) {
-                    const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
+                    const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber)}`);
                     
                     if (!response.ok) {
                         throw new Error('Network response was not ok');
@@ -20729,9 +20794,10 @@
 
                 const [_, houseNumber, streetName] = match;
                 
-                // Build the query
-                const query = `$where=UPPER(house_number)='${houseNumber}' AND UPPER(street_name) like '${streetName}%'${borough ? ` AND UPPER(borough) like '${borough}%'` : ''}`;
-                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?${query}`;
+                // Build the query (escape quotes for SoQL, then URL-encode the whole clause)
+                const escapeQuotes = value => (value || '').replace(/'/g, "''");
+                const whereClause = `UPPER(house_number)='${escapeQuotes(houseNumber)}' AND UPPER(street_name) like '${escapeQuotes(streetName)}%'${borough ? ` AND UPPER(borough) like '${escapeQuotes(borough)}%'` : ''}`;
+                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=${encodeURIComponent(whereClause)}`;
                 
                 const response = await fetch(url);
                 if (!response.ok) throw new Error('Network response was not ok');
@@ -20928,7 +20994,7 @@
         // Add this function to fetch violations
         async function quickFetchViolations(deviceNumber) {
             try {
-                const response = await fetch(`https://data.cityofnewyork.us/resource/855j-jady.json?device_number=${deviceNumber}`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/855j-jady.json?device_number=${encodeURIComponent(deviceNumber)}`);
                 const data = await response.json();
                 return data;
             } catch (error) {
@@ -20990,7 +21056,7 @@
         }
 
         // Update the CSV export to include violations
-        function quickExportDevicesToCSV() {
+        async function quickExportDevicesToCSV() {
             const deviceData = window.lastSearchResults;
             if (!deviceData || (!deviceData.found || deviceData.found.length === 0) && (!deviceData.notFound || deviceData.notFound.length === 0)) {
                 alert('No data to export. Please perform a search first.');
@@ -21000,14 +21066,14 @@
             // Create CSV content with violations
             let csvContent = 'Device Number,Status,Type,Address,BIN,Violations\n';
 
-            // Add found devices
+            // Add found devices (wait for all violation fetches before building the file)
             if (deviceData.found) {
-                deviceData.found.forEach(async device => {
+                const rows = await Promise.all(deviceData.found.map(async device => {
                     const violations = await quickFetchViolations(device.device_number);
                     const violationCount = violations.length;
                     const violationStatus = violations.map(v => v.violation_status).join('; ');
-                    
-                    const row = [
+
+                    return [
                         device.device_number,
                         device.device_status || 'N/A',
                         device.device_type || 'N/A',
@@ -21015,8 +21081,8 @@
                         device.bin || 'N/A',
                         `${violationCount} (${violationStatus})`
                     ].map(field => `"${field}"`).join(',');
-                    csvContent += row + '\n';
-                });
+                }));
+                csvContent += rows.join('\n') + (rows.length ? '\n' : '');
             }
 
             // Add not found devices
@@ -21082,11 +21148,6 @@
                 el.style.color = getComputedStyle(document.documentElement).getPropertyValue('--text-color');
             });
         }
-
-        // Call this function after generating results
-        // Add these lines at the end of the lookupDevices() function
-        resultDiv.innerHTML = html;
-        applyColorTheme();
 
         // Updated function to also display days since the last update
         async function fetchAPILastUpdateDate() {
@@ -21569,7 +21630,7 @@
         async function fetchViolationsForBin(bin) {
             try {
                 // This will get all violations for the given BIN
-                const response = await fetch(`https://data.cityofnewyork.us/resource/855j-jady.json?$where=bin='${bin}'`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/855j-jady.json?$where=${encodeURIComponent(`bin='${String(bin).replace(/'/g, "''")}'`)}`);
                 if (!response.ok) throw new Error('Network response was not ok');
                 const data = await response.json();
                 
@@ -22232,7 +22293,7 @@
         async function fetchPermitInfo(deviceNumber) {
             try {
                 // First get the device details to get the BIN
-                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber}`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber)}`);
                 if (!response.ok) throw new Error('Network response was not ok');
                 const data = await response.json();
                 
@@ -22246,7 +22307,7 @@
                     if (binNumber) {
                         try {
                             // First try to find permits that specifically mention this device number in the description
-                            const deviceQuery = `$where=bin='${binNumber}' AND descriptionofwork like '%${deviceNumber}%'`;
+                            const deviceQuery = `$where=${encodeURIComponent(`bin='${String(binNumber).replace(/'/g, "''")}' AND descriptionofwork like '%${String(deviceNumber).replace(/'/g, "''")}%'`)}`;
                             const deviceSpecificResponse = await fetch(`https://data.cityofnewyork.us/resource/kfp4-dz4h.json?${deviceQuery}`);
                             
                             if (deviceSpecificResponse.ok) {
@@ -22278,7 +22339,7 @@
                             // If no exact match found, try looking for permits that might be for this device
                             if (allPermits.length === 0) {
                                 // Get all permits for this BIN
-                                const binResponse = await fetch(`https://data.cityofnewyork.us/resource/kfp4-dz4h.json?bin=${binNumber}`);
+                                const binResponse = await fetch(`https://data.cityofnewyork.us/resource/kfp4-dz4h.json?bin=${encodeURIComponent(binNumber)}`);
                                 if (binResponse.ok) {
                                     const binData = await binResponse.json();
                                     
@@ -22487,7 +22548,7 @@
         // Add this new function to fetch detailed device information from the API
         async function fetchDeviceInfo(deviceNumber) {
             try {
-                const response = await fetch(`https://data.cityofnewyork.us/resource/juyv-2jek.json?device_id=${deviceNumber}`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/juyv-2jek.json?device_id=${encodeURIComponent(deviceNumber)}`);
                 
                 
                 if (!response.ok) {
@@ -22948,7 +23009,7 @@
             resultDiv.style.display = 'block';
 
             try {
-                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber.trim()}`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber.trim())}`);
                 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -23118,7 +23179,7 @@
             resultDiv.style.display = 'block';
 
             try {
-                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${deviceNumber.trim()}`);
+                const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber.trim())}`);
                 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -23239,7 +23300,6 @@
 
         // Run on page load
         document.addEventListener('DOMContentLoaded', checkDisclaimerStatus);
-
 
     </script>
 
@@ -24864,10 +24924,10 @@
             result._fieldDiagnostics = {
                 totalFields: allFieldNames.length,
                 fieldsWithValues: Object.keys(formData).length,
-                sampleFieldNames: allFieldNames.slice(0, 200),
+                sampleFieldNames: allFieldNames.slice(0, 2000),
                 allFieldData: Object.entries(formData).map(function(e) {
                     return e[0] + ' = ' + String(e[1]).substring(0, 100);
-                }).slice(0, 300)
+                }).slice(0, 2000)
             };
 
             // Match server-side logic: success if devices OR violations found
@@ -26692,6 +26752,72 @@
     }
 
     /**
+     * Copy full scan diagnostics (raw fields + parse results) for troubleshooting
+     * scans that succeed but miss data.
+     */
+    function copyELV3ScanDiagnostics(event) {
+        if (event) event.stopPropagation();
+        var item = elv3ScanItems[elv3ScanCurrentIndex];
+        if (!item || !item.result) return;
+        var r = item.result;
+        var diag = r._fieldDiagnostics || {};
+        var lines = [
+            '=== ELV3 SCAN DIAGNOSTICS ===',
+            'File: ' + ((item.file && item.file.name) || 'unknown'),
+            'Success: ' + r.success,
+            'Address: ' + (r.address || '(none)'),
+            'BIN: ' + (r.bin || '(none)'),
+            'Inspector: ' + (r.inspectorName || '(none)'),
+            '',
+            '--- PARSED DEVICES (' + (r.devices || []).length + ') ---'
+        ];
+        (r.devices || []).forEach(function(d) {
+            var dn = typeof d === 'string' ? d : (d.deviceNumber || JSON.stringify(d));
+            var vios = (r.violationsByDevice || {})[dn] || [];
+            lines.push(dn + ' — ' + vios.length + ' violation(s)' +
+                vios.map(function(v) { return ' [' + v.partCode + '/' + (v.conditionCode || '-') + '/' + (v.remedyCode || '-') + ']'; }).join(''));
+        });
+        lines.push('');
+        lines.push('--- SATISFACTORY (' + (r.satisfactoryDevices || []).length + ') ---');
+        (r.satisfactoryDevices || []).forEach(function(d) { lines.push(d.deviceNumber || String(d)); });
+        lines.push('');
+        lines.push('--- NEED REVIEW / MISSING STATUS (' + (r.devicesWithoutStatusCheck || []).length + ') ---');
+        (r.devicesWithoutStatusCheck || []).forEach(function(d) { lines.push(String(d)); });
+        lines.push('');
+        lines.push('--- UNSAT MISSING DETAILS (' + (r.devicesMissingViolationDetails || []).length + ') ---');
+        (r.devicesMissingViolationDetails || []).forEach(function(d) { lines.push(d.deviceNumber || String(d)); });
+        lines.push('');
+        lines.push('--- RAW FORM FIELDS: ' + (diag.totalFields || 0) + ' total, ' + (diag.fieldsWithValues || 0) + ' with values ---');
+        (diag.allFieldData || []).forEach(function(fd) { lines.push(fd); });
+        lines.push('');
+        lines.push('--- ALL FIELD NAMES (' + (diag.sampleFieldNames || []).length + ') ---');
+        lines.push((diag.sampleFieldNames || []).join(', '));
+
+        var text = lines.join('\n');
+        try {
+            navigator.clipboard.writeText(text);
+        } catch (e) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+        var btn = event && event.currentTarget ? event.currentTarget : null;
+        if (btn) {
+            var textSpan = btn.querySelector('.copy-text');
+            if (textSpan) {
+                var orig = textSpan.textContent;
+                textSpan.textContent = 'Copied!';
+                setTimeout(function() { textSpan.textContent = orig; }, 2000);
+            }
+        }
+    }
+
+    /**
      * Extract device number from a string
      */
     function extractELV3DeviceNumber(value) {
@@ -26985,6 +27111,15 @@
     /**
      * Render the ELV3 scan result
      */
+    function escapeELV3Html(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     function renderELV3ScanResult(data, targetEl, renderOptions) {
         const container = targetEl || document.getElementById('elv3ScanResultContent');
         const scrollState = (renderOptions && renderOptions.preserveScroll && container)
@@ -27012,7 +27147,7 @@
                 }
                 container.innerHTML = '<h4>✗ Scan Failed</h4>'
                     + '<div class="elv3-scan-result-details">'
-                    + '<p>' + (data.errorMessage || 'Could not parse this PDF.') + '</p>'
+                    + '<p>' + escapeELV3Html(data.errorMessage || 'Could not parse this PDF.') + '</p>'
                     + diagHtml
                     + '</div>';
             }
@@ -27041,9 +27176,9 @@
             <h4>✓ Scan Complete</h4>
             <div class="elv3-scan-result-details">
                 ${data.blankTemplate ? `<p><strong>Blank ELV3 Template:</strong> Recognized ${data.templateFieldCount || data._fieldDiagnostics?.totalFields || 0} form fields. Fill in device rows and upload again to scan results.</p>` : ''}
-                ${data.address ? `<p><strong>Address:</strong> ${data.address}</p>` : ''}
-                ${data.bin ? `<p><strong>BIN:</strong> <span class="elv3-scan-bin-copy" data-bin="${String(data.bin).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onclick="copyBinToClipboard(this.getAttribute('data-bin'), event)" title="Click to copy">${String(data.bin).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></p>` : ''}
-                ${data.inspectorName ? `<p><strong>Inspector:</strong> ${data.inspectorName}</p>` : ''}
+                ${data.address ? `<p><strong>Address:</strong> ${escapeELV3Html(data.address)}</p>` : ''}
+                ${data.bin ? `<p><strong>BIN:</strong> <span class="elv3-scan-bin-copy" data-bin="${escapeELV3Html(data.bin)}" onclick="copyBinToClipboard(this.getAttribute('data-bin'), event)" title="Click to copy">${escapeELV3Html(data.bin)}</span></p>` : ''}
+                ${data.inspectorName ? `<p><strong>Inspector:</strong> ${escapeELV3Html(data.inspectorName)}</p>` : ''}
                 <p><strong>Devices Scanned:</strong> ${totalDevices}</p>
                 <p><strong>Devices with Violations:</strong> ${devicesWithViolationsCount}${filedViolationDevicesCount > 0 ? ` of ${totalDevicesWithViolationsCount} remaining` : ''}</p>
                 ${totalFiledDevicesCount > 0 ? `<p><strong>Filed Devices Hidden:</strong> ${showFiledViolationDevices ? 0 : totalFiledDevicesCount}</p>` : ''}
@@ -27056,6 +27191,10 @@
                 <button class="elv3-scan-copy-all-btn" onclick="copyAllViolations(event)">
                     <span class="copy-icon">📋</span>
                     <span class="copy-text">Copy All</span>
+                </button>
+                <button class="elv3-scan-copy-all-btn" onclick="copyELV3ScanDiagnostics(event)" title="Copy raw field data and parse results for troubleshooting">
+                    <span class="copy-icon">🔍</span>
+                    <span class="copy-text">Copy Diagnostics</span>
                 </button>
                 ${totalFiledDevicesCount > 0 ? `
                     <label class="elv3-scan-show-filed-toggle">
@@ -27077,12 +27216,13 @@
                 ` : ''}
                 ${visibleViolationDeviceEntries.map(([deviceNumber, violations]) => {
                     const deviceFieldText = violations[0]?.deviceFieldText || null;
-                    const escapedDeviceNumber = deviceNumber.replace(/'/g, "\\'");
+                    // JS-string escape first, then HTML-escape (the attribute is HTML-decoded before JS parses it)
+                    const escapedDeviceNumber = escapeELV3Html(String(deviceNumber).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
                     const isFiled = filedViolationDevices[deviceNumber] === true;
                     return `
-                    <div class="elv3-scan-device-group ${isFiled ? 'elv3-scan-device-filed' : ''}" data-elv3-device="${deviceNumber.replace(/"/g, '&quot;')}">
+                    <div class="elv3-scan-device-group ${isFiled ? 'elv3-scan-device-filed' : ''}" data-elv3-device="${escapeELV3Html(deviceNumber)}">
                         <div class="elv3-scan-device-header violations">
-                            <span class="elv3-scan-device-number">${deviceNumber}${deviceFieldText ? ` <span class="elv3-scan-device-note">${deviceFieldText}</span>` : ''}</span>
+                            <span class="elv3-scan-device-number">${escapeELV3Html(deviceNumber)}${deviceFieldText ? ` <span class="elv3-scan-device-note">${escapeELV3Html(deviceFieldText)}</span>` : ''}</span>
                             <div class="elv3-scan-device-header-actions">
                                 <label class="elv3-scan-filed-toggle" title="Mark this device as filed and hide it">
                                     <input type="checkbox" onclick="toggleELV3ScanFiledDevice('${escapedDeviceNumber}', event)" ${isFiled ? 'checked' : ''}>
@@ -27095,13 +27235,13 @@
                             ${violations.map(v => `
                                 <div class="elv3-scan-violation-item">
                                     <div class="elv3-scan-violation-codes">
-                                        <span class="elv3-scan-code-badge"><span class="code">${v.partCode}</span> Part</span>
-                                        <span class="elv3-scan-code-badge"><span class="code">${v.conditionCode || '-'}</span> Cond</span>
-                                        <span class="elv3-scan-code-badge"><span class="code">${v.remedyCode || '-'}</span> Remedy</span>
+                                        <span class="elv3-scan-code-badge"><span class="code">${escapeELV3Html(v.partCode)}</span> Part</span>
+                                        <span class="elv3-scan-code-badge"><span class="code">${escapeELV3Html(v.conditionCode || '-')}</span> Cond</span>
+                                        <span class="elv3-scan-code-badge"><span class="code">${escapeELV3Html(v.remedyCode || '-')}</span> Remedy</span>
                                     </div>
-                                    <div class="elv3-scan-violation-part">${v.partDescription}</div>
-                                    <div class="elv3-scan-violation-details">${v.conditionDescription || ''} → ${v.remedyDescription || ''}</div>
-                                    ${v.comments ? `<div class="elv3-scan-violation-comment">"${v.comments}"</div>` : ''}
+                                    <div class="elv3-scan-violation-part">${escapeELV3Html(v.partDescription)}</div>
+                                    <div class="elv3-scan-violation-details">${escapeELV3Html(v.conditionDescription || '')} → ${escapeELV3Html(v.remedyDescription || '')}</div>
+                                    ${v.comments ? `<div class="elv3-scan-violation-comment">"${escapeELV3Html(v.comments)}"</div>` : ''}
                                 </div>
                             `).join('')}
                             <div class="elv3-scan-copy-hint">📋 Click to copy</div>
@@ -27119,7 +27259,7 @@
                     <p style="margin: 0 0 8px 0; color: var(--text-color); font-size: 13px;">The following device(s) have a device number but neither Satisfactory nor Unsatisfactory is checked:</p>
                     <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
                         ${devicesWithoutStatusCheck.map(deviceNumber => `
-                            <span style="background: rgba(245, 158, 11, 0.3); padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 13px;">${deviceNumber}</span>
+                            <span style="background: rgba(245, 158, 11, 0.3); padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 13px;">${escapeELV3Html(deviceNumber)}</span>
                         `).join('')}
                     </div>
                 </div>
@@ -27133,7 +27273,7 @@
                     <p style="margin: 0 0 8px 0; color: var(--text-color); font-size: 13px;">These device(s) are marked unsatisfactory, but no part/condition/remedy details were read from the PDF:</p>
                     <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
                         ${devicesMissingViolationDetails.map(device => `
-                            <span style="background: rgba(245, 158, 11, 0.3); padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 13px;">${device.deviceNumber}</span>
+                            <span style="background: rgba(245, 158, 11, 0.3); padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 13px;">${escapeELV3Html(device.deviceNumber)}</span>
                         `).join('')}
                     </div>
                 </div>
@@ -27149,11 +27289,11 @@
                 ` : ''}
                 <div class="elv3-scan-satisfactory-list">
                     ${visibleSatisfactoryDevices.map(device => {
-                        const escapedDeviceNumber = device.deviceNumber.replace(/'/g, "\\'");
+                        const escapedDeviceNumber = escapeELV3Html(String(device.deviceNumber).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
                         const isFiled = filedViolationDevices[device.deviceNumber] === true;
                         return `
-                        <div class="elv3-scan-satisfactory-item ${isFiled ? 'elv3-scan-device-filed' : ''}" data-elv3-device="${device.deviceNumber.replace(/"/g, '&quot;')}">
-                            <span class="elv3-scan-device-number">${device.deviceNumber}</span>
+                        <div class="elv3-scan-satisfactory-item ${isFiled ? 'elv3-scan-device-filed' : ''}" data-elv3-device="${escapeELV3Html(device.deviceNumber)}">
+                            <span class="elv3-scan-device-number">${escapeELV3Html(device.deviceNumber)}</span>
                             <label class="elv3-scan-filed-toggle" title="Mark this device as filed and hide it">
                                 <input type="checkbox" onclick="toggleELV3ScanFiledDevice('${escapedDeviceNumber}', event)" ${isFiled ? 'checked' : ''}>
                                 <span>Filed</span>
@@ -27188,7 +27328,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 4.1</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
