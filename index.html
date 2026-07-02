@@ -952,6 +952,12 @@
                         style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
                     Export Data
                 </button>
+                <button onclick="document.getElementById('bulkUpdateFileInput').click()"
+                        title="Upload a previously exported Excel/CSV file to refresh test dates, statuses, and violations"
+                        style="padding: 12px 20px; background: #f57c00; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                    🔄 Update Exported File
+                </button>
+                <input id="bulkUpdateFileInput" type="file" accept=".xlsx,.xls,.csv" style="display: none;" onchange="handleBulkExportUpdateUpload(event, 'bulkResult')">
                 <button id="mapButton" 
                         onclick="showBuildingMap()" 
                         style="padding: 12px 20px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
@@ -2118,6 +2124,12 @@
                         style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
                     Export Data
                 </button>
+                <button onclick="document.getElementById('mapTabBulkUpdateFileInput').click()"
+                        title="Upload a previously exported Excel/CSV file to refresh test dates, statuses, and violations"
+                        style="padding: 12px 20px; background: #f57c00; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                    🔄 Update Exported File
+                </button>
+                <input id="mapTabBulkUpdateFileInput" type="file" accept=".xlsx,.xls,.csv" style="display: none;" onchange="handleBulkExportUpdateUpload(event, 'mapTabBulkResult')">
                 <button id="mapTabMapButton" 
                         onclick="showBuildingMap()" 
                         style="padding: 12px 20px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
@@ -18851,6 +18863,304 @@
             }
         }
         
+        /**
+         * Compute the frequently-changing export fields for a device using the same
+         * rules as exportToExcel (test status, CAT 5 requirement, eligibility).
+         */
+        function computeDeviceRefreshFields(device, machineType) {
+            const currentYear = new Date().getFullYear();
+            const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+            const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+            const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+
+            const hasPVIThisYear = pviDate && pviDate.getFullYear() === currentYear;
+            const hasCat1ThisYear = cat1Date && cat1Date.getFullYear() === currentYear;
+            const hasCat5ThisYear = cat5Date && cat5Date.getFullYear() === currentYear;
+
+            const deviceType = (device.device_type || '').toUpperCase();
+            const machineTypeUpper = (machineType || '').toUpperCase();
+            const deviceStatus = (device.device_status || '').toUpperCase();
+            const isDismantled = deviceStatus.includes('DISMANTLED');
+            const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
+            const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMB WAITER') || deviceType.includes('DUMWAITER');
+            const isConveyor = deviceType.includes('CONVEYOR');
+            const deviceNumberUpper = (device.device_number || '').toUpperCase();
+            const isWheelchairLift = deviceType.includes('WHEELCHAIR') || deviceNumberUpper.includes('W');
+            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO') ||
+                                machineTypeUpper.includes('HYDRAULIC') || machineTypeUpper.includes('HYDRO');
+            const isEscalator = deviceType.includes('ESCALATOR');
+            const cat5NotApplicable = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled || isRemoved;
+
+            let requiresCat5 = false;
+            let nextCat5Due = 'N/A';
+            if (!isDumbwaiter && !isConveyor && !isWheelchairLift && !isHydraulic && !isEscalator && cat5Date) {
+                requiresCat5 = (currentYear - cat5Date.getFullYear()) >= 5;
+                nextCat5Due = String(cat5Date.getFullYear() + 5);
+            } else if (cat5NotApplicable) {
+                nextCat5Due = 'Not Required';
+            } else {
+                nextCat5Due = 'No CAT 5 on file';
+            }
+
+            let testStatus;
+            if (isRemoved) {
+                testStatus = 'No Test Required';
+            } else {
+                let allTestsCompleted = false;
+                if (isDismantled) {
+                    allTestsCompleted = hasPVIThisYear;
+                } else if (isConveyor) {
+                    allTestsCompleted = hasCat1ThisYear;
+                } else if (isDumbwaiter || isWheelchairLift || isHydraulic || isEscalator) {
+                    allTestsCompleted = hasPVIThisYear && hasCat1ThisYear;
+                } else if (requiresCat5) {
+                    allTestsCompleted = hasPVIThisYear && hasCat1ThisYear && hasCat5ThisYear;
+                } else {
+                    allTestsCompleted = hasPVIThisYear && hasCat1ThisYear;
+                }
+
+                const isWarningDevice = requiresCat5 && !hasCat5ThisYear && hasCat1ThisYear && hasPVIThisYear;
+                const someTestsDone = hasPVIThisYear || hasCat1ThisYear || hasCat5ThisYear;
+
+                if (isConveyor && hasCat1ThisYear) {
+                    testStatus = 'Testing Completed';
+                } else if (isWarningDevice) {
+                    testStatus = 'CAT 5 Required (Warning)';
+                } else if (allTestsCompleted) {
+                    testStatus = 'All Tests Completed';
+                } else if (someTestsDone) {
+                    let missingTests = [];
+                    if (isConveyor) {
+                        if (!hasCat1ThisYear) missingTests.push('CAT 1');
+                    } else if (isDumbwaiter || isWheelchairLift || isHydraulic || isEscalator) {
+                        if (!hasPVIThisYear) missingTests.push('PVI');
+                        if (!hasCat1ThisYear) missingTests.push('CAT 1');
+                    } else {
+                        if (!hasPVIThisYear) missingTests.push('PVI');
+                        if (!hasCat1ThisYear) missingTests.push('CAT 1');
+                        if (requiresCat5 && !hasCat5ThisYear) missingTests.push('CAT 5');
+                    }
+                    testStatus = `Pending: ${missingTests.join(' & ')}`;
+                } else {
+                    testStatus = 'No Tests Completed';
+                }
+            }
+
+            const testDates = [pviDate, cat1Date, cat5Date].filter(date => date !== null);
+            const mostRecentTestDate = testDates.length > 0 ? new Date(Math.max.apply(null, testDates)) : null;
+            let testingEligibility = 'N/A';
+            let eligibleDateDisplay = 'N/A';
+            if (isRemoved) {
+                testingEligibility = 'No Test Required';
+            } else if (mostRecentTestDate) {
+                const daysSinceLastTest = Math.floor((new Date() - mostRecentTestDate) / (1000 * 60 * 60 * 24));
+                testingEligibility = daysSinceLastTest >= 91 ? 'Ready' : 'Not Ready';
+                const eligibilityDate = new Date(mostRecentTestDate);
+                eligibilityDate.setDate(eligibilityDate.getDate() + 91);
+                eligibleDateDisplay = eligibilityDate.toLocaleDateString();
+            }
+
+            return {
+                'Status': device.device_status || 'N/A',
+                'Type': device.device_type || 'N/A',
+                'CAT 1 Date': cat1Date ? cat1Date.toLocaleDateString() : 'N/A',
+                'CAT 5 Date': cat5Date ? cat5Date.toLocaleDateString() : 'N/A',
+                'Next CAT 5 Due': nextCat5Due,
+                'PVI Date': pviDate ? pviDate.toLocaleDateString() : 'N/A',
+                'Test Status': testStatus,
+                'Testing Eligibility': testingEligibility,
+                'Eligible Date': eligibleDateDisplay
+            };
+        }
+
+        /** Fetch device records for many device numbers in batched SoQL "in" queries. */
+        async function fetchDeviceRecordsBatch(deviceNumbers) {
+            const byDevice = {};
+            for (let i = 0; i < deviceNumbers.length; i += 50) {
+                const chunk = deviceNumbers.slice(i, i + 50);
+                const list = chunk.map(d => `'${String(d).toUpperCase().replace(/'/g, "''")}'`).join(',');
+                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=${encodeURIComponent(`upper(device_number) in(${list})`)}&$limit=${chunk.length * 3}`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                data.forEach(rec => {
+                    const key = (rec.device_number || '').toUpperCase();
+                    if (!byDevice[key]) byDevice[key] = rec;
+                });
+            }
+            return byDevice;
+        }
+
+        /** Handle upload of a previously exported bulk file and refresh its data. */
+        async function handleBulkExportUpdateUpload(event, resultDivId) {
+            const file = event.target.files && event.target.files[0];
+            event.target.value = '';
+            if (!file) return;
+
+            const resultDiv = document.getElementById(resultDivId);
+            if (resultDiv) {
+                resultDiv.innerHTML = '<div style="padding: 15px; color: var(--text-color);">Reading file...</div>';
+                resultDiv.style.display = 'block';
+            }
+
+            const esc = escapeMapSuggestionHtml;
+            try {
+                const buffer = await file.arrayBuffer();
+                const wb = XLSX.read(buffer);
+                const sheetName = wb.SheetNames[0];
+                const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: false, defval: '' });
+                if (!rows.length) throw new Error('The file appears to be empty.');
+
+                // Locate columns by header text (case-insensitive)
+                const headers = rows[0].map(h => String(h).trim());
+                const colIndex = {};
+                headers.forEach((h, i) => { colIndex[h.toLowerCase()] = i; });
+                const deviceCol = colIndex['device number'];
+                if (deviceCol === undefined) {
+                    throw new Error('Could not find a "Device Number" column. Please upload a file exported from Bulk Device Lookup.');
+                }
+
+                // Fields we refresh, if their columns exist in the file
+                const REFRESHABLE = ['Status', 'Type', 'CAT 1 Date', 'CAT 5 Date', 'Next CAT 5 Due', 'PVI Date',
+                    'Test Status', 'Testing Eligibility', 'Eligible Date'];
+                const VIOLATION_COLUMNS = ['Violation Count', 'Violation Statuses', 'Violation Numbers',
+                    'Violation Issue Dates', 'Violation Types', 'Violation Descriptions'];
+                const presentRefreshable = REFRESHABLE.filter(name => colIndex[name.toLowerCase()] !== undefined);
+                const presentViolationCols = VIOLATION_COLUMNS.filter(name => colIndex[name.toLowerCase()] !== undefined);
+
+                // Collect device numbers from data rows
+                const dataRows = [];
+                for (let r = 1; r < rows.length; r++) {
+                    const dn = String(rows[r][deviceCol] || '').trim().toUpperCase();
+                    if (dn && dn !== 'N/A') dataRows.push({ rowIndex: r, deviceNumber: dn });
+                }
+                if (dataRows.length === 0) throw new Error('No device numbers found in the file.');
+
+                if (resultDiv) {
+                    resultDiv.innerHTML = `<div style="padding: 15px; color: var(--text-color);">Fetching current data for ${dataRows.length} device${dataRows.length !== 1 ? 's' : ''}...</div>`;
+                }
+
+                const uniqueDeviceNumbers = [...new Set(dataRows.map(d => d.deviceNumber))];
+                const deviceRecords = await fetchDeviceRecordsBatch(uniqueDeviceNumbers);
+
+                // Fetch violations and machine type with limited concurrency
+                const needViolations = presentViolationCols.length > 0;
+                const extras = {};
+                let cursor = 0;
+                const foundDeviceNumbers = uniqueDeviceNumbers.filter(dn => deviceRecords[dn]);
+                async function extraWorker() {
+                    while (cursor < foundDeviceNumbers.length) {
+                        const dn = foundDeviceNumbers[cursor++];
+                        try {
+                            const [violations, info] = await Promise.all([
+                                needViolations ? fetchViolations(dn) : Promise.resolve([]),
+                                fetchDeviceInfo(dn)
+                            ]);
+                            extras[dn] = { violations: violations || [], machineType: info?.machine_type || '' };
+                        } catch (e) {
+                            extras[dn] = { violations: [], machineType: '' };
+                        }
+                        if (resultDiv && cursor % 10 === 0) {
+                            resultDiv.innerHTML = `<div style="padding: 15px; color: var(--text-color);">Fetching details: ${cursor} of ${foundDeviceNumbers.length} devices...</div>`;
+                        }
+                    }
+                }
+                await Promise.all(Array.from({ length: Math.min(6, foundDeviceNumbers.length) }, extraWorker));
+
+                // Update rows in place, tracking changes
+                const changes = [];
+                const stillNotFound = [];
+                dataRows.forEach(({ rowIndex, deviceNumber }) => {
+                    const record = deviceRecords[deviceNumber];
+                    if (!record) {
+                        stillNotFound.push(deviceNumber);
+                        return;
+                    }
+                    const extra = extras[deviceNumber] || { violations: [], machineType: '' };
+                    const fresh = computeDeviceRefreshFields(record, extra.machineType);
+
+                    if (needViolations) {
+                        const active = extra.violations.filter(v =>
+                            v.violation_status?.toUpperCase() === 'ACTIVE' ||
+                            v.violation_status?.toUpperCase() === 'OPEN');
+                        fresh['Violation Count'] = String(active.length);
+                        fresh['Violation Statuses'] = active.map(v => v.violation_status || 'N/A').join('; ') || 'N/A';
+                        fresh['Violation Numbers'] = active.map(v => v.violation_number || 'N/A').join('; ') || 'N/A';
+                        fresh['Violation Issue Dates'] = active.map(v => {
+                            const date = v.violation_issue_date || v.violation_date;
+                            return date ? new Date(date).toLocaleDateString() : 'N/A';
+                        }).join('; ') || 'N/A';
+                        fresh['Violation Types'] = active.map(v => v.violation_type || 'N/A').join('; ') || 'N/A';
+                        fresh['Violation Descriptions'] = active.map(v => v.violation_description || v.violation_remarks || 'N/A').join('; ') || 'N/A';
+                    }
+
+                    [...presentRefreshable, ...presentViolationCols].forEach(colName => {
+                        const idx = colIndex[colName.toLowerCase()];
+                        const newValue = fresh[colName];
+                        if (newValue === undefined) return;
+                        const oldValue = String(rows[rowIndex][idx] ?? '').trim();
+                        if (oldValue !== String(newValue).trim()) {
+                            changes.push({ deviceNumber, field: colName, oldValue: oldValue || '(empty)', newValue: String(newValue) });
+                            rows[rowIndex][idx] = newValue;
+                        }
+                    });
+                });
+
+                // Download the updated workbook (same headers/rows, refreshed values)
+                const outWb = XLSX.utils.book_new();
+                const outWs = XLSX.utils.aoa_to_sheet(rows);
+                XLSX.utils.book_append_sheet(outWb, outWs, sheetName || 'Device Lookup');
+                const baseName = file.name.replace(/\.(xlsx|xls|csv)$/i, '');
+                XLSX.writeFile(outWb, `${baseName}_updated_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+                // Render summary of what changed
+                const changedDevices = new Set(changes.map(c => c.deviceNumber));
+                const changeRowsHtml = changes.slice(0, 100).map(c => `
+                    <tr>
+                        <td style="padding: 4px 10px; border-bottom: 1px solid var(--input-border); white-space: nowrap;">${esc(c.deviceNumber)}</td>
+                        <td style="padding: 4px 10px; border-bottom: 1px solid var(--input-border); white-space: nowrap;">${esc(c.field)}</td>
+                        <td style="padding: 4px 10px; border-bottom: 1px solid var(--input-border); color: #ff9800;">${esc(c.oldValue)}</td>
+                        <td style="padding: 4px 10px; border-bottom: 1px solid var(--input-border); color: #4CAF50;">${esc(c.newValue)}</td>
+                    </tr>`).join('');
+
+                if (resultDiv) {
+                    resultDiv.innerHTML = `
+                        <div style="background: var(--input-bg); padding: 20px; border-radius: 8px; border: 1px solid var(--input-border); color: var(--text-color);">
+                            <div style="font-size: 1.1em; font-weight: 600; color: var(--header-color); margin-bottom: 10px;">🔄 File Update Complete</div>
+                            <div style="margin-bottom: 4px;">Devices checked: <strong>${dataRows.length}</strong></div>
+                            <div style="margin-bottom: 4px;">Devices with updated data: <strong style="color: ${changedDevices.size > 0 ? '#4CAF50' : 'var(--text-color)'};">${changedDevices.size}</strong></div>
+                            <div style="margin-bottom: 4px;">Values refreshed: <strong>${changes.length}</strong></div>
+                            ${stillNotFound.length > 0 ? `<div style="margin-bottom: 4px; color: #ff6b6b;">Not found in DOB data: ${esc(stillNotFound.join(', '))}</div>` : ''}
+                            <div style="margin: 10px 0; opacity: 0.8; font-size: 0.9em;">The updated file has been downloaded${changes.length === 0 ? ' (no values changed — everything was already current)' : ''}.</div>
+                            ${changes.length > 0 ? `
+                                <div style="max-height: 300px; overflow-y: auto; margin-top: 10px; border: 1px solid var(--input-border); border-radius: 6px;">
+                                    <table style="width: 100%; border-collapse: collapse; font-size: 0.88em;">
+                                        <thead>
+                                            <tr style="background: var(--panel-bg); position: sticky; top: 0;">
+                                                <th style="padding: 6px 10px; text-align: left;">Device</th>
+                                                <th style="padding: 6px 10px; text-align: left;">Field</th>
+                                                <th style="padding: 6px 10px; text-align: left;">Old</th>
+                                                <th style="padding: 6px 10px; text-align: left;">New</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>${changeRowsHtml}</tbody>
+                                    </table>
+                                </div>
+                                ${changes.length > 100 ? `<div style="margin-top: 6px; opacity: 0.7; font-size: 0.85em;">Showing first 100 of ${changes.length} changes — the downloaded file contains all of them.</div>` : ''}
+                            ` : ''}
+                        </div>
+                    `;
+                    resultDiv.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error updating exported file:', error);
+                if (resultDiv) {
+                    resultDiv.innerHTML = `<div style="padding: 15px;"><span style="color: #ff6b6b; font-weight: 500;">Error updating file: ${esc(error.message)}</span></div>`;
+                    resultDiv.style.display = 'block';
+                }
+            }
+        }
+
         function selectAllColumns() {
             document.querySelectorAll('.export-column').forEach(cb => cb.checked = true);
         }
