@@ -952,7 +952,7 @@
                         style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
                     Export Data
                 </button>
-                <button onclick="document.getElementById('bulkUpdateFileInput').click()"
+                <button onclick="triggerBulkExportUpdateUpload('bulkResult')"
                         title="Upload a previously exported Excel/CSV file to refresh test dates, statuses, and violations"
                         style="padding: 12px 20px; background: #f57c00; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
                     🔄 Update Exported File
@@ -2124,7 +2124,7 @@
                         style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
                     Export Data
                 </button>
-                <button onclick="document.getElementById('mapTabBulkUpdateFileInput').click()"
+                <button onclick="triggerBulkExportUpdateUpload('mapTabBulkResult')"
                         title="Upload a previously exported Excel/CSV file to refresh test dates, statuses, and violations"
                         style="padding: 12px 20px; background: #f57c00; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
                     🔄 Update Exported File
@@ -9766,6 +9766,11 @@
         let currentMapViewFileHandle = null;
         let currentMapViewFileName = null;
         let mapDobInfoUpdatedAt = null;
+
+        let bulkExportUpdateWorkbook = null;
+        let bulkExportUpdateFileHandle = null;
+        let bulkExportUpdateFileName = null;
+        let bulkExportUpdateResultDivId = null;
 
         function isRemovedFromMapJob(device) {
             const status = (device && device.device_status ? device.device_status : '').toUpperCase();
@@ -18991,12 +18996,139 @@
             return byDevice;
         }
 
+        /** Open a previously exported bulk file for refresh (File System Access API when available). */
+        async function triggerBulkExportUpdateUpload(resultDivId) {
+            if (window.showOpenFilePicker) {
+                try {
+                    const [handle] = await window.showOpenFilePicker({
+                        types: [{
+                            description: 'Excel or CSV',
+                            accept: {
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+                                'application/vnd.ms-excel': ['.xls'],
+                                'text/csv': ['.csv']
+                            }
+                        }],
+                        multiple: false
+                    });
+                    const file = await handle.getFile();
+                    await processBulkExportUpdateFile(file, resultDivId, handle);
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        console.error('Error opening bulk export file:', err);
+                        alert(`Unable to open file: ${err.message || 'Unknown error'}`);
+                    }
+                }
+                return;
+            }
+
+            const inputId = resultDivId === 'mapTabBulkResult' ? 'mapTabBulkUpdateFileInput' : 'bulkUpdateFileInput';
+            const fileInput = document.getElementById(inputId);
+            if (!fileInput) return;
+            fileInput.value = '';
+            fileInput.click();
+        }
+
+        function buildBulkExportUpdateBlob(workbook) {
+            const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            return new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        }
+
+        function getBulkExportUpdateSuggestedName() {
+            const baseName = (bulkExportUpdateFileName || 'device_lookup').replace(/\.(xlsx|xls|csv)$/i, '');
+            return `${baseName}_updated_${new Date().toISOString().split('T')[0]}.xlsx`;
+        }
+
+        function showBulkExportUpdateSaveMessage(message) {
+            const resultDiv = bulkExportUpdateResultDivId && document.getElementById(bulkExportUpdateResultDivId);
+            if (!resultDiv) return;
+            let statusEl = resultDiv.querySelector('#bulkExportUpdateSaveStatus');
+            if (!statusEl) {
+                statusEl = document.createElement('div');
+                statusEl.id = 'bulkExportUpdateSaveStatus';
+                resultDiv.insertBefore(statusEl, resultDiv.firstChild);
+            }
+            statusEl.style.cssText = 'padding: 8px 12px; margin-bottom: 10px; background: #1b4332; border: 1px solid #4CAF50; border-radius: 6px; color: #4CAF50; font-size: 0.9em;';
+            statusEl.textContent = `✓ ${message}`;
+        }
+
+        /** Save the refreshed workbook to the original file or prompt for a location. */
+        async function saveBulkExportUpdateFile(saveAs = false) {
+            if (!bulkExportUpdateWorkbook) {
+                alert('No updated file to save. Use "Update Exported File" first.');
+                return;
+            }
+
+            const blob = buildBulkExportUpdateBlob(bulkExportUpdateWorkbook);
+            const suggestedName = getBulkExportUpdateSuggestedName();
+            const arrayBuffer = await blob.arrayBuffer();
+
+            if (!saveAs && bulkExportUpdateFileHandle && /\.xlsx$/i.test(bulkExportUpdateFileName || '')) {
+                try {
+                    const writable = await bulkExportUpdateFileHandle.createWritable();
+                    await writable.write(arrayBuffer);
+                    await writable.close();
+                    showBulkExportUpdateSaveMessage(`Saved to "${bulkExportUpdateFileName}"`);
+                    return;
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                    console.warn('Could not overwrite bulk export file, falling back:', err);
+                    bulkExportUpdateFileHandle = null;
+                }
+            }
+
+            if (window.showSaveFilePicker) {
+                try {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: saveAs ? suggestedName : (bulkExportUpdateFileName || suggestedName),
+                        types: [{
+                            description: 'Excel Workbook',
+                            accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] }
+                        }]
+                    });
+                    const writable = await handle.createWritable();
+                    await writable.write(arrayBuffer);
+                    await writable.close();
+
+                    bulkExportUpdateFileHandle = handle;
+                    const file = await handle.getFile();
+                    bulkExportUpdateFileName = file.name;
+                    showBulkExportUpdateSaveMessage(
+                        saveAs
+                            ? `Saved to "${bulkExportUpdateFileName}"`
+                            : `Saved to "${bulkExportUpdateFileName}" — future saves will overwrite this file`
+                    );
+                    return;
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                    console.warn('showSaveFilePicker failed, falling back to download:', err);
+                }
+            }
+
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = suggestedName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            showBulkExportUpdateSaveMessage(`Downloaded "${suggestedName}"`);
+        }
+
+        async function saveBulkExportUpdateAs() {
+            await saveBulkExportUpdateFile(true);
+        }
+
         /** Handle upload of a previously exported bulk file and refresh its data. */
         async function handleBulkExportUpdateUpload(event, resultDivId) {
             const file = event.target.files && event.target.files[0];
             event.target.value = '';
             if (!file) return;
+            await processBulkExportUpdateFile(file, resultDivId, null);
+        }
 
+        async function processBulkExportUpdateFile(file, resultDivId, fileHandle = null) {
             const resultDiv = document.getElementById(resultDivId);
             if (resultDiv) {
                 resultDiv.innerHTML = '<div style="padding: 15px; color: var(--text-color);">Reading file...</div>';
@@ -19106,12 +19238,24 @@
                     });
                 });
 
-                // Download the updated workbook (same headers/rows, refreshed values)
+                // Store the updated workbook for Save / Save As
                 const outWb = XLSX.utils.book_new();
                 const outWs = XLSX.utils.aoa_to_sheet(rows);
                 XLSX.utils.book_append_sheet(outWb, outWs, sheetName || 'Device Lookup');
-                const baseName = file.name.replace(/\.(xlsx|xls|csv)$/i, '');
-                XLSX.writeFile(outWb, `${baseName}_updated_${new Date().toISOString().split('T')[0]}.xlsx`);
+                bulkExportUpdateWorkbook = outWb;
+                bulkExportUpdateFileHandle = fileHandle;
+                bulkExportUpdateFileName = file.name;
+                bulkExportUpdateResultDivId = resultDivId;
+
+                const canOverwrite = !!fileHandle && /\.xlsx$/i.test(file.name);
+                let saveHint = canOverwrite
+                    ? `Save will overwrite "${file.name}". Use Save As to write to a different file.`
+                    : fileHandle
+                        ? `Data refreshed from "${file.name}". Use Save or Save As to download the updated .xlsx file.`
+                        : 'Use Save or Save As below to download the updated file to your computer.';
+                if (changes.length === 0) {
+                    saveHint += ' No values changed — everything was already current.';
+                }
 
                 // Render summary of what changed
                 const changedDevices = new Set(changes.map(c => c.deviceNumber));
@@ -19131,7 +19275,19 @@
                             <div style="margin-bottom: 4px;">Devices with updated data: <strong style="color: ${changedDevices.size > 0 ? '#4CAF50' : 'var(--text-color)'};">${changedDevices.size}</strong></div>
                             <div style="margin-bottom: 4px;">Values refreshed: <strong>${changes.length}</strong></div>
                             ${stillNotFound.length > 0 ? `<div style="margin-bottom: 4px; color: #ff6b6b;">Not found in DOB data: ${esc(stillNotFound.join(', '))}</div>` : ''}
-                            <div style="margin: 10px 0; opacity: 0.8; font-size: 0.9em;">The updated file has been downloaded${changes.length === 0 ? ' (no values changed — everything was already current)' : ''}.</div>
+                            <div style="margin: 10px 0; opacity: 0.8; font-size: 0.9em;">${saveHint}</div>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0;">
+                                <button onclick="saveBulkExportUpdateFile(false)"
+                                        title="${canOverwrite ? 'Overwrite the file you opened' : 'Save the updated file'}"
+                                        style="padding: 10px 18px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                                    💾 Save${canOverwrite ? '' : '...'}
+                                </button>
+                                <button onclick="saveBulkExportUpdateAs()"
+                                        title="Save the updated file under a new name"
+                                        style="padding: 10px 18px; background: #1e7e34; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
+                                    📄 Save As...
+                                </button>
+                            </div>
                             ${changes.length > 0 ? `
                                 <div style="max-height: 300px; overflow-y: auto; margin-top: 10px; border: 1px solid var(--input-border); border-radius: 6px;">
                                     <table style="width: 100%; border-collapse: collapse; font-size: 0.88em;">
@@ -19146,7 +19302,7 @@
                                         <tbody>${changeRowsHtml}</tbody>
                                     </table>
                                 </div>
-                                ${changes.length > 100 ? `<div style="margin-top: 6px; opacity: 0.7; font-size: 0.85em;">Showing first 100 of ${changes.length} changes — the downloaded file contains all of them.</div>` : ''}
+                                ${changes.length > 100 ? `<div style="margin-top: 6px; opacity: 0.7; font-size: 0.85em;">Showing first 100 of ${changes.length} changes — the saved file contains all of them.</div>` : ''}
                             ` : ''}
                         </div>
                     `;
