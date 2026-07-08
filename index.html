@@ -1077,6 +1077,7 @@
                             #hiddenBuildingsList,
                             #additionalLocationsList,
                             #housesLocationsList,
+                            #transportationLocationsList,
                             #customNamesList,
                             #completedBuildingsList,
                             #monthLabelsList,
@@ -1089,6 +1090,7 @@
                             #mapControlsPanel.mcp-popped-out #hiddenBuildingsList,
                             #mapControlsPanel.mcp-popped-out #additionalLocationsList,
                             #mapControlsPanel.mcp-popped-out #housesLocationsList,
+                            #mapControlsPanel.mcp-popped-out #transportationLocationsList,
                             #mapControlsPanel.mcp-popped-out #customNamesList,
                             #mapControlsPanel.mcp-popped-out #completedBuildingsList,
                             #mapControlsPanel.mcp-popped-out #monthLabelsList,
@@ -1255,7 +1257,7 @@
                                 <span class="mcp-arrow" id="mcpAdditionalArrow">▼</span>
                             </div>
                             <div class="mcp-body" id="mcpAdditional">
-                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> section to manage pins marked as a house. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
+                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> and <strong>Transportation</strong> sections to manage tagged pins. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
                                 <input type="text" id="additionalLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
                                        oninput="filterAdditionalLocationsList(this.value)">
                                 <div id="additionalLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
@@ -1299,6 +1301,26 @@
                                     <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No houses</div>
                                 </div>
                                 <button onclick="clearAllHouseTags()" class="mcp-btn" style="color:#8d6e63;">Unmark all houses</button>
+                            </div>
+                        </div>
+
+                        <!-- Transportation (additional locations marked as transportation) -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpTransportation')">
+                                <span class="mcp-title" style="display: flex; align-items: center; gap: 8px;">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" class="mcp-transportation-header-icon"><path fill="#1565c0" d="M12 2C8 2 4 2.5 4 6v9.5C4 17.43 5.57 19 7.5 19L6 20.5v.5h2.23l2-2h3.54l2 2H18v-.5L16.5 19c1.93 0 3.5-1.57 3.5-3.5V6c0-3.5-4-4-8-4zM7.5 17C6.67 17 6 16.33 6 15.5S6.67 14 7.5 14 9 14.67 9 15.5 8.33 17 7.5 17zM11 10H6V6h5v4zm5.5 7c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM18 10h-5V6h5v4z"/></svg>
+                                    <span>Transportation - <span id="transportationLocationsCount">0</span></span>
+                                </span>
+                                <span class="mcp-arrow" id="mcpTransportationArrow">▼</span>
+                            </div>
+                            <div class="mcp-body" id="mcpTransportation">
+                                <p class="mcp-desc">Pins you marked as transportation use a blue train icon on the map. Unmark keeps the pin under Additional Locations; Remove deletes the pin entirely.</p>
+                                <input type="text" id="transportationLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
+                                       oninput="filterTransportationLocationsList(this.value)">
+                                <div id="transportationLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No transportation locations</div>
+                                </div>
+                                <button onclick="clearAllTransportationTags()" class="mcp-btn" style="color:#1565c0;">Unmark all transportation</button>
                             </div>
                         </div>
 
@@ -9762,6 +9784,7 @@
         let mapHideScheduledMonthSelectionReady = false;
 
         let additionalLocationMarkers = [];
+        const MAP_TRANSPORTATION_COLOR = '#1565c0';
         let pendingLoadedMapViewState = null;
         let currentMapViewFileHandle = null;
         let currentMapViewFileName = null;
@@ -9814,6 +9837,12 @@
         function getAdditionalLocationActivityLabel(location) {
             if (!location) return '';
             return location.customName || location.label || location.address || '';
+        }
+
+        function getTransportationTrainSvg(color, size) {
+            const svgColor = color || MAP_TRANSPORTATION_COLOR;
+            const svgSize = size || 16;
+            return `<svg xmlns="http://www.w3.org/2000/svg" width="${svgSize}" height="${svgSize}" viewBox="0 0 24 24" aria-hidden="true" style="display:block;"><path fill="${svgColor}" d="M12 2C8 2 4 2.5 4 6v9.5C4 17.43 5.57 19 7.5 19L6 20.5v.5h2.23l2-2h3.54l2 2H18v-.5L16.5 19c1.93 0 3.5-1.57 3.5-3.5V6c0-3.5-4-4-8-4zM7.5 17C6.67 17 6 16.33 6 15.5S6.67 14 7.5 14 9 14.67 9 15.5 8.33 17 7.5 17zM11 10H6V6h5v4zm5.5 7c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM18 10h-5V6h5v4z"/></svg>`;
         }
 
         function addMapActivity(action, options) {
@@ -10878,8 +10907,8 @@
             const additionalLocations = getAdditionalLocations();
             additionalLocationMarkers.forEach((marker, index) => {
                 const location = additionalLocations[index];
-                // Houses and right-clicked custom pins stay visible under map view filters
-                if (location && (location.isHouse || location.type === 'pinned')) {
+                // Tagged custom pins and right-clicked pins stay visible under map view filters
+                if (location && (location.isHouse || location.isTransportation || location.type === 'pinned')) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     bounds.extend(marker.getLatLng());
                 } else if (buildingMap.hasLayer(marker)) {
@@ -12048,13 +12077,13 @@
         }
         
         function clearAllAdditionalLocations() {
-            if (confirm('Are you sure you want to remove all non-house additional locations? House pins will stay in the Houses section.')) {
+            if (confirm('Are you sure you want to remove all untagged additional locations? House and Transportation pins will stay in their sections.')) {
                 const allLocations = getAdditionalLocations();
-                const removedCount = allLocations.filter(loc => !loc.isHouse).length;
-                const houses = allLocations.filter(loc => loc.isHouse);
-                setAdditionalLocations(houses);
+                const removedCount = allLocations.filter(loc => !loc.isHouse && !loc.isTransportation).length;
+                const taggedLocations = allLocations.filter(loc => loc.isHouse || loc.isTransportation);
+                setAdditionalLocations(taggedLocations);
                 if (removedCount > 0) addMapActivity('Cleared additional locations', { type: 'Building', details: `${removedCount} location${removedCount !== 1 ? 's' : ''} removed` });
-                showMapNotification('All non-house additional locations cleared', '#00bcd4');
+                showMapNotification('All untagged additional locations cleared', '#00bcd4');
                 
                 // Update the controls panel
                 updateAdditionalLocationsPanel();
@@ -12070,7 +12099,7 @@
             const locations = getAdditionalLocations();
             const regularLocations = locations
                 .map((loc, index) => ({ loc, index }))
-                .filter(item => !item.loc.isHouse);
+                .filter(item => !item.loc.isHouse && !item.loc.isTransportation);
             const countEl = document.getElementById('additionalLocationsCount');
             const listEl = document.getElementById('additionalLocationsList');
             
@@ -12111,6 +12140,7 @@
             }
             updateCustomNamesPanel();
             updateHousesLocationsPanel();
+            updateTransportationLocationsPanel();
             const alSearch = document.getElementById('additionalLocationsSearchInput');
             if (alSearch && alSearch.value.trim()) {
                 filterAdditionalLocationsList(alSearch.value);
@@ -12118,6 +12148,10 @@
             const housesSearch = document.getElementById('housesLocationsSearchInput');
             if (housesSearch && housesSearch.value.trim()) {
                 filterHousesLocationsList(housesSearch.value);
+            }
+            const transportationSearch = document.getElementById('transportationLocationsSearchInput');
+            if (transportationSearch && transportationSearch.value.trim()) {
+                filterTransportationLocationsList(transportationSearch.value);
             }
         }
 
@@ -12202,6 +12236,105 @@
             }
         }
 
+        function updateTransportationLocationsPanel() {
+            const all = getAdditionalLocations();
+            const transportation = all.filter(loc => loc.isTransportation);
+            const countEl = document.getElementById('transportationLocationsCount');
+            const listEl = document.getElementById('transportationLocationsList');
+            if (countEl) countEl.textContent = transportation.length;
+            if (listEl) {
+                if (transportation.length === 0) {
+                    listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No transportation locations</div>';
+                } else {
+                    const trainIconSvg = getTransportationTrainSvg(MAP_TRANSPORTATION_COLOR, 16);
+                    listEl.innerHTML = transportation.map((loc) => {
+                        const hasBin = loc.bin ? true : false;
+                        const addrEsc = (loc.label || '').replace(/"/g, '&quot;');
+                        const customEsc = (loc.customName || '').replace(/"/g, '&quot;');
+                        const coordsEsc = (Number(loc.latitude).toFixed(5) + ' ' + Number(loc.longitude).toFixed(5)).replace(/"/g, '&quot;');
+                        const promoteBtn = hasBin
+                            ? `<button class="addloc-promote-btn" onclick="promoteAdditionalLocationByCoords(${loc.latitude}, ${loc.longitude})"
+                                       title="Fetch all device data for this BIN and move it into the main building list"
+                                       style="width:100%; margin-top:6px; padding:5px 8px; background:rgba(39,174,96,0.12); color:#27ae60; border:1px solid rgba(39,174,96,0.4); border-radius:4px; cursor:pointer; font-size:0.88em; font-weight:600; display:flex; align-items:center; justify-content:center; gap:5px;">
+                                   ⬆ Move to Buildings &amp; Fetch Device Data
+                               </button>`
+                            : `<div style="margin-top:5px; font-size:0.8em; opacity:0.5; font-style:italic;">No BIN — cannot move to main buildings</div>`;
+                        return `
+                        <div data-mcp-transportation-wrap="1" style="margin-bottom: 6px;">
+                        <div data-mcp-transportation-row="1" data-transportation="1" data-bin="${loc.bin || ''}" data-address="${addrEsc}" data-custom="${customEsc}" data-coords="${coordsEsc}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 1em; border: 1px solid var(--input-border);">
+                            <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToAdditionalLocation(${loc.latitude}, ${loc.longitude})">
+                                <span style="display: flex; align-items: flex-start; gap: 6px; overflow: hidden;">
+                                    <span style="flex-shrink: 0; display: flex; align-items: center; gap: 5px; padding-top: 1px;">
+                                        ${trainIconSvg}
+                                        <span title="Same color as the pin on the map" style="width: 10px; height: 10px; border-radius: 50%; background: ${MAP_TRANSPORTATION_COLOR}; border: 1px solid rgba(0,0,0,0.12); flex-shrink: 0; box-sizing: border-box;"></span>
+                                    </span>
+                                    <span style="flex: 1; min-width: 0; overflow: hidden;">
+                                        ${loc.customName ? `<span style="display: block; font-size: 0.8em; font-weight: 700; color: #e64a19; margin-bottom: 2px;">🏷️ ${loc.customName}</span>` : ''}
+                                        <span style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; text-decoration: underline dotted; color: var(--text-color);">${loc.label}</span>
+                                        <span style="display: block; font-size: 0.8em; opacity: 0.55; margin-top: 2px;">${hasBin ? 'BIN ' + loc.bin + ' · ' : ''}${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}</span>
+                                    </span>
+                                </span>
+                            </span>
+                            <button type="button" onclick="removeAdditionalLocationByCoords(${loc.latitude}, ${loc.longitude})"
+                                    title="Remove pin from map"
+                                    style="flex-shrink:0; background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.4); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 0.88em; margin-left: 8px;">✕</button>
+                        </div>
+                            ${promoteBtn}
+                        </div>`;
+                    }).join('');
+                }
+            }
+        }
+
+        function filterTransportationLocationsList(query) {
+            var list = document.getElementById('transportationLocationsList');
+            if (!list) return;
+            var q = (query || '').toLowerCase().trim();
+            var items = list.querySelectorAll(':scope > div[data-mcp-transportation-wrap]');
+            var anyVisible = false;
+            items.forEach(function(wrap) {
+                var el = wrap.querySelector('[data-mcp-transportation-row]');
+                if (!el) return;
+                var text = ((el.dataset.bin || '') + ' ' + (el.dataset.address || '') + ' ' + (el.dataset.custom || '') + ' ' + (el.dataset.coords || '') + ' transportation train').toLowerCase();
+                var match = !q || text.includes(q);
+                wrap.style.display = match ? '' : 'none';
+                if (match) anyVisible = true;
+            });
+            var noResultsId = 'transportationLocationsListNoFilterMatch';
+            var noResults = document.getElementById(noResultsId);
+            if (!anyVisible && q && items.length > 0) {
+                if (!noResults) {
+                    noResults = document.createElement('div');
+                    noResults.id = noResultsId;
+                    noResults.style.cssText = 'font-size:1em;opacity:0.6;text-align:center;padding:8px;';
+                    list.appendChild(noResults);
+                }
+                noResults.textContent = 'No matches for "' + query + '"';
+                noResults.style.display = '';
+            } else if (noResults) {
+                noResults.style.display = 'none';
+            }
+        }
+
+        function clearAllTransportationTags() {
+            if (!confirm('Remove the transportation tag from all pins? Pins stay on the map as regular additional locations.')) return;
+            const locations = getAdditionalLocations();
+            let changed = false;
+            locations.forEach(loc => {
+                if (loc.isTransportation) {
+                    delete loc.isTransportation;
+                    changed = true;
+                }
+            });
+            if (!changed) return;
+            setAdditionalLocations(locations);
+            showMapNotification('All transportation tags removed', MAP_TRANSPORTATION_COLOR);
+            updateAdditionalLocationsPanel();
+            if (buildingMap && window.lastBulkSearchResults) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
+
         function clearAllHouseTags() {
             if (!confirm('Remove the house tag from all pins? Pins stay on the map as regular additional locations.')) return;
             const locations = getAdditionalLocations();
@@ -12249,6 +12382,7 @@
             if (idx === -1) return;
             if (isHouse) {
                 locations[idx].isHouse = true;
+                delete locations[idx].isTransportation;
             } else {
                 delete locations[idx].isHouse;
             }
@@ -12259,9 +12393,28 @@
             }
         }
 
+        function setAdditionalLocationIsTransportation(lat, lng, isTransportation) {
+            const locations = getAdditionalLocations();
+            const idx = locations.findIndex(loc =>
+                Math.abs(loc.latitude - lat) < 0.000001 && Math.abs(loc.longitude - lng) < 0.000001
+            );
+            if (idx === -1) return;
+            if (isTransportation) {
+                locations[idx].isTransportation = true;
+                delete locations[idx].isHouse;
+            } else {
+                delete locations[idx].isTransportation;
+            }
+            setAdditionalLocations(locations);
+            updateAdditionalLocationsPanel();
+            if (buildingMap && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
+
         function updateCustomNamesPanel() {
             const locations = getAdditionalLocations();
-            const named = locations.filter(loc => loc.customName && !loc.isHouse);
+            const named = locations.filter(loc => loc.customName && !loc.isHouse && !loc.isTransportation);
             const countEl = document.getElementById('customNamesCount');
             const listEl = document.getElementById('customNamesList');
             if (countEl) countEl.textContent = named.length;
@@ -12306,7 +12459,7 @@
         function clearAllCustomNames() {
             const locations = getAdditionalLocations();
             locations.forEach(loc => {
-                if (!loc.isHouse) delete loc.customName;
+                if (!loc.isHouse && !loc.isTransportation) delete loc.customName;
             });
             setAdditionalLocations(locations);
             updateAdditionalLocationsPanel();
@@ -15662,6 +15815,10 @@
             if (housesInp && housesInp.value.trim()) {
                 filterHousesLocationsList(housesInp.value);
             }
+            var transportationInp = document.getElementById('transportationLocationsSearchInput');
+            if (transportationInp && transportationInp.value.trim()) {
+                filterTransportationLocationsList(transportationInp.value);
+            }
 
             var mcpPanel = document.getElementById('mapControlsPanel');
             if (mcpPanel && mcpPanel.style.display !== 'none') {
@@ -17300,17 +17457,23 @@
                 
                 const hasCustomName = !!(location.customName && String(location.customName).trim());
                 const isHouse = !!location.isHouse;
+                const isTransportation = !!location.isTransportation;
                 let iconText;
+                let iconHtml;
                 if (deviceCount > 0) {
                     iconText = deviceCount;
                 } else if (isHouse) {
                     iconText = '🏠';
+                } else if (isTransportation) {
+                    iconHtml = getTransportationTrainSvg('#ffffff', 15);
                 } else {
                     iconText = '📍';
                 }
                 let markerBg;
                 if (isHouse) {
                     markerBg = '#8d6e63';
+                } else if (isTransportation) {
+                    markerBg = MAP_TRANSPORTATION_COLOR;
                 } else if (hasCustomName) {
                     markerBg = '#e64a19';
                 } else {
@@ -17333,7 +17496,7 @@
                         color: ${markerFg};
                         font-weight: bold;
                         font-size: 11px;
-                    ">${iconText}</div>`,
+                    ">${iconHtml || iconText}</div>`,
                     iconSize: [30, 30],
                     iconAnchor: [15, 15]
                 });
@@ -17393,7 +17556,7 @@
                 const totalViolations = violationDetails.length;
                 const escapedAddress = location.label.replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 const currentMonthLabel = location.bin ? getMonthLabel(location.bin) : null;
-                const headerAccent = isHouse ? '#8d6e63' : (hasCustomName ? '#e64a19' : '#00bcd4');
+                const headerAccent = isHouse ? '#8d6e63' : (isTransportation ? MAP_TRANSPORTATION_COLOR : (hasCustomName ? '#e64a19' : '#00bcd4'));
                 
                 // Build popup content matching building popup format
                 const additionalPopupContent = `
@@ -17492,6 +17655,16 @@
                                        onchange="setAdditionalLocationIsHouse(${location.latitude}, ${location.longitude}, this.checked)"
                                        style="width: 16px; height: 16px; cursor: pointer; flex-shrink: 0;" />
                                 <span style="font-weight: 600; color: #8d6e63;">🏠 Mark as house</span>
+                            </label>
+                        </div>
+
+                        <div style="margin-bottom: 10px; padding: 8px; background: rgba(21,101,192,0.1); border-radius: 6px; border: 1px solid rgba(21,101,192,0.35);">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; color: var(--text-color); user-select: none;">
+                                <input type="checkbox"
+                                       ${location.isTransportation ? 'checked' : ''}
+                                       onchange="setAdditionalLocationIsTransportation(${location.latitude}, ${location.longitude}, this.checked)"
+                                       style="width: 16px; height: 16px; cursor: pointer; flex-shrink: 0;" />
+                                <span style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: ${MAP_TRANSPORTATION_COLOR};">${getTransportationTrainSvg(MAP_TRANSPORTATION_COLOR, 15)} Mark as transportation</span>
                             </label>
                         </div>
                         
@@ -17975,7 +18148,7 @@
                 const additionalLocations = getAdditionalLocations();
                 additionalLocationMarkers.forEach((marker, index) => {
                     const location = additionalLocations[index];
-                    const shouldShowAdditional = (location && (location.isHouse || location.type === 'pinned')) || !hasMapViewFilter || matchedAdditionalIndexes.has(index);
+                    const shouldShowAdditional = (location && (location.isHouse || location.isTransportation || location.type === 'pinned')) || !hasMapViewFilter || matchedAdditionalIndexes.has(index);
                     if (shouldShowAdditional) {
                         if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     } else if (buildingMap.hasLayer(marker)) {
