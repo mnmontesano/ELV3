@@ -24553,6 +24553,117 @@
         });
     }
 
+    function getELV3DeviceNumberValue(device) {
+        if (typeof device === 'string') return device.trim();
+        if (!device) return '';
+        return String(device.deviceNumber || device.device_number || device.device || '').trim();
+    }
+
+    function getELV3ScanDeviceNumbers(data) {
+        var seen = {};
+        var devices = [];
+
+        function add(device) {
+            var deviceNumber = getELV3DeviceNumberValue(device).toUpperCase();
+            if (!deviceNumber || seen[deviceNumber]) return;
+            seen[deviceNumber] = true;
+            devices.push(deviceNumber);
+        }
+
+        (data.devices || []).forEach(add);
+        Object.keys(data.violationsByDevice || {}).forEach(add);
+        (data.satisfactoryDevices || []).forEach(add);
+        (data.devicesWithoutStatusCheck || []).forEach(add);
+        (data.devicesMissingViolationDetails || []).forEach(add);
+
+        return devices;
+    }
+
+    async function fetchELV3BinForDevice(deviceNumber) {
+        var cleanDeviceNumber = String(deviceNumber || '').trim().toUpperCase();
+        if (!cleanDeviceNumber) throw new Error('Choose a device number first.');
+
+        var response = await fetch('https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=' + encodeURIComponent(cleanDeviceNumber));
+        if (!response.ok) throw new Error('BIN lookup failed for ' + cleanDeviceNumber + '.');
+
+        var data = await response.json();
+        if (!data || data.length === 0 || !data[0].bin) {
+            throw new Error('No BIN found for device ' + cleanDeviceNumber + '.');
+        }
+
+        return {
+            deviceNumber: cleanDeviceNumber,
+            bin: data[0].bin,
+            address: data[0].house_number && data[0].street_name ? (data[0].house_number + ' ' + data[0].street_name).trim() : null
+        };
+    }
+
+    function applyELV3ScanBinLookup(data, lookup, options) {
+        options = options || {};
+        data.bin = lookup.bin;
+        data.binSourceDeviceNumber = lookup.deviceNumber;
+
+        if (lookup.address && (options.replaceAddress === true || !data.address)) {
+            data.address = lookup.address;
+        }
+
+        var scanBinInput = document.getElementById('scanBinInput');
+        if (scanBinInput) scanBinInput.value = lookup.bin;
+    }
+
+    async function populateELV3ScanBinFromDevice(data, deviceNumber, options) {
+        var lookup = await fetchELV3BinForDevice(deviceNumber);
+        applyELV3ScanBinLookup(data, lookup, options);
+        return lookup;
+    }
+
+    function toggleELV3ScanBinSourceMenu(event) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        var menu = document.getElementById('elv3ScanBinSourceMenu');
+        if (!menu) return;
+        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+    }
+
+    async function updateELV3ScanBinSource(event, selectedDeviceNumber) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        if (!elv3ScanItems.length) return;
+
+        var item = elv3ScanItems[elv3ScanCurrentIndex];
+        if (!item || !item.result) return;
+
+        var status = document.getElementById('elv3ScanBinSourceStatus');
+        var button = document.getElementById('elv3ScanBinSourceBtn');
+        var menu = document.getElementById('elv3ScanBinSourceMenu');
+        var deviceNumber = selectedDeviceNumber || (button ? button.getAttribute('data-device-number') : '');
+        if (!deviceNumber) return;
+
+        if (button) button.disabled = true;
+        if (menu) menu.style.display = 'none';
+        if (status) {
+            status.textContent = 'Looking up...';
+            status.classList.remove('error');
+        }
+
+        try {
+            await populateELV3ScanBinFromDevice(item.result, deviceNumber, { replaceAddress: true });
+            renderELV3ScanResult(item.result, document.getElementById('elv3ScanResultContent'), { preserveScroll: true });
+        } catch (err) {
+            if (status) {
+                status.textContent = err.message || 'BIN lookup failed';
+                status.classList.add('error');
+            } else {
+                alert(err.message || 'BIN lookup failed');
+            }
+            if (button) button.disabled = false;
+        }
+    }
+
     function toggleScanNotes() {
         var fields = document.getElementById('scanNotesFields');
         var arrow = document.getElementById('scanNotesArrow');
@@ -24806,19 +24917,9 @@
 
             if (result.devices.length > 0 && !result.bin) {
                 statusText.textContent = 'Looking up BIN number...';
-                var firstDevice = result.devices[0];
-                var deviceNumber = firstDevice.deviceNumber || firstDevice;
+                var deviceNumber = getELV3DeviceNumberValue(result.devices[0]);
                 try {
-                    var apiResp = await fetch('https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=' + encodeURIComponent(deviceNumber));
-                    if (apiResp.ok) {
-                        var apiData = await apiResp.json();
-                        if (apiData && apiData.length > 0 && apiData[0].bin) {
-                            result.bin = apiData[0].bin;
-                            if (!result.address && apiData[0].house_number && apiData[0].street_name) {
-                                result.address = (apiData[0].house_number + ' ' + apiData[0].street_name).trim();
-                            }
-                        }
-                    }
+                    await populateELV3ScanBinFromDevice(result, deviceNumber);
                 } catch (_) { /* BIN lookup is best-effort */ }
             }
 
@@ -25156,19 +25257,9 @@
 
                 if (result.devices.length > 0 && !result.bin) {
                     statusText.textContent = total > 1 ? `Looking up BIN for PDF ${i + 1}...` : 'Looking up BIN number...';
-                    const firstDevice = result.devices[0];
-                    const deviceNumber = firstDevice.deviceNumber || firstDevice;
+                    const deviceNumber = getELV3DeviceNumberValue(result.devices[0]);
                     try {
-                        const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber)}`);
-                        if (response.ok) {
-                            const data = await response.json();
-                            if (data && data.length > 0 && data[0].bin) {
-                                result.bin = data[0].bin;
-                                if (!result.address && data[0].house_number && data[0].street_name) {
-                                    result.address = `${data[0].house_number} ${data[0].street_name}`.trim();
-                                }
-                            }
-                        }
+                        await populateELV3ScanBinFromDevice(result, deviceNumber);
                     } catch (apiError) {
                         console.log('Could not fetch BIN from API:', apiError);
                     }
@@ -25232,23 +25323,11 @@
             // Try to fetch BIN from DOB API using the first device number
             if (result.devices.length > 0 && !result.bin) {
                 statusText.textContent = 'Looking up BIN number...';
-                const firstDevice = result.devices[0];
-                const deviceNumber = firstDevice.deviceNumber || firstDevice;
+                const deviceNumber = getELV3DeviceNumberValue(result.devices[0]);
                 console.log(`Looking up BIN for device: ${deviceNumber}`);
                 try {
-                    // Use the same API as the rest of the site: e5aq-a4j2.json?device_number=
-                    const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber)}`);
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data && data.length > 0 && data[0].bin) {
-                            result.bin = data[0].bin;
-                            // Also get address if not already set
-                            if (!result.address && data[0].house_number && data[0].street_name) {
-                                result.address = `${data[0].house_number} ${data[0].street_name}`.trim();
-                            }
-                            console.log(`BIN fetched from API: ${result.bin}, Address: ${result.address}`);
-                        }
-                    }
+                    await populateELV3ScanBinFromDevice(result, deviceNumber);
+                    console.log(`BIN fetched from API: ${result.bin}, Address: ${result.address}`);
                 } catch (apiError) {
                     console.log('Could not fetch BIN from API:', apiError);
                 }
@@ -27810,6 +27889,12 @@
         const filedSatisfactoryDevicesCount = satisfactoryDevices.filter(d => filedViolationDevices[d.deviceNumber]).length;
         const totalFiledDevicesCount = filedViolationDevicesCount + filedSatisfactoryDevicesCount;
         const totalDevices = (data.devices || []).length;
+        const scanDeviceNumbers = getELV3ScanDeviceNumbers(data);
+        const selectedBinDeviceNumber = data.binSourceDeviceNumber || scanDeviceNumbers[0] || '';
+        const binSourceOptionsHtml = scanDeviceNumbers.map(function(deviceNumber) {
+            const escapedDeviceNumber = escapeELV3Html(String(deviceNumber).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+            return `<button type="button" class="elv3-scan-bin-source-option ${deviceNumber === selectedBinDeviceNumber ? 'active' : ''}" onclick="updateELV3ScanBinSource(event, '${escapedDeviceNumber}')">${escapeELV3Html(deviceNumber)}</button>`;
+        }).join('');
         
         let resultHtml = `
             <h4>✓ Scan Complete</h4>
@@ -27817,6 +27902,7 @@
                 ${data.blankTemplate ? `<p><strong>Blank ELV3 Template:</strong> Recognized ${data.templateFieldCount || data._fieldDiagnostics?.totalFields || 0} form fields. Fill in device rows and upload again to scan results.</p>` : ''}
                 ${data.address ? `<p><strong>Address:</strong> ${escapeELV3Html(data.address)}</p>` : ''}
                 ${data.bin ? `<p><strong>BIN:</strong> <span class="elv3-scan-bin-copy" data-bin="${escapeELV3Html(data.bin)}" onclick="copyBinToClipboard(this.getAttribute('data-bin'), event)" title="Click to copy">${escapeELV3Html(data.bin)}</span></p>` : ''}
+                ${data.binSourceDeviceNumber ? `<p><strong>BIN Source Device:</strong> ${escapeELV3Html(data.binSourceDeviceNumber)}</p>` : ''}
                 ${data.inspectorName ? `<p><strong>Inspector:</strong> ${escapeELV3Html(data.inspectorName)}</p>` : ''}
                 <p><strong>Devices Scanned:</strong> ${totalDevices}</p>
                 <p><strong>Devices with Violations:</strong> ${devicesWithViolationsCount}${filedViolationDevicesCount > 0 ? ` of ${totalDevicesWithViolationsCount} remaining` : ''}</p>
@@ -27831,6 +27917,19 @@
                     <span class="copy-icon">📋</span>
                     <span class="copy-text">Copy All</span>
                 </button>
+                ${scanDeviceNumbers.length > 0 ? `
+                    <div class="elv3-scan-bin-source-control">
+                        <span class="elv3-scan-bin-source-label">BIN from</span>
+                        <button id="elv3ScanBinSourceBtn" class="elv3-scan-copy-all-btn elv3-scan-bin-source-btn" data-device-number="${escapeELV3Html(selectedBinDeviceNumber)}" onclick="toggleELV3ScanBinSourceMenu(event)" title="Choose which device number should be used to fetch the BIN">
+                            <span class="copy-text">${escapeELV3Html(selectedBinDeviceNumber)}</span>
+                            <span aria-hidden="true">▼</span>
+                        </button>
+                        <div id="elv3ScanBinSourceMenu" class="elv3-scan-bin-source-menu" style="display: none;">
+                            ${binSourceOptionsHtml}
+                        </div>
+                        <span id="elv3ScanBinSourceStatus" class="elv3-scan-bin-source-status"></span>
+                    </div>
+                ` : ''}
                 <button class="elv3-scan-copy-all-btn" onclick="copyELV3ScanDiagnostics(event)" title="Copy raw field data and parse results for troubleshooting">
                     <span class="copy-icon">🔍</span>
                     <span class="copy-text">Copy Diagnostics</span>
