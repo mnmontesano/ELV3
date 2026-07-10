@@ -27592,9 +27592,18 @@
         var violations = (data.violationsByDevice || {})[deviceNumber];
         if (!violations || violations.length === 0) return;
 
-        var comments = violations
-            .filter(function(v) { return v.comments; })
-            .map(function(v) { return v.comments; });
+        // Some ELV3 variants store the comment alongside the device number rather
+        // than in a violation comment field. Include both sources so every visible
+        // device note can be copied.
+        var comments = [];
+        violations.forEach(function(v) {
+            [v.comments, v.deviceFieldText].forEach(function(text) {
+                var normalized = String(text || '').trim();
+                if (normalized && comments.indexOf(normalized) === -1) {
+                    comments.push(normalized);
+                }
+            });
+        });
 
         if (comments.length === 0) return;
 
@@ -27886,13 +27895,11 @@
         }
         const devicesWithoutStatusCheck = data.devicesWithoutStatusCheck || [];
         const devicesMissingViolationDetails = data.devicesMissingViolationDetails || [];
-        const devicesWithoutStatusCheckSet = new Set(devicesWithoutStatusCheck);
-        const violationsByDeviceFiltered = objectFromEntriesSafe(
-            Object.entries(data.violationsByDevice || {}).filter(([dn]) => !devicesWithoutStatusCheckSet.has(dn))
-        );
         const filedViolationDevices = data.filedViolationDevices || {};
         const showFiledViolationDevices = data.showFiledViolationDevices === true;
-        const violationDeviceEntries = Object.entries(violationsByDeviceFiltered);
+        const devicesWithoutStatusCheckSet = new Set(devicesWithoutStatusCheck);
+        const violationDeviceEntries = Object.entries(data.violationsByDevice || {})
+            .filter(([dn]) => !devicesWithoutStatusCheckSet.has(dn));
         const visibleViolationDeviceEntries = violationDeviceEntries.filter(([dn]) => showFiledViolationDevices || !filedViolationDevices[dn]);
         const filedViolationDevicesCount = violationDeviceEntries.filter(([dn]) => filedViolationDevices[dn]).length;
         const devicesWithViolationsCount = visibleViolationDeviceEntries.length;
@@ -27900,7 +27907,21 @@
         const satisfactoryDevices = data.satisfactoryDevices || [];
         const visibleSatisfactoryDevices = satisfactoryDevices.filter(d => showFiledViolationDevices || !filedViolationDevices[d.deviceNumber]);
         const filedSatisfactoryDevicesCount = satisfactoryDevices.filter(d => filedViolationDevices[d.deviceNumber]).length;
-        const totalFiledDevicesCount = filedViolationDevicesCount + filedSatisfactoryDevicesCount;
+        const warningDeviceNumbers = new Set([
+            ...devicesWithoutStatusCheck,
+            ...devicesMissingViolationDetails.map(device => device.deviceNumber)
+        ]);
+        const filedMissingStatusDevicesCount = devicesWithoutStatusCheck
+            .filter(deviceNumber => filedViolationDevices[deviceNumber]).length;
+        const filedMissingViolationDetailsDevicesCount = devicesMissingViolationDetails
+            .filter(device => filedViolationDevices[device.deviceNumber]).length;
+        const filedDeviceNumbers = new Set([
+            ...violationDeviceEntries.map(([deviceNumber]) => deviceNumber),
+            ...satisfactoryDevices.map(device => device.deviceNumber),
+            ...warningDeviceNumbers
+        ]);
+        const totalFiledDevicesCount = Array.from(filedDeviceNumbers)
+            .filter(deviceNumber => filedViolationDevices[deviceNumber]).length;
         const totalDevices = (data.devices || []).length;
         const scanDeviceNumbers = getELV3ScanDeviceNumbers(data);
         const selectedBinDeviceNumber = data.binSourceDeviceNumber || scanDeviceNumbers[0] || '';
@@ -27958,7 +27979,7 @@
         
         resultHtml += `<div class="elv3-scan-results-scroll">`;
         
-        // Show devices with violations (excluding devices in Missing Status Check)
+        // Devices without a status are displayed in their own review section.
         if (violationDeviceEntries.length > 0) {
             resultHtml += `
                 <h5 class="elv3-scan-section-title violations">⚠ Devices with Violations${filedViolationDevicesCount > 0 && !showFiledViolationDevices ? ` (${devicesWithViolationsCount} remaining)` : ''}</h5>
@@ -28004,28 +28025,52 @@
         
         // Show warning for devices without Satisfactory/Unsatisfactory check
         if (devicesWithoutStatusCheck.length > 0) {
+            const visibleDevicesWithoutStatusCheck = devicesWithoutStatusCheck
+                .filter(deviceNumber => showFiledViolationDevices || !filedViolationDevices[deviceNumber]);
             resultHtml += `
-                <h5 class="elv3-scan-section-title" style="color: #f59e0b;">⚠ Missing Status Check</h5>
+                <h5 class="elv3-scan-section-title" style="color: #f59e0b;">⚠ Missing Status Check${filedMissingStatusDevicesCount > 0 && !showFiledViolationDevices ? ` (${visibleDevicesWithoutStatusCheck.length} remaining)` : ''}</h5>
                 <div class="elv3-scan-warning-box" style="background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; border-radius: 6px; padding: 12px; margin-bottom: 16px;">
                     <p style="margin: 0 0 8px 0; color: var(--text-color); font-size: 13px;">The following device(s) have a device number but neither Satisfactory nor Unsatisfactory is checked:</p>
+                    ${visibleDevicesWithoutStatusCheck.length === 0 ? '<div class="elv3-scan-all-filed-message">All devices in this section are marked filed. Turn on "Show filed" to view them again.</div>' : ''}
                     <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
-                        ${devicesWithoutStatusCheck.map(deviceNumber => `
-                            <span style="background: rgba(245, 158, 11, 0.3); padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 13px;">${escapeELV3Html(deviceNumber)}</span>
-                        `).join('')}
+                        ${visibleDevicesWithoutStatusCheck.map(deviceNumber => {
+                            const escapedDeviceNumber = escapeELV3Html(String(deviceNumber).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+                            const isFiled = filedViolationDevices[deviceNumber] === true;
+                            return `
+                            <span class="elv3-scan-warning-device ${isFiled ? 'elv3-scan-device-filed' : ''}" data-elv3-device="${escapeELV3Html(deviceNumber)}">
+                                <span>${escapeELV3Html(deviceNumber)}</span>
+                                <label class="elv3-scan-filed-toggle" title="Mark this device as filed and hide it">
+                                    <input type="checkbox" onclick="toggleELV3ScanFiledDevice('${escapedDeviceNumber}', event)" ${isFiled ? 'checked' : ''}>
+                                    <span>Filed</span>
+                                </label>
+                            </span>`;
+                        }).join('')}
                     </div>
                 </div>
             `;
         }
 
         if (devicesMissingViolationDetails.length > 0) {
+            const visibleDevicesMissingViolationDetails = devicesMissingViolationDetails
+                .filter(device => showFiledViolationDevices || !filedViolationDevices[device.deviceNumber]);
             resultHtml += `
-                <h5 class="elv3-scan-section-title" style="color: #f59e0b;">⚠ Unsatisfactory Devices Need Defect Details</h5>
+                <h5 class="elv3-scan-section-title" style="color: #f59e0b;">⚠ Unsatisfactory Devices Need Defect Details${filedMissingViolationDetailsDevicesCount > 0 && !showFiledViolationDevices ? ` (${visibleDevicesMissingViolationDetails.length} remaining)` : ''}</h5>
                 <div class="elv3-scan-warning-box" style="background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; border-radius: 6px; padding: 12px; margin-bottom: 16px;">
                     <p style="margin: 0 0 8px 0; color: var(--text-color); font-size: 13px;">These device(s) are marked unsatisfactory, but no part/condition/remedy details were read from the PDF:</p>
+                    ${visibleDevicesMissingViolationDetails.length === 0 ? '<div class="elv3-scan-all-filed-message">All devices in this section are marked filed. Turn on "Show filed" to view them again.</div>' : ''}
                     <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
-                        ${devicesMissingViolationDetails.map(device => `
-                            <span style="background: rgba(245, 158, 11, 0.3); padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 13px;">${escapeELV3Html(device.deviceNumber)}</span>
-                        `).join('')}
+                        ${visibleDevicesMissingViolationDetails.map(device => {
+                            const escapedDeviceNumber = escapeELV3Html(String(device.deviceNumber).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+                            const isFiled = filedViolationDevices[device.deviceNumber] === true;
+                            return `
+                            <span class="elv3-scan-warning-device ${isFiled ? 'elv3-scan-device-filed' : ''}" data-elv3-device="${escapeELV3Html(device.deviceNumber)}">
+                                <span>${escapeELV3Html(device.deviceNumber)}</span>
+                                <label class="elv3-scan-filed-toggle" title="Mark this device as filed and hide it">
+                                    <input type="checkbox" onclick="toggleELV3ScanFiledDevice('${escapedDeviceNumber}', event)" ${isFiled ? 'checked' : ''}>
+                                    <span>Filed</span>
+                                </label>
+                            </span>`;
+                        }).join('')}
                     </div>
                 </div>
             `;
