@@ -26225,27 +26225,250 @@
         });
 
         // Pass 4: comments and metadata.
-        entries.forEach(function(entry) {
-            if (!looksLikeComment(entry.value)) return;
-            if (!/(comment|remark|note|Text Field)/i.test(entry.name)) return;
-            let deviceIndex = null;
-            const detail = entry.name.match(/Comments?_\d+_(\d+)/i);
-            const direct = entry.name.match(/Comments?_(\d+)/i);
-            if (detail) deviceIndex = parseInt(detail[1], 10);
-            else if (direct) deviceIndex = parseInt(direct[1], 10);
-            else deviceIndex = ownerDeviceIndex(entry);
-            if (!deviceIndex || !devicesByIndex[deviceIndex]) return;
-            if (!commentsByIndex[deviceIndex]) commentsByIndex[deviceIndex] = [];
-            commentsByIndex[deviceIndex].push(entry.value);
-        });
+        // Flattened ELV3 PDFs store up to three inspector comment lines per device
+        // in "Text FieldN" widgets on the right side of each defect row. Field-order
+        // ownership is unreliable for those names, so prefer annotation geometry
+        // (same approach used for status checkboxes), then Text Field number
+        // heuristics, then order fallback. All filled lines for a device are kept.
+        (function attachComments() {
+            const partRows = [];
+            const deviceRows = [];
+            const partSpecs = [
+                { regex: /Elevator_Part_(\d+)_\[(\d+)\]/i, style: 'underscoreBracket' },
+                { regex: /Elevator_Part(?:_(\d+))?_(\d+)_/i, style: 'named' },
+                { regex: /Elevator_Part(?:_(\d+))?\[(\d+)\]/i, style: 'bracket' }
+            ];
+            // Each device row owns about three stacked Text Field lines (~15pt apart).
+            const COMMENT_LINE_DY = 42;
 
-        result.violations.forEach(function(violation) {
-            const idx = deviceIndexByNumber[violation.deviceNumber];
-            const comments = commentsByIndex[idx] || [];
-            if (comments.length > 0 && !violation.comments) {
-                violation.comments = comments.shift();
+            entries.forEach(function(entry) {
+                const center = rectCenter(entry.meta);
+                // Prefer annotation page from pdf.js; AcroForm names on continuation
+                // sheets often still say Page1/Page2 while the widget is on page 3+.
+                const page = (entry.meta && entry.meta.page) || entry.page;
+                if (!center || !page) return;
+
+                const deviceNumber = extractELV3DeviceNumber(entry.value);
+                if (deviceNumber && /_\d+_Device/i.test(entry.name)) {
+                    const deviceIndex = deviceIndexByNumber[deviceNumber];
+                    if (deviceIndex) {
+                        deviceRows.push({
+                            page: page,
+                            deviceIndex: deviceIndex,
+                            x: center.x,
+                            y: center.y
+                        });
+                    }
+                }
+
+                for (let i = 0; i < partSpecs.length; i++) {
+                    const spec = partSpecs[i];
+                    const match = entry.name.match(spec.regex);
+                    if (!match) continue;
+                    const partCode = normalizePart(entry.value);
+                    if (!partCode) break;
+                    const deviceIndex = violationDeviceIndex(match[1], entry.page || page, spec.style, match[2]);
+                    if (deviceIndex && devicesByIndex[deviceIndex]) {
+                        partRows.push({
+                            page: page,
+                            deviceIndex: deviceIndex,
+                            partCode: partCode,
+                            x: center.x,
+                            y: center.y
+                        });
+                    }
+                    break;
+                }
+            });
+
+            function commentPartCode(value) {
+                const match = String(value || '').trim().match(/^(\d{1,3})\s*[-–:]/);
+                return match ? String(match[1]).padStart(2, '0') : null;
             }
-        });
+
+            function deviceIndexFromTextFieldNumber(fieldNum) {
+                // Each device defect row owns three Text Field slots
+                // (e.g. 3/4/5, 6/7/8, 25/26/27). Later pages can skip numbers, so
+                // geometry is preferred when available.
+                if (!Number.isFinite(fieldNum) || fieldNum < 0) return null;
+                return Math.floor(fieldNum / 3) + 1;
+            }
+
+            function textFieldNumber(name) {
+                const match = String(name || '').replace(/^Page\d+\./i, '').match(/^Text Field(\d+)$/i);
+                return match ? parseInt(match[1], 10) : null;
+            }
+
+            function deviceIndexFromGeometry(entry) {
+                const center = rectCenter(entry.meta);
+                const page = (entry.meta && entry.meta.page) || entry.page;
+                if (!center || !page) return null;
+                const wantedPart = commentPartCode(entry.value);
+                let best = null;
+
+                partRows.forEach(function(row) {
+                    if (row.page !== page) return;
+                    if (center.x <= row.x - 5) return;
+                    // Allow the full 3-line comment stack under/around the part code.
+                    const dy = row.y - center.y;
+                    if (dy < -12 || dy > COMMENT_LINE_DY) return;
+                    let score = Math.abs(center.y - row.y);
+                    if (wantedPart && row.partCode === wantedPart) score -= 100;
+                    if (!best || score < best.score) {
+                        best = { deviceIndex: row.deviceIndex, score: score };
+                    }
+                });
+                if (best) return best.deviceIndex;
+
+                deviceRows.forEach(function(row) {
+                    if (row.page !== page) return;
+                    if (center.x <= row.x - 5) return;
+                    // Comment stack sits on/under the device number row.
+                    const dy = row.y - center.y;
+                    if (dy < -8 || dy > COMMENT_LINE_DY + 8) return;
+                    const score = Math.abs(dy);
+                    if (!best || score < best.score) {
+                        best = { deviceIndex: row.deviceIndex, score: score };
+                    }
+                });
+                return best ? best.deviceIndex : null;
+            }
+
+            const seenCommentKeys = new Set();
+            entries.forEach(function(entry) {
+                if (!looksLikeComment(entry.value)) return;
+                if (!/(comment|remark|note|Text Field)/i.test(entry.name)) return;
+
+                const bareName = String(entry.name).replace(/^Page\d+\./i, '');
+                const dedupeKey = bareName + '|' + entry.value;
+                if (seenCommentKeys.has(dedupeKey)) return;
+                seenCommentKeys.add(dedupeKey);
+
+                let deviceIndex = null;
+                const detail = entry.name.match(/Comments?_\d+_(\d+)/i);
+                const direct = entry.name.match(/Comments?_(\d+)/i);
+                if (detail) deviceIndex = parseInt(detail[1], 10);
+                else if (direct) deviceIndex = parseInt(direct[1], 10);
+
+                if (!deviceIndex) deviceIndex = deviceIndexFromGeometry(entry);
+
+                const fieldNum = textFieldNumber(bareName);
+                if (!deviceIndex && fieldNum !== null) {
+                    deviceIndex = deviceIndexFromTextFieldNumber(fieldNum);
+                }
+
+                if (!deviceIndex) deviceIndex = ownerDeviceIndex(entry);
+                if (!deviceIndex || !devicesByIndex[deviceIndex]) return;
+
+                const center = rectCenter(entry.meta);
+                if (!commentsByIndex[deviceIndex]) commentsByIndex[deviceIndex] = [];
+                commentsByIndex[deviceIndex].push({
+                    value: entry.value,
+                    y: center ? center.y : null,
+                    fieldNum: fieldNum,
+                    partCode: commentPartCode(entry.value)
+                });
+            });
+
+            function sortComments(comments) {
+                return comments.slice().sort(function(a, b) {
+                    // Top-to-bottom reading order; fall back to Text Field number.
+                    if (a.y != null && b.y != null && a.y !== b.y) return b.y - a.y;
+                    if (a.fieldNum != null && b.fieldNum != null && a.fieldNum !== b.fieldNum) {
+                        return a.fieldNum - b.fieldNum;
+                    }
+                    return 0;
+                });
+            }
+
+            function uniqueCommentValues(comments) {
+                const seen = new Set();
+                const out = [];
+                sortComments(comments).forEach(function(item) {
+                    const value = typeof item === 'string' ? item : item.value;
+                    if (!value || seen.has(value)) return;
+                    seen.add(value);
+                    out.push(typeof item === 'string' ? { value: item, partCode: commentPartCode(item) } : item);
+                });
+                return out;
+            }
+
+            function joinComments(items) {
+                return items.map(function(item) { return item.value; }).filter(Boolean).join(' | ');
+            }
+
+            // Attach every filled comment line for a device. With one violation,
+            // join up to three lines. With multiple violations, prefer part-code
+            // matches first, then assign remaining lines in order / join leftovers.
+            Object.keys(commentsByIndex).forEach(function(idx) {
+                const deviceIndex = parseInt(idx, 10);
+                const deviceNumber = devicesByIndex[deviceIndex];
+                if (!deviceNumber) return;
+
+                const comments = uniqueCommentValues(commentsByIndex[idx] || []);
+                if (comments.length === 0) return;
+
+                const devVios = result.violations.filter(function(v) {
+                    return v.deviceNumber === deviceNumber;
+                });
+                if (devVios.length === 0) return;
+
+                const remaining = comments.slice();
+
+                devVios.forEach(function(violation) {
+                    if (violation.comments) return;
+                    for (let i = 0; i < remaining.length; i++) {
+                        if (remaining[i].partCode && remaining[i].partCode === violation.partCode) {
+                            violation.comments = remaining.splice(i, 1)[0].value;
+                            return;
+                        }
+                    }
+                });
+
+                if (devVios.length === 1) {
+                    const all = [];
+                    if (devVios[0].comments) {
+                        all.push({ value: devVios[0].comments });
+                    }
+                    remaining.forEach(function(item) { all.push(item); });
+                    remaining.length = 0;
+                    if (all.length > 0) devVios[0].comments = joinComments(uniqueCommentValues(all));
+                    return;
+                }
+
+                devVios.forEach(function(violation) {
+                    if (!violation.comments && remaining.length > 0) {
+                        violation.comments = remaining.shift().value;
+                    }
+                });
+
+                if (remaining.length > 0) {
+                    const extra = joinComments(remaining);
+                    remaining.length = 0;
+                    const target = devVios.find(function(v) { return v.comments; }) || devVios[0];
+                    target.comments = target.comments ? (target.comments + ' | ' + extra) : extra;
+                }
+            });
+
+            // Rescue orphan comments that landed on a device index with no open
+            // violation slot (common when Text Field numbering skips on later pages).
+            Object.keys(commentsByIndex).forEach(function(idx) {
+                const deviceNumber = devicesByIndex[parseInt(idx, 10)];
+                const alreadyAttached = deviceNumber && result.violations.some(function(v) {
+                    return v.deviceNumber === deviceNumber && v.comments;
+                });
+                if (alreadyAttached) return;
+
+                const comments = uniqueCommentValues(commentsByIndex[idx] || []);
+                comments.forEach(function(item) {
+                    if (!item.partCode) return;
+                    const match = result.violations.find(function(v) {
+                        return !v.comments && v.partCode === item.partCode;
+                    });
+                    if (match) match.comments = item.value;
+                });
+            });
+        })();
 
         if (!result.address) {
             const addressEntry = entries.find(function(entry) {
@@ -27061,6 +27284,8 @@
             const textFieldMatch = fieldName.match(/Text Field(\d+)/);
             if (textFieldMatch) {
                 const fieldNum = parseInt(textFieldMatch[1]);
+                // 3 slots per device row: fields 3/6/9/12 map to devices 2/3/4/5 on
+                // the common flattened ELV3 layout (local device slots start at 1).
                 const deviceIndex = Math.floor(fieldNum / COMMENT_FIELDS_PER_DEVICE) + 1;
                 const rowIndex = fieldNum % COMMENT_FIELDS_PER_DEVICE;
                 
@@ -27071,6 +27296,12 @@
                         comment: strValue
                     });
                     console.log(`Found comment for device ${deviceIndex} (${devices[deviceIndex]}) row ${rowIndex}: ${strValue.substring(0, 50)}...`);
+                } else {
+                    // If the slot index is empty (later-page numbering gaps), stash
+                    // under a synthetic key for part-code rescue below.
+                    const orphanKey = 'orphan:' + fieldNum;
+                    if (!deviceComments[orphanKey]) deviceComments[orphanKey] = [];
+                    deviceComments[orphanKey].push({ row: rowIndex, comment: strValue });
                 }
             }
             
@@ -27099,6 +27330,7 @@
         // Attach comments to violations. When the form stores multiple comments in one field
         // separated by " | ", assign each segment to the corresponding violation row (same device).
         for (const [deviceIndex, comments] of Object.entries(deviceComments)) {
+            if (String(deviceIndex).indexOf('orphan:') === 0) continue;
             const deviceNumber = devices[deviceIndex];
             if (deviceNumber && comments.length > 0) {
                 const combinedComment = comments.map(c => c.comment).join(' | ');
@@ -27106,7 +27338,13 @@
                 const parts = combinedComment.split(/\s*\|\s*/).map(function(p) { return p.trim(); }).filter(Boolean);
                 if (parts.length <= 1) {
                     for (let vi = 0; vi < devVios.length; vi++) {
-                        if (!devVios[vi].comments) devVios[vi].comments = combinedComment;
+                        if (!devVios[vi].comments) {
+                            const partMatch = combinedComment.match(/^(\d{1,3})\s*[-–:]/);
+                            const partCode = partMatch ? String(partMatch[1]).padStart(2, '0') : null;
+                            if (!partCode || !devVios[vi].partCode || devVios[vi].partCode === partCode || vi === 0) {
+                                devVios[vi].comments = combinedComment;
+                            }
+                        }
                     }
                 } else {
                     for (let i = 0; i < devVios.length; i++) {
@@ -27118,6 +27356,22 @@
                 console.log(`Attached comments to device ${deviceNumber}: ${combinedComment.substring(0, 80)}...`);
             }
         }
+
+        // Rescue comments whose Text Field slot did not map to a known device index.
+        Object.keys(deviceComments).forEach(function(key) {
+            if (String(key).indexOf('orphan:') !== 0 && devices[key]) return;
+            const comments = deviceComments[key] || [];
+            comments.forEach(function(item) {
+                const comment = item.comment;
+                const partMatch = String(comment).match(/^(\d{1,3})\s*[-–:]/);
+                if (!partMatch) return;
+                const partCode = String(partMatch[1]).padStart(2, '0');
+                const match = result.violations.find(function(v) {
+                    return !v.comments && v.partCode === partCode;
+                });
+                if (match) match.comments = comment;
+            });
+        });
         
         // Step 5: Group violations by device for easier display
         result.violationsByDevice = {};
@@ -27391,11 +27645,29 @@
         // ── Step 6: Extract comments ──
         for (var i = 0; i < entries.length; i++) {
             var lo = entries[i].fieldName.toLowerCase();
-            if ((lo.includes('comment') || lo.includes('remark') || lo.includes('note')) && entries[i].value.length > 3) {
-                var dev = ownerDevice(i);
-                var devVios = result.violations.filter(function(v) { return v.deviceNumber === dev && !v.comments; });
-                if (devVios.length > 0) devVios[0].comments = entries[i].value;
+            var isCommentField = lo.includes('comment') || lo.includes('remark') || lo.includes('note') || /text field\d+/.test(lo);
+            if (!isCommentField || entries[i].value.length < 3) continue;
+            if (/^(sat|satisfactory|unsat|unsatisfactory)$/i.test(entries[i].value)) continue;
+
+            var commentVal = entries[i].value;
+            var partPrefix = (commentVal.match(/^(\d{1,3})\s*[-–:]/) || [])[1];
+            var partCode = partPrefix ? ('0' + partPrefix).slice(-2) : null;
+
+            var dev = ownerDevice(i);
+            var candidates = result.violations.filter(function(v) {
+                return !v.comments && (!partCode || v.partCode === partCode) && (!dev || v.deviceNumber === dev);
+            });
+            if (candidates.length === 0 && partCode) {
+                candidates = result.violations.filter(function(v) {
+                    return !v.comments && v.partCode === partCode;
+                });
             }
+            if (candidates.length === 0) {
+                candidates = result.violations.filter(function(v) {
+                    return v.deviceNumber === dev && !v.comments;
+                });
+            }
+            if (candidates.length > 0) candidates[0].comments = commentVal;
         }
 
         // ── Step 7: Detect satisfactory/unsatisfactory from checkboxes or keywords ──
@@ -27584,24 +27856,10 @@
         };
     }
 
-    async function copyDeviceViolations(deviceNumber, event) {
-        if (!elv3ScanItems.length) return;
-        var item = elv3ScanItems[elv3ScanCurrentIndex];
-        if (!item || !item.result) return;
-        var data = item.result;
-        var violations = (data.violationsByDevice || {})[deviceNumber];
-        if (!violations || violations.length === 0) return;
-
-        var comments = violations
-            .filter(function(v) { return v.comments; })
-            .map(function(v) { return v.comments; });
-
-        if (comments.length === 0) return;
-
-        var text = comments.join('\n');
-
+    async function copyTextToClipboard(text) {
         try {
             await navigator.clipboard.writeText(text);
+            return true;
         } catch (e) {
             var ta = document.createElement('textarea');
             ta.value = text;
@@ -27611,24 +27869,87 @@
             ta.select();
             document.execCommand('copy');
             document.body.removeChild(ta);
+            return true;
         }
+    }
+
+    function formatELV3ViolationCopyText(violation) {
+        if (!violation) return '';
+        if (violation.comments) return String(violation.comments).trim();
+        var parts = [
+            violation.partCode || '',
+            violation.conditionCode || '',
+            violation.remedyCode || ''
+        ].filter(Boolean);
+        var codes = parts.join('/');
+        var desc = violation.partDescription || '';
+        if (codes && desc) return codes + ' - ' + desc;
+        return codes || desc || '';
+    }
+
+    function flashELV3CopyTarget(target, defaultHint) {
+        if (!target) return;
+        target.classList.add('elv3-scan-copied');
+        var hint = target.querySelector('.elv3-scan-copy-hint');
+        if (hint) {
+            hint.textContent = '✓ Copied!';
+            hint.style.color = '#10b981';
+        }
+        setTimeout(function() {
+            target.classList.remove('elv3-scan-copied');
+            if (hint) {
+                hint.textContent = defaultHint || '📋 Click to copy';
+                hint.style.color = '';
+            }
+        }, 2000);
+    }
+
+    async function copyDeviceViolations(deviceNumber, event) {
+        if (event) event.stopPropagation();
+        if (!elv3ScanItems.length) return;
+        var item = elv3ScanItems[elv3ScanCurrentIndex];
+        if (!item || !item.result) return;
+        var data = item.result;
+        var violations = (data.violationsByDevice || {})[deviceNumber];
+        if (!violations || violations.length === 0) return;
+
+        var lines = violations
+            .map(function(v) { return formatELV3ViolationCopyText(v); })
+            .filter(Boolean);
+
+        if (lines.length === 0) return;
+
+        await copyTextToClipboard(lines.join('\n'));
 
         var target = event && event.currentTarget ? event.currentTarget : (event && event.target ? event.target.closest('.elv3-scan-copy-target') : null);
-        if (target) {
+        if (target && target.classList.contains('elv3-scan-copy-all-violations-btn')) {
+            var original = target.textContent;
+            target.textContent = '✓ Copied all!';
             target.classList.add('elv3-scan-copied');
-            var hint = target.querySelector('.elv3-scan-copy-hint');
-            if (hint) {
-                hint.textContent = '✓ Copied!';
-                hint.style.color = '#10b981';
-            }
             setTimeout(function() {
+                target.textContent = original;
                 target.classList.remove('elv3-scan-copied');
-                if (hint) {
-                    hint.textContent = '📋 Click to copy';
-                    hint.style.color = '';
-                }
             }, 2000);
+            return;
         }
+        flashELV3CopyTarget(target, violations.length > 1 ? '📋 Click to copy all' : '📋 Click to copy');
+    }
+
+    async function copySingleDeviceViolation(deviceNumber, violationIndex, event) {
+        if (event) event.stopPropagation();
+        if (!elv3ScanItems.length) return;
+        var item = elv3ScanItems[elv3ScanCurrentIndex];
+        if (!item || !item.result) return;
+        var violations = (item.result.violationsByDevice || {})[deviceNumber];
+        if (!violations || !violations[violationIndex]) return;
+
+        var text = formatELV3ViolationCopyText(violations[violationIndex]);
+        if (!text) return;
+
+        await copyTextToClipboard(text);
+
+        var target = event && event.currentTarget ? event.currentTarget : null;
+        flashELV3CopyTarget(target, '📋 Click to copy this violation');
     }
 
     function toggleELV3ScanFiledDevice(deviceNumber, event) {
@@ -27982,9 +28303,9 @@
                                 <span class="elv3-scan-device-count">${violations.length} violation${violations.length > 1 ? 's' : ''}</span>
                             </div>
                         </div>
-                        <div class="elv3-scan-device-violations elv3-scan-copy-target" onclick="copyDeviceViolations('${escapedDeviceNumber}', event)" title="Click to copy this device's violations">
-                            ${violations.map(v => `
-                                <div class="elv3-scan-violation-item">
+                        <div class="elv3-scan-device-violations">
+                            ${violations.map((v, vi) => `
+                                <div class="elv3-scan-violation-item elv3-scan-copy-target" onclick="copySingleDeviceViolation('${escapedDeviceNumber}', ${vi}, event)" title="Click to copy this violation">
                                     <div class="elv3-scan-violation-codes">
                                         <span class="elv3-scan-code-badge"><span class="code">${escapeELV3Html(v.partCode)}</span> Part</span>
                                         <span class="elv3-scan-code-badge"><span class="code">${escapeELV3Html(v.conditionCode || '-')}</span> Cond</span>
@@ -27993,9 +28314,14 @@
                                     <div class="elv3-scan-violation-part">${escapeELV3Html(v.partDescription)}</div>
                                     <div class="elv3-scan-violation-details">${escapeELV3Html(v.conditionDescription || '')} → ${escapeELV3Html(v.remedyDescription || '')}</div>
                                     ${v.comments ? `<div class="elv3-scan-violation-comment">"${escapeELV3Html(v.comments)}"</div>` : ''}
+                                    <div class="elv3-scan-copy-hint">📋 Click to copy this violation</div>
                                 </div>
                             `).join('')}
-                            <div class="elv3-scan-copy-hint">📋 Click to copy</div>
+                            ${violations.length > 1 ? `
+                                <button type="button" class="elv3-scan-copy-all-violations-btn" onclick="copyDeviceViolations('${escapedDeviceNumber}', event)" title="Copy all violations for this device">
+                                    📋 Copy all ${violations.length} violations
+                                </button>
+                            ` : ''}
                         </div>
                     </div>
                 `}).join('')}
@@ -28079,7 +28405,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5.1</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
