@@ -25941,6 +25941,9 @@
             const fields = map[page] || {};
             const indexes = Object.keys(fields).map(Number).sort(function(a, b) { return a - b; });
             const seen = new Set(indexes);
+            // Bracket TextField1[N] extra code columns start at index 26, then +27
+            // per device. Using 0 as the base maps a 3rd column (e.g. 56-58) into
+            // the next device's block; firstFieldOffset must be that column base.
             for (let i = 0; i < indexes.length; i++) {
                 const idx = indexes[i];
                 if (idx < firstFieldOffset || !seen.has(idx + 1) || !seen.has(idx + 2)) continue;
@@ -26221,9 +26224,10 @@
             if (page >= 2) {
                 const firstDevice = ((page - 2) * 5) + 1;
                 scanTripletMap(textFieldsByPage, page, firstDevice, 7, 'textfield');
-                scanTripletMap(bracketTextFieldsByPage, page, firstDevice, 0, 'bracket-textfield');
+                // Bracket extra-code columns start at TextField1[26], not [0].
+                scanTripletMap(bracketTextFieldsByPage, page, firstDevice, 26, 'bracket-textfield');
             } else if (page === 1) {
-                scanTripletMap(bracketTextFieldsByPage, page, 6, 0, 'page1-bracket-textfield');
+                scanTripletMap(bracketTextFieldsByPage, page, 6, 26, 'page1-bracket-textfield');
             }
         });
 
@@ -27159,19 +27163,22 @@
         // Page 1 bracket TFs: use INDEX-BASED device assignment (not sequential counter).
         // Each device section spans 27 fields. The first triplet starts at index 26.
         //   TextField1[26-28] → device 6, TextField1[53-55] → device 7, etc.
-        // Device = 6 + Math.floor(tripletStartIndex / 27).
+        // A 3rd code column for the same device is +3 (e.g. 56-58 still device 7),
+        // so Device = 6 + Math.floor((tripletStartIndex - 26) / 27).
         // Guard: only add if the device already has a confirmed main violation.
+        var BRACKET_TF_BASE = 26;
         (function scanPage1BracketTFs() {
             var tfMap = bracketTFByPage[1] || {};
             var sorted = Object.keys(tfMap).map(Number).sort(function(a, b) { return a - b; });
             for (var i = 0; i < sorted.length - 2; i++) {
                 var idx1 = sorted[i], idx2 = sorted[i + 1], idx3 = sorted[i + 2];
                 if (idx2 !== idx1 + 1 || idx3 !== idx1 + 2) continue;
+                if (idx1 < BRACKET_TF_BASE) continue;
                 var aClean = tfMap[idx1].trim();
                 var bClean = tfMap[idx2].trim().toUpperCase();
                 var cClean = tfMap[idx3].trim();
                 if (partPattern.test(aClean) && conditionPattern.test(bClean) && remedyPattern.test(cClean)) {
-                    var targetDevice = 6 + Math.floor(idx1 / 27);
+                    var targetDevice = 6 + Math.floor((idx1 - BRACKET_TF_BASE) / 27);
                     if (devices[targetDevice] && hasMainViolationForDevice(targetDevice)) {
                         bracketTriplets.push({
                             fieldStart: idx1,
@@ -27189,7 +27196,8 @@
         
         // Page 2+ bracket TFs: 27-field blocks following the same detail-page
         // mapping as the named fields: Page 2 = devices 1-5, Page 3 = 6-10,
-        // Page 4 = 11-15, and so on.
+        // Page 4 = 11-15, and so on. Same (idx - 26) / 27 base as page 1 so a
+        // 3rd code column stays with its device.
         // Guard: only add if the device already has a confirmed main violation.
         (function scanContinuationBracketTFs() {
             var continuationPages = sortedPages.filter(function(pageNum) { return pageNum >= 2; });
@@ -27201,11 +27209,12 @@
                 for (var i = 0; i < sorted.length - 2; i++) {
                     var idx1 = sorted[i], idx2 = sorted[i + 1], idx3 = sorted[i + 2];
                     if (idx2 !== idx1 + 1 || idx3 !== idx1 + 2) continue;
+                    if (idx1 < BRACKET_TF_BASE) continue;
                     var aClean = tfMap[idx1].trim();
                     var bClean = tfMap[idx2].trim().toUpperCase();
                     var cClean = tfMap[idx3].trim();
                     if (partPattern.test(aClean) && conditionPattern.test(bClean) && remedyPattern.test(cClean)) {
-                        var targetDevice = firstDeviceOnPage + Math.floor(idx1 / FIELDS_PER_DEVICE);
+                        var targetDevice = firstDeviceOnPage + Math.floor((idx1 - BRACKET_TF_BASE) / FIELDS_PER_DEVICE);
                         if (devices[targetDevice] && hasMainViolationForDevice(targetDevice)) {
                             bracketTriplets.push({
                                 page: pageNum,
