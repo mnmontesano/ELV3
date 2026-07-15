@@ -10210,6 +10210,63 @@
             return data && data.length > 0 ? data[0] : null;
         }
 
+        async function fetchCurrentDobDevicesForBin(bin) {
+            const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?bin=${encodeURIComponent(bin)}`);
+            if (!response.ok) throw new Error(`DOB lookup failed for BIN ${bin}`);
+            const data = await response.json();
+            return Array.isArray(data) ? data : [];
+        }
+
+        async function enrichNewMapDobDevices(devices, bin) {
+            const freshDevices = Array.isArray(devices) ? devices : [];
+            const [violationsByDevice, deviceInfos] = await Promise.all([
+                fetchViolationsForBin(bin),
+                Promise.all(freshDevices.map(device => fetchDeviceInfo(device.device_number)))
+            ]);
+            return freshDevices.map((device, index) => ({
+                ...device,
+                violations: (violationsByDevice[device.device_number] || []).filter(violation =>
+                    violation.violation_status?.toUpperCase() === 'ACTIVE' ||
+                    violation.violation_status?.toUpperCase() === 'OPEN'),
+                machine_type: deviceInfos[index]?.machine_type || device.machine_type || '',
+                approved_date: deviceInfos[index]?.approved_date || device.approved_date || ''
+            }));
+        }
+
+        async function addNewDobDevicesToMapBins(binGroups, failedBins) {
+            const addedDevices = [];
+            const validBins = Object.keys(binGroups || {}).filter(bin => /^\d{6,7}$/.test(String(bin)));
+            for (let index = 0; index < validBins.length; index++) {
+                const bin = validBins[index];
+                const group = binGroups[bin];
+                try {
+                    const currentDevices = await fetchCurrentDobDevicesForBin(bin);
+                    const savedDeviceNumbers = new Set((group.devices || []).map(device =>
+                        String(device && device.device_number || '').trim().toUpperCase()
+                    ));
+                    const newDevices = currentDevices.filter(device =>
+                        !savedDeviceNumbers.has(String(device && device.device_number || '').trim().toUpperCase())
+                    );
+                    if (newDevices.length === 0) continue;
+
+                    const enrichedDevices = await enrichNewMapDobDevices(newDevices, bin);
+                    group.devices.push(...enrichedDevices);
+                    enrichedDevices.forEach(device => {
+                        addedDevices.push({
+                            deviceNumber: String(device.device_number || '').trim().toUpperCase(),
+                            bin,
+                            address: group.address || '',
+                            device
+                        });
+                    });
+                } catch (error) {
+                    console.warn('DOB BIN device lookup failed for BIN:', bin, error);
+                    failedBins.push(bin);
+                }
+            }
+            return addedDevices;
+        }
+
         function mergeDobDeviceRecord(savedDevice, freshDevice) {
             if (!savedDevice || !freshDevice) return [];
 
@@ -10409,13 +10466,15 @@
             }
         }
 
-        function showDobInfoUpdateChangesModal(changeRows, failedDevices, autoCompletedRows) {
+        function showDobInfoUpdateChangesModal(changeRows, failedDevices, autoCompletedRows, addedDevices, failedBins) {
             const existing = document.getElementById('dobInfoUpdateChangesModal');
             if (existing) existing.remove();
 
             const changes = Array.isArray(changeRows) ? changeRows : [];
             const failures = Array.isArray(failedDevices) ? failedDevices : [];
             const autoCompleted = Array.isArray(autoCompletedRows) ? autoCompletedRows : [];
+            const additions = Array.isArray(addedDevices) ? addedDevices : [];
+            const binFailures = Array.isArray(failedBins) ? failedBins : [];
             const modal = document.createElement('div');
             modal.id = 'dobInfoUpdateChangesModal';
             modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:10045; display:flex; align-items:center; justify-content:center; padding:18px;';
@@ -10462,10 +10521,26 @@
                     </div>
                 </details>`
                 : '';
+            const additionsHtml = additions.length > 0
+                ? `<details open style="margin-top:10px; border-radius:8px; background:rgba(39,174,96,0.1); border:1px solid rgba(39,174,96,0.35); color:#27ae60; font-size:0.9em; overflow:hidden;">
+                    <summary style="padding:10px 12px; cursor:pointer; font-weight:700;">
+                        New DOB Devices Added (${additions.length})
+                    </summary>
+                    <div style="padding:0 12px 10px;">
+                        <div style="margin-bottom:7px; opacity:0.9;">These devices are now included in the MAP data and Excel export.</div>
+                        ${additions.map(row => `<div style="margin-top:4px;">${escapeMapSuggestionHtml(row.deviceNumber)} — ${escapeMapSuggestionHtml(row.address || ('BIN ' + row.bin))}</div>`).join('')}
+                    </div>
+                </details>`
+                : '';
 
             const failuresHtml = failures.length > 0
                 ? `<div style="margin-top:10px; padding:9px 10px; border-radius:8px; background:rgba(255,107,107,0.1); border:1px solid rgba(255,107,107,0.35); color:#ff6b6b; font-size:0.9em;">
                     Could not update ${failures.length} device${failures.length !== 1 ? 's' : ''}: ${escapeMapSuggestionHtml(failures.join(', '))}
+                </div>`
+                : '';
+            const binFailuresHtml = binFailures.length > 0
+                ? `<div style="margin-top:10px; padding:9px 10px; border-radius:8px; background:rgba(255,107,107,0.1); border:1px solid rgba(255,107,107,0.35); color:#ff6b6b; font-size:0.9em;">
+                    Could not check ${binFailures.length} BIN${binFailures.length !== 1 ? 's' : ''} for newly listed devices: ${escapeMapSuggestionHtml(binFailures.join(', '))}
                 </div>`
                 : '';
 
@@ -10474,15 +10549,17 @@
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:16px 18px; border-bottom:1px solid var(--input-border);">
                         <div>
                             <h3 style="margin:0 0 4px 0; color:var(--header-color);">DOB Info Update Changes</h3>
-                            <div style="font-size:0.9em; opacity:0.72;">${changes.length} date change${changes.length !== 1 ? 's' : ''} applied to saved device records.${autoCompleted.length ? ` ${autoCompleted.length} building${autoCompleted.length !== 1 ? 's' : ''} auto-marked completed.` : ''}</div>
+                            <div style="font-size:0.9em; opacity:0.72;">${changes.length} date change${changes.length !== 1 ? 's' : ''} applied to saved device records.${additions.length ? ` ${additions.length} newly listed device${additions.length !== 1 ? 's' : ''} added.` : ''}${autoCompleted.length ? ` ${autoCompleted.length} building${autoCompleted.length !== 1 ? 's' : ''} auto-marked completed.` : ''}</div>
                         </div>
                         <button onclick="document.getElementById('dobInfoUpdateChangesModal')?.remove()" style="background:none; border:none; color:var(--text-color); font-size:24px; line-height:1; cursor:pointer;">×</button>
                     </div>
                     <div style="padding:8px 18px 16px; overflow-y:auto;">
                         ${autoCompletedHtml}
+                        ${additionsHtml}
                         ${catResultsHtml}
                         ${pviResultsHtml}
                         ${failuresHtml}
+                        ${binFailuresHtml}
                     </div>
                     <div style="padding:12px 18px; border-top:1px solid var(--input-border); display:flex; justify-content:flex-end;">
                         <button onclick="document.getElementById('dobInfoUpdateChangesModal')?.remove()" style="padding:8px 16px; border-radius:6px; border:1px solid #1a73e8; background:#1a73e8; color:white; cursor:pointer; font-weight:700;">Done</button>
@@ -10508,7 +10585,8 @@
             }
 
             const uniqueDeviceNumbers = Array.from(new Set(refs.map(ref => ref.deviceNumber)));
-            if (!confirm(`Refresh DOB info for ${uniqueDeviceNumbers.length} device${uniqueDeviceNumbers.length !== 1 ? 's' : ''}? This only updates saved device records with the latest DOB device information. Save afterward to write it to your file.`)) {
+            const bins = Object.keys(window.lastBulkSearchResults.binGroups).filter(bin => /^\d{6,7}$/.test(String(bin)));
+            if (!confirm(`Refresh DOB info for ${uniqueDeviceNumbers.length} saved device${uniqueDeviceNumbers.length !== 1 ? 's' : ''} and check ${bins.length} BIN${bins.length !== 1 ? 's' : ''} for newly listed devices? Save afterward to write the updated MAP data to your file.`)) {
                 return;
             }
 
@@ -10517,6 +10595,7 @@
 
             const freshByDevice = {};
             const failed = [];
+            const failedBins = [];
             for (let i = 0; i < uniqueDeviceNumbers.length; i++) {
                 const deviceNumber = uniqueDeviceNumbers[i];
                 try {
@@ -10528,6 +10607,8 @@
                 const percent = Math.round(((i + 1) / uniqueDeviceNumbers.length) * 100);
                 updateDobInfoButtonState(true, `Updating ${percent}%`, percent);
             }
+            updateDobInfoButtonState(true, 'Checking BINs for new devices...', 100);
+            const addedDevices = await addNewDobDevicesToMapBins(window.lastBulkSearchResults.binGroups, failedBins);
 
             let dateUpdates = 0;
             let recordsUpdated = 0;
@@ -10551,6 +10632,7 @@
                 }
                 recordsUpdated++;
             });
+            bins.forEach(bin => touchedBins.add(String(bin)));
             const autoCompletedRows = autoCompleteMapBuildingsFromDobUpdate(touchedBins);
 
             setMapDobInfoUpdatedAt(Date.now());
@@ -10565,8 +10647,11 @@
             const autoCompleteText = autoCompletedRows.length > 0
                 ? ` ${autoCompletedRows.length} building${autoCompletedRows.length !== 1 ? 's' : ''} auto-marked completed.`
                 : '';
-            showMapNotification(`DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${autoCompleteText}${saveHint}`, dateUpdates > 0 || autoCompletedRows.length > 0 ? '#27ae60' : '#17a2b8');
-            setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows), 150);
+            const additionsText = addedDevices.length > 0
+                ? ` ${addedDevices.length} newly listed device${addedDevices.length !== 1 ? 's' : ''} added.`
+                : '';
+            showMapNotification(`DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${additionsText}${autoCompleteText}${saveHint}`, dateUpdates > 0 || addedDevices.length > 0 || autoCompletedRows.length > 0 ? '#27ae60' : '#17a2b8');
+            setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows, addedDevices, failedBins), 150);
         }
 
         const MAP_EXCEL_CELL_LIMIT = 32767;
@@ -11136,7 +11221,12 @@
                 appendMapExcelSheet(workbook, usedSheetNames, 'Buildings', buildingHeaders, buildingRows);
 
                 const deviceKeys = collectMapExcelObjectKeys(allDevices.map(item => item.device), ['violations']);
-                const deviceHeaders = ['BIN', 'Building Address', 'Violation Count', ...deviceKeys];
+                const deviceHeaders = [
+                    'BIN',
+                    'Building Address',
+                    'Violation Count',
+                    ...deviceKeys.map(key => key === 'approved_date' ? 'Approved Date' : key)
+                ];
                 const deviceRows = allDevices.map(({ bin, group, device }) => [
                     bin,
                     getMapExcelBuildingAddress(bin, group, view),
