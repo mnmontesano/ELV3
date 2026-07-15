@@ -20725,10 +20725,116 @@
                     });
                 });
 
+                // Discover active DOB devices at BINs from this file that are not already listed
+                const devicesInFile = new Set(uniqueDeviceNumbers);
+                const binCol = colIndex['bin'];
+                const binsToScan = new Set();
+                if (binCol !== undefined) {
+                    for (let r = 1; r < rows.length; r++) {
+                        const binVal = String(rows[r][binCol] || '').trim();
+                        if (binVal && binVal.toUpperCase() !== 'N/A' && binVal.toUpperCase() !== 'UNKNOWN BIN') {
+                            binsToScan.add(binVal);
+                        }
+                    }
+                }
+                Object.values(deviceRecords).forEach(record => {
+                    const binVal = String(record && record.bin || '').trim();
+                    if (binVal && binVal.toUpperCase() !== 'N/A') binsToScan.add(binVal);
+                });
+                const uniqueBins = [...binsToScan];
+
+                const newDevicesByBin = [];
+                const failedBins = [];
+                if (uniqueBins.length > 0) {
+                    if (resultDiv) {
+                        resultDiv.innerHTML = `<div style="padding: 15px; color: var(--text-color);">Scanning ${uniqueBins.length} BIN${uniqueBins.length !== 1 ? 's' : ''} for devices not in your file...</div>`;
+                    }
+                    let binCursor = 0;
+                    async function binWorker() {
+                        while (binCursor < uniqueBins.length) {
+                            const bin = uniqueBins[binCursor++];
+                            try {
+                                const dobDevices = await fetchDobDevicesForBin(bin);
+                                const seen = new Set();
+                                (Array.isArray(dobDevices) ? dobDevices : []).forEach(device => {
+                                    const deviceNumber = device && device.device_number
+                                        ? String(device.device_number).trim().toUpperCase()
+                                        : '';
+                                    if (!deviceNumber || devicesInFile.has(deviceNumber) || seen.has(deviceNumber)) return;
+                                    if (!mapDobDeviceIsActiveForCompletion(device)) return;
+                                    seen.add(deviceNumber);
+                                    const refresh = computeDeviceRefreshFields(device, '');
+                                    const address = device.house_number && device.street_name
+                                        ? `${device.house_number} ${device.street_name}`
+                                        : (device.street_name || '');
+                                    newDevicesByBin.push({
+                                        bin,
+                                        deviceNumber,
+                                        type: device.device_type || 'N/A',
+                                        status: device.device_status || 'N/A',
+                                        address: address || 'N/A',
+                                        borough: device.borough || 'N/A',
+                                        cat1: refresh['CAT 1 Date'],
+                                        cat5: refresh['CAT 5 Date'],
+                                        pvi: refresh['PVI Date'],
+                                        testStatus: refresh['Test Status'],
+                                        eligibility: refresh['Testing Eligibility'],
+                                        eligibleDate: refresh['Eligible Date']
+                                    });
+                                });
+                            } catch (e) {
+                                console.warn('BIN scan failed during export update:', bin, e);
+                                failedBins.push(bin);
+                            }
+                            if (resultDiv && binCursor % 5 === 0) {
+                                resultDiv.innerHTML = `<div style="padding: 15px; color: var(--text-color);">Scanning BINs for new devices: ${binCursor} of ${uniqueBins.length}...</div>`;
+                            }
+                        }
+                    }
+                    await Promise.all(Array.from({ length: Math.min(4, uniqueBins.length) }, binWorker));
+                    newDevicesByBin.sort((a, b) => {
+                        const binCmp = String(a.bin).localeCompare(String(b.bin), undefined, { numeric: true });
+                        if (binCmp !== 0) return binCmp;
+                        return String(a.deviceNumber).localeCompare(String(b.deviceNumber), undefined, { numeric: true });
+                    });
+                }
+
                 // Store the updated workbook for Save / Save As
                 const outWb = XLSX.utils.book_new();
                 const outWs = XLSX.utils.aoa_to_sheet(rows);
-                XLSX.utils.book_append_sheet(outWb, outWs, sheetName || 'Device Lookup');
+                const primarySheetName = sheetName || 'Device Lookup';
+                XLSX.utils.book_append_sheet(outWb, outWs, primarySheetName);
+
+                // Second tab: devices on these BINs that were not in the original export
+                const newDevicesSheetName = primarySheetName === 'New Devices by BIN'
+                    ? 'BIN Devices to Review'
+                    : 'New Devices by BIN';
+                const newDevicesSheetRows = [
+                    ['BIN', 'Device Number', 'Type', 'Status', 'Address', 'Borough',
+                        'CAT 1 Date', 'CAT 5 Date', 'PVI Date', 'Test Status',
+                        'Testing Eligibility', 'Eligible Date', 'Notes']
+                ];
+                if (newDevicesByBin.length === 0) {
+                    newDevicesSheetRows.push([
+                        '', '', '', '', '', '', '', '', '', '', '', '',
+                        uniqueBins.length === 0
+                            ? 'No BINs found in this file to scan.'
+                            : 'No additional active devices found on these BINs beyond what is already in your file.'
+                    ]);
+                } else {
+                    newDevicesByBin.forEach(d => {
+                        newDevicesSheetRows.push([
+                            d.bin, d.deviceNumber, d.type, d.status, d.address, d.borough,
+                            d.cat1, d.cat5, d.pvi, d.testStatus, d.eligibility, d.eligibleDate,
+                            'Not in original export — review and add if needed'
+                        ]);
+                    });
+                }
+                if (uniqueBins.length > 0 || newDevicesByBin.length > 0) {
+                    const newDevicesWs = XLSX.utils.aoa_to_sheet(newDevicesSheetRows);
+                    XLSX.utils.book_append_sheet(outWb, newDevicesWs, newDevicesSheetName);
+                }
+
                 bulkExportUpdateWorkbook = outWb;
                 bulkExportUpdateFileHandle = fileHandle;
                 bulkExportUpdateFileName = file.name;
@@ -20743,6 +20849,9 @@
                 if (changes.length === 0) {
                     saveHint += ' No values changed — everything was already current.';
                 }
+                if (uniqueBins.length > 0) {
+                    saveHint += ` A second sheet ("${newDevicesSheetName}") lists active DOB devices on your BINs that were not in the original file.`;
+                }
 
                 // Render summary of what changed
                 const changedDevices = new Set(changes.map(c => c.deviceNumber));
@@ -20753,6 +20862,15 @@
                         <td style="padding: 4px 10px; border-bottom: 1px solid var(--input-border); color: #ff9800;">${esc(c.oldValue)}</td>
                         <td style="padding: 4px 10px; border-bottom: 1px solid var(--input-border); color: #4CAF50;">${esc(c.newValue)}</td>
                     </tr>`).join('');
+                const newDevicePreviewHtml = newDevicesByBin.slice(0, 50).map(d => `
+                    <tr>
+                        <td style="padding: 4px 10px; border-bottom: 1px solid var(--input-border); white-space: nowrap;">${esc(d.bin)}</td>
+                        <td style="padding: 4px 10px; border-bottom: 1px solid var(--input-border); white-space: nowrap; font-weight: 600;">${esc(d.deviceNumber)}</td>
+                        <td style="padding: 4px 10px; border-bottom: 1px solid var(--input-border);">${esc(d.type)}</td>
+                        <td style="padding: 4px 10px; border-bottom: 1px solid var(--input-border);">${esc(d.status)}</td>
+                        <td style="padding: 4px 10px; border-bottom: 1px solid var(--input-border);">${esc(d.address)}</td>
+                        <td style="padding: 4px 10px; border-bottom: 1px solid var(--input-border); white-space: nowrap;">${esc(d.testStatus)}</td>
+                    </tr>`).join('');
 
                 if (resultDiv) {
                     resultDiv.innerHTML = `
@@ -20761,7 +20879,10 @@
                             <div style="margin-bottom: 4px;">Devices checked: <strong>${dataRows.length}</strong></div>
                             <div style="margin-bottom: 4px;">Devices with updated data: <strong style="color: ${changedDevices.size > 0 ? '#4CAF50' : 'var(--text-color)'};">${changedDevices.size}</strong></div>
                             <div style="margin-bottom: 4px;">Values refreshed: <strong>${changes.length}</strong></div>
+                            <div style="margin-bottom: 4px;">BINs scanned for other devices: <strong>${uniqueBins.length}</strong></div>
+                            <div style="margin-bottom: 4px;">New devices not in your file: <strong style="color: ${newDevicesByBin.length > 0 ? '#ff9800' : 'var(--text-color)'};">${newDevicesByBin.length}</strong></div>
                             ${stillNotFound.length > 0 ? `<div style="margin-bottom: 4px; color: #ff6b6b;">Not found in DOB data: ${esc(stillNotFound.join(', '))}</div>` : ''}
+                            ${failedBins.length > 0 ? `<div style="margin-bottom: 4px; color: #ff6b6b;">BIN scan failed for: ${esc(failedBins.join(', '))}</div>` : ''}
                             <div style="margin: 10px 0; opacity: 0.8; font-size: 0.9em;">${saveHint}</div>
                             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0;">
                                 <button onclick="saveBulkExportUpdateFile(false)"
@@ -20776,7 +20897,8 @@
                                 </button>
                             </div>
                             ${changes.length > 0 ? `
-                                <div style="max-height: 300px; overflow-y: auto; margin-top: 10px; border: 1px solid var(--input-border); border-radius: 6px;">
+                                <div style="margin-top: 14px; font-weight: 600; color: var(--header-color);">Updated values</div>
+                                <div style="max-height: 300px; overflow-y: auto; margin-top: 8px; border: 1px solid var(--input-border); border-radius: 6px;">
                                     <table style="width: 100%; border-collapse: collapse; font-size: 0.88em;">
                                         <thead>
                                             <tr style="background: var(--panel-bg); position: sticky; top: 0;">
@@ -20790,6 +20912,37 @@
                                     </table>
                                 </div>
                                 ${changes.length > 100 ? `<div style="margin-top: 6px; opacity: 0.7; font-size: 0.85em;">Showing first 100 of ${changes.length} changes — the saved file contains all of them.</div>` : ''}
+                            ` : ''}
+                            ${uniqueBins.length > 0 ? `
+                                <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--input-border);">
+                                    <div style="font-weight: 600; color: var(--header-color); margin-bottom: 6px;">📋 New Devices by BIN (review)</div>
+                                    <div style="font-size: 0.9em; opacity: 0.85; margin-bottom: 8px;">
+                                        Active DOB devices found on BINs from your file that were <strong>not</strong> in the original export.
+                                        They are saved on the <strong>${esc(newDevicesSheetName)}</strong> sheet — review whether you need to add them.
+                                    </div>
+                                    ${newDevicesByBin.length > 0 ? `
+                                        <div style="max-height: 280px; overflow-y: auto; border: 1px solid var(--input-border); border-radius: 6px;">
+                                            <table style="width: 100%; border-collapse: collapse; font-size: 0.88em;">
+                                                <thead>
+                                                    <tr style="background: var(--panel-bg); position: sticky; top: 0;">
+                                                        <th style="padding: 6px 10px; text-align: left;">BIN</th>
+                                                        <th style="padding: 6px 10px; text-align: left;">Device</th>
+                                                        <th style="padding: 6px 10px; text-align: left;">Type</th>
+                                                        <th style="padding: 6px 10px; text-align: left;">Status</th>
+                                                        <th style="padding: 6px 10px; text-align: left;">Address</th>
+                                                        <th style="padding: 6px 10px; text-align: left;">Test Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>${newDevicePreviewHtml}</tbody>
+                                            </table>
+                                        </div>
+                                        ${newDevicesByBin.length > 50 ? `<div style="margin-top: 6px; opacity: 0.7; font-size: 0.85em;">Showing first 50 of ${newDevicesByBin.length} — the saved sheet contains all of them.</div>` : ''}
+                                    ` : `
+                                        <div style="padding: 10px 12px; background: rgba(76,175,80,0.1); border: 1px solid rgba(76,175,80,0.3); border-radius: 6px; font-size: 0.9em;">
+                                            No additional active devices found on these BINs beyond what is already in your file.
+                                        </div>
+                                    `}
+                                </div>
                             ` : ''}
                         </div>
                     `;
