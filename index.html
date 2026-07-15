@@ -14044,60 +14044,9 @@
                 showMapNotification(`${_addressOrBin(key)} monitored for new devices on DOB Info Update`, '#00acc1');
             }
             setMapDeviceMonitors(monitors);
-            closeMapBuildingActionsModal();
             if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
                 initBuildingMap(window.lastBulkSearchResults.binGroups, true);
             }
-        }
-
-        function closeMapBuildingActionsModal() {
-            const existing = document.getElementById('mapBuildingActionsModal');
-            if (existing) existing.remove();
-        }
-
-        function showMapBuildingActionsModal(bin, address) {
-            closeMapBuildingActionsModal();
-            const key = String(bin || '').trim();
-            const label = address || _addressOrBin(key);
-            const isMonitored = isMapDeviceMonitorActive(key);
-            const escapedAddress = String(label).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const escapedBin = key.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-
-            const modal = document.createElement('div');
-            modal.id = 'mapBuildingActionsModal';
-            modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:20040; display:flex; align-items:center; justify-content:center; padding:18px;';
-            modal.innerHTML = `
-                <div style="background:var(--card-bg); color:var(--text-color); border:1px solid var(--input-border); border-radius:12px; width:min(360px, 94vw); box-shadow:0 12px 36px rgba(0,0,0,0.35); overflow:hidden;">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:14px 16px; border-bottom:1px solid var(--input-border);">
-                        <div>
-                            <h3 style="margin:0 0 4px 0; color:var(--header-color); font-size:1.05em;">Building Actions</h3>
-                            <div style="font-size:0.85em; opacity:0.72; line-height:1.35;">${escapeMapSuggestionHtml(label)}${key ? `<br><span style="opacity:0.8;">BIN ${escapeMapSuggestionHtml(key)}</span>` : ''}</div>
-                        </div>
-                        <button onclick="closeMapBuildingActionsModal()" style="background:none; border:none; color:var(--text-color); font-size:22px; line-height:1; cursor:pointer;">×</button>
-                    </div>
-                    <div style="padding:14px 16px; display:flex; flex-direction:column; gap:8px;">
-                        <button onclick="toggleMapDeviceMonitor('${escapedBin}', '${escapedAddress}')"
-                                style="background:${isMonitored ? '#00acc1' : 'rgba(0,172,193,0.1)'}; color:${isMonitored ? 'white' : '#00acc1'}; border:1px solid #00acc1; border-radius:8px; padding:10px 12px; cursor:pointer; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:8px; width:100%;">
-                            📡 ${isMonitored ? 'Stop Monitoring' : 'Monitor for New Devices'}
-                        </button>
-                        <button onclick="closeMapBuildingActionsModal(); toggleMapHidden('${escapedBin}', '${escapedAddress}')"
-                                style="background:rgba(136,136,136,0.1); color:#888; border:1px solid #888; border-radius:8px; padding:10px 12px; cursor:pointer; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:8px; width:100%;">
-                            👁️ Hide Building
-                        </button>
-                        <button onclick="closeMapBuildingActionsModal(); removeMapBuilding('${escapedBin}')"
-                                style="background:rgba(255,107,107,0.1); color:#ff6b6b; border:1px solid #ff6b6b; border-radius:8px; padding:10px 12px; cursor:pointer; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:8px; width:100%;">
-                            🗑️ Remove from Map
-                        </button>
-                    </div>
-                    <div style="padding:0 16px 14px; display:flex; justify-content:flex-end;">
-                        <button onclick="closeMapBuildingActionsModal()" style="padding:8px 14px; border-radius:6px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); cursor:pointer; font-weight:600;">Close</button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(modal);
-            modal.addEventListener('click', event => {
-                if (event.target === modal) closeMapBuildingActionsModal();
-            });
         }
 
         function collectMonitoredMapDobBinTargets() {
@@ -18461,15 +18410,42 @@
                                                display: flex; align-items: center; justify-content: center;
                                                flex: 1;
                                                transition: all 0.2s;">⭐</button>
-                            </div>
-                            <div style="margin-top: 6px;">
-                                <button type="button"
-                                        onclick="showMapBuildingActionsModal('${building.bin}', '${escapedAddress}')"
-                                        title="Open building actions"
-                                        style="width:100%; font-size:11px; font-weight:600; color:var(--text-color); cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:6px; padding:7px 10px; border-radius:6px; border:1px solid var(--input-border); background:var(--input-bg);">
-                                    <span>Actions${isDeviceMonitored ? ' · 📡' : ''}</span>
-                                    <span style="font-size:10px; font-weight:700; opacity:0.75;">▸</span>
-                                </button>
+                                <button onclick="toggleMapDeviceMonitor('${building.bin}', '${escapedAddress}')"
+                                        title="${isDeviceMonitored ? 'Stop monitoring for new devices' : 'Monitor for new devices on DOB Info Update'}"
+                                        style="background: ${isDeviceMonitored ? '#00acc1' : 'rgba(0,172,193,0.1)'};
+                                               color: ${isDeviceMonitored ? 'white' : '#00acc1'};
+                                               border: 1px solid #00acc1;
+                                               border-radius: 6px;
+                                               width: 36px; height: 32px;
+                                               cursor: pointer;
+                                               font-size: 15px;
+                                               display: flex; align-items: center; justify-content: center;
+                                               flex: 1;
+                                               transition: all 0.2s;">📡</button>
+                                <button onclick="toggleMapHidden('${building.bin}', '${escapedAddress}')" 
+                                        title="Hide this building from map"
+                                        style="background: rgba(136,136,136,0.1); 
+                                               color: #888; 
+                                               border: 1px solid #888; 
+                                               border-radius: 6px; 
+                                               width: 36px; height: 32px;
+                                               cursor: pointer; 
+                                               font-size: 15px;
+                                               display: flex; align-items: center; justify-content: center;
+                                               flex: 1;
+                                               transition: all 0.2s;">👁️</button>
+                                <button onclick="removeMapBuilding('${building.bin}')"
+                                        title="Remove this building from map view"
+                                        style="background: rgba(255,107,107,0.1);
+                                               color: #ff6b6b;
+                                               border: 1px solid #ff6b6b;
+                                               border-radius: 6px;
+                                               width: 36px; height: 32px;
+                                               cursor: pointer;
+                                               font-size: 15px;
+                                               display: flex; align-items: center; justify-content: center;
+                                               flex: 1;
+                                               transition: all 0.2s;">🗑️</button>
                             </div>
                         </div>
                         
