@@ -1082,6 +1082,7 @@
                             .mcp-btn { width: 100%; padding: 0.5em 0.55em; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 0.96em; margin-top: 0.4em; }
                             .mcp-search-input { width: 100%; padding: 0.5em 0.6em; border-radius: 5px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 0.96em; box-sizing: border-box; margin-bottom: 0.5em; }
                             #favoritesBuildingsList,
+                            #monitoredBuildingsList,
                             #inProcessBuildingsList,
                             #hiddenBuildingsList,
                             #additionalLocationsList,
@@ -1095,6 +1096,7 @@
                             #testDatesPanelList { max-height: min(52vh, 460px) !important; }
                             /* Popped-out panel: lift list height caps so content fills available space */
                             #mapControlsPanel.mcp-popped-out #favoritesBuildingsList,
+                            #mapControlsPanel.mcp-popped-out #monitoredBuildingsList,
                             #mapControlsPanel.mcp-popped-out #inProcessBuildingsList,
                             #mapControlsPanel.mcp-popped-out #hiddenBuildingsList,
                             #mapControlsPanel.mcp-popped-out #additionalLocationsList,
@@ -1131,6 +1133,23 @@
                                     <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No favorited buildings</div>
                                 </div>
                                 <button onclick="clearAllFavorites()" class="mcp-btn" style="color:#f59e0b;">Clear All Favorites</button>
+                            </div>
+                        </div>
+
+                        <!-- Device Monitors -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpDeviceMonitors')">
+                                <span class="mcp-title"><span style="color:#00acc1;">📡</span> Monitoring - <span id="mapDeviceMonitorsCount">0</span></span>
+                                <span class="mcp-arrow" id="mcpDeviceMonitorsArrow">▼</span>
+                            </div>
+                            <div class="mcp-body" id="mcpDeviceMonitors">
+                                <p class="mcp-desc">Buildings watched for new DOB devices. Checked automatically during DOB Info Update — new devices show in the results modal.</p>
+                                <input type="text" id="deviceMonitorsSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
+                                       oninput="filterMcpBinRowList('monitoredBuildingsList', this.value)">
+                                <div id="monitoredBuildingsList" style="max-height: 200px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No buildings monitored</div>
+                                </div>
+                                <button onclick="clearAllDeviceMonitors()" class="mcp-btn" style="color:#00acc1;">Clear All Monitoring</button>
                             </div>
                         </div>
 
@@ -9812,6 +9831,7 @@
         let mapNotes = {};
         let mapActivityLog = [];
         let mapAdditionalLocations = [];
+        let mapDeviceMonitors = {};
         let mapHideMonthLabeled = false;
         let activeMonthFilters = new Set();
         let pendingMapHideScheduledMonthPrompt = false;
@@ -10092,6 +10112,7 @@
                 completed: getMapCompleted(),
                 inProcess: getMapInProcess(),
                 hold: getMapHold(),
+                deviceMonitors: getMapDeviceMonitors(),
                 testDates: getMapTestDates(),
                 notes: getMapNotes(),
                 activityLog: getMapActivityLog(),
@@ -10309,12 +10330,12 @@
                 const deviceNumberForCopy = deviceNumber.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 const meta = [device.device_type, device.device_status].filter(Boolean).join(' · ');
                 return `
-                    <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start; padding:4px 0; border-bottom:1px solid rgba(23,162,184,0.15);">
+                    <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start; padding:4px 0; border-bottom:1px solid rgba(255,107,107,0.2);">
                         <div style="min-width:0;">
                             <strong class="dob-new-device-copy"
                                     onclick="copyDeviceNumberToClipboard('${deviceNumberForCopy}', event)"
                                     title="Click to copy device number"
-                                    style="cursor:pointer; padding:1px 6px; border-radius:4px; border:1px solid rgba(26,115,232,0.25); background:rgba(26,115,232,0.08); color:var(--header-color); display:inline-flex; align-items:center; gap:4px; font-size:11px;">
+                                    style="cursor:pointer; padding:1px 6px; border-radius:4px; border:1px solid rgba(255,107,107,0.3); background:rgba(255,107,107,0.08); color:var(--header-color); display:inline-flex; align-items:center; gap:4px; font-size:11px;">
                                 ${escapeMapSuggestionHtml(deviceNumber)} <span style="font-size:10px; opacity:0.65;">📋</span>
                             </strong>
                             ${meta ? `<div style="font-size:10px; opacity:0.7; margin-top:2px;">${escapeMapSuggestionHtml(meta)}</div>` : ''}
@@ -10324,14 +10345,14 @@
             }).join('');
 
             return `
-                <details style="margin-top:6px; border-radius:6px; background:rgba(23,162,184,0.08); border:1px solid rgba(23,162,184,0.25); overflow:hidden;">
-                    <summary style="padding:6px 8px; cursor:pointer; font-size:10px; font-weight:700; color:#17a2b8; list-style:none; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <details style="margin-top:6px; border-radius:6px; background:rgba(255,107,107,0.1); border:1px solid rgba(255,107,107,0.35); overflow:hidden;">
+                    <summary style="padding:6px 8px; cursor:pointer; font-size:10px; font-weight:700; color:#ff6b6b; list-style:none; display:flex; align-items:center; justify-content:space-between; gap:8px;">
                         <span>Also on DOB BIN · ${devices.length} not in count</span>
                         <span style="font-size:9px; opacity:0.75; font-weight:600;">▼</span>
                     </summary>
                     <div style="padding:0 8px 8px;">
                         <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; justify-content:space-between; margin-bottom:6px;">
-                            <div style="font-size:9px; opacity:0.7; line-height:1.3; flex:1 1 140px;">
+                            <div style="font-size:9px; opacity:0.75; line-height:1.3; flex:1 1 140px; color:var(--text-color);">
                                 Not included in Devices count. Click a number to copy. Add via Full Device Report → Check New Devices.
                             </div>
                             <button type="button"
@@ -11374,13 +11395,14 @@
             }
         }
 
-        function showDobInfoUpdateChangesModal(changeRows, failedDevices, autoCompletedRows) {
+        function showDobInfoUpdateChangesModal(changeRows, failedDevices, autoCompletedRows, monitoredNewDevices) {
             const existing = document.getElementById('dobInfoUpdateChangesModal');
             if (existing) existing.remove();
 
             const changes = Array.isArray(changeRows) ? changeRows : [];
             const failures = Array.isArray(failedDevices) ? failedDevices : [];
             const autoCompleted = Array.isArray(autoCompletedRows) ? autoCompletedRows : [];
+            const monitoredFound = Array.isArray(monitoredNewDevices) ? monitoredNewDevices : [];
             const modal = document.createElement('div');
             modal.id = 'dobInfoUpdateChangesModal';
             modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:10045; display:flex; align-items:center; justify-content:center; padding:18px;';
@@ -11428,6 +11450,35 @@
                 </details>`
                 : '';
 
+            const monitoredBuildingCount = groupDobNewDeviceCandidatesByBuilding(monitoredFound).length;
+            const monitoredHtml = monitoredFound.length > 0
+                ? `<details open style="margin-bottom:10px; border-radius:8px; background:rgba(0,172,193,0.12); border:1px solid rgba(0,172,193,0.4); color:#00acc1; font-size:0.9em; overflow:hidden;">
+                    <summary style="padding:10px 12px; cursor:pointer; font-weight:700;">
+                        📡 Monitored Buildings — New Devices (${monitoredFound.length} device${monitoredFound.length !== 1 ? 's' : ''} · ${monitoredBuildingCount} building${monitoredBuildingCount !== 1 ? 's' : ''})
+                    </summary>
+                    <div style="padding:0 12px 10px;">
+                        <div style="margin:8px 0; opacity:0.9;">Radar-monitored buildings have new DOB devices that are not on your map yet. Click a device to add it, or use Add All.</div>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px;">
+                            <input id="dobNewDevicesSearchInput"
+                                   type="text"
+                                   placeholder="Search device #, BIN, or building address..."
+                                   oninput="filterDobNewDevicesInModal('dobInfoUpdateChangesModal')"
+                                   style="flex:1 1 220px; min-width:180px; padding:8px 10px; border-radius:6px; border:1px solid var(--input-border); background:var(--card-bg); color:var(--text-color); font-size:0.92em;">
+                            <button type="button"
+                                    onclick="document.getElementById('dobNewDevicesSearchInput').value=''; filterDobNewDevicesInModal('dobInfoUpdateChangesModal');"
+                                    style="padding:8px 12px; border-radius:6px; border:1px solid var(--input-border); background:var(--card-bg); color:var(--text-color); cursor:pointer; font-size:0.9em;">
+                                Clear
+                            </button>
+                            <span id="dobNewDevicesFilterCount" style="display:none; font-size:0.85em; opacity:0.75;"></span>
+                        </div>
+                        <div id="dobNewDevicesEmptyState" style="display:none; padding:14px 10px; opacity:0.75; text-align:center;">No devices match your search.</div>
+                        <div id="dobNewDevicesGroupedList">
+                            ${renderDobNewDeviceCandidatesGroupedHtml(monitoredFound)}
+                        </div>
+                    </div>
+                </details>`
+                : '';
+
             const failuresHtml = failures.length > 0
                 ? `<div style="margin-top:10px; padding:9px 10px; border-radius:8px; background:rgba(255,107,107,0.1); border:1px solid rgba(255,107,107,0.35); color:#ff6b6b; font-size:0.9em;">
                     Could not update ${failures.length} device${failures.length !== 1 ? 's' : ''}: ${escapeMapSuggestionHtml(failures.join(', '))}
@@ -11436,6 +11487,7 @@
 
             const summaryParts = [];
             summaryParts.push(`${changes.length} date change${changes.length !== 1 ? 's' : ''} applied to saved device records`);
+            if (monitoredFound.length) summaryParts.push(`${monitoredFound.length} new device${monitoredFound.length !== 1 ? 's' : ''} found on radar-monitored buildings`);
             if (autoCompleted.length) summaryParts.push(`${autoCompleted.length} building${autoCompleted.length !== 1 ? 's' : ''} auto-marked completed`);
 
             modal.innerHTML = `
@@ -11448,6 +11500,7 @@
                         <button onclick="document.getElementById('dobInfoUpdateChangesModal')?.remove()" style="background:none; border:none; color:var(--text-color); font-size:24px; line-height:1; cursor:pointer;">×</button>
                     </div>
                     <div style="padding:8px 18px 16px; overflow-y:auto;">
+                        ${monitoredHtml}
                         ${autoCompletedHtml}
                         ${catResultsHtml}
                         ${pviResultsHtml}
@@ -11462,6 +11515,7 @@
             modal.addEventListener('click', event => {
                 if (event.target === modal) modal.remove();
             });
+            if (monitoredFound.length > 0) bindDobNewDeviceCandidateRows(modal);
         }
 
         async function updateMapViewDobInfo() {
@@ -11477,12 +11531,28 @@
             }
 
             const uniqueDeviceNumbers = Array.from(new Set(refs.map(ref => ref.deviceNumber)));
-            if (!confirm(`Refresh DOB info for ${uniqueDeviceNumbers.length} device${uniqueDeviceNumbers.length !== 1 ? 's' : ''}? This updates saved device records with the latest DOB device information. Save afterward to write it to your file.`)) {
+            const monitoredTargets = collectMonitoredMapDobBinTargets();
+            const monitorNote = monitoredTargets.length > 0
+                ? ` Also checks ${monitoredTargets.length} radar-monitored BIN${monitoredTargets.length !== 1 ? 's' : ''} for new devices.`
+                : '';
+            if (!confirm(`Refresh DOB info for ${uniqueDeviceNumbers.length} device${uniqueDeviceNumbers.length !== 1 ? 's' : ''}? This updates saved device records with the latest DOB device information.${monitorNote} Save afterward to write it to your file.`)) {
                 return;
             }
 
+            const totalSteps = uniqueDeviceNumbers.length + monitoredTargets.length;
+            let completedSteps = 0;
+            const reportProgress = (label) => {
+                const percent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 100;
+                updateDobInfoButtonState(true, `${label} ${percent}%`, percent);
+            };
+
             updateDobInfoButtonState(true, 'Updating 0%', 0);
-            showMapNotification('Refreshing DOB device info...', '#0d6efd');
+            showMapNotification(
+                monitoredTargets.length > 0
+                    ? 'Refreshing DOB device info and checking monitored buildings...'
+                    : 'Refreshing DOB device info...',
+                '#0d6efd'
+            );
 
             const freshByDevice = {};
             const failed = [];
@@ -11494,8 +11564,8 @@
                     console.warn('DOB info update failed for device:', deviceNumber, error);
                     failed.push(deviceNumber);
                 }
-                const percent = Math.round(((i + 1) / uniqueDeviceNumbers.length) * 100);
-                updateDobInfoButtonState(true, `Updating ${percent}%`, percent);
+                completedSteps++;
+                reportProgress('Updating');
             }
 
             let dateUpdates = 0;
@@ -11519,6 +11589,20 @@
                 }
             });
 
+            let monitoredNewDevices = [];
+            if (monitoredTargets.length > 0) {
+                reportProgress('Radar check');
+                window.pendingDobNewDeviceCandidates = window.pendingDobNewDeviceCandidates || {};
+                const discovery = await discoverNewDobDevicesForMapBins(monitoredTargets, (done) => {
+                    completedSteps = uniqueDeviceNumbers.length + done;
+                    reportProgress('Radar check');
+                });
+                monitoredNewDevices = discovery.candidates || [];
+                (discovery.failedBins || []).forEach(bin => {
+                    if (!failed.includes(`BIN ${bin}`)) failed.push(`BIN ${bin}`);
+                });
+            }
+
             const autoCompletedRows = autoCompleteMapBuildingsFromDobUpdate(touchedBins);
 
             setMapDobInfoUpdatedAt(Date.now());
@@ -11533,8 +11617,14 @@
             const autoCompleteText = autoCompletedRows.length > 0
                 ? ` ${autoCompletedRows.length} building${autoCompletedRows.length !== 1 ? 's' : ''} auto-marked completed.`
                 : '';
-            showMapNotification(`DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${autoCompleteText}${saveHint}`, dateUpdates > 0 || autoCompletedRows.length > 0 ? '#27ae60' : '#17a2b8');
-            setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows), 150);
+            const monitorText = monitoredNewDevices.length > 0
+                ? ` 📡 ${monitoredNewDevices.length} new device${monitoredNewDevices.length !== 1 ? 's' : ''} on monitored buildings.`
+                : (monitoredTargets.length > 0 ? ' No new devices on monitored buildings.' : '');
+            showMapNotification(
+                `DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${monitorText}${autoCompleteText}${saveHint}`,
+                dateUpdates > 0 || monitoredNewDevices.length > 0 || autoCompletedRows.length > 0 ? '#27ae60' : '#17a2b8'
+            );
+            setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows, monitoredNewDevices), 150);
         }
 
         const MAP_EXCEL_CELL_LIMIT = 32767;
@@ -12288,6 +12378,7 @@
                     completed: view.completed || {},
                     inProcess: view.inProcess || {},
                     hold: view.hold || {},
+                    deviceMonitors: view.deviceMonitors || {},
                     testDates: view.testDates || {},
                     notes: view.notes || {},
                     activityLog: Array.isArray(view.activityLog) ? view.activityLog : [],
@@ -12413,6 +12504,7 @@
                 completed: normalizedCompleted,
                 inProcess: source.inProcess || {},
                 hold: source.hold || {},
+                deviceMonitors: source.deviceMonitors || {},
                 testDates: testDates,
                 notes: source.notes || {},
                 activityLog: Array.isArray(source.activityLog) ? source.activityLog : [],
@@ -12431,6 +12523,7 @@
             setMapCompleted(view.completed || {});
             setMapInProcess(view.inProcess || {});
             setMapHold(view.hold || {});
+            setMapDeviceMonitors(view.deviceMonitors || {});
             setMapTestDates(view.testDates || {});
             setMapNotes(view.notes || {});
             setMapActivityLog(view.activityLog || []);
@@ -13932,6 +14025,111 @@
             mapFavorites = favorites && typeof favorites === 'object' ? favorites : {};
         }
 
+        function getMapDeviceMonitors() {
+            return mapDeviceMonitors;
+        }
+
+        function setMapDeviceMonitors(monitors) {
+            mapDeviceMonitors = monitors && typeof monitors === 'object' ? monitors : {};
+        }
+
+        function isMapDeviceMonitorActive(bin) {
+            const monitors = getMapDeviceMonitors();
+            return !!(monitors && monitors[String(bin || '').trim()]);
+        }
+
+        function toggleMapDeviceMonitor(bin, address) {
+            const monitors = getMapDeviceMonitors();
+            const key = String(bin || '').trim();
+            if (!key) return;
+            if (monitors[key]) {
+                delete monitors[key];
+                addMapActivity('Stopped device monitoring', {
+                    type: 'Building',
+                    bin: key,
+                    address: address || _addressOrBin(key),
+                    details: 'Radar monitor off'
+                });
+                showMapNotification(`${_addressOrBin(key)} is no longer monitored for new devices`, '#607d8b');
+            } else {
+                monitors[key] = {
+                    address: address || _addressOrBin(key),
+                    timestamp: Date.now()
+                };
+                addMapActivity('Started device monitoring', {
+                    type: 'Building',
+                    bin: key,
+                    address: monitors[key].address,
+                    details: 'Radar monitor on — notified during DOB Info Update'
+                });
+                showMapNotification(`${_addressOrBin(key)} monitored for new devices on DOB Info Update`, '#00acc1');
+            }
+            setMapDeviceMonitors(monitors);
+            closeMapBuildingActionsModal();
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
+
+        function closeMapBuildingActionsModal() {
+            const existing = document.getElementById('mapBuildingActionsModal');
+            if (existing) existing.remove();
+        }
+
+        function showMapBuildingActionsModal(bin, address) {
+            closeMapBuildingActionsModal();
+            const key = String(bin || '').trim();
+            const label = address || _addressOrBin(key);
+            const isMonitored = isMapDeviceMonitorActive(key);
+            const escapedAddress = String(label).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const escapedBin = key.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+            const modal = document.createElement('div');
+            modal.id = 'mapBuildingActionsModal';
+            modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:20040; display:flex; align-items:center; justify-content:center; padding:18px;';
+            modal.innerHTML = `
+                <div style="background:var(--card-bg); color:var(--text-color); border:1px solid var(--input-border); border-radius:12px; width:min(360px, 94vw); box-shadow:0 12px 36px rgba(0,0,0,0.35); overflow:hidden;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:14px 16px; border-bottom:1px solid var(--input-border);">
+                        <div>
+                            <h3 style="margin:0 0 4px 0; color:var(--header-color); font-size:1.05em;">Building Actions</h3>
+                            <div style="font-size:0.85em; opacity:0.72; line-height:1.35;">${escapeMapSuggestionHtml(label)}${key ? `<br><span style="opacity:0.8;">BIN ${escapeMapSuggestionHtml(key)}</span>` : ''}</div>
+                        </div>
+                        <button onclick="closeMapBuildingActionsModal()" style="background:none; border:none; color:var(--text-color); font-size:22px; line-height:1; cursor:pointer;">×</button>
+                    </div>
+                    <div style="padding:14px 16px; display:flex; flex-direction:column; gap:8px;">
+                        <button onclick="toggleMapDeviceMonitor('${escapedBin}', '${escapedAddress}')"
+                                style="background:${isMonitored ? '#00acc1' : 'rgba(0,172,193,0.1)'}; color:${isMonitored ? 'white' : '#00acc1'}; border:1px solid #00acc1; border-radius:8px; padding:10px 12px; cursor:pointer; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:8px; width:100%;">
+                            📡 ${isMonitored ? 'Stop Monitoring' : 'Monitor for New Devices'}
+                        </button>
+                        <button onclick="closeMapBuildingActionsModal(); toggleMapHidden('${escapedBin}', '${escapedAddress}')"
+                                style="background:rgba(136,136,136,0.1); color:#888; border:1px solid #888; border-radius:8px; padding:10px 12px; cursor:pointer; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:8px; width:100%;">
+                            👁️ Hide Building
+                        </button>
+                        <button onclick="closeMapBuildingActionsModal(); removeMapBuilding('${escapedBin}')"
+                                style="background:rgba(255,107,107,0.1); color:#ff6b6b; border:1px solid #ff6b6b; border-radius:8px; padding:10px 12px; cursor:pointer; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:8px; width:100%;">
+                            🗑️ Remove from Map
+                        </button>
+                    </div>
+                    <div style="padding:0 16px 14px; display:flex; justify-content:flex-end;">
+                        <button onclick="closeMapBuildingActionsModal()" style="padding:8px 14px; border-radius:6px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); cursor:pointer; font-weight:600;">Close</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.addEventListener('click', event => {
+                if (event.target === modal) closeMapBuildingActionsModal();
+            });
+        }
+
+        function collectMonitoredMapDobBinTargets() {
+            const monitors = getMapDeviceMonitors();
+            const monitoredBins = Object.keys(monitors || {});
+            if (monitoredBins.length === 0) return [];
+            const allTargets = collectMapDobBinTargets();
+            const monitoredSet = new Set(monitoredBins.map(bin => String(bin).trim()));
+            return allTargets.filter(target => monitoredSet.has(String(target.bin).trim()));
+        }
+
         function getMapHidden() {
             return mapHidden;
         }
@@ -14000,6 +14198,7 @@
             delete mapCompleted[bin];
             delete mapInProcess[bin];
             delete mapHold[bin];
+            delete mapDeviceMonitors[bin];
             delete mapTestDates[bin];
             delete mapNotes[bin];
 
@@ -16051,6 +16250,27 @@
             }
         }
 
+        function clearAllDeviceMonitors() {
+            const monitors = getMapDeviceMonitors();
+            const count = Object.keys(monitors || {}).length;
+            if (count === 0) {
+                showMapNotification('No buildings are being monitored', '#607d8b');
+                return;
+            }
+            if (!confirm(`Stop monitoring all ${count} building${count === 1 ? '' : 's'} for new devices?`)) return;
+            setMapDeviceMonitors({});
+            addMapActivity('Cleared all device monitors', {
+                type: 'Map',
+                details: `${count} building${count === 1 ? '' : 's'} removed from radar monitoring`
+            });
+            showMapNotification('All device monitoring cleared', '#00acc1');
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            } else {
+                updateMapControlsPanel();
+            }
+        }
+
         // --- Map settings sidebar: list search (BIN + address + optional data-filter-text for dates, etc.) ---
         function filterMcpBinRowList(listId, query, noResultsIdOverride) {
             var list = document.getElementById(listId);
@@ -16610,12 +16830,14 @@
         function updateMapControlsPanel() {
             ensureMapControlsNotesSection();
             const favorites = getMapFavorites();
+            const deviceMonitors = getMapDeviceMonitors();
             const hidden = getMapHidden();
             const completedMap = getMapCompleted();
             const inProcessMap = getMapInProcess();
             const holdMap = getMapHold();
             const notesMap = getMapNotes();
             const favoritesCount = Object.keys(favorites).length;
+            const deviceMonitorsCount = Object.keys(deviceMonitors || {}).length;
             const hiddenCount = Object.keys(hidden).length;
             const completedCount = Object.keys(completedMap).length;
             const inProcessCount = Object.keys(inProcessMap).length;
@@ -16623,12 +16845,14 @@
             const notesCount = Object.keys(notesMap).length;
 
             const favCountEl = document.getElementById('mapFavoritesCount');
+            const deviceMonitorsCountEl = document.getElementById('mapDeviceMonitorsCount');
             const hiddenCountEl = document.getElementById('mapHiddenCount');
             const completedCountEl = document.getElementById('mapCompletedCount');
             const inProcessCountEl = document.getElementById('mapInProcessCount');
             const holdCountEl = document.getElementById('mapHoldCount');
             const notesCountEl = document.getElementById('mapNotesCount');
             const favoritesListEl = document.getElementById('favoritesBuildingsList');
+            const monitoredListEl = document.getElementById('monitoredBuildingsList');
             const hiddenListEl = document.getElementById('hiddenBuildingsList');
             const completedListEl = document.getElementById('completedBuildingsList');
             const inProcessListEl = document.getElementById('inProcessBuildingsList');
@@ -16636,6 +16860,7 @@
             const notesListEl = document.getElementById('notesBuildingsList');
 
             if (favCountEl) favCountEl.textContent = favoritesCount;
+            if (deviceMonitorsCountEl) deviceMonitorsCountEl.textContent = deviceMonitorsCount;
 
             if (favoritesListEl) {
                 if (favoritesCount > 0) {
@@ -16663,6 +16888,38 @@
                     favoritesListEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No favorited buildings</div>';
                 }
             }
+
+            if (monitoredListEl) {
+                if (deviceMonitorsCount > 0) {
+                    monitoredListEl.innerHTML = Object.entries(deviceMonitors).map(([bin, data]) => {
+                        let address = (data && data.address) ? data.address : '';
+                        if (!address) address = _addressOrBin(bin);
+                        if (address && String(address).trim() === String(bin).trim()) address = '';
+                        const monitoredOn = data && data.timestamp
+                            ? new Date(data.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                            : '';
+                        const addrEsc = (address || '').replace(/"/g, '&quot;');
+                        const addrJs = (address || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        return `
+                        <div data-bin="${bin}" data-address="${addrEsc}" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 1em;">
+                            <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
+                                <span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">
+                                    <span style="color: #00acc1; font-weight: 700; flex-shrink: 0;">📡</span>
+                                    ${address
+                                        ? `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; text-decoration: underline dotted;">${escapeMapSuggestionHtml(address)}</span>`
+                                        : `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6; text-decoration: underline dotted;">BIN ${bin}</span>`
+                                    }
+                                </span>
+                                ${monitoredOn ? `<span style="font-size: 0.8em; opacity: 0.55; padding-left: 22px;">Since ${monitoredOn}${address ? ' · BIN ' + bin : ''}</span>` : (address ? `<span style="font-size: 0.8em; opacity: 0.55; padding-left: 22px;">BIN ${bin}</span>` : '')}
+                            </span>
+                            <button onclick="toggleMapDeviceMonitor('${bin}', '${addrJs}')" style="flex-shrink:0; background: #00acc1; color: white; border: none; border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 0.8em; margin-left: 8px;">Stop</button>
+                        </div>`;
+                    }).join('');
+                } else {
+                    monitoredListEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No buildings monitored</div>';
+                }
+            }
+
             if (hiddenCountEl) hiddenCountEl.textContent = hiddenCount;
             if (completedCountEl) completedCountEl.textContent = completedCount;
             if (inProcessCountEl) inProcessCountEl.textContent = inProcessCount;
@@ -16895,6 +17152,7 @@
                 }
             }
             reapplyBinSidebarSearch('favoritesSearchInput', 'favoritesBuildingsList');
+            reapplyBinSidebarSearch('deviceMonitorsSearchInput', 'monitoredBuildingsList');
             reapplyBinSidebarSearch('hiddenSearchInput', 'hiddenBuildingsList');
             reapplyBinSidebarSearch('inProcessSearchInput', 'inProcessBuildingsList');
             reapplyBinSidebarSearch('holdSearchInput', 'holdBuildingsList');
@@ -18098,6 +18356,7 @@
                 const isCompleted = building.isCompleted;
                 const isInProcess = building.isInProcess;
                 const isHold = building.isHold;
+                const isDeviceMonitored = isMapDeviceMonitorActive(building.bin);
 
                 // Create custom icon
                 const icon = createBuildingMarkerIcon(building);
@@ -18171,9 +18430,9 @@
                 const completedSourceLabel = completedData.source ? ` · ${escapeMapSuggestionHtml(completedData.source)}` : '';
                 
                 const popupContent = `
-                    <div class="map-popup-content" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                    <div class="map-popup-content" style="min-width: 380px; max-width: 460px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                         <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isCompleted ? '#27ae60' : isInProcess ? '#e67e22' : isHold ? '#607d8b' : isFavorited ? '#9b59b6' : '#1a73e8'};">
-                            <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px;">${building.address}</div>
+                            <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${building.address}</div>
                             <div style="display: flex; gap: 6px; justify-content: space-between;">
                                 <button onclick="toggleMapCompleted('${building.bin}')" 
                                         title="${isCompleted ? 'Unmark as completed' : 'Mark as completed'}"
@@ -18223,30 +18482,15 @@
                                                display: flex; align-items: center; justify-content: center;
                                                flex: 1;
                                                transition: all 0.2s;">⭐</button>
-                                <button onclick="toggleMapHidden('${building.bin}', '${escapedAddress}')" 
-                                        title="Hide this building from map"
-                                        style="background: rgba(136,136,136,0.1); 
-                                               color: #888; 
-                                               border: 1px solid #888; 
-                                               border-radius: 6px; 
-                                               width: 36px; height: 32px;
-                                               cursor: pointer; 
-                                               font-size: 15px;
-                                               display: flex; align-items: center; justify-content: center;
-                                               flex: 1;
-                                               transition: all 0.2s;">👁️</button>
-                                <button onclick="removeMapBuilding('${building.bin}')"
-                                        title="Remove this building from map view"
-                                        style="background: rgba(255,107,107,0.1);
-                                               color: #ff6b6b;
-                                               border: 1px solid #ff6b6b;
-                                               border-radius: 6px;
-                                               width: 36px; height: 32px;
-                                               cursor: pointer;
-                                               font-size: 15px;
-                                               display: flex; align-items: center; justify-content: center;
-                                               flex: 1;
-                                               transition: all 0.2s;">🗑️</button>
+                            </div>
+                            <div style="margin-top: 6px;">
+                                <button type="button"
+                                        onclick="showMapBuildingActionsModal('${building.bin}', '${escapedAddress}')"
+                                        title="Open building actions"
+                                        style="width:100%; font-size:11px; font-weight:600; color:var(--text-color); cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:6px; padding:7px 10px; border-radius:6px; border:1px solid var(--input-border); background:var(--input-bg);">
+                                    <span>Actions${isDeviceMonitored ? ' · 📡' : ''}</span>
+                                    <span style="font-size:10px; font-weight:700; opacity:0.75;">▸</span>
+                                </button>
                             </div>
                         </div>
                         
@@ -18263,6 +18507,11 @@
                         ${isFavorited ? `
                         <div style="font-size: 11px; color: #9b59b6; font-weight: 600; margin-bottom: 10px; padding: 4px 8px; background: rgba(155,89,182,0.1); border-radius: 4px; text-align: center;">
                             ⭐ Favorited Building
+                        </div>` : ''}
+
+                        ${isDeviceMonitored ? `
+                        <div style="font-size: 11px; color: #00acc1; font-weight: 600; margin-bottom: 10px; padding: 4px 8px; background: rgba(0,172,193,0.12); border-radius: 4px; text-align: center; border: 1px solid rgba(0,172,193,0.35);">
+                            📡 Monitoring for new devices on DOB Info Update
                         </div>` : ''}
                         
                         ${isHold ? `
@@ -18436,7 +18685,7 @@
                     </div>
                 `;
 
-                marker.bindPopup(popupContent);
+                marker.bindPopup(popupContent, { maxWidth: 480, minWidth: 380 });
                 mapMarkers.push(marker);
                 if (hiddenByCurrentSettings) {
                     buildingMap.removeLayer(marker);
@@ -18658,9 +18907,9 @@
                 
                 // Build popup content matching building popup format
                 const additionalPopupContent = `
-                    <div class="map-popup-content" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                    <div class="map-popup-content" style="min-width: 380px; max-width: 460px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${headerAccent};">
-                            <div style="font-weight: bold; font-size: 14px; flex: 1;">${(location.customName || location.label).toUpperCase()}</div>
+                            <div style="font-weight: bold; font-size: 14px; flex: 1; line-height: 1.35; white-space: normal; word-break: break-word;">${(location.customName || location.label).toUpperCase()}</div>
                             <div style="display: flex; gap: 4px; margin-left: 8px; flex-wrap: wrap; justify-content: flex-end;">
                                 ${location.bin ? `
                                 <button onclick="promoteAdditionalLocationByCoords(${location.latitude}, ${location.longitude})"
@@ -18832,7 +19081,7 @@
                     </div>
                 `;
 
-                additionalMarker.bindPopup(additionalPopupContent);
+                additionalMarker.bindPopup(additionalPopupContent, { maxWidth: 480, minWidth: 380 });
                 additionalLocationMarkers.push(additionalMarker);
                 bounds.extend([location.latitude, location.longitude]);
             });
@@ -29512,7 +29761,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5.2</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5.3</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
