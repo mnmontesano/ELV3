@@ -10460,6 +10460,12 @@
                 if (typeof onProgress === 'function') onProgress(i + 1, list.length);
             }
 
+            await attachViolationsToDobNewDeviceCandidates(candidates);
+            // Keep store in sync after violation attachment
+            candidates.forEach(row => {
+                if (row && row.key) candidateStore[row.key] = row;
+            });
+
             window.pendingDobNewDeviceCandidates = candidateStore;
             return { candidates, failedBins };
         }
@@ -10730,7 +10736,10 @@
                 });
                 row.addEventListener('click', (event) => {
                     if (row.classList.contains('dob-new-device-added')) return;
-                    if (event.target && event.target.closest && event.target.closest('.dob-new-device-copy')) return;
+                    if (event.target && event.target.closest && (
+                        event.target.closest('.dob-new-device-copy') ||
+                        event.target.closest('.dob-new-device-details')
+                    )) return;
                     const rowBin = row.getAttribute('data-bin') || '';
                     const device = row.getAttribute('data-device') || '';
                     addPendingDobNewDeviceToMap(rowBin, device);
@@ -10738,9 +10747,238 @@
             });
         }
 
+        function getMapDeviceReportTestInfo(device, currentYear) {
+            const year = currentYear || new Date().getFullYear();
+            const statusText = (device.device_status || '').toUpperCase();
+            const typeText = (device.device_type || '').toUpperCase();
+            const machineText = (device.machine_type || device.machineType || '').toUpperCase();
+            const numberText = (device.device_number || '').toUpperCase();
+            const isRemoved = statusText.includes('REMOVED') || statusText.includes('DELETED');
+            const isDismantled = statusText.includes('DISMANTLED');
+            const isDumbwaiter = typeText.includes('DUMBWAITER') || typeText.includes('DUMWAITER');
+            const isConveyor = typeText.includes('CONVEYOR');
+            const isWheelchairLift = typeText.includes('WHEELCHAIR') || numberText.includes('W');
+            const isHydraulic = typeText.includes('HYDRAULIC') || typeText.includes('HYDRO') || machineText.includes('HYDRAULIC') || machineText.includes('HYDRO');
+            const isEscalator = typeText.includes('ESCALATOR');
+            const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
+            const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
+            const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+            const hasPVI = !!(pviDate && !isNaN(pviDate.getTime()) && pviDate.getFullYear() === year);
+            const hasCat1 = !!(cat1Date && !isNaN(cat1Date.getTime()) && cat1Date.getFullYear() === year);
+            const hasCat5 = !!(cat5Date && !isNaN(cat5Date.getTime()) && cat5Date.getFullYear() === year);
+            const cat5NotRequired = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled;
+            const requiresCat5 = !cat5NotRequired && cat5Date && !isNaN(cat5Date.getTime()) && (year - cat5Date.getFullYear()) >= 5;
+            const nextCat5DueYear = (!cat5NotRequired && cat5Date && !isNaN(cat5Date.getTime())) ? cat5Date.getFullYear() + 5 : null;
+            return {
+                isRemoved,
+                isDismantled,
+                requiresPVI: !isRemoved && !isConveyor,
+                requiresCat1: !isRemoved && !isDismantled,
+                requiresCat5,
+                cat5NotRequired,
+                nextCat5DueYear,
+                pviDate: pviDate && !isNaN(pviDate.getTime()) ? pviDate : null,
+                cat1Date: cat1Date && !isNaN(cat1Date.getTime()) ? cat1Date : null,
+                cat5Date: cat5Date && !isNaN(cat5Date.getTime()) ? cat5Date : null,
+                hasPVI,
+                hasCat1,
+                hasCat5
+            };
+        }
+
+        function getMapDeviceReportPendingTests(testInfo) {
+            const pending = [];
+            if (!testInfo.isRemoved) {
+                if (testInfo.requiresPVI && !testInfo.hasPVI) pending.push('PVI');
+                if (testInfo.requiresCat1 && !testInfo.hasCat1) pending.push('CAT 1');
+                if (testInfo.requiresCat5 && !testInfo.hasCat5) pending.push('CAT 5');
+            }
+            return pending;
+        }
+
+        function getMapDeviceReportNextTestAvailability(testInfo, today) {
+            const pending = getMapDeviceReportPendingTests(testInfo);
+            const dayStart = today || new Date();
+            dayStart.setHours(0, 0, 0, 0);
+            if (testInfo.isRemoved) {
+                return { pending: [], nextTest: null, availableDate: null, daysUntil: null, isAvailableNow: false };
+            }
+            if (pending.length === 0) {
+                return { pending: [], nextTest: null, availableDate: null, daysUntil: null, isAvailableNow: true };
+            }
+            let mostRecent = null;
+            if (testInfo.isDismantled) {
+                mostRecent = testInfo.pviDate;
+            } else {
+                const allD = [testInfo.pviDate, testInfo.cat1Date, testInfo.cat5Date].filter(Boolean);
+                mostRecent = allD.length ? new Date(Math.max(...allD.map(d => d.getTime()))) : null;
+            }
+            let availableDate = null;
+            let daysUntil = 0;
+            if (mostRecent) {
+                availableDate = new Date(mostRecent);
+                availableDate.setDate(availableDate.getDate() + 91);
+                availableDate.setHours(0, 0, 0, 0);
+                daysUntil = Math.max(0, Math.ceil((availableDate - dayStart) / (1000 * 60 * 60 * 24)));
+            }
+            return {
+                pending,
+                nextTest: pending[0],
+                availableDate,
+                daysUntil,
+                isAvailableNow: !mostRecent || daysUntil <= 0
+            };
+        }
+
+        /** Device Report-style details body for new-device review dropdowns. */
+        function renderMapDeviceReportBodyHtml(device, options) {
+            const opts = options || {};
+            const currentYear = opts.currentYear || new Date().getFullYear();
+            const today = opts.today || new Date();
+            const idPrefix = String(opts.idPrefix || 'devReport').replace(/[^a-zA-Z0-9_-]/g, '_');
+            const testInfo = getMapDeviceReportTestInfo(device, currentYear);
+            const pending = getMapDeviceReportPendingTests(testInfo);
+            const nextTestAvailability = getMapDeviceReportNextTestAvailability(testInfo, new Date(today.getTime()));
+            const statusUp = String(device.device_status || '').toUpperCase();
+            const isRemoved = testInfo.isRemoved;
+            const fmt = d => d ? d.toLocaleDateString() : '—';
+
+            let nextTestHtml = '';
+            if (isRemoved) {
+                nextTestHtml = `<span style="color:#888;font-style:italic;">N/A (${statusUp.includes('DELETED') ? 'Deleted' : 'Removed'})</span>`;
+            } else if (pending.length === 0) {
+                nextTestHtml = '<span style="color:#4CAF50;font-weight:600;">All tests complete ✓</span>';
+            } else {
+                const nextTestLabel = escapeMapSuggestionHtml(nextTestAvailability.nextTest || pending[0]);
+                const morePending = pending.length > 1
+                    ? `<span style="font-size:11px;opacity:0.65;margin-left:4px;">(+${pending.length - 1} more after)</span>`
+                    : '';
+                if (nextTestAvailability.isAvailableNow) {
+                    nextTestHtml = `<span style="font-weight:700;color:var(--header-color);">${nextTestLabel}</span>${morePending} · <span style="color:#4CAF50;font-weight:600;">Available now</span>`;
+                } else {
+                    const dateStr = nextTestAvailability.availableDate
+                        ? nextTestAvailability.availableDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : '—';
+                    const daysText = nextTestAvailability.daysUntil === 1
+                        ? '1 day'
+                        : `${nextTestAvailability.daysUntil} days`;
+                    nextTestHtml = `<span style="font-weight:700;color:var(--header-color);">${nextTestLabel}</span>${morePending} · <span style="color:#ff9800;font-weight:600;">${dateStr}</span><span style="font-size:11px;opacity:0.65;margin-left:4px;">(${daysText})</span>`;
+                }
+            }
+
+            const pviHtml = testInfo.requiresPVI
+                ? `<span style="color:${testInfo.hasPVI ? '#4CAF50' : '#ff6b6b'}">${testInfo.hasPVI ? '✓' : '✗'}</span> ${fmt(testInfo.pviDate)}`
+                : `<span style="color:#888;font-style:italic;">Not required</span>`;
+            const cat1Html = testInfo.requiresCat1
+                ? `<span style="color:${testInfo.hasCat1 ? '#4CAF50' : '#ff6b6b'}">${testInfo.hasCat1 ? '✓' : '✗'}</span> ${fmt(testInfo.cat1Date)}`
+                : `<span style="color:#888;font-style:italic;">Not required</span>`;
+            const nextCat5Html = testInfo.cat5NotRequired
+                ? '<span style="font-size:10px;color:#888;font-style:italic;">Next CAT 5: Not required</span>'
+                : testInfo.nextCat5DueYear
+                    ? `<span style="font-size:10px;color:${testInfo.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'};font-weight:700;">Next CAT 5: ${testInfo.nextCat5DueYear}</span>`
+                    : '<span style="font-size:10px;opacity:0.65;">Next CAT 5: No prior CAT 5 date</span>';
+            const cat5Html = testInfo.requiresCat5
+                ? `<span style="color:${testInfo.hasCat5 ? '#4CAF50' : '#ff9800'};font-weight:700;">${testInfo.hasCat5 ? '✓' : '⚠'} ${fmt(testInfo.cat5Date)}</span><br>${nextCat5Html}`
+                : `${fmt(testInfo.cat5Date)}<br>${nextCat5Html}`;
+
+            const pendingHtml = isRemoved
+                ? `<span style="color:#888;font-style:italic;">N/A (${statusUp.includes('DELETED') ? 'Deleted' : 'Removed'})</span>`
+                : pending.length === 0
+                    ? '<span style="color:#4CAF50;font-weight:600;">All done ✓</span>'
+                    : `<span style="color:#ff6b6b;font-weight:600;">${pending.join(', ')}</span>`;
+
+            const violations = Array.isArray(device.violations) ? device.violations : [];
+            const violCount = violations.length;
+            const violationDropdownHtml = violCount > 0 ? `
+                <div style="margin-top:10px;border:1px solid rgba(255,107,107,0.28);border-radius:6px;overflow:hidden;background:rgba(255,107,107,0.05);">
+                    <div onclick="event.stopPropagation(); var body=document.getElementById('${idPrefix}_violations'); var arrow=document.getElementById('${idPrefix}_violationsArrow'); if(body){var open=body.style.display!=='none'; body.style.display=open?'none':'block'; if(arrow) arrow.textContent=open?'▼':'▲';}"
+                         style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;">
+                        <span style="font-size:12px;color:#ff6b6b;font-weight:700;">⚠️ Violations (${violCount})</span>
+                        <span id="${idPrefix}_violationsArrow" style="font-size:12px;color:#ff6b6b;font-weight:700;">▼</span>
+                    </div>
+                    <div id="${idPrefix}_violations" style="display:none;padding:0 10px 10px 10px;">
+                        ${violations.map((v, violationIndex) => {
+                            const issueDateRaw = v.violation_issue_date || v.violation_date;
+                            const issueDate = issueDateRaw ? new Date(issueDateRaw).toLocaleDateString() : 'N/A';
+                            const statusText = v.violation_status || 'N/A';
+                            const vStatusUp = statusText.toUpperCase();
+                            const statusColor = vStatusUp.includes('ACTIVE') || vStatusUp.includes('OPEN') ? '#ff6b6b' :
+                                vStatusUp.includes('CURED') || vStatusUp.includes('CLOSED') ? '#4CAF50' :
+                                vStatusUp.includes('DISMISS') ? '#9e9e9e' : 'var(--text-color)';
+                            const remarks = v.violation_remarks || v.violation_description || 'N/A';
+                            return `<div style="padding:8px 0;border-top:${violationIndex === 0 ? 'none' : '1px solid rgba(255,107,107,0.18)'};font-size:12px;color:var(--text-color);line-height:1.5;">
+                                <div><strong style="color:var(--header-color);">Violation #:</strong> ${escapeMapSuggestionHtml(v.violation_number || 'N/A')}</div>
+                                <div><strong style="color:var(--header-color);">Issued:</strong> ${escapeMapSuggestionHtml(issueDate)}</div>
+                                <div><strong style="color:var(--header-color);">Status:</strong> <span style="color:${statusColor};font-weight:600;">${escapeMapSuggestionHtml(statusText)}</span></div>
+                                <div><strong style="color:var(--header-color);">Type:</strong> ${escapeMapSuggestionHtml(v.violation_type || 'N/A')}</div>
+                                ${v.violation_category ? `<div><strong style="color:var(--header-color);">Category:</strong> ${escapeMapSuggestionHtml(v.violation_category)}</div>` : ''}
+                                ${v.violation_severity ? `<div><strong style="color:var(--header-color);">Severity:</strong> ${escapeMapSuggestionHtml(v.violation_severity)}</div>` : ''}
+                                <div style="margin-top:4px;"><strong style="color:var(--header-color);">Remarks:</strong><div style="white-space:pre-wrap;margin-top:2px;">${escapeMapSuggestionHtml(remarks)}</div></div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>` : '';
+
+            return `
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px;margin-bottom:8px;">
+                    <div><div style="opacity:0.6;margin-bottom:2px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">PVI (${currentYear})</div>${pviHtml}</div>
+                    <div><div style="opacity:0.6;margin-bottom:2px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Cat1 (${currentYear})</div>${cat1Html}</div>
+                    <div><div style="opacity:0.6;margin-bottom:2px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">Cat5 / Next</div><span>${cat5Html}</span></div>
+                </div>
+                <div style="font-size:12px;margin-bottom:6px;padding:8px 10px;background:rgba(26,115,232,0.06);border:1px solid rgba(26,115,232,0.18);border-radius:6px;line-height:1.45;">
+                    <span style="opacity:0.6;margin-right:4px;">Next test required:</span>${nextTestHtml}
+                </div>
+                <div style="font-size:12px;">
+                    <span style="opacity:0.6;margin-right:4px;">Pending:</span>${pendingHtml}
+                </div>
+                ${violationDropdownHtml}
+            `;
+        }
+
+        async function attachViolationsToDobNewDeviceCandidates(candidates) {
+            const list = Array.isArray(candidates) ? candidates : [];
+            if (list.length === 0) return list;
+            const bins = [...new Set(list.map(c => String(c.bin || '').trim()).filter(Boolean))];
+            for (const bin of bins) {
+                let violationsByDevice = {};
+                try {
+                    violationsByDevice = await fetchViolationsForBin(bin) || {};
+                } catch (error) {
+                    console.warn('Could not attach violations for new-device preview BIN:', bin, error);
+                }
+                const byUpperDevice = {};
+                Object.keys(violationsByDevice || {}).forEach(key => {
+                    const upper = String(key || '').trim().toUpperCase();
+                    if (!upper) return;
+                    const entries = Array.isArray(violationsByDevice[key]) ? violationsByDevice[key] : [];
+                    byUpperDevice[upper] = (byUpperDevice[upper] || []).concat(entries);
+                });
+                list.filter(c => String(c.bin || '').trim() === bin).forEach(c => {
+                    if (!c.device) c.device = {};
+                    const deviceNumber = String(c.deviceNumber || c.device.device_number || '').trim().toUpperCase();
+                    const all = byUpperDevice[deviceNumber] || [];
+                    c.device.violations = all.filter(v =>
+                        v.violation_status?.toUpperCase() === 'ACTIVE' ||
+                        v.violation_status?.toUpperCase() === 'OPEN');
+                });
+            }
+            return list;
+        }
+
         function renderDobNewDeviceCandidateRowsHtml(discovered) {
-            return (Array.isArray(discovered) ? discovered : []).map(row => {
+            return (Array.isArray(discovered) ? discovered : []).map((row, index) => {
                 const deviceNumberForCopy = String(row.deviceNumber || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const idPrefix = `newDev_${String(row.bin || 'bin').replace(/[^a-zA-Z0-9_-]/g, '_')}_${String(row.deviceNumber || index).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+                const device = row.device || {
+                    device_number: row.deviceNumber,
+                    device_type: row.deviceType,
+                    device_status: row.deviceStatus
+                };
+                const detailBody = renderMapDeviceReportBodyHtml(device, { idPrefix });
+                const violCount = Array.isArray(device.violations) ? device.violations.length : 0;
+                const detailsLabel = violCount > 0
+                    ? `Device details · ${violCount} violation${violCount !== 1 ? 's' : ''}`
+                    : 'Device details';
                 return `
                 <div class="dob-new-device-candidate" data-bin="${escapeMapSuggestionHtml(row.bin || '')}" data-device="${escapeMapSuggestionHtml(row.deviceNumber || '')}" data-address="${escapeMapSuggestionHtml(row.address || '')}" data-device-type="${escapeMapSuggestionHtml(row.deviceType || '')}"
                     style="margin-top:6px; padding:8px 10px; border-radius:8px; border:1px solid rgba(23,162,184,0.3); background:rgba(255,255,255,0.04); cursor:pointer; transition:background 0.15s ease;">
@@ -10759,6 +10997,15 @@
                         </div>
                         <div class="dob-new-device-status" style="font-size:0.82em; font-weight:700; white-space:nowrap; color:#17a2b8;">Click row to add</div>
                     </div>
+                    <details class="dob-new-device-details" open onclick="event.stopPropagation();" ontoggle="var a=this.querySelector('.dob-new-device-details-arrow'); if(a) a.textContent=this.open?'▲':'▼';" style="margin-top:8px; border-radius:6px; border:1px solid var(--input-border); background:var(--panel-bg); overflow:hidden;">
+                        <summary style="padding:7px 10px; cursor:pointer; font-size:12px; font-weight:700; color:var(--header-color); list-style:none; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                            <span>${detailsLabel}</span>
+                            <span class="dob-new-device-details-arrow" style="font-size:10px; opacity:0.7;">▲</span>
+                        </summary>
+                        <div style="padding:0 10px 10px;">
+                            ${detailBody}
+                        </div>
+                    </details>
                 </div>
             `;
             }).join('');
@@ -10899,7 +11146,7 @@
             modal.id = 'buildingBinNewDevicesModal';
             modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:20050; display:flex; align-items:center; justify-content:center; padding:18px;';
             modal.innerHTML = `
-                <div style="background:var(--card-bg); color:var(--text-color); border:1px solid var(--input-border); border-radius:12px; width:min(640px, 96vw); max-height:82vh; box-shadow:0 12px 42px rgba(0,0,0,0.38); display:flex; flex-direction:column; overflow:hidden;">
+                <div style="background:var(--card-bg); color:var(--text-color); border:1px solid var(--input-border); border-radius:12px; width:min(760px, 96vw); max-height:82vh; box-shadow:0 12px 42px rgba(0,0,0,0.38); display:flex; flex-direction:column; overflow:hidden;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:16px 18px; border-bottom:1px solid var(--input-border);">
                         <div>
                             <h3 style="margin:0 0 4px 0; color:var(--header-color);">New Devices for BIN ${escapeMapSuggestionHtml(bin)}</h3>
@@ -10909,7 +11156,7 @@
                     </div>
                     <div style="padding:12px 18px 16px; overflow-y:auto;">
                         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; margin-bottom:8px;">
-                            <div style="font-size:0.9em; opacity:0.8; flex:1 1 220px;">Click a device number to copy it, click the row to add it, or add all at once. Added devices are included in your Excel sheet when you save.</div>
+                            <div style="font-size:0.9em; opacity:0.8; flex:1 1 220px;">Device details are shown for each device (same info as Device Report). Click a device number to copy it, click the row to add it, or add all at once. Collapse details if you want a shorter list.</div>
                             <button type="button"
                                     class="dob-new-device-add-all-btn"
                                     data-bin="${escapeMapSuggestionHtml(bin)}"
@@ -23735,7 +23982,7 @@
                 
                 // Group violations by device number for easier lookup
                 const violationsByDevice = {};
-                data.forEach(violation => {
+                (Array.isArray(data) ? data : []).forEach(violation => {
                     const deviceNum = violation.device_number;
                     if (!violationsByDevice[deviceNum]) {
                         violationsByDevice[deviceNum] = [];
