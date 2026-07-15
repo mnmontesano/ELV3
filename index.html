@@ -10217,10 +10217,10 @@
             return Array.isArray(data) ? data : [];
         }
 
-        async function enrichNewMapDobDevices(devices) {
+        async function enrichNewMapDobDevices(devices, bin) {
             const freshDevices = Array.isArray(devices) ? devices : [];
             const [violationsByDevice, deviceInfos] = await Promise.all([
-                fetchViolationsForBin(freshDevices[0] && freshDevices[0].bin),
+                fetchViolationsForBin(bin),
                 Promise.all(freshDevices.map(device => fetchDeviceInfo(device.device_number)))
             ]);
             return freshDevices.map((device, index) => ({
@@ -10248,7 +10248,7 @@
                     );
                     if (newDevices.length === 0) continue;
 
-                    const enrichedDevices = await enrichNewMapDobDevices(newDevices);
+                    const enrichedDevices = await enrichNewMapDobDevices(newDevices, bin);
                     group.devices.push(...enrichedDevices);
                     enrichedDevices.forEach(device => {
                         addedDevices.push({
