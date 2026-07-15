@@ -5985,7 +5985,7 @@
                         violationsElement.innerHTML = '<span style="color: var(--text-color);">No violations found</span>';
                     }
                 }
-                return data || [];
+                return Array.isArray(data) ? data : [];
             } catch (error) {
                 if (violationsElement) {
                     violationsElement.innerHTML = '<span style="color: #ff6b6b;">Error loading violations</span>';
@@ -20671,7 +20671,10 @@
                                 needViolations ? fetchViolations(dn) : Promise.resolve([]),
                                 fetchDeviceInfo(dn)
                             ]);
-                            extras[dn] = { violations: violations || [], machineType: info?.machine_type || '' };
+                            extras[dn] = {
+                                violations: Array.isArray(violations) ? violations : [],
+                                machineType: info?.machine_type || ''
+                            };
                         } catch (e) {
                             extras[dn] = { violations: [], machineType: '' };
                         }
@@ -20695,7 +20698,8 @@
                     const fresh = computeDeviceRefreshFields(record, extra.machineType);
 
                     if (needViolations) {
-                        const active = extra.violations.filter(v =>
+                        const violationsList = Array.isArray(extra.violations) ? extra.violations : [];
+                        const active = violationsList.filter(v =>
                             v.violation_status?.toUpperCase() === 'ACTIVE' ||
                             v.violation_status?.toUpperCase() === 'OPEN');
                         fresh['Violation Count'] = String(active.length);
@@ -21258,7 +21262,8 @@
             try {
                 const response = await fetch(`https://data.cityofnewyork.us/resource/855j-jady.json?device_number=${encodeURIComponent(deviceNumber)}`);
                 const data = await response.json();
-                return data;
+                // NYC Open Data can return an error object (e.g. rate limit) instead of an array
+                return Array.isArray(data) ? data : [];
             } catch (error) {
                 console.error('Error fetching violations:', error);
                 return [];
