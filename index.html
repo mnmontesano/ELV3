@@ -10233,7 +10233,126 @@
             const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?${params.toString()}`);
             if (!response.ok) throw new Error(`DOB BIN lookup failed for ${bin}`);
             const data = await response.json();
-            return Array.isArray(data) ? data : [];
+            const devices = Array.isArray(data) ? data : [];
+            cacheMapBinDobDevices(bin, devices);
+            return devices;
+        }
+
+        function cacheMapBinDobDevices(bin, devices) {
+            if (!window.mapBinDobDeviceCache) window.mapBinDobDeviceCache = {};
+            const key = String(bin || '').trim();
+            if (!key) return;
+            window.mapBinDobDeviceCache[key] = {
+                fetchedAt: Date.now(),
+                devices: Array.isArray(devices) ? devices : []
+            };
+        }
+
+        function getCachedMapBinDobDevices(bin) {
+            if (!window.mapBinDobDeviceCache) return null;
+            const entry = window.mapBinDobDeviceCache[String(bin || '').trim()];
+            return entry && Array.isArray(entry.devices) ? entry.devices : null;
+        }
+
+        function getTrackedMapDeviceNumbersForBin(bin) {
+            const numbers = new Set();
+            const key = String(bin || '').trim();
+            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups
+                ? window.lastBulkSearchResults.binGroups
+                : {};
+            const group = binGroups[key];
+            if (group && Array.isArray(group.devices)) {
+                group.devices.forEach(device => {
+                    const deviceNumber = device && device.device_number ? String(device.device_number).trim().toUpperCase() : '';
+                    if (deviceNumber) numbers.add(deviceNumber);
+                });
+            }
+            getAdditionalLocations().forEach(location => {
+                if (!location || String(location.bin || '').trim() !== key || !Array.isArray(location.devices)) return;
+                location.devices.forEach(device => {
+                    const deviceNumber = device && device.device_number ? String(device.device_number).trim().toUpperCase() : '';
+                    if (deviceNumber) numbers.add(deviceNumber);
+                });
+            });
+            return numbers;
+        }
+
+        function getUntrackedDobDevicesForBin(bin, dobDevices) {
+            const tracked = getTrackedMapDeviceNumbersForBin(bin);
+            const list = Array.isArray(dobDevices) ? dobDevices : [];
+            const seen = new Set();
+            return list.filter(device => {
+                const deviceNumber = device && device.device_number ? String(device.device_number).trim().toUpperCase() : '';
+                if (!deviceNumber || tracked.has(deviceNumber) || seen.has(deviceNumber)) return false;
+                if (!mapDobDeviceIsActiveForCompletion(device)) return false;
+                seen.add(deviceNumber);
+                return true;
+            }).sort((a, b) => String(a.device_number || '').localeCompare(String(b.device_number || ''), undefined, { numeric: true }));
+        }
+
+        async function ensureMapBinDobDeviceCache(bin) {
+            const key = String(bin || '').trim();
+            if (!key) return [];
+            const cached = getCachedMapBinDobDevices(key);
+            if (cached) return cached;
+            return fetchDobDevicesForBin(key);
+        }
+
+        function renderMapUntrackedDobDevicesHtml(bin, untrackedDevices) {
+            const devices = Array.isArray(untrackedDevices) ? untrackedDevices : [];
+            if (devices.length === 0) {
+                return '';
+            }
+
+            const rows = devices.map(device => {
+                const deviceNumber = String(device.device_number || '').trim();
+                const deviceNumberForCopy = deviceNumber.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const meta = [device.device_type, device.device_status].filter(Boolean).join(' · ');
+                return `
+                    <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start; padding:4px 0; border-bottom:1px solid rgba(23,162,184,0.15);">
+                        <div style="min-width:0;">
+                            <strong class="dob-new-device-copy"
+                                    onclick="copyDeviceNumberToClipboard('${deviceNumberForCopy}', event)"
+                                    title="Click to copy device number"
+                                    style="cursor:pointer; padding:1px 6px; border-radius:4px; border:1px solid rgba(26,115,232,0.25); background:rgba(26,115,232,0.08); color:var(--header-color); display:inline-flex; align-items:center; gap:4px; font-size:11px;">
+                                ${escapeMapSuggestionHtml(deviceNumber)} <span style="font-size:10px; opacity:0.65;">📋</span>
+                            </strong>
+                            ${meta ? `<div style="font-size:10px; opacity:0.7; margin-top:2px;">${escapeMapSuggestionHtml(meta)}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+                <details style="margin-top:6px; border-radius:6px; background:rgba(23,162,184,0.08); border:1px solid rgba(23,162,184,0.25); overflow:hidden;">
+                    <summary style="padding:6px 8px; cursor:pointer; font-size:10px; font-weight:700; color:#17a2b8; list-style:none; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                        <span>Also on DOB BIN · ${devices.length} not in count</span>
+                        <span style="font-size:9px; opacity:0.75; font-weight:600;">▼</span>
+                    </summary>
+                    <div style="padding:0 8px 8px;">
+                        <div style="font-size:9px; opacity:0.7; margin-bottom:4px; line-height:1.3;">
+                            Not included in Devices count. Click a number to copy. Add via Full Device Report → Check New Devices.
+                        </div>
+                        ${rows}
+                    </div>
+                </details>
+            `;
+        }
+
+        async function hydrateMapBuildingUntrackedDevices(bin) {
+            const key = String(bin || '').trim();
+            const container = document.getElementById(`mapUntrackedDevices_${key}`);
+            if (!container) return;
+
+            container.innerHTML = `<div style="font-size:10px; opacity:0.65; margin-top:4px;">Checking DOB BIN for other devices...</div>`;
+            try {
+                const dobDevices = await ensureMapBinDobDeviceCache(key);
+                const untracked = getUntrackedDobDevicesForBin(key, dobDevices);
+                container.innerHTML = renderMapUntrackedDobDevicesHtml(key, untracked);
+            } catch (error) {
+                console.warn('Could not load untracked DOB devices for BIN:', key, error);
+                container.innerHTML = `<div style="font-size:10px; color:#ff6b6b; margin-top:4px;">Could not check DOB for other BIN devices.</div>`;
+            }
         }
 
         function collectMapDobBinTargets() {
@@ -17943,7 +18062,15 @@
             });
 
             buildingMap.on('popupopen', function (e) {
-                hydrateMapBuildingPopupState(e.popup && e.popup.getElement ? e.popup.getElement() : document);
+                const popupRoot = e.popup && e.popup.getElement ? e.popup.getElement() : document;
+                hydrateMapBuildingPopupState(popupRoot);
+                const untrackedContainer = popupRoot.querySelector
+                    ? popupRoot.querySelector('[id^="mapUntrackedDevices_"]')
+                    : document.querySelector('[id^="mapUntrackedDevices_"]');
+                if (untrackedContainer && untrackedContainer.id) {
+                    const bin = untrackedContainer.id.replace(/^mapUntrackedDevices_/, '');
+                    if (bin) hydrateMapBuildingUntrackedDevices(bin);
+                }
             });
 
             // Safari can calculate hidden/flex modal dimensions late; reflow map sizing safely.
@@ -18145,7 +18272,7 @@
                             </div>
                         </div>
                         
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px;">
                             <div style="font-size: 12px;">
                                 <strong>BIN:</strong> 
                                 <span onclick="copyMapBin('${building.bin}')" 
@@ -18160,6 +18287,7 @@
                                 <strong>Devices:</strong> ${building.deviceCount}
                             </div>
                         </div>
+                        <div id="mapUntrackedDevices_${building.bin}" style="margin-bottom: 10px;"></div>
                         
                         <div style="margin-bottom: 10px; padding: 8px; background: rgba(23,162,184,0.1); border-radius: 6px; border: 1px solid rgba(23,162,184,0.3);">
                             <div style="display: flex; align-items: center; gap: 8px;">
