@@ -1011,7 +1011,7 @@
                                 <span>📄</span> <span>Save As</span>
                             </button>
                             <div class="map-modal-dob-group">
-                                <button id="mapDobUpdateButton" onclick="updateMapViewDobInfo()" title="Refresh saved device test dates from DOB" style="background: #0d6efd; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
+                                <button id="mapDobUpdateButton" onclick="updateMapViewDobInfo()" title="Refresh saved device test dates from DOB and check BINs for new devices" style="background: #0d6efd; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
                                     <span>🔄</span> <span id="mapDobUpdateButtonLabel">DOB Info Update</span>
                                 </button>
                                 <span id="mapDobLastUpdated" style="display: none; color: var(--text-color); opacity: 0.68; font-size: 0.68em; white-space: nowrap;"></span>
@@ -10050,14 +10050,24 @@
         function buildMapViewExportPayload() {
             syncMapNoteDraftsFromDom();
 
-            const additionalLocations = getAdditionalLocations();
+            const additionalLocations = getAdditionalLocations().map(location => {
+                if (!location || typeof location !== 'object') return location;
+                if (!Array.isArray(location.devices)) return location;
+                return {
+                    ...location,
+                    devices: location.devices.filter(device => !device || !device.omitFromSavedMapFile)
+                };
+            });
+            const exportBinGroups = stripOmitFromSavedMapDevices(
+                (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {}
+            );
             const scopedMonthLabels = collectScopedMonthLabels(
-                window.lastBulkSearchResults.binGroups || {},
+                exportBinGroups,
                 additionalLocations,
                 getMapMonthLabels()
             );
             const monthAssignments = collectMonthAssignments(
-                window.lastBulkSearchResults.binGroups || {},
+                exportBinGroups,
                 additionalLocations,
                 scopedMonthLabels
             );
@@ -10070,7 +10080,10 @@
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
                 bulkDeviceNumbers: (document.getElementById('bulkDeviceNumbers') || {}).value || '',
-                lastBulkSearchResults: window.lastBulkSearchResults,
+                lastBulkSearchResults: {
+                    ...(window.lastBulkSearchResults || {}),
+                    binGroups: exportBinGroups
+                },
                 favorites: getMapFavorites(),
                 hidden: getMapHidden(),
                 completed: getMapCompleted(),
@@ -10208,6 +10221,671 @@
             if (!response.ok) throw new Error(`DOB lookup failed for ${deviceNumber}`);
             const data = await response.json();
             return data && data.length > 0 ? data[0] : null;
+        }
+
+        async function fetchDobDevicesForBin(bin) {
+            const params = new URLSearchParams();
+            params.set('bin', String(bin));
+            params.set('$limit', '5000');
+            const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?${params.toString()}`);
+            if (!response.ok) throw new Error(`DOB BIN lookup failed for ${bin}`);
+            const data = await response.json();
+            return Array.isArray(data) ? data : [];
+        }
+
+        function collectMapDobBinTargets() {
+            const targets = new Map();
+
+            const addGroup = (bin, group) => {
+                const key = String(bin || '').trim();
+                if (!key || key.toUpperCase() === 'UNKNOWN BIN') return;
+                if (!targets.has(key)) targets.set(key, { bin: key, groups: [] });
+                const entry = targets.get(key);
+                if (group && !entry.groups.includes(group)) entry.groups.push(group);
+            };
+
+            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups
+                ? window.lastBulkSearchResults.binGroups
+                : {};
+            Object.entries(binGroups).forEach(([bin, group]) => addGroup(bin, group));
+
+            getAdditionalLocations().forEach(location => {
+                if (location && location.bin) addGroup(location.bin, location);
+            });
+
+            return Array.from(targets.values());
+        }
+
+        function getPrimaryMapGroupForBin(bin, binTarget) {
+            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups
+                ? window.lastBulkSearchResults.binGroups
+                : {};
+            if (binGroups[bin]) return binGroups[bin];
+            return binTarget && Array.isArray(binTarget.groups) ? binTarget.groups[0] : null;
+        }
+
+        function getSavedDeviceNumbersForBinTarget(binTarget) {
+            const numbers = new Set();
+            if (!binTarget || !Array.isArray(binTarget.groups)) return numbers;
+            binTarget.groups.forEach(group => {
+                if (!group || !Array.isArray(group.devices)) return;
+                group.devices.forEach(device => {
+                    const deviceNumber = device && device.device_number ? String(device.device_number).trim().toUpperCase() : '';
+                    if (deviceNumber) numbers.add(deviceNumber);
+                });
+            });
+            return numbers;
+        }
+
+        async function enrichNewDobDeviceRecord(device, violationsByDevice) {
+            const deviceNumber = device && device.device_number ? String(device.device_number).trim() : '';
+            const violations = (violationsByDevice && deviceNumber && violationsByDevice[deviceNumber]) || [];
+            device.violations = violations.filter(v =>
+                v.violation_status?.toUpperCase() === 'ACTIVE' ||
+                v.violation_status?.toUpperCase() === 'OPEN');
+            try {
+                const deviceInfo = await fetchDeviceInfo(deviceNumber);
+                device.machine_type = deviceInfo?.machine_type || device.machine_type || '';
+            } catch (error) {
+                console.warn('Could not fetch machine type for new DOB device:', deviceNumber, error);
+                device.machine_type = device.machine_type || '';
+            }
+            return device;
+        }
+
+        async function discoverNewDobDevicesForMapBins(binTargets, onProgress) {
+            const candidates = [];
+            const failedBins = [];
+            const list = Array.isArray(binTargets) ? binTargets : [];
+            const candidateStore = {};
+
+            for (let i = 0; i < list.length; i++) {
+                const binTarget = list[i];
+                const bin = binTarget.bin;
+                try {
+                    const dobDevices = await fetchDobDevicesForBin(bin);
+                    const savedNumbers = getSavedDeviceNumbersForBinTarget(binTarget);
+                    const targetGroup = getPrimaryMapGroupForBin(bin, binTarget);
+                    if (!targetGroup) {
+                        if (dobDevices.some(device => {
+                            const deviceNumber = device && device.device_number ? String(device.device_number).trim().toUpperCase() : '';
+                            return deviceNumber && !savedNumbers.has(deviceNumber) && mapDobDeviceIsActiveForCompletion(device);
+                        })) {
+                            failedBins.push(bin);
+                        }
+                    } else {
+                        const address = targetGroup.address || '';
+                        dobDevices.forEach(device => {
+                            const deviceNumber = device && device.device_number ? String(device.device_number).trim().toUpperCase() : '';
+                            if (!deviceNumber || savedNumbers.has(deviceNumber)) return;
+                            if (!mapDobDeviceIsActiveForCompletion(device)) return;
+                            const key = `${bin}|${deviceNumber}`;
+                            if (candidateStore[key]) return;
+                            const row = {
+                                key,
+                                deviceNumber,
+                                bin,
+                                address: address || (
+                                    device.house_number && device.street_name
+                                        ? `${device.house_number} ${device.street_name}${device.borough ? ', ' + device.borough : ''}`
+                                        : ''
+                                ),
+                                deviceType: device.device_type || '',
+                                deviceStatus: device.device_status || '',
+                                device: { ...device }
+                            };
+                            candidateStore[key] = row;
+                            candidates.push(row);
+                            savedNumbers.add(deviceNumber);
+                        });
+                    }
+                } catch (error) {
+                    console.warn('DOB BIN new-device scan failed:', bin, error);
+                    failedBins.push(bin);
+                }
+                if (typeof onProgress === 'function') onProgress(i + 1, list.length);
+            }
+
+            window.pendingDobNewDeviceCandidates = candidateStore;
+            return { candidates, failedBins };
+        }
+
+        function getPendingDobNewDeviceCandidate(bin, deviceNumber) {
+            const key = `${String(bin || '').trim()}|${String(deviceNumber || '').trim().toUpperCase()}`;
+            const store = window.pendingDobNewDeviceCandidates || {};
+            return store[key] || null;
+        }
+
+        function markPendingDobNewDeviceRowStatus(bin, deviceNumber, statusText, added) {
+            const modals = [
+                document.getElementById('dobInfoUpdateChangesModal'),
+                document.getElementById('buildingBinNewDevicesModal')
+            ].filter(Boolean);
+            const normalizedBin = String(bin || '');
+            const normalizedDevice = String(deviceNumber || '').trim().toUpperCase();
+            modals.forEach(modal => {
+                const row = Array.from(modal.querySelectorAll('.dob-new-device-candidate')).find(el =>
+                    (el.getAttribute('data-bin') || '') === normalizedBin &&
+                    String(el.getAttribute('data-device') || '').trim().toUpperCase() === normalizedDevice
+                );
+                if (!row) return;
+                if (added) {
+                    row.classList.add('dob-new-device-added');
+                    row.style.opacity = '0.72';
+                    row.style.cursor = 'default';
+                    row.style.pointerEvents = 'none';
+                }
+                const statusEl = row.querySelector('.dob-new-device-status');
+                if (statusEl) statusEl.textContent = statusText;
+            });
+        }
+
+        async function addPendingDobNewDeviceToMap(bin, deviceNumber, options) {
+            const opts = options || {};
+            const candidate = getPendingDobNewDeviceCandidate(bin, deviceNumber);
+            if (!candidate || !candidate.device) {
+                if (!opts.silent) showMapNotification('That device is no longer available to add', '#ff9800');
+                return { ok: false, reason: 'missing' };
+            }
+
+            const normalizedDevice = String(deviceNumber || '').trim().toUpperCase();
+            const normalizedBin = String(bin || '').trim();
+
+            if (!opts.skipConfirm && !confirm(`Add device ${normalizedDevice} to the map?`)) {
+                return { ok: false, reason: 'cancelled' };
+            }
+
+            const binTargets = collectMapDobBinTargets().filter(target => String(target.bin) === normalizedBin);
+            const binTarget = binTargets[0] || { bin: normalizedBin, groups: [] };
+            const targetGroup = getPrimaryMapGroupForBin(normalizedBin, binTarget);
+            if (!targetGroup) {
+                if (!opts.silent) showMapNotification(`Could not find map building for BIN ${normalizedBin}`, '#ff6b6b');
+                return { ok: false, reason: 'no-group' };
+            }
+            if (!Array.isArray(targetGroup.devices)) targetGroup.devices = [];
+
+            const alreadySaved = targetGroup.devices.some(
+                d => String(d.device_number || '').trim().toUpperCase() === normalizedDevice
+            );
+            if (alreadySaved) {
+                markPendingDobNewDeviceRowStatus(normalizedBin, normalizedDevice, 'Already on map', true);
+                if (!opts.silent) showMapNotification(`Device ${normalizedDevice} is already on the map`, '#17a2b8');
+                return { ok: false, reason: 'already-saved' };
+            }
+
+            markPendingDobNewDeviceRowStatus(normalizedBin, normalizedDevice, 'Adding...', false);
+
+            try {
+                let violationsByDevice = opts.violationsByDevice || null;
+                if (!violationsByDevice) {
+                    try {
+                        violationsByDevice = await fetchViolationsForBin(normalizedBin);
+                    } catch (error) {
+                        console.warn('Could not fetch violations for new device BIN:', normalizedBin, error);
+                        violationsByDevice = {};
+                    }
+                }
+
+                const device = { ...candidate.device };
+                await enrichNewDobDeviceRecord(device, violationsByDevice);
+
+                if (!targetGroup.address && device.house_number && device.street_name) {
+                    targetGroup.address = `${device.house_number} ${device.street_name}${device.borough ? ', ' + device.borough : ''}`;
+                }
+                if (!targetGroup.latitude && device.latitude) {
+                    targetGroup.latitude = device.latitude;
+                    targetGroup.longitude = device.longitude;
+                }
+
+                targetGroup.devices.push(device);
+                if (!opts.skipActivity) {
+                    addMapActivity('Added new DOB device', {
+                        type: 'Building',
+                        bin: normalizedBin,
+                        address: targetGroup.address || candidate.address || '',
+                        details: `${normalizedDevice} (included in Excel save)`
+                    });
+                }
+
+                if (!opts.skipRefresh) {
+                    updateMapControlsPanel();
+                    refreshMapViewAfterDobInfoUpdate();
+                    if (document.getElementById('deviceDetailModal')) {
+                        showDeviceDetailModal(normalizedBin);
+                    }
+                }
+
+                markPendingDobNewDeviceRowStatus(normalizedBin, normalizedDevice, 'Added to map', true);
+
+                if (window.pendingDobNewDeviceCandidates && window.pendingDobNewDeviceCandidates[candidate.key]) {
+                    window.pendingDobNewDeviceCandidates[candidate.key].added = true;
+                    window.pendingDobNewDeviceCandidates[candidate.key].includeInExcel = true;
+                }
+
+                updateDobNewDeviceAddAllButtons(normalizedBin);
+
+                if (!opts.silent) {
+                    showMapNotification(
+                        `Added ${normalizedDevice} to the map. Save to write it to your Excel/map file.`,
+                        '#27ae60'
+                    );
+                }
+                return { ok: true, deviceNumber: normalizedDevice, bin: normalizedBin, address: targetGroup.address || candidate.address || '' };
+            } catch (error) {
+                console.warn('Failed to add discovered DOB device:', normalizedDevice, error);
+                markPendingDobNewDeviceRowStatus(normalizedBin, normalizedDevice, 'Add failed — click to retry', false);
+                if (!opts.silent) showMapNotification(`Could not add device ${normalizedDevice}`, '#ff6b6b');
+                return { ok: false, reason: 'error' };
+            }
+        }
+
+        function getVisiblePendingDobNewDevicesForBin(bin) {
+            const normalizedBin = String(bin || '').trim();
+            const store = window.pendingDobNewDeviceCandidates || {};
+            const fromStore = Object.values(store).filter(row =>
+                row &&
+                !row.added &&
+                String(row.bin || '').trim() === normalizedBin &&
+                row.deviceNumber
+            );
+
+            const modals = [
+                document.getElementById('dobInfoUpdateChangesModal'),
+                document.getElementById('buildingBinNewDevicesModal')
+            ].filter(Boolean);
+
+            if (modals.length === 0) return fromStore;
+
+            const visibleNumbers = new Set();
+            modals.forEach(modal => {
+                Array.from(modal.querySelectorAll('.dob-new-device-candidate')).forEach(row => {
+                    if ((row.getAttribute('data-bin') || '') !== normalizedBin) return;
+                    if (row.classList.contains('dob-new-device-added')) return;
+                    if (row.style.display === 'none') return;
+                    const deviceNumber = String(row.getAttribute('data-device') || '').trim().toUpperCase();
+                    if (deviceNumber) visibleNumbers.add(deviceNumber);
+                });
+            });
+
+            if (visibleNumbers.size === 0) return fromStore;
+            return fromStore.filter(row => visibleNumbers.has(String(row.deviceNumber || '').trim().toUpperCase()));
+        }
+
+        function updateDobNewDeviceAddAllButtons(bin) {
+            const normalizedBin = String(bin || '').trim();
+            const remaining = getVisiblePendingDobNewDevicesForBin(normalizedBin).length;
+            document.querySelectorAll('.dob-new-device-add-all-btn').forEach(btn => {
+                if ((btn.getAttribute('data-bin') || '') !== normalizedBin) return;
+                if (remaining === 0) {
+                    btn.disabled = true;
+                    btn.textContent = 'All added';
+                    btn.style.opacity = '0.7';
+                } else {
+                    btn.disabled = false;
+                    btn.textContent = 'Add All';
+                    btn.style.opacity = '1';
+                }
+            });
+        }
+
+        async function addAllPendingDobNewDevicesForBin(bin, event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+
+            const normalizedBin = String(bin || '').trim();
+            const candidates = getVisiblePendingDobNewDevicesForBin(normalizedBin);
+            if (candidates.length === 0) {
+                showMapNotification(`No remaining new devices to add for BIN ${normalizedBin}`, '#ff9800');
+                return;
+            }
+
+            const address = candidates[0].address || '';
+            if (!confirm(`Add all ${candidates.length} new device${candidates.length !== 1 ? 's' : ''} for ${address || ('BIN ' + normalizedBin)} to the map? They will be included in your Excel sheet when you save.`)) {
+                return;
+            }
+
+            const addAllButtons = Array.from(document.querySelectorAll('.dob-new-device-add-all-btn'))
+                .filter(btn => (btn.getAttribute('data-bin') || '') === normalizedBin);
+            addAllButtons.forEach(btn => {
+                btn.disabled = true;
+                btn.textContent = 'Adding...';
+                btn.style.opacity = '0.75';
+            });
+
+            let violationsByDevice = {};
+            try {
+                violationsByDevice = await fetchViolationsForBin(normalizedBin);
+            } catch (error) {
+                console.warn('Could not fetch violations for Add All BIN:', normalizedBin, error);
+            }
+
+            let addedCount = 0;
+            let skippedCount = 0;
+            for (const candidate of candidates) {
+                const result = await addPendingDobNewDeviceToMap(normalizedBin, candidate.deviceNumber, {
+                    skipConfirm: true,
+                    silent: true,
+                    skipRefresh: true,
+                    skipActivity: true,
+                    violationsByDevice
+                });
+                if (result && result.ok) addedCount++;
+                else skippedCount++;
+            }
+
+            if (addedCount > 0) {
+                addMapActivity('Added new DOB devices', {
+                    type: 'Building',
+                    bin: normalizedBin,
+                    address: address || '',
+                    details: `${addedCount} device${addedCount !== 1 ? 's' : ''} added (included in Excel save)`
+                });
+                updateMapControlsPanel();
+                refreshMapViewAfterDobInfoUpdate();
+                if (document.getElementById('deviceDetailModal')) {
+                    showDeviceDetailModal(normalizedBin);
+                }
+            }
+
+            updateDobNewDeviceAddAllButtons(normalizedBin);
+
+            showMapNotification(
+                addedCount > 0
+                    ? `Added ${addedCount} device${addedCount !== 1 ? 's' : ''} for BIN ${normalizedBin}.${skippedCount ? ` ${skippedCount} skipped.` : ''} Save to write them to your Excel/map file.`
+                    : `No devices were added for BIN ${normalizedBin}`,
+                addedCount > 0 ? '#27ae60' : '#ff9800'
+            );
+        }
+
+        function bindDobNewDeviceCandidateRows(root) {
+            if (!root) return;
+            root.querySelectorAll('.dob-new-device-candidate').forEach(row => {
+                row.addEventListener('mouseenter', () => {
+                    if (!row.classList.contains('dob-new-device-added')) {
+                        row.style.background = 'rgba(23,162,184,0.18)';
+                    }
+                });
+                row.addEventListener('mouseleave', () => {
+                    if (!row.classList.contains('dob-new-device-added')) {
+                        row.style.background = 'rgba(255,255,255,0.04)';
+                    }
+                });
+                row.addEventListener('click', () => {
+                    if (row.classList.contains('dob-new-device-added')) return;
+                    const rowBin = row.getAttribute('data-bin') || '';
+                    const device = row.getAttribute('data-device') || '';
+                    addPendingDobNewDeviceToMap(rowBin, device);
+                });
+            });
+        }
+
+        function renderDobNewDeviceCandidateRowsHtml(discovered) {
+            return (Array.isArray(discovered) ? discovered : []).map(row => `
+                <div class="dob-new-device-candidate" data-bin="${escapeMapSuggestionHtml(row.bin || '')}" data-device="${escapeMapSuggestionHtml(row.deviceNumber || '')}" data-address="${escapeMapSuggestionHtml(row.address || '')}" data-device-type="${escapeMapSuggestionHtml(row.deviceType || '')}"
+                    style="margin-top:6px; padding:8px 10px; border-radius:8px; border:1px solid rgba(23,162,184,0.3); background:rgba(255,255,255,0.04); cursor:pointer; transition:background 0.15s ease;">
+                    <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                        <div>
+                            <div style="font-weight:700; color:var(--header-color);">${escapeMapSuggestionHtml(row.deviceNumber)}${row.bin ? ` <span style="font-weight:400; opacity:0.65;">BIN ${escapeMapSuggestionHtml(row.bin)}</span>` : ''}</div>
+                            <div style="opacity:0.85;">${escapeMapSuggestionHtml(row.address || '')}</div>
+                            <div style="opacity:0.75; margin-top:2px;">${escapeMapSuggestionHtml([row.deviceType, row.deviceStatus].filter(Boolean).join(' · '))}</div>
+                        </div>
+                        <div class="dob-new-device-status" style="font-size:0.82em; font-weight:700; white-space:nowrap; color:#17a2b8;">Click to add</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function groupDobNewDeviceCandidatesByBuilding(discovered) {
+            const groups = new Map();
+            (Array.isArray(discovered) ? discovered : []).forEach(row => {
+                const bin = String(row.bin || '').trim() || 'Unknown BIN';
+                if (!groups.has(bin)) {
+                    groups.set(bin, {
+                        bin,
+                        address: row.address || '',
+                        devices: []
+                    });
+                }
+                const group = groups.get(bin);
+                if (!group.address && row.address) group.address = row.address;
+                group.devices.push(row);
+            });
+            return Array.from(groups.values()).sort((a, b) => {
+                const addressCompare = String(a.address || '').localeCompare(String(b.address || ''), undefined, { sensitivity: 'base' });
+                if (addressCompare !== 0) return addressCompare;
+                return String(a.bin).localeCompare(String(b.bin), undefined, { numeric: true });
+            });
+        }
+
+        function renderDobNewDeviceCandidatesGroupedHtml(discovered) {
+            const buildingGroups = groupDobNewDeviceCandidatesByBuilding(discovered);
+            if (buildingGroups.length === 0) return '';
+
+            return buildingGroups.map((group, index) => {
+                const binForJs = String(group.bin || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                return `
+                <details class="dob-new-device-building-group" open data-bin="${escapeMapSuggestionHtml(group.bin)}" data-address="${escapeMapSuggestionHtml(group.address || '')}"
+                    style="margin-top:${index === 0 ? '8px' : '10px'}; border:1px solid rgba(23,162,184,0.28); border-radius:8px; overflow:hidden; background:rgba(255,255,255,0.03);">
+                    <summary style="padding:10px 12px; cursor:pointer; font-weight:700; color:var(--header-color); background:rgba(23,162,184,0.12); list-style:none; display:flex; justify-content:space-between; gap:10px; align-items:center;">
+                        <span style="min-width:0;">
+                            <span style="display:block;">${escapeMapSuggestionHtml(group.address || ('BIN ' + group.bin))}</span>
+                            <span style="display:block; font-weight:500; opacity:0.7; font-size:0.88em; margin-top:2px;">BIN ${escapeMapSuggestionHtml(group.bin)}</span>
+                        </span>
+                        <span style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                            <span class="dob-new-device-building-count" style="font-size:0.85em; color:#17a2b8; font-weight:700;">${group.devices.length} device${group.devices.length !== 1 ? 's' : ''}</span>
+                            <button type="button"
+                                    class="dob-new-device-add-all-btn"
+                                    data-bin="${escapeMapSuggestionHtml(group.bin)}"
+                                    onclick="addAllPendingDobNewDevicesForBin('${binForJs}', event)"
+                                    style="padding:5px 10px; border-radius:6px; border:none; background:#17a2b8; color:white; cursor:pointer; font-size:0.82em; font-weight:700; white-space:nowrap;">
+                                Add All
+                            </button>
+                        </span>
+                    </summary>
+                    <div style="padding:0 10px 10px;">
+                        ${renderDobNewDeviceCandidateRowsHtml(group.devices)}
+                    </div>
+                </details>
+            `;
+            }).join('');
+        }
+
+        function filterDobNewDevicesInModal(rootId) {
+            const root = document.getElementById(rootId || 'dobInfoUpdateChangesModal');
+            if (!root) return;
+
+            const searchInput = root.querySelector('#dobNewDevicesSearchInput');
+            const query = searchInput ? searchInput.value.trim().toUpperCase() : '';
+            const countEl = root.querySelector('#dobNewDevicesFilterCount');
+            const emptyEl = root.querySelector('#dobNewDevicesEmptyState');
+            const buildingGroups = root.querySelectorAll('.dob-new-device-building-group');
+            let visibleDevices = 0;
+            let visibleBuildings = 0;
+
+            if (buildingGroups.length > 0) {
+                buildingGroups.forEach(group => {
+                    const devices = group.querySelectorAll('.dob-new-device-candidate');
+                    let groupVisible = 0;
+                    devices.forEach(deviceRow => {
+                        const haystack = [
+                            deviceRow.getAttribute('data-device') || '',
+                            deviceRow.getAttribute('data-bin') || '',
+                            deviceRow.getAttribute('data-address') || '',
+                            deviceRow.getAttribute('data-device-type') || '',
+                            group.getAttribute('data-address') || '',
+                            group.getAttribute('data-bin') || ''
+                        ].join(' ').toUpperCase();
+                        const match = !query || haystack.includes(query);
+                        deviceRow.style.display = match ? '' : 'none';
+                        if (match) groupVisible++;
+                    });
+                    group.style.display = groupVisible > 0 ? '' : 'none';
+                    if (groupVisible > 0) {
+                        visibleBuildings++;
+                        visibleDevices += groupVisible;
+                        const countBadge = group.querySelector('.dob-new-device-building-count');
+                        if (countBadge) {
+                            countBadge.textContent = `${groupVisible} device${groupVisible !== 1 ? 's' : ''}`;
+                        }
+                        if (query) group.open = true;
+                    }
+                });
+            } else {
+                root.querySelectorAll('.dob-new-device-candidate').forEach(deviceRow => {
+                    const haystack = [
+                        deviceRow.getAttribute('data-device') || '',
+                        deviceRow.getAttribute('data-bin') || '',
+                        deviceRow.getAttribute('data-address') || '',
+                        deviceRow.getAttribute('data-device-type') || ''
+                    ].join(' ').toUpperCase();
+                    const match = !query || haystack.includes(query);
+                    deviceRow.style.display = match ? '' : 'none';
+                    if (match) visibleDevices++;
+                });
+            }
+
+            if (countEl) {
+                if (!query) {
+                    countEl.style.display = 'none';
+                    countEl.textContent = '';
+                } else {
+                    countEl.style.display = '';
+                    countEl.textContent = buildingGroups.length > 0
+                        ? `${visibleDevices} device${visibleDevices !== 1 ? 's' : ''} in ${visibleBuildings} building${visibleBuildings !== 1 ? 's' : ''}`
+                        : `${visibleDevices} device${visibleDevices !== 1 ? 's' : ''}`;
+                }
+            }
+            if (emptyEl) {
+                emptyEl.style.display = visibleDevices === 0 ? '' : 'none';
+            }
+        }
+
+        function showBuildingBinNewDevicesModal(bin, address, candidates) {
+            const existing = document.getElementById('buildingBinNewDevicesModal');
+            if (existing) existing.remove();
+
+            const discovered = Array.isArray(candidates) ? candidates : [];
+            const binForJs = String(bin || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const modal = document.createElement('div');
+            modal.id = 'buildingBinNewDevicesModal';
+            modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:20050; display:flex; align-items:center; justify-content:center; padding:18px;';
+            modal.innerHTML = `
+                <div style="background:var(--card-bg); color:var(--text-color); border:1px solid var(--input-border); border-radius:12px; width:min(640px, 96vw); max-height:82vh; box-shadow:0 12px 42px rgba(0,0,0,0.38); display:flex; flex-direction:column; overflow:hidden;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:16px 18px; border-bottom:1px solid var(--input-border);">
+                        <div>
+                            <h3 style="margin:0 0 4px 0; color:var(--header-color);">New Devices for BIN ${escapeMapSuggestionHtml(bin)}</h3>
+                            <div style="font-size:0.9em; opacity:0.72;">${escapeMapSuggestionHtml(address || '')}${discovered.length ? ` · ${discovered.length} new device${discovered.length !== 1 ? 's' : ''} found` : ''}</div>
+                        </div>
+                        <button onclick="document.getElementById('buildingBinNewDevicesModal')?.remove()" style="background:none; border:none; color:var(--text-color); font-size:24px; line-height:1; cursor:pointer;">×</button>
+                    </div>
+                    <div style="padding:12px 18px 16px; overflow-y:auto;">
+                        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                            <div style="font-size:0.9em; opacity:0.8; flex:1 1 220px;">Click a device to add it, or add all at once. Added devices are included in your Excel sheet when you save.</div>
+                            <button type="button"
+                                    class="dob-new-device-add-all-btn"
+                                    data-bin="${escapeMapSuggestionHtml(bin)}"
+                                    onclick="addAllPendingDobNewDevicesForBin('${binForJs}', event)"
+                                    style="padding:7px 12px; border-radius:6px; border:none; background:#17a2b8; color:white; cursor:pointer; font-size:0.9em; font-weight:700; white-space:nowrap;">
+                                Add All
+                            </button>
+                        </div>
+                        ${renderDobNewDeviceCandidateRowsHtml(discovered)}
+                    </div>
+                    <div style="padding:12px 18px; border-top:1px solid var(--input-border); display:flex; justify-content:flex-end;">
+                        <button onclick="document.getElementById('buildingBinNewDevicesModal')?.remove()" style="padding:8px 16px; border-radius:6px; border:1px solid #17a2b8; background:#17a2b8; color:white; cursor:pointer; font-weight:700;">Done</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.addEventListener('click', event => {
+                if (event.target === modal) modal.remove();
+            });
+            bindDobNewDeviceCandidateRows(modal);
+        }
+
+        async function checkMapBuildingBinForNewDevices(bin) {
+            const normalizedBin = String(bin || '').trim();
+            if (!normalizedBin) {
+                showMapNotification('No BIN available for this building', '#ff9800');
+                return;
+            }
+
+            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
+            const group = binGroups && binGroups[normalizedBin];
+            if (!group) {
+                showMapNotification('No device data available for this building', '#ff6b6b');
+                return;
+            }
+
+            if (!confirm(`Search DOB for new devices under BIN ${normalizedBin}? Only devices not already on this building will be shown.`)) {
+                return;
+            }
+
+            const btn = document.getElementById('deviceReportCheckNewDevicesBtn');
+            const previousLabel = btn ? btn.textContent : '';
+            if (btn) {
+                btn.disabled = true;
+                btn.style.opacity = '0.75';
+                btn.style.cursor = 'wait';
+                btn.textContent = 'Checking...';
+            }
+
+            showMapNotification(`Checking BIN ${normalizedBin} for new devices...`, '#17a2b8');
+
+            try {
+                const binTarget = {
+                    bin: normalizedBin,
+                    groups: [group]
+                };
+                const discovery = await discoverNewDobDevicesForMapBins([binTarget]);
+                const candidates = discovery.candidates || [];
+                const failedBins = discovery.failedBins || [];
+
+                if (failedBins.length > 0 && candidates.length === 0) {
+                    showMapNotification(`Could not check BIN ${normalizedBin} for new devices`, '#ff6b6b');
+                    return;
+                }
+
+                if (candidates.length === 0) {
+                    showMapNotification(`No new devices found for BIN ${normalizedBin}`, '#17a2b8');
+                    return;
+                }
+
+                showMapNotification(
+                    `Found ${candidates.length} new device${candidates.length !== 1 ? 's' : ''} for BIN ${normalizedBin}`,
+                    '#27ae60'
+                );
+                showBuildingBinNewDevicesModal(normalizedBin, group.address || '', candidates);
+            } catch (error) {
+                console.warn('Building BIN new-device check failed:', normalizedBin, error);
+                showMapNotification(`Could not check BIN ${normalizedBin} for new devices`, '#ff6b6b');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    btn.style.cursor = 'pointer';
+                    btn.textContent = previousLabel || 'Check New Devices';
+                }
+            }
+        }
+
+        function stripOmitFromSavedMapDevices(binGroups) {
+            if (!binGroups || typeof binGroups !== 'object') return binGroups;
+            const cleaned = {};
+            Object.entries(binGroups).forEach(([bin, group]) => {
+                if (!group || typeof group !== 'object') {
+                    cleaned[bin] = group;
+                    return;
+                }
+                const nextGroup = { ...group };
+                if (Array.isArray(group.devices)) {
+                    nextGroup.devices = group.devices.filter(device => !device || !device.omitFromSavedMapFile);
+                }
+                cleaned[bin] = nextGroup;
+            });
+            return cleaned;
         }
 
         function mergeDobDeviceRecord(savedDevice, freshDevice) {
@@ -10409,13 +11087,14 @@
             }
         }
 
-        function showDobInfoUpdateChangesModal(changeRows, failedDevices, autoCompletedRows) {
+        function showDobInfoUpdateChangesModal(changeRows, failedDevices, autoCompletedRows, newDeviceCandidates) {
             const existing = document.getElementById('dobInfoUpdateChangesModal');
             if (existing) existing.remove();
 
             const changes = Array.isArray(changeRows) ? changeRows : [];
             const failures = Array.isArray(failedDevices) ? failedDevices : [];
             const autoCompleted = Array.isArray(autoCompletedRows) ? autoCompletedRows : [];
+            const discovered = Array.isArray(newDeviceCandidates) ? newDeviceCandidates : [];
             const modal = document.createElement('div');
             modal.id = 'dobInfoUpdateChangesModal';
             modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:10045; display:flex; align-items:center; justify-content:center; padding:18px;';
@@ -10463,22 +11142,57 @@
                 </details>`
                 : '';
 
+            const buildingGroupCount = groupDobNewDeviceCandidatesByBuilding(discovered).length;
+            const newDevicesHtml = discovered.length > 0
+                ? `<details open style="margin-bottom:10px; border-radius:8px; background:rgba(23,162,184,0.1); border:1px solid rgba(23,162,184,0.35); color:#17a2b8; font-size:0.9em; overflow:hidden;">
+                    <summary style="padding:10px 12px; cursor:pointer; font-weight:700;">
+                        New Devices Found (${discovered.length} device${discovered.length !== 1 ? 's' : ''} · ${buildingGroupCount} building${buildingGroupCount !== 1 ? 's' : ''})
+                    </summary>
+                    <div style="padding:0 12px 10px;">
+                        <div style="margin-bottom:8px; opacity:0.9;">Grouped by building. Click a device to add it, or use <strong>Add All</strong> for that building. Added devices are included in your Excel sheet when you save.</div>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px;">
+                            <input id="dobNewDevicesSearchInput"
+                                   type="text"
+                                   placeholder="Search device #, BIN, or building address..."
+                                   oninput="filterDobNewDevicesInModal('dobInfoUpdateChangesModal')"
+                                   style="flex:1 1 220px; min-width:180px; padding:8px 10px; border-radius:6px; border:1px solid var(--input-border); background:var(--card-bg); color:var(--text-color); font-size:0.92em;">
+                            <button type="button"
+                                    onclick="document.getElementById('dobNewDevicesSearchInput').value=''; filterDobNewDevicesInModal('dobInfoUpdateChangesModal');"
+                                    style="padding:8px 12px; border-radius:6px; border:1px solid var(--input-border); background:var(--card-bg); color:var(--text-color); cursor:pointer; font-size:0.9em;">
+                                Clear
+                            </button>
+                            <span id="dobNewDevicesFilterCount" style="display:none; font-size:0.85em; opacity:0.75;"></span>
+                        </div>
+                        <div id="dobNewDevicesEmptyState" style="display:none; padding:14px 10px; opacity:0.75; text-align:center;">No devices match your search.</div>
+                        <div id="dobNewDevicesGroupedList">
+                            ${renderDobNewDeviceCandidatesGroupedHtml(discovered)}
+                        </div>
+                    </div>
+                </details>`
+                : '';
+
             const failuresHtml = failures.length > 0
                 ? `<div style="margin-top:10px; padding:9px 10px; border-radius:8px; background:rgba(255,107,107,0.1); border:1px solid rgba(255,107,107,0.35); color:#ff6b6b; font-size:0.9em;">
                     Could not update ${failures.length} device${failures.length !== 1 ? 's' : ''}: ${escapeMapSuggestionHtml(failures.join(', '))}
                 </div>`
                 : '';
 
+            const summaryParts = [];
+            summaryParts.push(`${changes.length} date change${changes.length !== 1 ? 's' : ''} applied to saved device records`);
+            if (discovered.length) summaryParts.push(`${discovered.length} new device${discovered.length !== 1 ? 's' : ''} found under BINs — click to add`);
+            if (autoCompleted.length) summaryParts.push(`${autoCompleted.length} building${autoCompleted.length !== 1 ? 's' : ''} auto-marked completed`);
+
             modal.innerHTML = `
                 <div style="background:var(--card-bg); color:var(--text-color); border:1px solid var(--input-border); border-radius:12px; width:min(760px, 96vw); max-height:82vh; box-shadow:0 12px 42px rgba(0,0,0,0.38); display:flex; flex-direction:column; overflow:hidden;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:16px 18px; border-bottom:1px solid var(--input-border);">
                         <div>
                             <h3 style="margin:0 0 4px 0; color:var(--header-color);">DOB Info Update Changes</h3>
-                            <div style="font-size:0.9em; opacity:0.72;">${changes.length} date change${changes.length !== 1 ? 's' : ''} applied to saved device records.${autoCompleted.length ? ` ${autoCompleted.length} building${autoCompleted.length !== 1 ? 's' : ''} auto-marked completed.` : ''}</div>
+                            <div style="font-size:0.9em; opacity:0.72;">${summaryParts.join('. ')}.</div>
                         </div>
                         <button onclick="document.getElementById('dobInfoUpdateChangesModal')?.remove()" style="background:none; border:none; color:var(--text-color); font-size:24px; line-height:1; cursor:pointer;">×</button>
                     </div>
                     <div style="padding:8px 18px 16px; overflow-y:auto;">
+                        ${newDevicesHtml}
                         ${autoCompletedHtml}
                         ${catResultsHtml}
                         ${pviResultsHtml}
@@ -10493,6 +11207,7 @@
             modal.addEventListener('click', event => {
                 if (event.target === modal) modal.remove();
             });
+            bindDobNewDeviceCandidateRows(modal);
         }
 
         async function updateMapViewDobInfo() {
@@ -10502,18 +11217,47 @@
             }
 
             const refs = collectMapDobDeviceRefs();
-            if (refs.length === 0) {
-                showMapNotification('No saved devices found to update', '#ff9800');
+            const binTargets = collectMapDobBinTargets();
+            if (refs.length === 0 && binTargets.length === 0) {
+                showMapNotification('No saved devices or BINs found to update', '#ff9800');
                 return;
             }
 
             const uniqueDeviceNumbers = Array.from(new Set(refs.map(ref => ref.deviceNumber)));
-            if (!confirm(`Refresh DOB info for ${uniqueDeviceNumbers.length} device${uniqueDeviceNumbers.length !== 1 ? 's' : ''}? This only updates saved device records with the latest DOB device information. Save afterward to write it to your file.`)) {
+            if (uniqueDeviceNumbers.length === 0 && binTargets.length === 0) {
+                showMapNotification('No saved devices found to update', '#ff9800');
                 return;
             }
 
+            if (uniqueDeviceNumbers.length > 0) {
+                if (!confirm(`Refresh DOB info for ${uniqueDeviceNumbers.length} device${uniqueDeviceNumbers.length !== 1 ? 's' : ''}? This updates saved device records with the latest DOB device information. Save afterward to write it to your file.`)) {
+                    return;
+                }
+            }
+
+            const searchForNewDevices = binTargets.length > 0
+                ? confirm(`Also search ${binTargets.length} BIN${binTargets.length !== 1 ? 's' : ''} for additional devices not already in your map file?`)
+                : false;
+
+            if (uniqueDeviceNumbers.length === 0 && !searchForNewDevices) {
+                return;
+            }
+
+            const binsToScan = searchForNewDevices ? binTargets : [];
+            const totalSteps = uniqueDeviceNumbers.length + binsToScan.length;
+            let completedSteps = 0;
+            const reportProgress = (label) => {
+                const percent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 100;
+                updateDobInfoButtonState(true, `${label} ${percent}%`, percent);
+            };
+
             updateDobInfoButtonState(true, 'Updating 0%', 0);
-            showMapNotification('Refreshing DOB device info...', '#0d6efd');
+            showMapNotification(
+                searchForNewDevices
+                    ? 'Refreshing DOB device info and checking BINs for new devices...'
+                    : 'Refreshing DOB device info...',
+                '#0d6efd'
+            );
 
             const freshByDevice = {};
             const failed = [];
@@ -10525,12 +11269,11 @@
                     console.warn('DOB info update failed for device:', deviceNumber, error);
                     failed.push(deviceNumber);
                 }
-                const percent = Math.round(((i + 1) / uniqueDeviceNumbers.length) * 100);
-                updateDobInfoButtonState(true, `Updating ${percent}%`, percent);
+                completedSteps++;
+                reportProgress('Updating');
             }
 
             let dateUpdates = 0;
-            let recordsUpdated = 0;
             const changeRows = [];
             const touchedBins = new Set();
             refs.forEach(ref => {
@@ -10549,8 +11292,24 @@
                         });
                     });
                 }
-                recordsUpdated++;
             });
+
+            let discoveredDevices = [];
+            if (searchForNewDevices && binsToScan.length > 0) {
+                reportProgress('Scanning BINs');
+                window.pendingDobNewDeviceCandidates = {};
+                const discovery = await discoverNewDobDevicesForMapBins(binsToScan, (done) => {
+                    completedSteps = uniqueDeviceNumbers.length + done;
+                    reportProgress('Scanning BINs');
+                });
+                discoveredDevices = discovery.candidates || [];
+                (discovery.failedBins || []).forEach(bin => {
+                    if (!failed.includes(`BIN ${bin}`)) failed.push(`BIN ${bin}`);
+                });
+            } else {
+                window.pendingDobNewDeviceCandidates = {};
+            }
+
             const autoCompletedRows = autoCompleteMapBuildingsFromDobUpdate(touchedBins);
 
             setMapDobInfoUpdatedAt(Date.now());
@@ -10565,8 +11324,11 @@
             const autoCompleteText = autoCompletedRows.length > 0
                 ? ` ${autoCompletedRows.length} building${autoCompletedRows.length !== 1 ? 's' : ''} auto-marked completed.`
                 : '';
-            showMapNotification(`DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${autoCompleteText}${saveHint}`, dateUpdates > 0 || autoCompletedRows.length > 0 ? '#27ae60' : '#17a2b8');
-            setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows), 150);
+            const newDeviceText = discoveredDevices.length > 0
+                ? ` ${discoveredDevices.length} new device${discoveredDevices.length !== 1 ? 's' : ''} found — click to add.`
+                : '';
+            showMapNotification(`DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${newDeviceText}${autoCompleteText}${saveHint}`, dateUpdates > 0 || discoveredDevices.length > 0 || autoCompletedRows.length > 0 ? '#27ae60' : '#17a2b8');
+            setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows, discoveredDevices), 150);
         }
 
         const MAP_EXCEL_CELL_LIMIT = 32767;
@@ -14546,7 +15308,10 @@
                                 : 'var(--panel-bg)';
 
                     rows += `
-                    <div style="background:${rowBg};border:1px solid var(--input-border);border-radius:8px;padding:12px;margin-bottom:8px;">
+                    <div class="device-report-item"
+                         data-device-type="${escapeMapSuggestionHtml(type)}"
+                         data-device-number="${escapeMapSuggestionHtml(num)}"
+                         style="background:${rowBg};border:1px solid var(--input-border);border-radius:8px;padding:12px;margin-bottom:8px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
                             <div>
                                 <strong onclick="copyDeviceNumberToClipboard('${deviceNumberForCopy}', event)"
@@ -14554,7 +15319,7 @@
                                         style="font-weight:700;font-size:16px;cursor:pointer;padding:2px 7px;border-radius:5px;border:1px solid rgba(26,115,232,0.25);background:rgba(26,115,232,0.08);color:var(--text-color);display:inline-flex;align-items:center;gap:5px;transition:all 0.2s;">
                                     ${escapedDeviceNumber} <span style="font-size:11px;opacity:0.65;">📋</span>
                                 </strong>
-                                <span style="font-size:13px;opacity:0.65;margin-left:8px;">${type}</span>
+                                <span style="font-size:13px;opacity:0.65;margin-left:8px;">${escapeMapSuggestionHtml(type)}</span>
                             </div>
                             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                                 <span style="font-size:13px;padding:2px 8px;border-radius:10px;background:rgba(128,128,128,0.15);">${status}</span>
@@ -14581,6 +15346,42 @@
             const existing = document.getElementById('deviceDetailModal');
             if (existing) existing.remove();
 
+            const deviceReportTypes = Array.from(new Set(devices.map(function(d) {
+                return d.device_type || 'Unknown';
+            }))).sort(function(a, b) {
+                return String(a).localeCompare(String(b));
+            });
+            const deviceReportTypeOptions = deviceReportTypes.map(function(t) {
+                const escaped = escapeMapSuggestionHtml(t);
+                return `<option value="${escaped}">${escaped}</option>`;
+            }).join('');
+            const deviceReportFilterBarHtml = devices.length > 0 ? `
+                    <div style="padding:12px 16px;border-bottom:1px solid var(--input-border);background:var(--panel-bg);flex-shrink:0;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+                        <div style="display:flex;align-items:center;gap:6px;flex:1 1 180px;min-width:160px;">
+                            <label for="deviceReportSearchInput" style="color:var(--text-color);font-size:13px;white-space:nowrap;">Search:</label>
+                            <input type="text"
+                                   id="deviceReportSearchInput"
+                                   placeholder="Device number"
+                                   oninput="filterDeviceReportModal()"
+                                   style="flex:1;min-width:0;padding:8px 10px;background:var(--card-bg);color:var(--text-color);border:1px solid var(--input-border);border-radius:6px;font-size:13px;">
+                        </div>
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <label for="deviceReportTypeFilter" style="color:var(--text-color);font-size:13px;white-space:nowrap;">Type:</label>
+                            <select id="deviceReportTypeFilter"
+                                    onchange="filterDeviceReportModal()"
+                                    style="padding:8px 10px;background:var(--card-bg);color:var(--text-color);border:1px solid var(--input-border);border-radius:6px;font-size:13px;min-width:140px;max-width:220px;">
+                                <option value="all">All Types</option>
+                                ${deviceReportTypeOptions}
+                            </select>
+                        </div>
+                        <button type="button"
+                                onclick="resetDeviceReportFilters()"
+                                style="padding:8px 12px;background:var(--card-bg);color:var(--text-color);border:1px solid var(--input-border);border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap;">
+                            Reset
+                        </button>
+                        <span id="deviceReportFilterCount" style="display:none;font-size:13px;opacity:0.7;color:var(--text-color);"></span>
+                    </div>` : '';
+
             const modal = document.createElement('div');
             modal.id = 'deviceDetailModal';
             modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.65);z-index:20000;display:flex;align-items:center;justify-content:center;';
@@ -14593,6 +15394,12 @@
                             <div style="font-size:14px;opacity:0.65;margin-top:2px;">${address} &nbsp;·&nbsp; BIN ${bin} &nbsp;·&nbsp; ${activeDeviceCount} device${activeDeviceCount !== 1 ? 's' : ''}</div>
                         </div>
                         <div style="display:flex;align-items:center;gap:10px;margin-left:auto;">
+                            <button id="deviceReportCheckNewDevicesBtn"
+                                    onclick="checkMapBuildingBinForNewDevices('${String(bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"
+                                    title="Search DOB for new devices under this BIN"
+                                    style="background:#17a2b8;border:none;border-radius:6px;padding:7px 14px;cursor:pointer;color:white;font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px;white-space:nowrap;">
+                                Check New Devices
+                            </button>
                             <button onclick="window.open('https://a810-dobnow.nyc.gov/publish/Index.html#!/', '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes,location=yes')"
                                     style="background:#27ae60;border:none;border-radius:6px;padding:7px 14px;cursor:pointer;color:white;font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px;white-space:nowrap;">
                                 DOB Now
@@ -14601,9 +15408,12 @@
                                     style="background:none;border:none;font-size:1.8em;cursor:pointer;color:#e53935;padding:0;line-height:1;">&times;</button>
                         </div>
                     </div>
+                    ${deviceReportFilterBarHtml}
                     <div style="overflow-y:auto;padding:16px;flex:1;">
                         ${reportSummaryHtml}
-                        ${rows}
+                        <div id="deviceReportList">
+                            ${rows}
+                        </div>
                     </div>
                 </div>
                 </div>`;
@@ -14623,6 +15433,48 @@
             });
 
             document.body.appendChild(modal);
+        }
+
+        function filterDeviceReportModal() {
+            const typeFilter = document.getElementById('deviceReportTypeFilter');
+            const searchInput = document.getElementById('deviceReportSearchInput');
+            const items = document.querySelectorAll('#deviceReportList .device-report-item');
+            const countEl = document.getElementById('deviceReportFilterCount');
+            if (!items.length) return;
+
+            const selectedType = typeFilter ? typeFilter.value : 'all';
+            const search = searchInput ? searchInput.value.trim().toUpperCase() : '';
+            let visible = 0;
+
+            items.forEach(function(item) {
+                const itemType = item.getAttribute('data-device-type') || '';
+                const itemNumber = (item.getAttribute('data-device-number') || '').toUpperCase();
+                const typeMatch = selectedType === 'all' || itemType === selectedType;
+                const searchMatch = !search || itemNumber.includes(search);
+                const show = typeMatch && searchMatch;
+                item.style.display = show ? '' : 'none';
+                if (show) visible++;
+            });
+
+            if (countEl) {
+                const total = items.length;
+                const filtersActive = selectedType !== 'all' || search.length > 0;
+                if (filtersActive) {
+                    countEl.style.display = '';
+                    countEl.textContent = 'Showing ' + visible + ' of ' + total + ' device' + (total !== 1 ? 's' : '');
+                } else {
+                    countEl.style.display = 'none';
+                    countEl.textContent = '';
+                }
+            }
+        }
+
+        function resetDeviceReportFilters() {
+            const typeFilter = document.getElementById('deviceReportTypeFilter');
+            const searchInput = document.getElementById('deviceReportSearchInput');
+            if (typeFilter) typeFilter.value = 'all';
+            if (searchInput) searchInput.value = '';
+            filterDeviceReportModal();
         }
 
         function openTestDatesModal(bin) {
@@ -28445,7 +29297,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5.1</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5.2</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
