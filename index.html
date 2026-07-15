@@ -10228,7 +10228,8 @@
                 violations: (violationsByDevice[device.device_number] || []).filter(violation =>
                     violation.violation_status?.toUpperCase() === 'ACTIVE' ||
                     violation.violation_status?.toUpperCase() === 'OPEN'),
-                machine_type: deviceInfos[index]?.machine_type || device.machine_type || ''
+                machine_type: deviceInfos[index]?.machine_type || device.machine_type || '',
+                approved_date: deviceInfos[index]?.approved_date || device.approved_date || ''
             }));
         }
 
@@ -11220,7 +11221,12 @@
                 appendMapExcelSheet(workbook, usedSheetNames, 'Buildings', buildingHeaders, buildingRows);
 
                 const deviceKeys = collectMapExcelObjectKeys(allDevices.map(item => item.device), ['violations']);
-                const deviceHeaders = ['BIN', 'Building Address', 'Violation Count', ...deviceKeys];
+                const deviceHeaders = [
+                    'BIN',
+                    'Building Address',
+                    'Violation Count',
+                    ...deviceKeys.map(key => key === 'approved_date' ? 'Approved Date' : key)
+                ];
                 const deviceRows = allDevices.map(({ bin, group, device }) => [
                     bin,
                     getMapExcelBuildingAddress(bin, group, view),
