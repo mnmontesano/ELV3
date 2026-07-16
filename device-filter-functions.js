@@ -52,15 +52,10 @@ function sortByDateTested() {
 
 // Helper function to get the most recent test date for a device element
 function getMostRecentDateFromDevice(deviceItem) {
-    // Find the device number to look up in stored results
-    const deviceNumberElement = deviceItem.querySelector('div:first-child');
-    if (!deviceNumberElement) return null;
-    
-    const deviceNumberText = deviceNumberElement.textContent;
-    const deviceNumberMatch = deviceNumberText.match(/Device #:\s*(\S+)/);
-    if (!deviceNumberMatch) return null;
-    
-    const deviceNumber = deviceNumberMatch[1];
+    // Use the explicit device-number attribute so nested card text cannot be
+    // mistaken for the identifier.
+    const deviceNumber = (deviceItem.getAttribute('data-device-number') || '').trim();
+    if (!deviceNumber) return null;
     
     // Look up the device in the stored results
     const data = window.lastBinSearchResults;
@@ -255,7 +250,10 @@ function applyAllFilters() {
             // DELETED devices are also treated as REMOVED
             typeMatch = deviceStatus === 'REMOVED' || deviceStatus === 'DELETED';
         } else {
-            typeMatch = deviceType === typeFilter;
+            // Type-specific views contain active devices only. Removed/deleted
+            // devices have their own dedicated filter.
+            typeMatch = deviceType === typeFilter &&
+                deviceStatus !== 'REMOVED' && deviceStatus !== 'DELETED';
         }
         
         // Violations filter check
@@ -280,12 +278,8 @@ function applyAllFilters() {
         // Device number filter check
         let deviceNumberMatch = true;
         if (deviceNumberFilter !== '') {
-            const deviceNumberElement = item.querySelector('div:first-child');
-            if (deviceNumberElement) {
-                const deviceNumberText = deviceNumberElement.textContent;
-                const deviceNumber = deviceNumberText.replace('Device #:', '').trim().toUpperCase();
-                deviceNumberMatch = deviceNumber.includes(deviceNumberFilter);
-            }
+            const deviceNumber = (item.getAttribute('data-device-number') || '').trim().toUpperCase();
+            deviceNumberMatch = deviceNumber.includes(deviceNumberFilter);
         }
         
         // Show item only if all filters match
@@ -366,4 +360,4 @@ document.addEventListener('DOMContentLoaded', function() {
     window.resetFilters = resetFilters;
     window.setTestEligibilityFilterFromStatus = setTestEligibilityFilterFromStatus;
     window.updateActiveFilterStatus = updateActiveFilterStatus;
-}); 
+});

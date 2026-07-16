@@ -182,6 +182,15 @@
         let allDevices = [];
         let filteredDevices = [];
 
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         async function fetchDevices() {
             const fetchBtn = document.getElementById('fetchBtn');
             const statusDiv = document.getElementById('status');
@@ -192,9 +201,13 @@
             const statusFilter = document.getElementById('statusFilter').value;
             const typeFilter = document.getElementById('typeFilter').value;
             const boroughFilter = document.getElementById('boroughFilter').value;
-            const limit = parseInt(document.getElementById('limitInput').value) || 500;
+            const requestedLimit = parseInt(document.getElementById('limitInput').value, 10);
+            const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 50000) : 500;
             
             fetchBtn.disabled = true;
+            allDevices = [];
+            filteredDevices = [];
+            exportBtn.style.display = 'none';
             statusDiv.innerHTML = '<div class="loading">Fetching devices from API...</div>';
             resultsDiv.innerHTML = '';
             resultsDiv.style.display = 'none';
@@ -227,6 +240,9 @@
                 }
                 
                 const data = await response.json();
+                if (!Array.isArray(data)) {
+                    throw new Error('The device API returned an unexpected response');
+                }
                 allDevices = data;
                 filteredDevices = data;
                 
@@ -248,7 +264,7 @@
                 resultsDiv.style.display = 'block';
                 
             } catch (error) {
-                statusDiv.innerHTML = `<div class="error">Error fetching data: ${error.message}</div>`;
+                statusDiv.innerHTML = `<div class="error">Error fetching data: ${escapeHtml(error.message)}</div>`;
                 console.error('Error:', error);
             } finally {
                 fetchBtn.disabled = false;
@@ -298,7 +314,7 @@
             topStatuses.forEach(([status, count]) => {
                 html += `
                     <div class="stat-box">
-                        <strong>${status}</strong>
+                        <strong>${escapeHtml(status)}</strong>
                         <div class="stat-value">${count}</div>
                     </div>
                 `;
@@ -356,17 +372,17 @@
                 
                 html += `
                     <tr>
-                        <td>${device.device_number || 'N/A'}</td>
-                        <td>${device.device_type || 'N/A'}</td>
-                        <td style="color: ${statusColor};">${deviceStatus}</td>
-                        <td>${statusDate}</td>
-                        <td>${device.bin || 'N/A'}</td>
-                        <td>${address || 'N/A'}</td>
-                        <td>${device.borough || 'N/A'}</td>
-                        <td>${pviDate}</td>
-                        <td>${pviYear}</td>
-                        <td>${cat1Year}</td>
-                        <td>${cat5Year}</td>
+                        <td>${escapeHtml(device.device_number || 'N/A')}</td>
+                        <td>${escapeHtml(device.device_type || 'N/A')}</td>
+                        <td style="color: ${statusColor};">${escapeHtml(deviceStatus)}</td>
+                        <td>${escapeHtml(statusDate)}</td>
+                        <td>${escapeHtml(device.bin || 'N/A')}</td>
+                        <td>${escapeHtml(address || 'N/A')}</td>
+                        <td>${escapeHtml(device.borough || 'N/A')}</td>
+                        <td>${escapeHtml(pviDate)}</td>
+                        <td>${escapeHtml(pviYear)}</td>
+                        <td>${escapeHtml(cat1Year)}</td>
+                        <td>${escapeHtml(cat5Year)}</td>
                     </tr>
                 `;
             });
@@ -442,4 +458,3 @@
     </script>
 </body>
 </html>
-

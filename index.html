@@ -562,11 +562,11 @@
         </div>
 
         <!-- Add this div right after your mainContent div opens -->
-        <div class="reference-overlay" onclick="toggleReference()"></div>
+        <div class="reference-overlay" onclick="toggleReference(event)"></div>
 
         <!-- Modify your reference panel div to include the close button -->
         <div class="reference-panel">
-            <button class="close-reference" onclick="toggleReference()" style="position: sticky; top: 0; right: 10px; background: none; border: none; font-size: 24px; cursor: pointer; color: #ff6b6b; padding: 5px 10px; float: right; z-index: 2; margin-top: -5px;">×</button>
+            <button class="close-reference" onclick="toggleReference(event)" style="position: sticky; top: 0; right: 10px; background: none; border: none; font-size: 24px; cursor: pointer; color: #ff6b6b; padding: 5px 10px; float: right; z-index: 2; margin-top: -5px;">×</button>
             <h3>ELV3 Reference</h3>
             
             <p><strong>Part Numbers:</strong></p>
@@ -3359,7 +3359,7 @@
 
 
 
-        function toggleReference() {
+        function toggleReference(event) {
             const panel = document.querySelector('.reference-panel');
             const overlay = document.querySelector('.reference-overlay');
             const button = document.querySelector('.toggle-reference');
@@ -3390,7 +3390,7 @@
                 }, 10);
             }
             
-            event.stopPropagation();
+            if (event) event.stopPropagation();
         }
 
         // Update the click outside handler
@@ -3632,75 +3632,80 @@
 
                     // Apply red styling if all dates are the same
                     const dateStyle = allDatesAreSame ? 'color: red; font-weight: bold;' : '';
+                    const deviceDomKey = String(device.device_number || deviceNumber || 'device').replace(/[^A-Za-z0-9_-]/g, '_');
+                    const safeDeviceNumber = escapeMapSuggestionHtml(device.device_number || deviceNumber || 'N/A');
+                    const safeAddress = escapeMapSuggestionHtml(
+                        device.house_number ? `${device.house_number} ${device.street_name || ''}`.trim() : 'N/A'
+                    );
                     
                     // Generate device specification HTML if available
                     const deviceSpecsHTML = deviceInfo ? `
                         <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
-                            <button onclick="toggleDeviceInfo('deviceInfo_${deviceNumber}')"
+                            <button onclick="toggleDeviceInfo('deviceInfo_${deviceDomKey}')"
                                     style="width: 100%; padding: 10px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
                                 <span>Device Information</span>
                                 <span class="arrow">▼</span>
                             </button>
-                            <div id="deviceInfo_${deviceNumber}" style="display: none; margin-top: 10px; padding: 10px; background: var(--panel-bg); border-radius: 4px; max-height: 300px; overflow-y: auto;">
+                            <div id="deviceInfo_${deviceDomKey}" style="display: none; margin-top: 10px; padding: 10px; background: var(--panel-bg); border-radius: 4px; max-height: 300px; overflow-y: auto;">
                                 ${deviceInfo.elevator_manufacturer ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 160px;">Manufacturer:</strong> 
-                                        <span>${deviceInfo.elevator_manufacturer || 'N/A'}</span>
+                                        <span>${escapeMapSuggestionHtml(deviceInfo.elevator_manufacturer || 'N/A')}</span>
                                     </div>` : ''}
                                 ${deviceInfo.machine_type ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 160px;">Machine Type:</strong> 
-                                        <span>${deviceInfo.machine_type || 'N/A'}</span>
+                                        <span>${escapeMapSuggestionHtml(deviceInfo.machine_type || 'N/A')}</span>
                                     </div>` : ''}
                                 ${deviceInfo.governor ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 160px;">Governor Type:</strong> 
-                                        <span>${deviceInfo.governor || 'N/A'}</span>
+                                        <span>${escapeMapSuggestionHtml(deviceInfo.governor || 'N/A')}</span>
                                     </div>` : ''}
                                 ${deviceInfo.car_buffer_type ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 160px;">Car Buffer Type:</strong> 
-                                        <span>${deviceInfo.car_buffer_type || 'N/A'}</span>
+                                        <span>${escapeMapSuggestionHtml(deviceInfo.car_buffer_type || 'N/A')}</span>
                                     </div>` : ''}
                                 ${deviceInfo.mode_of_operation ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 160px;">Mode Operation:</strong> 
-                                        <span>${deviceInfo.mode_of_operation || 'N/A'}</span>
+                                        <span>${escapeMapSuggestionHtml(deviceInfo.mode_of_operation || 'N/A')}</span>
                                     </div>` : ''}
                                 ${deviceInfo.car_safety_type ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 160px;">Safety Type:</strong> 
-                                        <span>${deviceInfo.car_safety_type || 'N/A'}</span>
+                                        <span>${escapeMapSuggestionHtml(deviceInfo.car_safety_type || 'N/A')}</span>
                                     </div>` : ''}
                                 ${deviceInfo.fire_emergency_phase ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 160px;">Fireman's Service:</strong> 
-                                        <span>${deviceInfo.fire_emergency_phase || 'N/A'}</span>
+                                        <span>${escapeMapSuggestionHtml(deviceInfo.fire_emergency_phase || 'N/A')}</span>
                                     </div>` : ''}
                                 ${deviceInfo.working_pressure ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 160px;">Working Pressure:</strong> 
-                                        <span>${deviceInfo.working_pressure || 'N/A'}</span>
+                                        <span>${escapeMapSuggestionHtml(deviceInfo.working_pressure || 'N/A')}</span>
                                     </div>` : ''}
                                 ${deviceInfo.controller_manufacturer ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 160px;">Controller Manufacturer:</strong> 
-                                        <span>${deviceInfo.controller_manufacturer || 'N/A'}</span>
+                                        <span>${escapeMapSuggestionHtml(deviceInfo.controller_manufacturer || 'N/A')}</span>
                                     </div>` : ''}
                                 ${deviceInfo.elevator_control ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 160px;">Elevator Control:</strong> 
-                                        <span>${deviceInfo.elevator_control || 'N/A'}</span>
+                                        <span>${escapeMapSuggestionHtml(deviceInfo.elevator_control || 'N/A')}</span>
                                     </div>` : ''}
                                 ${deviceInfo.elevator_capacity_lbs ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 160px;">Capacity:</strong> 
-                                        <span>${deviceInfo.elevator_capacity_lbs || 'N/A'} lbs</span>
+                                        <span>${escapeMapSuggestionHtml(deviceInfo.elevator_capacity_lbs || 'N/A')} lbs</span>
                                     </div>` : ''}
                                 ${deviceInfo.elevator_speed_fpm ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 160px;">Speed:</strong> 
-                                        <span>${deviceInfo.elevator_speed_fpm || 'N/A'} fpm</span>
+                                        <span>${escapeMapSuggestionHtml(deviceInfo.elevator_speed_fpm || 'N/A')} fpm</span>
                                     </div>` : ''}
                             </div>
                         </div>
@@ -3710,7 +3715,7 @@
                         <div style="background: var(--input-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">Device Number:</strong> 
-                                <span style="${dateStyle}">${device.device_number || deviceNumber}</span>
+                                <span style="${dateStyle}">${safeDeviceNumber}</span>
                             </div>
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">BIN:</strong> 
@@ -3729,23 +3734,23 @@
                             </div>
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">Address:</strong> 
-                                <span>${device.house_number ? device.house_number + ' ' + device.street_name : 'N/A'}</span>
+                                <span>${safeAddress}</span>
                             </div>
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">Borough:</strong> 
-                                <span>${device.borough || 'N/A'}</span>
+                                <span>${escapeMapSuggestionHtml(device.borough || 'N/A')}</span>
                             </div>
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">Device Type:</strong> 
-                                <span>${device.device_type || 'N/A'}</span>
+                                <span>${escapeMapSuggestionHtml(device.device_type || 'N/A')}</span>
                             </div>
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">Status:</strong> 
-                                <span>${device.device_status || 'N/A'}</span>
+                                <span>${escapeMapSuggestionHtml(device.device_status || 'N/A')}</span>
                             </div>
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">ZIP Code:</strong> 
-                                <span>${device.zip_code || 'N/A'}</span>
+                                <span>${escapeMapSuggestionHtml(device.zip_code || 'N/A')}</span>
                             </div>
                             <div style="margin-bottom: 10px;">
                                 <strong style="color: var(--header-color); display: inline-block; width: 120px;">Violations:</strong> 
@@ -3755,23 +3760,23 @@
                             </div>
                             ${violationCount > 0 ? `
                                 <div style="margin-bottom: 15px;">
-                                    <button onclick="toggleViolations('device_violations_${deviceNumber}')" 
-                                            id="violationsBtn_device_violations_${deviceNumber}"
+                                    <button onclick="toggleViolations('device_violations_${deviceDomKey}')"
+                                            id="violationsBtn_device_violations_${deviceDomKey}"
                                             style="width: 100%; padding: 8px; background: var(--panel-bg); color: var(--text-color); 
                                                    border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; 
                                                    font-size: 0.9em; display: flex; justify-content: space-between; align-items: center;">
                                         <span>Show Violation Details</span>
                                         <span class="arrow">▼</span>
                                     </button>
-                                    <div id="violations_device_violations_${deviceNumber}" style="display: none; margin-top: 8px; 
+                                    <div id="violations_device_violations_${deviceDomKey}" style="display: none; margin-top: 8px;
                                          padding: 8px; background: var(--panel-bg); border-radius: 4px; font-size: 0.9em; max-height: 200px; overflow-y: auto; border: 1px solid var(--input-border); box-shadow: 0 2px 4px var(--card-shadow);">
                                         ${activeViolations.map(v => `
                                             <div style="margin-bottom: 10px; padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid var(--input-border);">
-                                                <strong style="color: var(--header-color);">Violation #:</strong> ${v.violation_number}<br>
+                                                <strong style="color: var(--header-color);">Violation #:</strong> ${escapeMapSuggestionHtml(v.violation_number || 'N/A')}<br>
                                                 <strong style="color: var(--header-color);">Issue Date:</strong> ${new Date(v.violation_issue_date).toLocaleDateString()}<br>
-                                                <strong style="color: var(--header-color);">Status:</strong> ${v.violation_status}<br>
-                                                <strong style="color: var(--header-color);">Type:</strong> ${v.violation_type || 'N/A'}<br>
-                                                <strong style="color: var(--header-color);">Remarks:</strong> ${v.violation_remarks || 'N/A'}
+                                                <strong style="color: var(--header-color);">Status:</strong> ${escapeMapSuggestionHtml(v.violation_status || 'N/A')}<br>
+                                                <strong style="color: var(--header-color);">Type:</strong> ${escapeMapSuggestionHtml(v.violation_type || 'N/A')}<br>
+                                                <strong style="color: var(--header-color);">Remarks:</strong> ${escapeMapSuggestionHtml(v.violation_remarks || 'N/A')}
                                             </div>
                                         `).join('')}
                                     </div>
@@ -3817,12 +3822,12 @@
                             <!-- Add Important dropdown for red devices -->
                             ${allDatesAreSame ? `
                                 <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
-                                    <button onclick="toggleImportantDropdown('device_${device.device_number || deviceNumber}')"
+                                    <button onclick="toggleImportantDropdown('device_${deviceDomKey}')"
                                             style="width: 100%; padding: 10px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">
                                         <span>⚠️ Important</span>
                                         <span class="arrow">▼</span>
                                     </button>
-                                    <div id="important_device_${device.device_number || deviceNumber}" style="display: none; margin-top: 10px; padding: 15px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b;">
+                                    <div id="important_device_${deviceDomKey}" style="display: none; margin-top: 10px; padding: 15px; background: rgba(255, 107, 107, 0.1); border-radius: 4px; border: 1px solid #ff6b6b;">
                                         <div style="margin-bottom: 8px;">
                                             <strong style="color: #ff6b6b;">Data Quality Alert</strong>
                                         </div>
@@ -3874,7 +3879,7 @@
                                     const removalPermitNote = hasRemovalPermit ? `
                                         <div style="margin-top: 10px; padding: 8px; background: rgba(33, 150, 243, 0.1); border-radius: 4px; border: 1px solid #2196F3;">
                                             <div style="color: #2196F3; font-weight: 500; margin-bottom: 4px;">
-                                                📋 Removal Permit Found${removalPermitNumber ? ': ' + removalPermitNumber : ''}
+                                                📋 Removal Permit Found${removalPermitNumber ? ': ' + escapeMapSuggestionHtml(removalPermitNumber) : ''}
                                             </div>
                                             <div style="font-size: 0.85em; opacity: 0.9;">
                                                 Testing may not have been performed due to the device being slated for removal. Please verify the current status with the DOB.
@@ -3884,12 +3889,12 @@
                                     
                                     return `
                                         <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
-                                            <button onclick="toggleMissedTestDropdown('device_${device.device_number || deviceNumber}')"
+                                            <button onclick="toggleMissedTestDropdown('device_${deviceDomKey}')"
                                                     style="width: 100%; padding: 10px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">
                                                 <span>⚠️ Important - Missed Required Test${missedTests.length > 1 ? 's' : ''} (${missedTests.length})</span>
                                                 <span class="arrow">▼</span>
                                             </button>
-                                            <div id="missed_test_device_${device.device_number || deviceNumber}" style="display: none; margin-top: 10px; padding: 15px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800;">
+                                            <div id="missed_test_device_${deviceDomKey}" style="display: none; margin-top: 10px; padding: 15px; background: rgba(255, 152, 0, 0.1); border-radius: 4px; border: 1px solid #ff9800;">
                                                 <div style="margin-bottom: 8px;">
                                                     <strong style="color: #ff9800;">Missed Required Test Alert</strong>
                                                 </div>
@@ -3911,19 +3916,19 @@
                             
                             <!-- Add More Info button and dropdown -->
                             <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
-                                <button onclick="toggleMoreInfo('moreInfo_${device.device_number}')"
+                                <button onclick="toggleMoreInfo('moreInfo_${deviceDomKey}')"
                                         style="width: 100%; padding: 10px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
                                     <span>More Info</span>
                                     <span class="arrow">▼</span>
                                 </button>
-                                <div id="moreInfo_${device.device_number}" style="display: none; margin-top: 10px; padding: 10px; background: var(--panel-bg); border-radius: 4px;">
+                                <div id="moreInfo_${deviceDomKey}" style="display: none; margin-top: 10px; padding: 10px; background: var(--panel-bg); border-radius: 4px;">
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 120px;">Block:</strong> 
-                                        <span>${device.block || 'N/A'}</span>
+                                        <span>${escapeMapSuggestionHtml(device.block || 'N/A')}</span>
                                     </div>
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 120px;">Lot:</strong> 
-                                        <span>${device.lot || 'N/A'}</span>
+                                        <span>${escapeMapSuggestionHtml(device.lot || 'N/A')}</span>
                                     </div>
                                     <div style="margin-top: 10px;">
                                         <button onclick="window.open('https://a836-pts-access.nyc.gov/care/forms/htmlframe.aspx?mode=content/home.htm', '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes,location=yes')"
@@ -6984,8 +6989,9 @@
                                 return `
                                     <div class="device-item removed-device" 
                                          data-has-violations="${violationCount > 0}" 
-                                         data-device-type="${type}"
-                                         data-device-status="${(device.device_status || 'REMOVED').toUpperCase()}">
+                                         data-device-type="${escapeMapSuggestionHtml(type)}"
+                                         data-device-number="${escapeMapSuggestionHtml(device.device_number || '')}"
+                                         data-device-status="${escapeMapSuggestionHtml((device.device_status || 'REMOVED').toUpperCase())}">
                                         <div style="padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid #ff6b6b; opacity: 0.8;">
                                             <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
                                                 <div><strong style="color: var(--header-color);">Device #:</strong> 
@@ -7575,8 +7581,9 @@
                                 return `
                                     <div class="device-item" 
                                          data-has-violations="${violationCount > 0}" 
-                                         data-device-type="${type}"
-                                         data-device-status="${(device.device_status || '').toUpperCase()}"
+                                         data-device-type="${escapeMapSuggestionHtml(type)}"
+                                         data-device-number="${escapeMapSuggestionHtml(device.device_number || '')}"
+                                         data-device-status="${escapeMapSuggestionHtml((device.device_status || '').toUpperCase())}"
                                          data-original-index="${index}">
                                         <div style="padding: 10px; background: var(--input-bg); border-radius: 5px; border: 1px solid var(--input-border);">
                                             <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
@@ -14767,6 +14774,15 @@
             }
         }
 
+        function formatLocalDateInputValue(value) {
+            const date = value instanceof Date ? value : new Date(value);
+            if (isNaN(date.getTime())) return '';
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
         function getMapCompletionDefaultDate(bin, existing) {
             const scheduledDates = getTestDatesForBin(bin);
             if (scheduledDates.length > 0) return scheduledDates[0];
@@ -14776,7 +14792,7 @@
                 : [];
             if (savedScheduledDates.length > 0) return savedScheduledDates.slice().sort()[0];
 
-            return new Date().toISOString().split('T')[0];
+            return formatLocalDateInputValue(new Date());
         }
 
         function showMapCompletedDetailsPicker(bin, options) {
@@ -14784,7 +14800,7 @@
             const existing = getMapCompleted()[bin] || {};
             const address = opts.address || existing.address || getMapBuildingAddressForBin(bin);
             const currentDate = existing.timestamp
-                ? new Date(existing.timestamp).toISOString().split('T')[0]
+                ? formatLocalDateInputValue(existing.timestamp)
                 : getMapCompletionDefaultDate(bin, existing);
             const currentTestType = normalizeMapCompletedTestType(opts.testType || existing.testType) || 'PVI';
             const overlay = document.createElement('div');
@@ -15272,7 +15288,7 @@
                 display: flex; align-items: center; justify-content: center;
             `;
 
-            const today = new Date().toISOString().split('T')[0];
+            const today = formatLocalDateInputValue(new Date());
 
             overlay.innerHTML = `
                 <div style="background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 24px; min-width: 300px; max-width: 400px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
@@ -16415,7 +16431,7 @@
                 display: flex; align-items: center; justify-content: center;
             `;
 
-            const today = new Date().toISOString().split('T')[0];
+            const today = formatLocalDateInputValue(new Date());
 
             overlay.innerHTML = `
                 <div style="background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 24px; min-width: 320px; max-width: 420px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.5); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
@@ -16524,7 +16540,7 @@
                 display: flex; align-items: center; justify-content: center;
             `;
 
-            const defaultCompletionDate = dateStr || new Date().toISOString().split('T')[0];
+            const defaultCompletionDate = dateStr || formatLocalDateInputValue(new Date());
 
             overlay.innerHTML = `
                 <div style="background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 26px; min-width: 320px; max-width: 440px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.55); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
@@ -22372,54 +22388,71 @@
 
         // Update the lookupDeviceDetails function
         async function lookupDeviceDetails(deviceNumber) {
-            // ... existing device lookup code ...
+            const cleanDeviceNumber = String(deviceNumber || '').trim();
+            const domKey = cleanDeviceNumber.replace(/[^A-Za-z0-9_-]/g, '_');
+            const deviceDetailsDiv = document.getElementById(`details_${cleanDeviceNumber}`) ||
+                document.getElementById(`details_${domKey}`) ||
+                document.getElementById('deviceResult');
+            if (!deviceDetailsDiv || !cleanDeviceNumber) return false;
 
-            // Add violations lookup
-                const violations = await fetchViolations(deviceNumber);
-            
-            // Add violations to the details display
-            let violationsHtml = '';
-            if (violations.length > 0) {
-                violationsHtml = `
-                    <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
+            deviceDetailsDiv.style.display = 'block';
+            deviceDetailsDiv.textContent = 'Loading device details...';
+
+            try {
+                const [deviceResponse, violations] = await Promise.all([
+                    fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(cleanDeviceNumber)}`),
+                    fetchViolations(cleanDeviceNumber)
+                ]);
+                if (!deviceResponse.ok) throw new Error('Device lookup failed');
+
+                const devices = await deviceResponse.json();
+                const device = Array.isArray(devices) ? devices[0] : null;
+                if (!device) {
+                    deviceDetailsDiv.textContent = 'No device details found.';
+                    return false;
+                }
+
+                const address = [device.house_number, device.street_name]
+                    .filter(Boolean)
+                    .join(' ');
+                const violationsHtml = violations.length > 0
+                    ? `<div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
                         <h4 style="color: #4a9eff;">Violations:</h4>
                         <div style="max-height: 200px; overflow-y: auto;">
                             ${violations.map(v => `
                                 <div style="margin-bottom: 10px; padding: 10px; background: #1c1c1c; border-radius: 5px;">
-                                    <strong>Violation #:</strong> ${v.violation_number}<br>
-                                    <strong>Issue Date:</strong> ${new Date(v.violation_issue_date).toLocaleDateString()}<br>
-                                    <strong>Status:</strong> ${v.violation_status}<br>
-                                    <strong>Type:</strong> ${v.violation_type}<br>
-                                    <strong>Remarks:</strong> ${v.violation_remarks}
+                                    <strong>Violation #:</strong> ${escapeMapSuggestionHtml(v.violation_number || 'N/A')}<br>
+                                    <strong>Issue Date:</strong> ${escapeMapSuggestionHtml(v.violation_issue_date ? new Date(v.violation_issue_date).toLocaleDateString() : 'N/A')}<br>
+                                    <strong>Status:</strong> ${escapeMapSuggestionHtml(v.violation_status || 'N/A')}<br>
+                                    <strong>Type:</strong> ${escapeMapSuggestionHtml(v.violation_type || 'N/A')}<br>
+                                    <strong>Remarks:</strong> ${escapeMapSuggestionHtml(v.violation_remarks || 'N/A')}
                                 </div>
                             `).join('')}
                         </div>
-                    </div>
-                `;
-            } else {
-                violationsHtml = `
-                    <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
+                    </div>`
+                    : `<div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
                         <h4 style="color: #4a9eff;">Violations:</h4>
                         <p>No violations found for this device.</p>
-                    </div>
-                `;
-            }
+                    </div>`;
 
-            // Update the details display to include violations
-            deviceDetailsDiv.innerHTML = `
-                <div style="background: #2c2c2c; padding: 20px; border-radius: 5px; margin-top: 20px;">
-                    <h3 style="color: #4a9eff; margin-bottom: 15px;">Device Details</h3>
-                    <div style="margin-bottom: 10px;">
-                        <strong>Device #:</strong> ${deviceNumber}<br>
-                        <strong style="color: #4a9eff;">Status:</strong> ${device.device_status || 'N/A'}<br>
-                        <strong style="color: #4a9eff;">Type:</strong> ${device.device_type || 'N/A'}<br>
-                        <strong style="color: #4a9eff;">Address:</strong> ${device.house_number} ${device.street_name}, ${device.borough}<br>
-                        <strong style="color: #4a9eff;">BIN:</strong> ${device.bin || 'N/A'}
-                    </div>
-                    ${violationsHtml}
-                </div>
-            `;
-            deviceDetailsDiv.style.display = 'block';
+                deviceDetailsDiv.innerHTML = `
+                    <div style="background: #2c2c2c; padding: 20px; border-radius: 5px; margin-top: 20px;">
+                        <h3 style="color: #4a9eff; margin-bottom: 15px;">Device Details</h3>
+                        <div style="margin-bottom: 10px;">
+                            <strong>Device #:</strong> ${escapeMapSuggestionHtml(device.device_number || cleanDeviceNumber)}<br>
+                            <strong style="color: #4a9eff;">Status:</strong> ${escapeMapSuggestionHtml(device.device_status || 'N/A')}<br>
+                            <strong style="color: #4a9eff;">Type:</strong> ${escapeMapSuggestionHtml(device.device_type || 'N/A')}<br>
+                            <strong style="color: #4a9eff;">Address:</strong> ${escapeMapSuggestionHtml(address || 'N/A')}, ${escapeMapSuggestionHtml(device.borough || 'N/A')}<br>
+                            <strong style="color: #4a9eff;">BIN:</strong> ${escapeMapSuggestionHtml(device.bin || 'N/A')}
+                        </div>
+                        ${violationsHtml}
+                    </div>`;
+                return true;
+            } catch (error) {
+                console.error('Error looking up device details:', error);
+                deviceDetailsDiv.textContent = 'Error loading device details.';
+                return false;
+            }
         }
 
         // Update the CSV export to include violations
@@ -30829,7 +30862,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5.4</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5.5</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
