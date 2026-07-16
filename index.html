@@ -1201,6 +1201,36 @@
                             </div>
                         </div>
 
+                        <!-- Category 5 -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpCategory5'); updateMapCategory5Panel();">
+                                <span class="mcp-title"><span style="color:#ff9800;">⚠</span> Category 5 - <span id="mapCategory5Count">0</span></span>
+                                <span class="mcp-arrow" id="mcpCategory5Arrow">▼</span>
+                            </div>
+                            <div class="mcp-body" id="mcpCategory5">
+                                <p class="mcp-desc">Devices that need CAT 5 testing for the selected year, grouped by building. Look ahead to plan future years.</p>
+                                <label for="mapCategory5YearSelect" style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:5px;">Year</label>
+                                <select id="mapCategory5YearSelect" onchange="onMapCategory5YearChange()" style="width:100%; padding:6px 8px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:0.95em; margin-bottom:8px;"></select>
+                                <input type="text" id="category5SearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or device..."
+                                       oninput="filterMcpBinRowList('category5BuildingsList', this.value)">
+                                <div id="category5BuildingsList" style="max-height: 320px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No CAT 5 devices for this year</div>
+                                </div>
+                                <button id="mapCategory5ShowOnMapBtn" onclick="toggleMapCategory5ShowOnMap()" class="mcp-btn" style="color:#ff9800; font-weight:600;">Show on MAP</button>
+                                <button id="mapCategory5HideCompletedBtn" onclick="toggleHideCompleted()" class="mcp-btn" style="color:#27ae60;">Hide Completed Jobs</button>
+                                <button id="mapCategory5ClearAllFiltersBtn" onclick="clearAllMapFilters()" class="mcp-btn" style="color:#ff6b6b;">Clear All Filters</button>
+                                <button id="mapCategory5BypassedBtn" onclick="toggleMapCategory5BypassedList()" class="mcp-btn" style="color:#4CAF50; font-weight:600;">Bypassed - <span id="mapCategory5BypassedCount">0</span></button>
+                                <div id="category5BypassedSection" style="display:none; margin-top:8px;">
+                                    <p class="mcp-desc" style="margin-bottom:6px;">Devices with CAT 5 bypassed in Device Report, grouped by building.</p>
+                                    <input type="text" id="category5BypassedSearchInput" class="mcp-search-input" placeholder="🔍 Search bypassed by address, BIN, device, or note..."
+                                           oninput="filterMcpBinRowList('category5BypassedList', this.value)">
+                                    <div id="category5BypassedList" style="max-height: 280px; overflow-y: auto; margin-bottom: 4px;">
+                                        <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No bypassed CAT 5 devices</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Import Schedule from Excel -->
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpScheduleImport')">
@@ -9792,6 +9822,7 @@
         let mapHold = {};
         let mapTestDates = {};
         let mapNotes = {};
+        let mapCat5Bypasses = {}; // key: "BIN::DEVICE_NUMBER" → { bypassed, note, timestamp }
         let mapActivityLog = [];
         let mapAdditionalLocations = [];
         let mapDeviceMonitors = {};
@@ -10078,6 +10109,7 @@
                 deviceMonitors: getMapDeviceMonitors(),
                 testDates: getMapTestDates(),
                 notes: getMapNotes(),
+                cat5Bypasses: getMapCat5Bypasses(),
                 activityLog: getMapActivityLog(),
                 dobInfoUpdatedAt: mapDobInfoUpdatedAt,
                 monthLabels: scopedMonthLabels,
@@ -10747,7 +10779,7 @@
             });
         }
 
-        function getMapDeviceReportTestInfo(device, currentYear) {
+        function getMapDeviceReportTestInfo(device, currentYear, binHint) {
             const year = currentYear || new Date().getFullYear();
             const statusText = (device.device_status || '').toUpperCase();
             const typeText = (device.device_type || '').toUpperCase();
@@ -10766,7 +10798,10 @@
             const hasPVI = !!(pviDate && !isNaN(pviDate.getTime()) && pviDate.getFullYear() === year);
             const hasCat1 = !!(cat1Date && !isNaN(cat1Date.getTime()) && cat1Date.getFullYear() === year);
             const hasCat5 = !!(cat5Date && !isNaN(cat5Date.getTime()) && cat5Date.getFullYear() === year);
-            const cat5NotRequired = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled;
+            const typeCat5NotRequired = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled;
+            const cat5Bypassed = !typeCat5NotRequired && isMapDeviceCat5Bypassed(device, null, binHint);
+            const cat5BypassNote = cat5Bypassed ? getMapDeviceCat5BypassNote(findMapBinForDevice(device, binHint), device.device_number) : '';
+            const cat5NotRequired = typeCat5NotRequired || cat5Bypassed;
             const requiresCat5 = !cat5NotRequired && cat5Date && !isNaN(cat5Date.getTime()) && (year - cat5Date.getFullYear()) >= 5;
             const nextCat5DueYear = (!cat5NotRequired && cat5Date && !isNaN(cat5Date.getTime())) ? cat5Date.getFullYear() + 5 : null;
             return {
@@ -10776,6 +10811,9 @@
                 requiresCat1: !isRemoved && !isDismantled,
                 requiresCat5,
                 cat5NotRequired,
+                typeCat5NotRequired,
+                cat5Bypassed,
+                cat5BypassNote,
                 nextCat5DueYear,
                 pviDate: pviDate && !isNaN(pviDate.getTime()) ? pviDate : null,
                 cat1Date: cat1Date && !isNaN(cat1Date.getTime()) ? cat1Date : null,
@@ -10836,7 +10874,8 @@
             const currentYear = opts.currentYear || new Date().getFullYear();
             const today = opts.today || new Date();
             const idPrefix = String(opts.idPrefix || 'devReport').replace(/[^a-zA-Z0-9_-]/g, '_');
-            const testInfo = getMapDeviceReportTestInfo(device, currentYear);
+            const binHint = opts.bin || (device && device.bin) || '';
+            const testInfo = getMapDeviceReportTestInfo(device, currentYear, binHint);
             const pending = getMapDeviceReportPendingTests(testInfo);
             const nextTestAvailability = getMapDeviceReportNextTestAvailability(testInfo, new Date(today.getTime()));
             const statusUp = String(device.device_status || '').toUpperCase();
@@ -10872,14 +10911,18 @@
             const cat1Html = testInfo.requiresCat1
                 ? `<span style="color:${testInfo.hasCat1 ? '#4CAF50' : '#ff6b6b'}">${testInfo.hasCat1 ? '✓' : '✗'}</span> ${fmt(testInfo.cat1Date)}`
                 : `<span style="color:#888;font-style:italic;">Not required</span>`;
-            const nextCat5Html = testInfo.cat5NotRequired
+            const nextCat5Html = testInfo.cat5Bypassed
+                ? '<span style="font-size:10px;color:#4CAF50;font-style:italic;">Next CAT 5: Not required (bypassed)</span>'
+                : testInfo.cat5NotRequired
                 ? '<span style="font-size:10px;color:#888;font-style:italic;">Next CAT 5: Not required</span>'
                 : testInfo.nextCat5DueYear
                     ? `<span style="font-size:10px;color:${testInfo.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'};font-weight:700;">Next CAT 5: ${testInfo.nextCat5DueYear}</span>`
                     : '<span style="font-size:10px;opacity:0.65;">Next CAT 5: No prior CAT 5 date</span>';
             const cat5Html = testInfo.requiresCat5
                 ? `<span style="color:${testInfo.hasCat5 ? '#4CAF50' : '#ff9800'};font-weight:700;">${testInfo.hasCat5 ? '✓' : '⚠'} ${fmt(testInfo.cat5Date)}</span><br>${nextCat5Html}`
-                : `${fmt(testInfo.cat5Date)}<br>${nextCat5Html}`;
+                : testInfo.cat5Bypassed
+                    ? `<span style="color:#4CAF50;font-style:italic;">Not required (bypassed)</span><br>${nextCat5Html}`
+                    : `${fmt(testInfo.cat5Date)}<br>${nextCat5Html}`;
 
             const pendingHtml = isRemoved
                 ? `<span style="color:#888;font-style:italic;">N/A (${statusUp.includes('DELETED') ? 'Deleted' : 'Removed'})</span>`
@@ -11311,8 +11354,9 @@
             return !(status.includes('REMOVED') || status.includes('DELETED'));
         }
 
-        function mapDobDeviceRequiresCat5ThisYear(device, year) {
+        function mapDobDeviceRequiresCat5ThisYear(device, year, binHint) {
             if (!device || !mapDobDeviceIsActiveForCompletion(device)) return false;
+            if (isMapDeviceCat5Bypassed(device, null, binHint)) return false;
             const status = String(device.device_status || '').toUpperCase();
             const deviceType = String(device.device_type || '').toUpperCase();
             const machineType = String(device.machine_type || '').toUpperCase();
@@ -11328,31 +11372,74 @@
             return !!(cat5Date && !isNaN(cat5Date.getTime()) && cat5Date.getFullYear() + 5 <= year);
         }
 
-        function mapDobDeviceHasRequiredCurrentYearCompletion(device, year) {
+        // CAT 5 due for a selected planning year:
+        // current/past years include overdue; future years are exact due-year matches.
+        function mapDobDeviceCat5DueForSelectedYear(device, year, binHint) {
+            if (!device || !mapDobDeviceIsActiveForCompletion(device)) return false;
+            if (isMapDeviceCat5Bypassed(device, null, binHint)) return false;
+            const status = String(device.device_status || '').toUpperCase();
+            const deviceType = String(device.device_type || '').toUpperCase();
+            const machineType = String(device.machine_type || '').toUpperCase();
+            const deviceNumber = String(device.device_number || '').toUpperCase();
+            const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMWAITER');
+            const isConveyor = deviceType.includes('CONVEYOR');
+            const isWheelchairLift = deviceType.includes('WHEELCHAIR') || deviceNumber.includes('W');
+            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO') || machineType.includes('HYDRAULIC') || machineType.includes('HYDRO');
+            const isEscalator = deviceType.includes('ESCALATOR');
+            const isDismantled = status.includes('DISMANTLED');
+            if (isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled) return false;
+            const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+            if (!cat5Date || isNaN(cat5Date.getTime())) return false;
+            const nextDueYear = cat5Date.getFullYear() + 5;
+            const currentYear = new Date().getFullYear();
+            if (year <= currentYear) return nextDueYear <= year;
+            return nextDueYear === year;
+        }
+
+        function getMapCategory5NextDueYear(device, binHint) {
+            if (!device || !mapDobDeviceIsActiveForCompletion(device)) return null;
+            if (isMapDeviceCat5Bypassed(device, null, binHint)) return null;
+            const status = String(device.device_status || '').toUpperCase();
+            const deviceType = String(device.device_type || '').toUpperCase();
+            const machineType = String(device.machine_type || '').toUpperCase();
+            const deviceNumber = String(device.device_number || '').toUpperCase();
+            const isDumbwaiter = deviceType.includes('DUMBWAITER') || deviceType.includes('DUMWAITER');
+            const isConveyor = deviceType.includes('CONVEYOR');
+            const isWheelchairLift = deviceType.includes('WHEELCHAIR') || deviceNumber.includes('W');
+            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO') || machineType.includes('HYDRAULIC') || machineType.includes('HYDRO');
+            const isEscalator = deviceType.includes('ESCALATOR');
+            const isDismantled = status.includes('DISMANTLED');
+            if (isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled) return null;
+            const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+            if (!cat5Date || isNaN(cat5Date.getTime())) return null;
+            return cat5Date.getFullYear() + 5;
+        }
+
+        function mapDobDeviceHasRequiredCurrentYearCompletion(device, year, binHint) {
             if (!mapDobDeviceIsActiveForCompletion(device)) return true;
-            const hasRequiredCat5 = !mapDobDeviceRequiresCat5ThisYear(device, year)
+            const hasRequiredCat5 = !mapDobDeviceRequiresCat5ThisYear(device, year, binHint)
                 || mapDobDateIsInYear(device.cat5_latest_report_filed, year);
             return mapDobDateIsInYear(device.periodic_latest_inspection, year)
                 && mapDobDateIsInYear(device.cat1_latest_report_filed, year)
                 && hasRequiredCat5;
         }
 
-        function getMapNextRequiredTestLabel(device, year) {
+        function getMapNextRequiredTestLabel(device, year, binHint) {
             if (!device || !mapDobDeviceIsActiveForCompletion(device)) return '';
             const missingTests = [];
             if (!mapDobDateIsInYear(device.periodic_latest_inspection, year)) missingTests.push('PVI');
             if (!mapDobDateIsInYear(device.cat1_latest_report_filed, year)) missingTests.push('CAT 1');
-            if (mapDobDeviceRequiresCat5ThisYear(device, year) && !mapDobDateIsInYear(device.cat5_latest_report_filed, year)) {
+            if (mapDobDeviceRequiresCat5ThisYear(device, year, binHint) && !mapDobDateIsInYear(device.cat5_latest_report_filed, year)) {
                 missingTests.push('CAT 5');
             }
             return missingTests.length > 0 ? missingTests.join(' + ') : 'All required tests filed';
         }
 
-        function mapDobGroupHasCurrentYearCompletion(group, year) {
+        function mapDobGroupHasCurrentYearCompletion(group, year, binHint) {
             const devices = group && Array.isArray(group.devices) ? group.devices : [];
             const activeDevices = devices.filter(mapDobDeviceIsActiveForCompletion);
             if (activeDevices.length === 0) return false;
-            return activeDevices.every(device => mapDobDeviceHasRequiredCurrentYearCompletion(device, year));
+            return activeDevices.every(device => mapDobDeviceHasRequiredCurrentYearCompletion(device, year, binHint));
         }
 
         function inferMapCompletedTestTypeFromDobGroup(group, year) {
@@ -11377,7 +11464,7 @@
             const autoCompleted = [];
             Array.from(candidateBins || []).forEach(bin => {
                 const group = binGroups[bin];
-                if (!mapDobGroupHasCurrentYearCompletion(group, currentYear)) return;
+                if (!mapDobGroupHasCurrentYearCompletion(group, currentYear, bin)) return;
                 const testType = 'All Test Completed';
                 if (completed[bin]) {
                     if (normalizeMapCompletedTestType(completed[bin].testType) !== testType) {
@@ -11971,6 +12058,10 @@
         function getMapViewFilterLabel(filterValue) {
             if (!filterValue || filterValue === 'all') return 'Current map view';
             if (filterValue.indexOf('month:') === 0) return filterValue.replace('month:', 'Month: ');
+            if (filterValue.indexOf('cat5:') === 0) {
+                const year = filterValue.replace('cat5:', '');
+                return `Category 5 due (${year})`;
+            }
             const labels = {
                 visible: 'Visible with current settings',
                 'active-month-filters': 'Current active month filter',
@@ -12081,6 +12172,11 @@
                 const month = filterValue.replace('month:', '');
                 return new Set(allBins.filter(bin => monthLabels[bin] === month));
             }
+            if (filterValue.indexOf('cat5:') === 0) {
+                const year = parseInt(filterValue.replace('cat5:', ''), 10);
+                if (!year || isNaN(year)) return new Set();
+                return new Set(getMapCategory5BinsForYear(year));
+            }
             return null;
         }
 
@@ -12173,6 +12269,7 @@
             if (!buildingMap || !Array.isArray(mapMarkers) || !Array.isArray(mapBuildingsData)) return;
 
             const shouldFitMap = !options || options.fitMap !== false;
+            const quiet = !!(options && options.quiet);
             const filterValue = getSelectedMapViewFilter();
             if (filterValue === 'hide-scheduled' && !mapHideScheduledMonthSelectionReady) {
                 if (!pendingMapHideScheduledMonthPrompt) {
@@ -12194,7 +12291,8 @@
                     restoreMapVisibilityForCurrentFilters();
                     updateMonthFilterStatus();
                 }
-                showMapNotification('Showing current map view', '#17a2b8');
+                updateMapCategory5ShowOnMapButton();
+                if (!quiet) showMapNotification('Showing current map view', '#17a2b8');
                 return;
             }
 
@@ -12206,10 +12304,16 @@
             let shownInViewport = false;
             let shown = 0;
 
+            // When viewing an intentional set (completed/hold/etc.), don't also apply hide toggles
+            const explicitSetFilters = new Set(['completed', 'in-process', 'hold', 'hidden']);
+            const respectHideSettings = !explicitSetFilters.has(filterValue);
+
             mapMarkers.forEach((marker, index) => {
                 const building = mapBuildingsData[index];
                 if (!building) return;
-                if (buildingMatchesMapViewFilter(building, filterValue, payload.view || {}, bins, monthLabels)) {
+                const matchesFilter = buildingMatchesMapViewFilter(building, filterValue, payload.view || {}, bins, monthLabels);
+                const hiddenBySettings = respectHideSettings && isBuildingHiddenByMapSettings(building);
+                if (matchesFilter && !hiddenBySettings) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     bounds.extend(marker.getLatLng());
                     if (viewport.contains(marker.getLatLng())) shownInViewport = true;
@@ -12238,6 +12342,7 @@
                 resultCount.style.color = shown > 0 ? '#17a2b8' : '#ff6b6b';
             }
             updateMonthFilterStatus();
+            updateMapCategory5ShowOnMapButton();
             // Only re-zoom when none of the filtered buildings are already on screen,
             // so changing filters doesn't reset the user's zoom/position.
             if (shouldFitMap && bounds.isValid() && !shownInViewport) buildingMap.fitBounds(bounds, { padding: [50, 50] });
@@ -12607,6 +12712,7 @@
                     deviceMonitors: view.deviceMonitors || {},
                     testDates: view.testDates || {},
                     notes: view.notes || {},
+                    cat5Bypasses: view.cat5Bypasses || {},
                     activityLog: Array.isArray(view.activityLog) ? view.activityLog : [],
                     dobInfoUpdatedAt: view.dobInfoUpdatedAt || null,
                     monthLabels: view.monthLabels || {},
@@ -12733,6 +12839,7 @@
                 deviceMonitors: source.deviceMonitors || {},
                 testDates: testDates,
                 notes: source.notes || {},
+                cat5Bypasses: source.cat5Bypasses || {},
                 activityLog: Array.isArray(source.activityLog) ? source.activityLog : [],
                 dobInfoUpdatedAt: parseMapTimestamp(source.dobInfoUpdatedAt),
                 monthLabels: source.monthLabels || {},
@@ -12752,6 +12859,7 @@
             setMapDeviceMonitors(view.deviceMonitors || {});
             setMapTestDates(view.testDates || {});
             setMapNotes(view.notes || {});
+            setMapCat5Bypasses(view.cat5Bypasses || {});
             setMapActivityLog(view.activityLog || []);
             setMapDobInfoUpdatedAt(view.dobInfoUpdatedAt || null);
             const restoredMonthLabels = (Array.isArray(view.monthAssignments) && view.monthAssignments.length > 0)
@@ -13964,15 +14072,80 @@
         }
 
         function updateHideCompletedBtn() {
-            const btn = document.getElementById('hideCompletedBtn');
             const active = isHideCompletedActive();
+            const btn = document.getElementById('hideCompletedBtn');
             if (btn) {
                 btn.textContent = active ? '👁️ Show Completed Buildings' : '🚫 Hide Completed Buildings';
                 btn.style.background = active ? '#27ae60' : 'var(--input-bg)';
                 btn.style.color = active ? 'white' : '#27ae60';
                 btn.style.borderColor = active ? '#27ae60' : 'var(--input-border)';
             }
+            const cat5Btn = document.getElementById('mapCategory5HideCompletedBtn');
+            if (cat5Btn) {
+                cat5Btn.textContent = active ? 'Show Completed Jobs' : 'Hide Completed Jobs';
+                cat5Btn.style.background = active ? '#27ae60' : '';
+                cat5Btn.style.color = active ? 'white' : '#27ae60';
+                cat5Btn.style.borderColor = active ? '#27ae60' : '';
+                cat5Btn.style.fontWeight = active ? '700' : '';
+            }
             updateMonthFilterStatus();
+        }
+
+        function clearAllMapFilters() {
+            const select = document.getElementById('mapViewFilterSelect');
+            if (select) select.value = 'all';
+
+            pendingMapHideScheduledMonthPrompt = false;
+            mapHideScheduledMonthSelectionReady = false;
+
+            activeMonthFilters.clear();
+            updateMonthFilterButtons();
+
+            if (isHideMonthLabeledActive()) {
+                mapHideMonthLabeled = false;
+                updateHideMonthLabeledBtn();
+            }
+
+            let togglesChanged = false;
+            if (mapHideCompleted) {
+                mapHideCompleted = false;
+                localStorage.setItem('mapHideCompleted', 'false');
+                togglesChanged = true;
+            }
+            if (mapHideInProcess) {
+                mapHideInProcess = false;
+                localStorage.setItem('mapHideInProcess', 'false');
+                togglesChanged = true;
+            }
+            if (mapHideHold) {
+                mapHideHold = false;
+                localStorage.setItem('mapHideHold', 'false');
+                togglesChanged = true;
+            }
+
+            updateHideCompletedBtn();
+            updateHideInProcessBtn();
+            updateHideHoldBtn();
+            updateMapCategory5ShowOnMapButton();
+
+            const hideCompletedToggle = document.getElementById('mapHideCompletedToggle');
+            if (hideCompletedToggle) hideCompletedToggle.checked = false;
+            const hideInProcessToggle = document.getElementById('mapHideInProcessToggle');
+            if (hideInProcessToggle) hideInProcessToggle.checked = false;
+            const hideHoldToggle = document.getElementById('mapHideHoldToggle');
+            if (hideHoldToggle) hideHoldToggle.checked = false;
+
+            if (togglesChanged && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            } else if (buildingMap && Array.isArray(mapMarkers) && Array.isArray(mapBuildingsData)) {
+                restoreMapVisibilityForCurrentFilters({ fitMap: false });
+                updateMonthFilterStatus();
+            }
+
+            const resultCount = document.getElementById('mapSearchResultCount');
+            if (resultCount) resultCount.style.display = 'none';
+
+            showMapNotification('Cleared all map filters', '#17a2b8');
         }
 
         const ALL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December','REVIEW'];
@@ -14127,14 +14300,32 @@
             statusEl.style.display = 'block';
         }
 
+        function mapBuildingHasCat5DueForYear(bin, year) {
+            const binGroups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            const group = binGroups[bin] || binGroups[String(bin)];
+            if (!group || !Array.isArray(group.devices)) return false;
+            return group.devices.some(device => mapDobDeviceCat5DueForSelectedYear(device, year, bin));
+        }
+
+        // In Category 5 map view, manually completed buildings that still need CAT 5 stay visible.
+        function mapCompletedBuildingStillNeedsCat5InCurrentView(building) {
+            if (!building || !building.isCompleted) return false;
+            const filterValue = getSelectedMapViewFilter();
+            if (!filterValue || filterValue.indexOf('cat5:') !== 0) return false;
+            const year = parseInt(filterValue.replace('cat5:', ''), 10);
+            if (!year || isNaN(year)) return false;
+            return mapBuildingHasCat5DueForYear(building.bin, year);
+        }
+
         function isBuildingHiddenByMapSettings(building) {
             if (!building) return true;
-            return !!(
-                building.isHidden ||
-                (isHideCompletedActive() && building.isCompleted) ||
-                (isHideInProcessActive() && building.isInProcess) ||
-                (isHideHoldActive() && building.isHold)
-            );
+            if (building.isHidden) return true;
+            if (isHideCompletedActive() && building.isCompleted && !mapCompletedBuildingStillNeedsCat5InCurrentView(building)) {
+                return true;
+            }
+            if (isHideInProcessActive() && building.isInProcess) return true;
+            if (isHideHoldActive() && building.isHold) return true;
+            return false;
         }
 
         function isBuildingVisibleInCurrentMapFilters(building) {
@@ -14454,7 +14645,7 @@
             const group = getMapGroupForBin(bin);
             if (!group) return true;
             const currentYear = new Date().getFullYear();
-            if (mapDobGroupHasCurrentYearCompletion(group, currentYear)) return true;
+            if (mapDobGroupHasCurrentYearCompletion(group, currentYear, bin)) return true;
             const label = group.address || getMapBuildingAddressForBin(bin) || `BIN ${bin}`;
             return confirm(`${label} does not show all required ${currentYear} tests filed with DOB yet. Continue marking this job as Completed?`);
         }
@@ -14509,7 +14700,7 @@
 
             const group = getMapGroupForBin(bin);
             const currentYear = new Date().getFullYear();
-            if (mapDobGroupHasCurrentYearCompletion(group, currentYear)) {
+            if (mapDobGroupHasCurrentYearCompletion(group, currentYear, bin)) {
                 const testType = 'All Test Completed';
                 const result = saveMapCompletedEntry(bin, {
                     address: group && group.address ? group.address : '',
@@ -14652,6 +14843,132 @@
 
         function getMapNote(bin) {
             return mapNotes[bin] || '';
+        }
+
+        function getMapCat5Bypasses() {
+            return mapCat5Bypasses;
+        }
+
+        function setMapCat5Bypasses(bypasses) {
+            mapCat5Bypasses = bypasses && typeof bypasses === 'object' ? bypasses : {};
+        }
+
+        function getMapCat5BypassKey(bin, deviceNumber) {
+            return String(bin || '').trim() + '::' + String(deviceNumber || '').trim().toUpperCase();
+        }
+
+        function findMapBinForDevice(device, binHint) {
+            if (binHint) return String(binHint);
+            if (device && device.bin) return String(device.bin);
+            const num = String(device && device.device_number || '').trim();
+            if (!num) return '';
+            const binGroups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            for (const [bin, group] of Object.entries(binGroups)) {
+                const devices = group && Array.isArray(group.devices) ? group.devices : [];
+                if (devices.some(d => String(d.device_number || '').trim() === num)) return String(bin);
+            }
+            return '';
+        }
+
+        function getMapDeviceCat5Bypass(bin, deviceNumber) {
+            const key = getMapCat5BypassKey(bin, deviceNumber);
+            const entry = mapCat5Bypasses[key];
+            return entry && typeof entry === 'object' ? entry : null;
+        }
+
+        function isMapDeviceCat5Bypassed(binOrDevice, deviceNumber, binHint) {
+            let bin;
+            let num;
+            if (binOrDevice && typeof binOrDevice === 'object') {
+                bin = findMapBinForDevice(binOrDevice, binHint);
+                num = binOrDevice.device_number;
+            } else {
+                bin = binOrDevice;
+                num = deviceNumber;
+            }
+            if (!bin || !num) return false;
+            const entry = getMapDeviceCat5Bypass(bin, num);
+            return !!(entry && entry.bypassed);
+        }
+
+        function getMapDeviceCat5BypassNote(bin, deviceNumber) {
+            const entry = getMapDeviceCat5Bypass(bin, deviceNumber);
+            return entry && entry.note ? String(entry.note) : '';
+        }
+
+        function setMapDeviceCat5Bypass(bin, deviceNumber, options) {
+            const key = getMapCat5BypassKey(bin, deviceNumber);
+            if (!bin || !deviceNumber || !key) return null;
+            const opts = options || {};
+            const existing = getMapDeviceCat5Bypass(bin, deviceNumber) || {};
+            const note = opts.note !== undefined ? String(opts.note || '').trim() : (existing.note || '');
+            const bypassed = opts.bypassed !== undefined ? !!opts.bypassed : (existing.bypassed !== false);
+            if (!bypassed && !note) {
+                delete mapCat5Bypasses[key];
+                return null;
+            }
+            mapCat5Bypasses[key] = {
+                bypassed,
+                note,
+                timestamp: Date.now(),
+                bin: String(bin),
+                deviceNumber: String(deviceNumber)
+            };
+            return mapCat5Bypasses[key];
+        }
+
+        function clearMapDeviceCat5Bypass(bin, deviceNumber) {
+            const key = getMapCat5BypassKey(bin, deviceNumber);
+            const existed = !!mapCat5Bypasses[key];
+            delete mapCat5Bypasses[key];
+            return existed;
+        }
+
+        function refreshMapAfterCat5BypassChange() {
+            if (typeof updateMapCategory5Panel === 'function') updateMapCategory5Panel();
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && buildingMap) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            } else if ((getSelectedMapViewFilter() || '').indexOf('cat5:') === 0) {
+                applyMapViewDropdownFilter({ fitMap: false, quiet: true });
+            }
+        }
+
+        function toggleMapDeviceCat5Bypass(bin, deviceNumber) {
+            const num = String(deviceNumber || '');
+            const currentlyBypassed = isMapDeviceCat5Bypassed(bin, num);
+            if (currentlyBypassed) {
+                clearMapDeviceCat5Bypass(bin, num);
+                addMapActivity('Cleared CAT 5 bypass', { type: 'CAT 5', bin, details: 'Device ' + num });
+                showMapNotification('CAT 5 bypass cleared for ' + num, '#ff9800');
+            } else {
+                const noteEl = document.getElementById('cat5BypassNote_' + String(bin) + '_' + String(num).replace(/[^a-zA-Z0-9_-]/g, '_'));
+                const note = noteEl ? String(noteEl.value || '').trim() : getMapDeviceCat5BypassNote(bin, num);
+                setMapDeviceCat5Bypass(bin, num, { bypassed: true, note });
+                addMapActivity('Bypassed CAT 5 requirement', {
+                    type: 'CAT 5',
+                    bin,
+                    details: 'Device ' + num + (note ? ' — ' + (note.length > 80 ? note.substring(0, 80) + '...' : note) : '')
+                });
+                showMapNotification('CAT 5 bypassed for ' + num, '#4CAF50');
+            }
+            refreshMapAfterCat5BypassChange();
+            showDeviceDetailModal(bin);
+        }
+
+        function saveMapDeviceCat5BypassNote(bin, deviceNumber) {
+            const safeId = 'cat5BypassNote_' + String(bin) + '_' + String(deviceNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
+            const noteEl = document.getElementById(safeId);
+            const note = noteEl ? String(noteEl.value || '').trim() : '';
+            const wasBypassed = isMapDeviceCat5Bypassed(bin, deviceNumber);
+            setMapDeviceCat5Bypass(bin, deviceNumber, { bypassed: true, note });
+            addMapActivity(wasBypassed ? 'Updated CAT 5 bypass note' : 'Bypassed CAT 5 with note', {
+                type: 'CAT 5',
+                bin,
+                details: 'Device ' + deviceNumber + (note ? ' — ' + (note.length > 80 ? note.substring(0, 80) + '...' : note) : '')
+            });
+            showMapNotification(note ? 'CAT 5 bypass note saved' : 'CAT 5 bypassed (no note)', '#4CAF50');
+            refreshMapAfterCat5BypassChange();
+            showDeviceDetailModal(bin);
         }
 
         function syncMapNoteDraft(bin, value) {
@@ -15556,44 +15873,7 @@
             const today = new Date(); today.setHours(0,0,0,0);
 
             const getDeviceReportTestInfo = function(device) {
-                const statusText = (device.device_status || '').toUpperCase();
-                const typeText = (device.device_type || '').toUpperCase();
-                const machineText = (device.machine_type || device.machineType || '').toUpperCase();
-                const numberText = (device.device_number || '').toUpperCase();
-                const isRemoved = statusText.includes('REMOVED') || statusText.includes('DELETED');
-                const isDismantled = statusText.includes('DISMANTLED');
-                const isDumbwaiter = typeText.includes('DUMBWAITER') || typeText.includes('DUMWAITER');
-                const isConveyor = typeText.includes('CONVEYOR');
-                const isWheelchairLift = typeText.includes('WHEELCHAIR') || numberText.includes('W');
-                const isHydraulic = typeText.includes('HYDRAULIC') || typeText.includes('HYDRO') || machineText.includes('HYDRAULIC') || machineText.includes('HYDRO');
-                const isEscalator = typeText.includes('ESCALATOR');
-                const pviDate  = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
-                const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
-                const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
-                const hasPVI = pviDate && pviDate.getFullYear() === currentYear;
-                const hasCat1 = cat1Date && cat1Date.getFullYear() === currentYear;
-                const hasCat5 = cat5Date && cat5Date.getFullYear() === currentYear;
-                const cat5NotRequired = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled;
-                const requiresCat5 = !cat5NotRequired && cat5Date && (currentYear - cat5Date.getFullYear()) >= 5;
-                const nextCat5DueYear = (!cat5NotRequired && cat5Date) ? cat5Date.getFullYear() + 5 : null;
-                const requiresPVI = !isRemoved && !isConveyor;
-                const requiresCat1 = !isRemoved && !isDismantled;
-
-                return {
-                    isRemoved,
-                    isDismantled,
-                    requiresPVI,
-                    requiresCat1,
-                    requiresCat5,
-                    cat5NotRequired,
-                    nextCat5DueYear,
-                    pviDate,
-                    cat1Date,
-                    cat5Date,
-                    hasPVI,
-                    hasCat1,
-                    hasCat5
-                };
+                return getMapDeviceReportTestInfo(device, currentYear, bin);
             };
 
             const getDeviceReportPendingTests = function(testInfo) {
@@ -15829,14 +16109,18 @@
                     const cat1Html = testInfo.requiresCat1
                         ? `<span style="color:${hasCat1 ? '#4CAF50' : '#ff6b6b'}">${hasCat1 ? '✓' : '✗'}</span> ${fmt(cat1Date)}`
                         : `<span style="color:#888;font-style:italic;">Not required</span>`;
-                    const nextCat5Html = testInfo.cat5NotRequired
+                    const nextCat5Html = testInfo.cat5Bypassed
+                        ? '<span style="font-size:10px;color:#4CAF50;font-style:italic;">Next CAT 5: Not required (bypassed)</span>'
+                        : testInfo.cat5NotRequired
                         ? '<span style="font-size:10px;color:#888;font-style:italic;">Next CAT 5: Not required</span>'
                         : testInfo.nextCat5DueYear
                             ? `<span style="font-size:10px;color:${testInfo.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'};font-weight:700;">Next CAT 5: ${testInfo.nextCat5DueYear}</span>`
                             : '<span style="font-size:10px;opacity:0.65;">Next CAT 5: No prior CAT 5 date</span>';
                     const cat5Html = testInfo.requiresCat5
                         ? `<span style="color:${hasCat5 ? '#4CAF50' : '#ff9800'};font-weight:700;">${hasCat5 ? '✓' : '⚠'} ${fmt(cat5Date)}</span><br>${nextCat5Html}`
-                        : `${fmt(cat5Date)}<br>${nextCat5Html}`;
+                        : testInfo.cat5Bypassed
+                            ? `<span style="color:#4CAF50;font-style:italic;">Not required (bypassed)</span><br>${nextCat5Html}`
+                            : `${fmt(cat5Date)}<br>${nextCat5Html}`;
 
                     const pendingHtml = isRemoved
                         ? `<span style="color:#888;font-style:italic;">N/A (${statusUp.includes('DELETED') ? 'Deleted' : 'Removed'})</span>`
@@ -15848,6 +16132,58 @@
                     const violHtml = violCount > 0
                         ? `<span style="color:#ff6b6b;font-weight:600;">⚠️ ${violCount}</span>`
                         : '<span style="opacity:0.45;">—</span>';
+
+                    const showCat5BypassUi = !isRemoved && (!testInfo.typeCat5NotRequired || testInfo.cat5Bypassed);
+                    const bypassNoteId = 'cat5BypassNote_' + String(bin) + '_' + String(num).replace(/[^a-zA-Z0-9_-]/g, '_');
+                    const binJs = String(bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    const numJs = String(num).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    const existingBypassNote = testInfo.cat5BypassNote || getMapDeviceCat5BypassNote(bin, num);
+                    const cat5BypassHeaderColor = testInfo.cat5Bypassed ? '#4CAF50' : '#ff9800';
+                    const cat5BypassHtml = showCat5BypassUi ? `
+                        <div style="margin-top:10px;border:1px solid ${testInfo.cat5Bypassed ? 'rgba(76,175,80,0.35)' : 'rgba(255,152,0,0.28)'};border-radius:6px;overflow:hidden;background:${testInfo.cat5Bypassed ? 'rgba(76,175,80,0.08)' : 'rgba(255,152,0,0.06)'};">
+                            <div onclick="var body=document.getElementById('deviceCat5Bypass_${bin}_${deviceIndex}'); var arrow=document.getElementById('deviceCat5BypassArrow_${bin}_${deviceIndex}'); if(body){var open=body.style.display!=='none'; body.style.display=open?'none':'block'; if(arrow) arrow.textContent=open?'▼':'▲';}"
+                                 style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;">
+                                <span style="font-size:13px;color:${cat5BypassHeaderColor};font-weight:700;">
+                                    ${testInfo.cat5Bypassed ? '✓ CAT 5 Bypassed' : 'CAT 5 Bypass'}
+                                    ${testInfo.cat5Bypassed && existingBypassNote ? ' · note saved' : ''}
+                                </span>
+                                <span id="deviceCat5BypassArrow_${bin}_${deviceIndex}" style="font-size:12px;color:${cat5BypassHeaderColor};font-weight:700;">▼</span>
+                            </div>
+                            <div id="deviceCat5Bypass_${bin}_${deviceIndex}" style="display:none;padding:0 10px 10px 10px;">
+                                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                                    <div style="min-width:0;flex:1;font-size:11px;opacity:0.75;line-height:1.35;">
+                                        ${testInfo.cat5Bypassed
+                                            ? 'This device is treated as not requiring CAT 5. Add a note explaining why.'
+                                            : (testInfo.requiresCat5
+                                                ? 'CAT 5 appears required. Bypass if this device does not need CAT 5.'
+                                                : (!testInfo.cat5Date
+                                                    ? 'No prior CAT 5 date on file. Bypass if CAT 5 is not required for this device.'
+                                                    : 'Bypass if this device no longer requires CAT 5 despite a prior CAT 5 date.'))}
+                                    </div>
+                                    <button type="button"
+                                            onclick="event.stopPropagation(); toggleMapDeviceCat5Bypass('${binJs}', '${numJs}')"
+                                            style="flex-shrink:0;padding:6px 10px;border-radius:5px;border:1px solid ${testInfo.cat5Bypassed ? '#ff9800' : '#4CAF50'};background:${testInfo.cat5Bypassed ? 'transparent' : '#4CAF50'};color:${testInfo.cat5Bypassed ? '#ff9800' : 'white'};font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
+                                        ${testInfo.cat5Bypassed ? 'Undo Bypass' : 'Bypass CAT 5'}
+                                    </button>
+                                </div>
+                                <label for="${bypassNoteId}" style="display:block;font-size:11px;opacity:0.7;margin-bottom:4px;">Bypass note${testInfo.cat5Bypassed ? '' : ' (saved with bypass)'}</label>
+                                <textarea id="${bypassNoteId}"
+                                          rows="2"
+                                          placeholder="e.g. Device converted / no longer requires CAT 5..."
+                                          onclick="event.stopPropagation()"
+                                          style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:5px;border:1px solid var(--input-border);background:var(--card-bg);color:var(--text-color);font-size:12px;resize:vertical;min-height:52px;">${escapeMapSuggestionHtml(existingBypassNote)}</textarea>
+                                <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px;">
+                                    <button type="button"
+                                            onclick="event.stopPropagation(); saveMapDeviceCat5BypassNote('${binJs}', '${numJs}')"
+                                            style="padding:5px 10px;border-radius:5px;border:1px solid #1a73e8;background:#1a73e8;color:white;font-size:12px;font-weight:600;cursor:pointer;">
+                                        ${testInfo.cat5Bypassed ? 'Save Note' : 'Bypass & Save Note'}
+                                    </button>
+                                </div>
+                                ${testInfo.cat5Bypassed && existingBypassNote
+                                    ? `<div style="margin-top:6px;font-size:11px;color:var(--text-color);opacity:0.8;line-height:1.35;"><strong>Note:</strong> ${escapeMapSuggestionHtml(existingBypassNote)}</div>`
+                                    : ''}
+                            </div>
+                        </div>` : '';
 
                     const violationDropdownHtml = violCount > 0 ? `
                         <div style="margin-top:10px;border:1px solid rgba(255,107,107,0.28);border-radius:6px;overflow:hidden;background:rgba(255,107,107,0.05);">
@@ -15917,6 +16253,7 @@
                         <div style="font-size:13px;">
                             <span style="opacity:0.6;margin-right:4px;">Pending:</span>${pendingHtml}
                         </div>
+                        ${cat5BypassHtml}
                         ${violationDropdownHtml}
                     </div>`;
                 });
@@ -17002,6 +17339,375 @@
             }
         }
 
+        function getSelectedMapCategory5Year() {
+            const select = document.getElementById('mapCategory5YearSelect');
+            const currentYear = new Date().getFullYear();
+            if (!select || !select.value) return currentYear;
+            const year = parseInt(select.value, 10);
+            return (!year || isNaN(year)) ? currentYear : year;
+        }
+
+        function getMapCategory5GroupsForYear(year) {
+            const binGroups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            const groups = [];
+            Object.keys(binGroups).forEach(bin => {
+                const group = binGroups[bin] || {};
+                const devices = Array.isArray(group.devices) ? group.devices : [];
+                const dueDevices = devices
+                    .filter(device => mapDobDeviceCat5DueForSelectedYear(device, year, bin))
+                    .map(device => {
+                        const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                        const nextDueYear = getMapCategory5NextDueYear(device, bin);
+                        return {
+                            device,
+                            number: device.device_number || 'N/A',
+                            type: device.device_type || 'Unknown',
+                            status: device.device_status || '',
+                            lastCat5: (cat5Date && !isNaN(cat5Date.getTime())) ? cat5Date : null,
+                            nextDueYear
+                        };
+                    })
+                    .sort((a, b) => String(a.number).localeCompare(String(b.number), undefined, { numeric: true, sensitivity: 'base' }));
+                if (dueDevices.length === 0) return;
+                let address = group.address || '';
+                if (!address && Array.isArray(mapBuildingsData)) {
+                    const building = mapBuildingsData.find(b => String(b.bin) === String(bin));
+                    if (building) address = building.address || '';
+                }
+                groups.push({
+                    bin: String(bin),
+                    address: address || ('BIN ' + bin),
+                    devices: dueDevices
+                });
+            });
+            groups.sort((a, b) => String(a.address).localeCompare(String(b.address), undefined, { sensitivity: 'base' }));
+            return groups;
+        }
+
+        function getMapCategory5BinsForYear(year) {
+            return getMapCategory5GroupsForYear(year).map(group => String(group.bin));
+        }
+
+        function ensureMapCategory5FilterOption(year) {
+            const select = document.getElementById('mapViewFilterSelect');
+            if (!select) return;
+            const value = 'cat5:' + year;
+            let option = Array.from(select.options).find(opt => opt.value === value);
+            if (!option) {
+                option = document.createElement('option');
+                option.value = value;
+                option.textContent = 'Category 5 due (' + year + ')';
+                select.appendChild(option);
+            } else {
+                option.textContent = 'Category 5 due (' + year + ')';
+            }
+            // Remove stale cat5 options for other years to keep the dropdown clean
+            Array.from(select.options).forEach(opt => {
+                if (opt.value.indexOf('cat5:') === 0 && opt.value !== value) {
+                    select.removeChild(opt);
+                }
+            });
+        }
+
+        function isMapCategory5ShowOnMapActive() {
+            const filterValue = getSelectedMapViewFilter();
+            const year = getSelectedMapCategory5Year();
+            return filterValue === ('cat5:' + year);
+        }
+
+        function updateMapCategory5ShowOnMapButton() {
+            const btn = document.getElementById('mapCategory5ShowOnMapBtn');
+            if (!btn) return;
+            if (isMapCategory5ShowOnMapActive()) {
+                btn.textContent = 'Clear MAP Filter';
+                btn.style.background = '#ff9800';
+                btn.style.color = 'white';
+                btn.style.borderColor = '#ff9800';
+                btn.style.fontWeight = '700';
+            } else {
+                btn.textContent = 'Show on MAP';
+                btn.style.background = '';
+                btn.style.color = '#ff9800';
+                btn.style.borderColor = '';
+                btn.style.fontWeight = '600';
+            }
+        }
+
+        function getMapCategory5BypassedGroups() {
+            const bypasses = getMapCat5Bypasses() || {};
+            const binGroups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            const byBin = {};
+
+            Object.keys(bypasses).forEach(key => {
+                const entry = bypasses[key];
+                if (!entry || !entry.bypassed) return;
+                let bin = entry.bin ? String(entry.bin) : '';
+                let deviceNumber = entry.deviceNumber ? String(entry.deviceNumber) : '';
+                if ((!bin || !deviceNumber) && key.indexOf('::') !== -1) {
+                    const parts = key.split('::');
+                    if (!bin) bin = parts[0] || '';
+                    if (!deviceNumber) deviceNumber = parts.slice(1).join('::') || '';
+                }
+                if (!bin || !deviceNumber) return;
+
+                const group = binGroups[bin] || {};
+                const devices = Array.isArray(group.devices) ? group.devices : [];
+                const device = devices.find(d => String(d.device_number || '').trim().toUpperCase() === String(deviceNumber).trim().toUpperCase());
+                let address = group.address || '';
+                if (!address && Array.isArray(mapBuildingsData)) {
+                    const building = mapBuildingsData.find(b => String(b.bin) === String(bin));
+                    if (building) address = building.address || '';
+                }
+                if (!byBin[bin]) {
+                    byBin[bin] = {
+                        bin: String(bin),
+                        address: address || ('BIN ' + bin),
+                        devices: []
+                    };
+                }
+                const cat5Date = device && device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                byBin[bin].devices.push({
+                    number: deviceNumber,
+                    type: (device && device.device_type) || 'Unknown',
+                    note: entry.note ? String(entry.note) : '',
+                    timestamp: entry.timestamp || null,
+                    lastCat5: (cat5Date && !isNaN(cat5Date.getTime())) ? cat5Date : null
+                });
+            });
+
+            const groups = Object.values(byBin).map(group => {
+                group.devices.sort((a, b) => String(a.number).localeCompare(String(b.number), undefined, { numeric: true, sensitivity: 'base' }));
+                return group;
+            });
+            groups.sort((a, b) => String(a.address).localeCompare(String(b.address), undefined, { sensitivity: 'base' }));
+            return groups;
+        }
+
+        function updateMapCategory5BypassedButton() {
+            const groups = getMapCategory5BypassedGroups();
+            const deviceCount = groups.reduce((sum, group) => sum + group.devices.length, 0);
+            const countEl = document.getElementById('mapCategory5BypassedCount');
+            if (countEl) countEl.textContent = String(deviceCount);
+
+            const btn = document.getElementById('mapCategory5BypassedBtn');
+            const section = document.getElementById('category5BypassedSection');
+            const isOpen = !!(section && section.style.display !== 'none');
+            if (btn) {
+                if (isOpen) {
+                    btn.style.background = '#4CAF50';
+                    btn.style.color = 'white';
+                    btn.style.borderColor = '#4CAF50';
+                    btn.style.fontWeight = '700';
+                } else {
+                    btn.style.background = '';
+                    btn.style.color = '#4CAF50';
+                    btn.style.borderColor = '';
+                    btn.style.fontWeight = '600';
+                }
+            }
+        }
+
+        function updateMapCategory5BypassedPanel() {
+            const listEl = document.getElementById('category5BypassedList');
+            const groups = getMapCategory5BypassedGroups();
+            const deviceCount = groups.reduce((sum, group) => sum + group.devices.length, 0);
+            updateMapCategory5BypassedButton();
+
+            if (!listEl) return;
+            if (deviceCount === 0) {
+                listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No bypassed CAT 5 devices</div>';
+                return;
+            }
+
+            listEl.innerHTML = groups.map(group => {
+                const addrEsc = (group.address || '').replace(/"/g, '&quot;');
+                const binJs = String(group.bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const deviceFilterText = group.devices.map(d => d.number + ' ' + d.type + ' ' + (d.note || '')).join(' ');
+                const deviceRows = group.devices.map(d => {
+                    const numJs = String(d.number).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    const lastCat5Text = d.lastCat5 ? d.lastCat5.toLocaleDateString() : 'N/A';
+                    const bypassedOn = d.timestamp
+                        ? new Date(d.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : '';
+                    const noteHtml = d.note
+                        ? `<span style="display:block;color:var(--text-color);opacity:0.8;margin-top:2px;"><strong>Note:</strong> ${escapeMapSuggestionHtml(d.note)}</span>`
+                        : '<span style="display:block;opacity:0.55;font-style:italic;margin-top:2px;">No note</span>';
+                    return `
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:6px 0;border-top:1px solid rgba(76,175,80,0.18);">
+                            <span style="min-width:0;flex:1;">
+                                <span style="font-weight:700;color:var(--text-color);">${escapeMapSuggestionHtml(d.number)}</span>
+                                <span style="display:block;font-size:0.82em;opacity:0.78;margin-top:1px;">${escapeMapSuggestionHtml(d.type)}</span>
+                                <span style="display:block;font-size:0.8em;color:#4CAF50;font-weight:600;margin-top:2px;">Bypassed${bypassedOn ? ' · ' + bypassedOn : ''} · Last CAT 5 ${escapeMapSuggestionHtml(lastCat5Text)}</span>
+                                <span style="display:block;font-size:0.8em;line-height:1.35;">${noteHtml}</span>
+                            </span>
+                            <button type="button"
+                                    onclick="clearMapCategory5BypassFromPanel('${binJs}', '${numJs}')"
+                                    style="flex-shrink:0;background:#ff9800;color:white;border:none;border-radius:3px;padding:3px 8px;cursor:pointer;font-size:0.78em;margin-top:2px;">
+                                Undo
+                            </button>
+                        </div>`;
+                }).join('');
+                return `
+                    <div data-bin="${group.bin}" data-address="${addrEsc}" data-filter-text="${escapeMapSuggestionHtml(deviceFilterText)}" style="padding:8px; background:var(--input-bg); border:1px solid rgba(76,175,80,0.28); border-radius:6px; margin-bottom:6px; font-size:1em;">
+                        <div style="margin-bottom:4px;">
+                            <span style="display:block;cursor:pointer;" title="Click to view on map" onclick="flyToMapBuilding('${group.bin}')">
+                                <span style="display:flex;align-items:center;gap:4px;overflow:hidden;">
+                                    <span style="color:#4CAF50;font-weight:700;flex-shrink:0;">✓</span>
+                                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;text-decoration:underline dotted;">${escapeMapSuggestionHtml(group.address)}</span>
+                                </span>
+                                <span style="display:block;font-size:0.8em;opacity:0.55;padding-left:22px;">BIN ${group.bin} · ${group.devices.length} bypassed device${group.devices.length !== 1 ? 's' : ''}</span>
+                            </span>
+                        </div>
+                        <div style="padding-left:8px;">${deviceRows}</div>
+                    </div>`;
+            }).join('');
+
+            const searchInput = document.getElementById('category5BypassedSearchInput');
+            if (searchInput && searchInput.value.trim()) {
+                filterMcpBinRowList('category5BypassedList', searchInput.value);
+            }
+        }
+
+        function toggleMapCategory5BypassedList() {
+            const section = document.getElementById('category5BypassedSection');
+            if (!section) return;
+            const isOpen = section.style.display !== 'none';
+            section.style.display = isOpen ? 'none' : 'block';
+            if (!isOpen) updateMapCategory5BypassedPanel();
+            else updateMapCategory5BypassedButton();
+        }
+
+        function clearMapCategory5BypassFromPanel(bin, deviceNumber) {
+            const num = String(deviceNumber || '');
+            if (!clearMapDeviceCat5Bypass(bin, num)) return;
+            addMapActivity('Cleared CAT 5 bypass', { type: 'CAT 5', bin, details: 'Device ' + num });
+            showMapNotification('CAT 5 bypass cleared for ' + num, '#ff9800');
+            refreshMapAfterCat5BypassChange();
+            const modal = document.getElementById('deviceDetailModal');
+            if (modal) showDeviceDetailModal(bin);
+        }
+
+        function populateMapCategory5YearSelect() {
+            const select = document.getElementById('mapCategory5YearSelect');
+            if (!select) return;
+            const currentYear = new Date().getFullYear();
+            const previousValue = select.value ? parseInt(select.value, 10) : currentYear;
+            const years = [];
+            for (let y = currentYear; y <= currentYear + 10; y++) years.push(y);
+            select.innerHTML = years.map(y => {
+                const label = y === currentYear ? (y + ' (current)') : String(y);
+                return '<option value="' + y + '">' + label + '</option>';
+            }).join('');
+            const restoreYear = years.includes(previousValue) ? previousValue : currentYear;
+            select.value = String(restoreYear);
+        }
+
+        function updateMapCategory5Panel() {
+            populateMapCategory5YearSelect();
+            const year = getSelectedMapCategory5Year();
+            const groups = getMapCategory5GroupsForYear(year);
+            const deviceCount = groups.reduce((sum, group) => sum + group.devices.length, 0);
+            const countEl = document.getElementById('mapCategory5Count');
+            const listEl = document.getElementById('category5BuildingsList');
+            if (countEl) countEl.textContent = String(deviceCount);
+
+            if (listEl) {
+                if (groups.length === 0) {
+                    const emptyMsg = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups
+                        ? ('No CAT 5 devices due in ' + year)
+                        : 'Load map buildings to see CAT 5 requirements';
+                    listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">' + emptyMsg + '</div>';
+                } else {
+                    const currentYear = new Date().getFullYear();
+                    listEl.innerHTML = groups.map(group => {
+                        const addrEsc = (group.address || '').replace(/"/g, '&quot;');
+                        const deviceFilterText = group.devices.map(d => d.number + ' ' + d.type).join(' ');
+                        const deviceRows = group.devices.map(d => {
+                            const lastCat5Text = d.lastCat5 ? d.lastCat5.toLocaleDateString() : 'N/A';
+                            const dueLabel = (d.nextDueYear && d.nextDueYear < currentYear)
+                                ? ('Overdue since ' + d.nextDueYear)
+                                : ('Due ' + (d.nextDueYear || year));
+                            return `
+                                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:5px 0;border-top:1px solid rgba(255,152,0,0.14);">
+                                    <span style="font-weight:700;color:var(--text-color);">${escapeMapSuggestionHtml(d.number)}</span>
+                                    <span style="text-align:right;font-size:0.82em;line-height:1.35;min-width:0;">
+                                        <span style="display:block;color:var(--text-color);opacity:0.78;">${escapeMapSuggestionHtml(d.type)}</span>
+                                        <span style="display:block;color:#ff9800;font-weight:700;">${dueLabel} · Last ${escapeMapSuggestionHtml(lastCat5Text)}</span>
+                                    </span>
+                                </div>`;
+                        }).join('');
+                        return `
+                            <div data-bin="${group.bin}" data-address="${addrEsc}" data-filter-text="${escapeMapSuggestionHtml(deviceFilterText)}" style="padding:8px; background:var(--input-bg); border:1px solid rgba(255,152,0,0.22); border-radius:6px; margin-bottom:6px; font-size:1em;">
+                                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;">
+                                    <span style="flex:1;min-width:0;cursor:pointer;" title="Click to view on map" onclick="flyToMapBuilding('${group.bin}')">
+                                        <span style="display:flex;align-items:center;gap:4px;overflow:hidden;">
+                                            <span style="color:#ff9800;font-weight:700;flex-shrink:0;">⚠</span>
+                                            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;text-decoration:underline dotted;">${escapeMapSuggestionHtml(group.address)}</span>
+                                        </span>
+                                        <span style="display:block;font-size:0.8em;opacity:0.55;padding-left:22px;">BIN ${group.bin} · ${group.devices.length} device${group.devices.length !== 1 ? 's' : ''}</span>
+                                    </span>
+                                </div>
+                                <div style="padding-left:8px;">${deviceRows}</div>
+                            </div>`;
+                    }).join('');
+                }
+            }
+
+            updateMapCategory5ShowOnMapButton();
+            updateMapCategory5BypassedPanel();
+            const searchInput = document.getElementById('category5SearchInput');
+            if (searchInput && searchInput.value.trim()) {
+                filterMcpBinRowList('category5BuildingsList', searchInput.value);
+            }
+        }
+
+        function onMapCategory5YearChange() {
+            const wasCat5FilterActive = (getSelectedMapViewFilter() || '').indexOf('cat5:') === 0;
+            updateMapCategory5Panel();
+            if (wasCat5FilterActive) {
+                // Keep map filter in sync when looking ahead while Show on MAP is active
+                ensureMapCategory5FilterOption(getSelectedMapCategory5Year());
+                const select = document.getElementById('mapViewFilterSelect');
+                if (select) select.value = 'cat5:' + getSelectedMapCategory5Year();
+                applyMapViewDropdownFilter({ fitMap: true });
+                updateMapCategory5ShowOnMapButton();
+            }
+        }
+
+        function toggleMapCategory5ShowOnMap() {
+            if (!window.lastBulkSearchResults || !window.lastBulkSearchResults.binGroups) {
+                showMapNotification('Load map buildings first to show CAT 5 devices', '#ff6b6b');
+                return;
+            }
+            if (!buildingMap || !Array.isArray(mapMarkers) || !Array.isArray(mapBuildingsData)) {
+                showMapNotification('Open the map first, then try Show on MAP', '#ff6b6b');
+                return;
+            }
+
+            const year = getSelectedMapCategory5Year();
+            const select = document.getElementById('mapViewFilterSelect');
+            if (isMapCategory5ShowOnMapActive()) {
+                if (select) select.value = 'all';
+                applyMapViewDropdownFilter({ fitMap: false, quiet: true });
+                updateMapCategory5ShowOnMapButton();
+                showMapNotification('Cleared Category 5 map filter', '#17a2b8');
+                return;
+            }
+
+            const bins = getMapCategory5BinsForYear(year);
+            if (bins.length === 0) {
+                showMapNotification('No CAT 5 devices due in ' + year, '#ff9800');
+                updateMapCategory5ShowOnMapButton();
+                return;
+            }
+
+            ensureMapCategory5FilterOption(year);
+            if (select) select.value = 'cat5:' + year;
+            applyMapViewDropdownFilter({ fitMap: true });
+            updateMapCategory5ShowOnMapButton();
+            showMapNotification(bins.length + ' building' + (bins.length !== 1 ? 's' : '') + ' with CAT 5 due in ' + year, '#ff9800');
+        }
+
         function updateMapControlsPanel() {
             ensureMapControlsNotesSection();
             const favorites = getMapFavorites();
@@ -17178,7 +17884,7 @@
                             : [];
                         var completedTestType = normalizeMapCompletedTestType(data && data.testType);
                         var completedSource = data && data.source ? String(data.source) : '';
-                        var allRequiredTestsCompleted = mapDobGroupHasCurrentYearCompletion(getMapGroupForBin(bin), new Date().getFullYear());
+                        var allRequiredTestsCompleted = mapDobGroupHasCurrentYearCompletion(getMapGroupForBin(bin), new Date().getFullYear(), bin);
                         var testLabel = allRequiredTestsCompleted ? 'All Test Completed:' : 'Test:';
                         var testLabelColor = allRequiredTestsCompleted ? '#27ae60' : 'inherit';
 
@@ -17341,6 +18047,8 @@
             if (transportationInp && transportationInp.value.trim()) {
                 filterTransportationLocationsList(transportationInp.value);
             }
+
+            updateMapCategory5Panel();
 
             var mcpPanel = document.getElementById('mapControlsPanel');
             if (mcpPanel && mcpPanel.style.display !== 'none') {
@@ -18326,7 +19034,7 @@
                         const activeDeviceCount = countMapJobDevices(group.devices);
                         // Calculate completion stats and testing eligibility for this building
                         const currentYear = new Date().getFullYear();
-                        const allRequiredTestsCompletedForYear = mapDobGroupHasCurrentYearCompletion(group, currentYear);
+                        const allRequiredTestsCompletedForYear = mapDobGroupHasCurrentYearCompletion(group, currentYear, bin);
                         const today = new Date();
                         today.setHours(0, 0, 0, 0);
                         
@@ -18391,7 +19099,7 @@
                                 status: device.device_status || 'N/A',
                                 hasPVI,
                                 hasCat1,
-                                nextRequiredTest: getMapNextRequiredTestLabel(device, currentYear),
+                                nextRequiredTest: getMapNextRequiredTestLabel(device, currentYear, bin),
                                 eligibleDate,
                                 daysUntil,
                                 mostRecentTest
@@ -18977,7 +19685,7 @@
                             status: device.device_status || 'N/A',
                             hasPVI,
                             hasCat1,
-                            nextRequiredTest: getMapNextRequiredTestLabel(device, currentYear),
+                            nextRequiredTest: getMapNextRequiredTestLabel(device, currentYear, bin),
                             eligibleDate,
                             daysUntil,
                             mostRecentTest
@@ -30121,7 +30829,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5.3</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5.4</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
