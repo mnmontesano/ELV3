@@ -1443,7 +1443,7 @@
                                     <li>Use 📅 dropdown to assign a month</li>
                                     <li>Use 🗓️ in popup to schedule test dates</li>
                                     <li>Past-due test dates appear in Settings to confirm</li>
-                                    <li>Completed buildings turn dark green</li>
+                                    <li>Completion markers: green = Full, blue = PVI only, purple = Category only</li>
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
@@ -10799,9 +10799,9 @@
             const isWheelchairLift = typeText.includes('WHEELCHAIR') || numberText.includes('W');
             const isHydraulic = typeText.includes('HYDRAULIC') || typeText.includes('HYDRO') || machineText.includes('HYDRAULIC') || machineText.includes('HYDRO');
             const isEscalator = typeText.includes('ESCALATOR');
-            const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
-            const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
-            const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+            const pviDate = parseMapInspectionDate(device.periodic_latest_inspection);
+            const cat1Date = parseMapInspectionDate(device.cat1_latest_report_filed);
+            const cat5Date = parseMapInspectionDate(device.cat5_latest_report_filed);
             const hasPVI = !!(pviDate && !isNaN(pviDate.getTime()) && pviDate.getFullYear() === year);
             const hasCat1 = !!(cat1Date && !isNaN(cat1Date.getTime()) && cat1Date.getFullYear() === year);
             const hasCat5 = !!(cat5Date && !isNaN(cat5Date.getTime()) && cat5Date.getFullYear() === year);
@@ -10925,8 +10925,10 @@
                 : testInfo.nextCat5DueYear
                     ? `<span style="font-size:10px;color:${testInfo.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'};font-weight:700;">Next CAT 5: ${testInfo.nextCat5DueYear}</span>`
                     : '<span style="font-size:10px;opacity:0.65;">Next CAT 5: No prior CAT 5 date</span>';
-            const cat5Html = testInfo.requiresCat5
-                ? `<span style="color:${testInfo.hasCat5 ? '#4CAF50' : '#ff9800'};font-weight:700;">${testInfo.hasCat5 ? '✓' : '⚠'} ${fmt(testInfo.cat5Date)}</span><br>${nextCat5Html}`
+            const cat5Html = testInfo.hasCat5
+                ? `<span style="color:#4CAF50;font-weight:700;">✓ ${fmt(testInfo.cat5Date)}</span><br>${nextCat5Html}`
+                : testInfo.requiresCat5
+                ? `<span style="color:#ff9800;font-weight:700;">⚠ ${fmt(testInfo.cat5Date)}</span><br>${nextCat5Html}`
                 : testInfo.cat5Bypassed
                     ? `<span style="color:#4CAF50;font-style:italic;">Not required (bypassed)</span><br>${nextCat5Html}`
                     : `${fmt(testInfo.cat5Date)}<br>${nextCat5Html}`;
@@ -11422,13 +11424,39 @@
             return cat5Date.getFullYear() + 5;
         }
 
+        function getMapBuildingCompletionFacts(group, year, binHint) {
+            const devices = group && Array.isArray(group.devices) ? group.devices : [];
+            const activeDevices = devices.filter(mapDobDeviceIsActiveForCompletion);
+            const deviceFacts = activeDevices.map(device => {
+                const info = getMapDeviceReportTestInfo(device, year, binHint);
+                return {
+                    device,
+                    info,
+                    pviComplete: !info.requiresPVI || info.hasPVI,
+                    categoryComplete: (!info.requiresCat1 || info.hasCat1) && (!info.requiresCat5 || info.hasCat5)
+                };
+            });
+            const pviRequiredCount = deviceFacts.filter(item => item.info.requiresPVI).length;
+            const categoryRequiredCount = deviceFacts.filter(item => item.info.requiresCat1 || item.info.requiresCat5).length;
+            const pviComplete = activeDevices.length > 0 && deviceFacts.every(item => item.pviComplete);
+            const categoryComplete = activeDevices.length > 0 && deviceFacts.every(item => item.categoryComplete);
+            return {
+                activeDeviceCount: activeDevices.length,
+                pviRequiredCount,
+                categoryRequiredCount,
+                pviComplete,
+                categoryComplete,
+                fullyComplete: pviComplete && categoryComplete,
+                deviceFacts
+            };
+        }
+
         function mapDobDeviceHasRequiredCurrentYearCompletion(device, year, binHint) {
             if (!mapDobDeviceIsActiveForCompletion(device)) return true;
-            const hasRequiredCat5 = !mapDobDeviceRequiresCat5ThisYear(device, year, binHint)
-                || mapDobDateIsInYear(device.cat5_latest_report_filed, year);
-            return mapDobDateIsInYear(device.periodic_latest_inspection, year)
-                && mapDobDateIsInYear(device.cat1_latest_report_filed, year)
-                && hasRequiredCat5;
+            const info = getMapDeviceReportTestInfo(device, year, binHint);
+            return (!info.requiresPVI || info.hasPVI)
+                && (!info.requiresCat1 || info.hasCat1)
+                && (!info.requiresCat5 || info.hasCat5);
         }
 
         function getMapNextRequiredTestLabel(device, year, binHint) {
@@ -11443,10 +11471,7 @@
         }
 
         function mapDobGroupHasCurrentYearCompletion(group, year, binHint) {
-            const devices = group && Array.isArray(group.devices) ? group.devices : [];
-            const activeDevices = devices.filter(mapDobDeviceIsActiveForCompletion);
-            if (activeDevices.length === 0) return false;
-            return activeDevices.every(device => mapDobDeviceHasRequiredCurrentYearCompletion(device, year, binHint));
+            return getMapBuildingCompletionFacts(group, year, binHint).fullyComplete;
         }
 
         function inferMapCompletedTestTypeFromDobGroup(group, year) {
@@ -11454,9 +11479,8 @@
             const hasCat5 = devices.some(device => mapDobDateIsInYear(device.cat5_latest_report_filed, year));
             const hasCat1 = devices.some(device => mapDobDateIsInYear(device.cat1_latest_report_filed, year));
             const hasPvi = devices.some(device => mapDobDateIsInYear(device.periodic_latest_inspection, year));
-            if (hasCat1 && hasCat5) return 'CAT 1 + CAT 5';
-            if (hasCat5) return 'CAT 5';
-            if (hasCat1) return 'CAT 1';
+            if (hasPvi && (hasCat1 || hasCat5)) return 'Full';
+            if (hasCat1 || hasCat5) return 'Category';
             if (hasPvi) return 'PVI';
             return 'PVI';
         }
@@ -11471,10 +11495,12 @@
             const autoCompleted = [];
             Array.from(candidateBins || []).forEach(bin => {
                 const group = binGroups[bin];
+                reconcileMapScheduledDatesWithDob(bin);
                 if (!mapDobGroupHasCurrentYearCompletion(group, currentYear, bin)) return;
-                const testType = 'All Test Completed';
+                const testType = 'Full';
                 if (completed[bin]) {
                     if (normalizeMapCompletedTestType(completed[bin].testType) !== testType) {
+                        completed[bin].completionType = testType;
                         completed[bin].testType = testType;
                         completed[bin].status = 'Completed';
                         completed[bin].source = completed[bin].source || source;
@@ -11523,19 +11549,12 @@
                 mapDobDateIsInYear(change.to, year)
             ).map(change => String(change.field || '').toUpperCase()));
             const testType = normalizeMapCompletedTestType(entry && entry.testType);
-            const activeDevices = group && Array.isArray(group.devices)
-                ? group.devices.filter(mapDobDeviceIsActiveForCompletion)
-                : [];
-
-            if (testType === 'PVI') return changedFields.has('PVI');
-            if (testType === 'CAT 1') return changedFields.has('CAT 1');
-            if (testType === 'CAT 5') return changedFields.has('CAT 5');
-            if (testType === 'CAT 1 + CAT 5') {
-                const hasCurrentCat1 = activeDevices.some(device => mapDobDateIsInYear(device.cat1_latest_report_filed, year));
-                const hasCurrentCat5 = activeDevices.some(device => mapDobDateIsInYear(device.cat5_latest_report_filed, year));
-                return (changedFields.has('CAT 1') || changedFields.has('CAT 5')) && hasCurrentCat1 && hasCurrentCat5;
+            const facts = getMapBuildingCompletionFacts(group, year, bin);
+            if (testType === 'PVI') return changedFields.has('PVI') && facts.pviComplete;
+            if (testType === 'Category') {
+                return (changedFields.has('CAT 1') || changedFields.has('CAT 5')) && facts.categoryComplete;
             }
-            return mapDobGroupHasCurrentYearCompletion(group, year, bin);
+            return facts.fullyComplete;
         }
 
         function recordMapDobCompletionConfirmations(touchedBins, changeRows, detectedAt) {
@@ -12240,11 +12259,9 @@
 
         function mapViewHasScheduledDates(view, bin, building) {
             const key = String(bin);
-            const testDates = view.testDates && Array.isArray(view.testDates[key]) ? view.testDates[key] : [];
-            const completedDates = view.completed && view.completed[key] && Array.isArray(view.completed[key].scheduledDates)
-                ? view.completed[key].scheduledDates
-                : [];
-            const buildingDates = building && Array.isArray(building.scheduledDates) ? building.scheduledDates : [];
+            const testDates = getMapScheduleDates(view.testDates && view.testDates[key]);
+            const completedDates = getMapScheduleDates(view.completed && view.completed[key] && view.completed[key].scheduledDates);
+            const buildingDates = getMapScheduleDates(building && building.scheduledDates);
             const liveDates = getTestDatesForBin(key);
             return testDates.length > 0 || completedDates.length > 0 || buildingDates.length > 0 || liveDates.length > 0;
         }
@@ -12628,8 +12645,9 @@
                 const groupKeys = collectMapExcelObjectKeys(buildingEntries.map(([, group]) => group), ['devices']);
                 const buildingHeaders = [
                     'BIN', 'Address', 'Latitude', 'Longitude', 'Device Count', 'Active Map Job Device Count',
-                    'Violation Count', 'Favorite', 'Hidden', 'Completed', 'Completed Date', 'In Process',
-                    'In Process Date', 'On Hold', 'Scheduled Test Dates', 'Completed Scheduled Dates',
+                    'Violation Count', 'Favorite', 'Hidden', 'Completed', 'Completion Scope', 'Completed Date', 'In Process',
+                    'In Process Date', 'On Hold', 'Scheduled PVI Dates', 'Scheduled Category Dates', 'Scheduled Unspecified Dates',
+                    'Completed Saved PVI Dates', 'Completed Saved Category Dates',
                     'Note', 'Month Label', ...groupKeys.map(key => `Group: ${key}`)
                 ];
                 const buildingRows = buildingEntries.map(([bin, group]) => {
@@ -12647,12 +12665,16 @@
                         view.favorites && view.favorites[bin] ? 'Yes' : '',
                         view.hidden && view.hidden[bin] ? 'Yes' : '',
                         completedData ? 'Yes' : '',
+                        completedData ? getMapCompletedTestLabel(completedData.completionType || completedData.testType) : '',
                         completedData ? mapExcelTimestamp(completedData.timestamp) : '',
                         inProcessData ? 'Yes' : '',
                         inProcessData ? (inProcessData.date || mapExcelTimestamp(inProcessData.timestamp)) : '',
                         view.hold && view.hold[bin] ? 'Yes' : '',
-                        Array.isArray(view.testDates && view.testDates[bin]) ? view.testDates[bin].join('; ') : '',
-                        completedData && Array.isArray(completedData.scheduledDates) ? completedData.scheduledDates.join('; ') : '',
+                        getMapScheduleDates(view.testDates && view.testDates[bin], 'pvi').join('; '),
+                        getMapScheduleDates(view.testDates && view.testDates[bin], 'category').join('; '),
+                        getMapScheduleDates(view.testDates && view.testDates[bin], 'general').join('; '),
+                        getMapScheduleDates(completedData && completedData.scheduledDates, 'pvi').join('; '),
+                        getMapScheduleDates(completedData && completedData.scheduledDates, 'category').join('; '),
                         view.notes && view.notes[bin] ? view.notes[bin] : '',
                         view.monthLabels && view.monthLabels[bin] ? view.monthLabels[bin] : '',
                         ...groupKeys.map(key => mapExcelValue(group[key]))
@@ -12704,26 +12726,28 @@
                             getMapExcelBuildingAddress(bin, binGroups[bin], view),
                             data && data.date ? data.date : '',
                             data && data.timestamp ? mapExcelTimestamp(data.timestamp) : '',
-                            data && data.testType ? getMapCompletedTestLabel(data.testType) : '',
+                            data && (data.completionType || data.testType) ? getMapCompletedTestLabel(data.completionType || data.testType) : '',
                             data && data.source ? data.source : '',
-                            data && Array.isArray(data.scheduledDates) ? data.scheduledDates.join('; ') : '',
+                            data && data.scheduledDates ? getMapScheduleDates(data.scheduledDates).join('; ') : '',
                             mapExcelValue(data)
                         ]);
                     });
                 });
-                appendMapExcelSheet(workbook, usedSheetNames, 'Map Lists', ['List', 'BIN', 'Address', 'Date', 'Timestamp', 'Completed Test', 'Source', 'Scheduled Dates', 'Saved Entry JSON'], mapListRows);
+                appendMapExcelSheet(workbook, usedSheetNames, 'Map Lists', ['List', 'BIN', 'Address', 'Date', 'Timestamp', 'Completion Scope', 'Source', 'Scheduled Dates', 'Saved Entry JSON'], mapListRows);
 
                 const dateRows = [];
-                Object.entries(view.testDates || {}).forEach(([bin, dates]) => {
-                    (Array.isArray(dates) ? dates : [dates]).filter(Boolean).forEach(date => {
-                        dateRows.push(['Scheduled Test Date', bin, getMapExcelBuildingAddress(bin, binGroups[bin], view), date, mapExcelDate(date)]);
-                    });
+                Object.entries(view.testDates || {}).forEach(([bin, schedule]) => {
+                    const record = normalizeMapScheduleRecord(schedule);
+                    ['pvi', 'category', 'general'].forEach(type => record[type].forEach(date => {
+                        dateRows.push([type === 'pvi' ? 'Scheduled PVI' : type === 'category' ? 'Scheduled Category' : 'Scheduled Unspecified', bin, getMapExcelBuildingAddress(bin, binGroups[bin], view), date, mapExcelDate(date)]);
+                    }));
                 });
                 Object.entries(view.completed || {}).forEach(([bin, data]) => {
-                    if (data && Array.isArray(data.scheduledDates)) {
-                        data.scheduledDates.filter(Boolean).forEach(date => {
-                            dateRows.push(['Completed Saved Scheduled Date', bin, getMapExcelBuildingAddress(bin, binGroups[bin], view), date, mapExcelDate(date)]);
-                        });
+                    if (data && data.scheduledDates) {
+                        const record = normalizeMapScheduleRecord(data.scheduledDates);
+                        ['pvi', 'category', 'general'].forEach(type => record[type].forEach(date => {
+                            dateRows.push([type === 'pvi' ? 'Completed Saved PVI Date' : type === 'category' ? 'Completed Saved Category Date' : 'Completed Saved Unspecified Date', bin, getMapExcelBuildingAddress(bin, binGroups[bin], view), date, mapExcelDate(date)]);
+                        }));
                     }
                 });
                 appendMapExcelSheet(workbook, usedSheetNames, 'Dates', ['Date Type', 'BIN', 'Address', 'Saved Date', 'Formatted Date'], dateRows);
@@ -12829,7 +12853,7 @@
 
         function sanitizeMapViewForExport(view) {
             return {
-                version: 1,
+                version: 2,
                 exportedAt: Date.now(),
                 app: 'ELV3 Cheat Sheet',
                 type: 'map-view',
@@ -12919,7 +12943,7 @@
             const scheduledByBin = {};
             Object.entries(rawScheduled).forEach(([bin, val]) => {
                 const dates = normalizeSavedDates(val);
-                if (dates.length) scheduledByBin[bin] = dates;
+                if (dates.length) scheduledByBin[bin] = { pvi: [], category: [], general: dates };
             });
 
             // Normalize completed: boolean true values → proper object { address, timestamp, scheduledDates }
@@ -12928,16 +12952,22 @@
             const rawCompleted = source.completed || {};
             const normalizedCompleted = {};
             Object.entries(rawCompleted).forEach(([bin, val]) => {
-                const embeddedDates = scheduledByBin[bin] || [];
+                const embeddedDates = normalizeMapScheduleRecord(scheduledByBin[bin]);
                 if (val === true) {
-                    normalizedCompleted[bin] = { address: '', timestamp: 0, scheduledDates: embeddedDates, testType: '', source: 'Manual', status: 'Completed' };
+                    normalizedCompleted[bin] = { address: '', timestamp: 0, scheduledDates: embeddedDates, completionType: 'Legacy', testType: 'Legacy', source: 'Manual', status: 'Completed' };
                 } else if (val && typeof val === 'object') {
-                    const existing = normalizeSavedDates(val.scheduledDates);
-                    const merged = Array.from(new Set([...existing, ...embeddedDates])).sort();
+                    const existing = normalizeMapScheduleRecord(val.scheduledDates);
+                    const merged = {
+                        pvi: Array.from(new Set([...existing.pvi, ...embeddedDates.pvi])).sort(),
+                        category: Array.from(new Set([...existing.category, ...embeddedDates.category])).sort(),
+                        general: Array.from(new Set([...existing.general, ...embeddedDates.general])).sort()
+                    };
+                    const completionType = normalizeMapCompletedTestType(val.completionType || val.testType) || 'Legacy';
                     normalizedCompleted[bin] = {
                         ...val,
                         scheduledDates: merged,
-                        testType: normalizeMapCompletedTestType(val.testType),
+                        completionType,
+                        testType: completionType,
                         source: val.source || 'Manual',
                         status: 'Completed'
                     };
@@ -12950,13 +12980,19 @@
             const testDates = {};
             if (source.testDates && typeof source.testDates === 'object' && !Array.isArray(source.testDates)) {
                 Object.entries(source.testDates).forEach(([bin, val]) => {
-                    const dates = normalizeSavedDates(val);
-                    if (dates.length) testDates[bin] = dates;
+                    const record = normalizeMapScheduleRecord(val);
+                    if (getMapScheduleDates(record).length) testDates[bin] = record;
                 });
             }
-            Object.entries(scheduledByBin).forEach(([bin, dates]) => {
+            Object.entries(scheduledByBin).forEach(([bin, legacyRecord]) => {
                 if (completedBins.has(bin)) return; // already embedded above
-                testDates[bin] = Array.from(new Set([...(testDates[bin] || []), ...dates])).sort();
+                const current = normalizeMapScheduleRecord(testDates[bin]);
+                const legacy = normalizeMapScheduleRecord(legacyRecord);
+                testDates[bin] = {
+                    pvi: Array.from(new Set([...current.pvi, ...legacy.pvi])).sort(),
+                    category: Array.from(new Set([...current.category, ...legacy.category])).sort(),
+                    general: Array.from(new Set([...current.general, ...legacy.general])).sort()
+                };
             });
 
             const now = Date.now();
@@ -14719,35 +14755,125 @@
         }
 
         function setMapCompleted(completed) {
-            mapCompleted = completed && typeof completed === 'object' ? completed : {};
+            mapCompleted = {};
+            if (!completed || typeof completed !== 'object' || Array.isArray(completed)) return;
+            Object.entries(completed).forEach(([bin, value]) => {
+                if (!value) return;
+                const entry = value === true ? {} : value;
+                const completionType = normalizeMapCompletedTestType(entry.completionType || entry.testType) || 'Legacy';
+                mapCompleted[bin] = {
+                    ...entry,
+                    completionType,
+                    testType: completionType,
+                    scheduledDates: normalizeMapScheduleRecord(entry.scheduledDates),
+                    status: 'Completed'
+                };
+            });
         }
 
         const MAP_COMPLETED_TEST_OPTIONS = [
-            { value: 'PVI', label: 'PVI' },
-            { value: 'CAT 1', label: 'CAT 1' },
-            { value: 'CAT 5', label: 'CAT 5' },
-            { value: 'CAT 1 + CAT 5', label: 'CAT 1 + CAT 5' },
-            { value: 'All Test Completed', label: 'All Test Completed' }
+            { value: 'Category', label: 'Category completed only' },
+            { value: 'PVI', label: 'PVI completed only' }
         ];
 
         function normalizeMapCompletedTestType(value) {
             const text = String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
-            if (text === 'ALL TEST COMPLETED' || text === 'ALL TESTS COMPLETED') return 'All Test Completed';
+            if (text === 'FULL' || text === 'FULLY COMPLETED' || text === 'ALL TEST COMPLETED' || text === 'ALL TESTS COMPLETED') return 'Full';
+            if (text === 'LEGACY' || text === 'UNSPECIFIED' || text === 'NOT SPECIFIED') return 'Legacy';
             if (text === 'PVI') return 'PVI';
-            if (text === 'CAT1' || text === 'CAT 1') return 'CAT 1';
-            if (text === 'CAT5' || text === 'CAT 5') return 'CAT 5';
-            if (text === 'CAT 1 + CAT 5' || text === 'CAT1 + CAT5' || text === 'CAT 1/CAT 5' || text === 'CAT1/CAT5') return 'CAT 1 + CAT 5';
+            if (text === 'CATEGORY' || text === 'CATEGORY ONLY' || text === 'CAT1' || text === 'CAT 1' || text === 'CAT5' || text === 'CAT 5') return 'Category';
+            if (text === 'CAT 1 + CAT 5' || text === 'CAT1 + CAT5' || text === 'CAT 1/CAT 5' || text === 'CAT1/CAT5') return 'Category';
             return '';
+        }
+
+        function getMapSavedTestCompletionForYear(bin, testType, year) {
+            const targetYear = Number(year) || new Date().getFullYear();
+            const entry = getMapCompleted()[bin];
+            if (!entry) return { isComplete: false, entry: null, completionDate: null };
+            const completionType = normalizeMapCompletedTestType(entry.completionType || entry.testType);
+            const normalizedTarget = normalizeMapCompletedTestType(testType);
+            if (!normalizedTarget || (completionType !== normalizedTarget && completionType !== 'Full')) {
+                return { isComplete: false, entry, completionDate: null };
+            }
+            if (entry.status && String(entry.status).toUpperCase() !== 'COMPLETED') {
+                return { isComplete: false, entry, completionDate: null };
+            }
+            const rawTimestamp = entry.timestamp !== undefined && entry.timestamp !== null
+                ? entry.timestamp
+                : entry.completedAt;
+            let completionDate = null;
+            if (rawTimestamp instanceof Date) {
+                completionDate = new Date(rawTimestamp.getTime());
+            } else if (typeof rawTimestamp === 'number' || /^\d{10,}$/.test(String(rawTimestamp || ''))) {
+                const numericTimestamp = Number(rawTimestamp);
+                completionDate = new Date(numericTimestamp < 100000000000 ? numericTimestamp * 1000 : numericTimestamp);
+            } else if (rawTimestamp) {
+                completionDate = new Date(rawTimestamp);
+            }
+            const validDate = completionDate && !isNaN(completionDate.getTime()) ? completionDate : null;
+            return {
+                isComplete: !!(validDate && validDate.getFullYear() === targetYear),
+                entry,
+                completionDate: validDate
+            };
+        }
+
+        function getMapSavedCategoryCompletionForYear(bin, year) {
+            return getMapSavedTestCompletionForYear(bin, 'Category', year);
+        }
+
+        function getMapTestCompletionForYear(bin, testType, year) {
+            const targetYear = Number(year) || new Date().getFullYear();
+            const normalizedType = normalizeMapCompletedTestType(testType);
+            const facts = getMapBuildingCompletionFacts(getMapGroupForBin(bin), targetYear, bin);
+            const isPvi = normalizedType === 'PVI';
+            const requiredDeviceCount = isPvi ? facts.pviRequiredCount : facts.categoryRequiredCount;
+            const dobComplete = requiredDeviceCount > 0 && (isPvi ? facts.pviComplete : facts.categoryComplete);
+            const savedCompletion = getMapSavedTestCompletionForYear(bin, normalizedType, targetYear);
+            return {
+                testType: normalizedType,
+                year: targetYear,
+                requiredDeviceCount,
+                dobComplete,
+                savedComplete: savedCompletion.isComplete,
+                isComplete: dobComplete || savedCompletion.isComplete,
+                source: dobComplete ? 'dob' : savedCompletion.isComplete ? 'saved' : '',
+                nextYear: targetYear + 1
+            };
         }
 
         function getMapCompletedTestLabel(value) {
             const normalized = normalizeMapCompletedTestType(value);
-            return normalized || 'Not specified';
+            if (normalized === 'Full') return 'PVI and Category completed';
+            if (normalized === 'PVI') return 'PVI completed only';
+            if (normalized === 'Category') return 'Category completed only';
+            if (normalized === 'Legacy') return 'Legacy completion — scope not specified';
+            return 'Not specified';
+        }
+
+        function mergeMapCompletionTypes(currentValue, nextValue) {
+            const current = normalizeMapCompletedTestType(currentValue);
+            const next = normalizeMapCompletedTestType(nextValue);
+            if (current === 'Full' || next === 'Full') return 'Full';
+            if ((current === 'PVI' && next === 'Category') || (current === 'Category' && next === 'PVI')) return 'Full';
+            return next || current || 'Full';
+        }
+
+        function getMapCompletionColor(value) {
+            const normalized = normalizeMapCompletedTestType(value);
+            if (normalized === 'PVI') return '#1a73e8';
+            if (normalized === 'Category') return '#9b59b6';
+            if (normalized === 'Legacy') return '#607d8b';
+            return '#27ae60';
         }
 
         function renderMapCompletedTestOptions(selectedValue) {
             const selected = normalizeMapCompletedTestType(selectedValue);
-            return MAP_COMPLETED_TEST_OPTIONS.map(option => {
+            const hasSelectableValue = MAP_COMPLETED_TEST_OPTIONS.some(option => option.value === selected);
+            const placeholder = selected === 'Full'
+                ? 'PVI + Category already recorded'
+                : 'Select PVI or Category...';
+            return `<option value="" ${hasSelectableValue ? '' : 'selected'} disabled>${placeholder}</option>` + MAP_COMPLETED_TEST_OPTIONS.map(option => {
                 return `<option value="${option.value}" ${selected === option.value ? 'selected' : ''}>${option.label}</option>`;
             }).join('');
         }
@@ -14777,21 +14903,75 @@
                 : null;
         }
 
-        function confirmMapCompletionRequirements(bin) {
+        function confirmMapCompletionRequirements(bin, completionType) {
             const group = getMapGroupForBin(bin);
             if (!group) return true;
             const currentYear = new Date().getFullYear();
-            if (mapDobGroupHasCurrentYearCompletion(group, currentYear, bin)) return true;
+            const normalizedType = normalizeMapCompletedTestType(completionType) || 'Full';
+            const facts = getMapBuildingCompletionFacts(group, currentYear, bin);
+            const requirementsMet = normalizedType === 'PVI'
+                ? facts.pviComplete
+                : normalizedType === 'Category'
+                    ? facts.categoryComplete
+                    : facts.fullyComplete;
+            if (requirementsMet) return true;
             const label = group.address || getMapBuildingAddressForBin(bin) || `BIN ${bin}`;
-            return confirm(`${label} does not show all required ${currentYear} tests filed with DOB yet. Continue marking this job as Completed?`);
+            const missingLabel = normalizedType === 'PVI'
+                ? 'all required PVI inspections'
+                : normalizedType === 'Category'
+                    ? 'all required Category inspections (CAT 1 and any CAT 5 due)'
+                    : 'all required PVI and Category inspections';
+            return confirm(`${label} does not show ${missingLabel} filed with DOB for ${currentYear}. Continue with this manual completion status?`);
+        }
+
+        function confirmMapManualDateForDobCompletedTest(bin, completionType, dateValue) {
+            const normalizedType = normalizeMapCompletedTestType(completionType);
+            const completionDate = parseMapInspectionDate(dateValue);
+            if (!completionDate || !normalizedType) return true;
+            const year = completionDate.getFullYear();
+            const facts = getMapBuildingCompletionFacts(getMapGroupForBin(bin), year, bin);
+            const dobComplete = normalizedType === 'PVI'
+                ? facts.pviRequiredCount > 0 && facts.pviComplete
+                : normalizedType === 'Category'
+                    ? facts.categoryRequiredCount > 0 && facts.categoryComplete
+                    : normalizedType === 'Full'
+                        ? facts.pviRequiredCount > 0 && facts.categoryRequiredCount > 0 && facts.fullyComplete
+                        : false;
+            if (!dobComplete) return true;
+            const testLabel = normalizedType === 'PVI' ? 'PVI' : normalizedType === 'Category' ? 'Category' : 'PVI and Category';
+            const buildingLabel = getMapBuildingAddressForBin(bin) || `BIN ${bin}`;
+            const displayDate = completionDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+            return confirm(
+                `DOB already confirms that every device requiring ${testLabel} testing at ${buildingLabel} is complete for ${year}.\n\n` +
+                `You entered ${displayDate} as a manual completion date. Save this manual date anyway?`
+            );
         }
 
         function saveMapCompletedEntry(bin, options) {
             const opts = options || {};
             const completed = getMapCompleted();
             const address = opts.address || getMapBuildingAddressForBin(bin);
-            const savedDates = Array.isArray(mapTestDates[bin]) ? mapTestDates[bin].slice() : [];
+            const completionType = normalizeMapCompletedTestType(opts.completionType || opts.testType)
+                || normalizeMapCompletedTestType((completed[bin] || {}).completionType || (completed[bin] || {}).testType)
+                || 'Full';
+            const savedSchedule = normalizeMapScheduleRecord(mapTestDates[bin]);
             const existing = completed[bin] || {};
+            const suppliedSchedule = normalizeMapScheduleRecord(opts.scheduledDates || savedSchedule);
+            const existingSchedule = normalizeMapScheduleRecord(existing.scheduledDates);
+            const capturePvi = completionType === 'PVI' || completionType === 'Full';
+            const captureCategory = completionType === 'Category' || completionType === 'Full';
+            const captureGeneral = completionType === 'Full';
+            const capturedSchedule = {
+                pvi: capturePvi ? suppliedSchedule.pvi : [],
+                category: captureCategory ? suppliedSchedule.category : [],
+                general: captureGeneral ? suppliedSchedule.general : []
+            };
+            const completedSchedule = {
+                pvi: Array.from(new Set([...existingSchedule.pvi, ...capturedSchedule.pvi])).sort(),
+                category: Array.from(new Set([...existingSchedule.category, ...capturedSchedule.category])).sort(),
+                general: Array.from(new Set([...existingSchedule.general, ...capturedSchedule.general])).sort()
+            };
+            const savedDates = getMapScheduleDates(capturedSchedule);
             const source = opts.source || existing.source || 'Manual';
             const markedCompletedAt = opts.markedCompletedAt || existing.markedCompletedAt ||
                 (String(source).toUpperCase() === 'MANUAL' ? Date.now() : null);
@@ -14799,15 +14979,16 @@
                 ...existing,
                 address,
                 timestamp: opts.timestamp || Date.now(),
-                scheduledDates: opts.scheduledDates || savedDates,
-                testType: normalizeMapCompletedTestType(opts.testType) || normalizeMapCompletedTestType(existing.testType),
+                scheduledDates: completedSchedule,
+                completionType,
+                testType: completionType,
                 source,
                 ...(markedCompletedAt ? { markedCompletedAt } : {}),
                 status: 'Completed'
             };
-            delete mapTestDates[bin];
+            clearScheduledDatesForCompletion(bin, completionType);
             setMapCompleted(completed);
-            return { address, savedDates };
+            return { address, savedDates, savedSchedule: capturedSchedule, completionType };
         }
 
         function updateMapCompletionStatus(bin, value) {
@@ -14841,7 +15022,7 @@
             const group = getMapGroupForBin(bin);
             const currentYear = new Date().getFullYear();
             if (mapDobGroupHasCurrentYearCompletion(group, currentYear, bin)) {
-                const testType = 'All Test Completed';
+                const testType = 'Full';
                 const result = saveMapCompletedEntry(bin, {
                     address: group && group.address ? group.address : '',
                     testType,
@@ -14860,13 +15041,6 @@
                 return;
             }
 
-            if (!confirmMapCompletionRequirements(bin)) {
-                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                    initBuildingMap(window.lastBulkSearchResults.binGroups, true);
-                }
-                return;
-            }
-
             showMapCompletedDetailsPicker(bin, {
                 onCancel: () => {
                     if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
@@ -14874,6 +15048,7 @@
                     }
                 },
                 onConfirm: ({ testType, timestamp, address }) => {
+                    if (!confirmMapCompletionRequirements(bin, testType)) return;
                     const result = saveMapCompletedEntry(bin, { testType, timestamp, address, source: 'Manual' });
                     addMapActivity('Changed completion status', {
                         type: 'Completed',
@@ -14892,7 +15067,13 @@
         function updateMapCompletedTestType(bin, value) {
             const completed = getMapCompleted();
             if (!completed[bin]) return;
-            completed[bin].testType = normalizeMapCompletedTestType(value);
+            const completionType = normalizeMapCompletedTestType(value);
+            if (!completionType || !confirmMapCompletionRequirements(bin, completionType)) {
+                updateMapControlsPanel();
+                return;
+            }
+            completed[bin].completionType = completionType;
+            completed[bin].testType = completionType;
             completed[bin].source = completed[bin].source || 'Manual';
             setMapCompleted(completed);
             addMapActivity('Updated completed test type', {
@@ -14920,9 +15101,7 @@
             const scheduledDates = getTestDatesForBin(bin);
             if (scheduledDates.length > 0) return scheduledDates[0];
 
-            const savedScheduledDates = existing && Array.isArray(existing.scheduledDates)
-                ? existing.scheduledDates
-                : [];
+            const savedScheduledDates = getMapScheduleDates(existing && existing.scheduledDates);
             if (savedScheduledDates.length > 0) return savedScheduledDates.slice().sort()[0];
 
             return formatLocalDateInputValue(new Date());
@@ -14935,7 +15114,14 @@
             const currentDate = existing.timestamp
                 ? formatLocalDateInputValue(existing.timestamp)
                 : getMapCompletionDefaultDate(bin, existing);
-            const currentTestType = normalizeMapCompletedTestType(opts.testType || existing.testType) || 'PVI';
+            const currentTestType = normalizeMapCompletedTestType(opts.testType || existing.completionType || existing.testType);
+            const currentYear = new Date().getFullYear();
+            const completionFacts = getMapBuildingCompletionFacts(getMapGroupForBin(bin), currentYear, bin);
+            const pviCompletionTimeframe = getMapDobCompletionTimeframe(bin, 'pvi', currentYear);
+            const categoryCompletionTimeframe = getMapDobCompletionTimeframe(bin, 'category', currentYear);
+            const renderCompletionTimeframe = timeframe => timeframe
+                ? `<span style="display:block; margin-top:4px; font-size:10px; line-height:1.35; opacity:0.82;"><strong>${timeframe.dateCount === 1 ? 'All devices completed' : 'Completion timeframe'}:</strong> ${timeframe.display}</span>`
+                : '';
             const overlay = document.createElement('div');
             overlay.id = 'completedDetailsOverlay';
             overlay.style.cssText = `
@@ -14945,13 +15131,23 @@
             `;
 
             overlay.innerHTML = `
-                <div style="background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 24px; min-width: 320px; max-width: 430px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-                    <h3 style="margin: 0 0 6px 0; color: var(--text-color, #fff); font-size: 16px;">✓ Completed Job Details</h3>
+                <div style="background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 24px; width:calc(100% - 32px); max-width:430px; box-sizing:border-box; box-shadow: 0 8px 32px rgba(0,0,0,0.4); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                    <h3 style="margin: 0 0 6px 0; color: var(--text-color, #fff); font-size: 16px;">✓ Building Completion</h3>
                     <p style="margin: 0 0 16px 0; font-size: 12px; opacity: 0.7; color: var(--text-color, #ccc);">${address || 'BIN ' + bin}</p>
-                    <label style="font-size: 13px; color: var(--text-color, #ccc); display: block; margin-bottom: 6px;">Test completed:</label>
+                    <label style="font-size: 13px; color: var(--text-color, #ccc); display: block; margin-bottom: 6px;">What was completed?</label>
                     <select id="completedTestTypeInput" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); font-size: 14px; box-sizing: border-box; margin-bottom: 14px;">
                         ${renderMapCompletedTestOptions(currentTestType)}
                     </select>
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:8px; margin:-4px 0 14px;">
+                        <div style="padding:8px 10px; border-radius:7px; background:${completionFacts.categoryComplete ? 'rgba(39,174,96,0.11)' : 'rgba(255,152,0,0.1)'}; border:1px solid ${completionFacts.categoryComplete ? 'rgba(39,174,96,0.32)' : 'rgba(255,152,0,0.32)'}; font-size:11px; color:var(--text-color);">
+                            <strong>Category</strong><br>${completionFacts.categoryComplete ? '✓ DOB complete' : '⚠ Not confirmed'}
+                            ${completionFacts.categoryComplete ? renderCompletionTimeframe(categoryCompletionTimeframe) : ''}
+                        </div>
+                        <div style="padding:8px 10px; border-radius:7px; background:${completionFacts.pviComplete ? 'rgba(39,174,96,0.11)' : 'rgba(255,152,0,0.1)'}; border:1px solid ${completionFacts.pviComplete ? 'rgba(39,174,96,0.32)' : 'rgba(255,152,0,0.32)'}; font-size:11px; color:var(--text-color);">
+                            <strong>PVI</strong><br>${completionFacts.pviComplete ? '✓ DOB complete' : '⚠ Not confirmed'}
+                            ${completionFacts.pviComplete ? renderCompletionTimeframe(pviCompletionTimeframe) : ''}
+                        </div>
+                    </div>
                     <label style="font-size: 13px; color: var(--text-color, #ccc); display: block; margin-bottom: 6px;">Completed date:</label>
                     <input type="date" id="completedDateInput" value="${currentDate}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); font-size: 14px; box-sizing: border-box; margin-bottom: 16px;">
                     <div style="display: flex; gap: 8px;">
@@ -14974,6 +15170,7 @@
                 const testType = normalizeMapCompletedTestType(document.getElementById('completedTestTypeInput').value);
                 if (!dateVal) { showMapNotification('Please select a completed date', '#ff6b6b'); return; }
                 if (!testType) { showMapNotification('Please select the completed test', '#ff6b6b'); return; }
+                if (!confirmMapManualDateForDobCompletedTest(bin, testType, dateVal)) return;
                 const timestamp = new Date(dateVal + 'T00:00:00').getTime();
                 overlay.remove();
                 if (typeof opts.onConfirm === 'function') {
@@ -15139,14 +15336,32 @@
         }
 
         function renderMapScheduleDateRows(bin) {
-            const dates = getTestDatesForBin(bin);
-            if (dates.length === 0) {
+            const rows = getMapBuildingTestDateRows(bin);
+            if (rows.length === 0) {
                 return '<div style="font-size: 11px; opacity: 0.55;">No dates scheduled.</div>';
             }
-            return dates.map(d => {
-                const display = new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-                return `<div style="font-size: 11px; padding: 3px 0; color: var(--text-color);">📅 ${display}</div>`;
-            }).join('');
+            const renderedRows = rows.map(row => {
+                const display = formatMapTestDateRange(row.date, row.endDate);
+                const label = row.type === 'pvi' ? 'PVI' : row.type === 'category' ? 'CATEGORY' : 'UNSPECIFIED';
+                const color = row.type === 'pvi' ? '#1a73e8' : row.type === 'category' ? '#9b59b6' : '#607d8b';
+                const detail = row.source === 'dob' && row.type === 'category'
+                    ? ` · CAT 1: ${Number(row.cat1Count) || 0} · CAT 5: ${Number(row.cat5Count) || 0}`
+                    : row.source === 'dob' && row.testLabels.length ? ` · ${row.testLabels.join(' + ')}` : '';
+                const allDevicesBadge = row.source === 'dob' && row.allDevicesCompletedSameDay
+                    ? '<span style="padding:1px 5px; border-radius:999px; background:rgba(39,174,96,0.14); color:#27ae60; font-size:8px; font-weight:800; white-space:nowrap;">✓ All Devices Completed</span>'
+                    : '';
+                const completedBadge = row.source === 'dob'
+                    ? `<span style="margin-left:auto; padding:1px 5px; border-radius:999px; background:rgba(39,174,96,0.14); color:#27ae60; font-size:8px; font-weight:800; white-space:nowrap;">${row.type === 'category' ? 'DOB FILED' : 'DOB COMPLETED'}</span>`
+                    : '';
+                return `<div style="display:flex; align-items:center; flex-wrap:wrap; gap:6px; font-size:11px; padding:3px 0; color:var(--text-color);"><span style="font-size:9px; font-weight:800; color:${color}; min-width:58px;">${label}</span><span>📅 ${display}${detail}</span>${allDevicesBadge}${completedBadge}</div>`;
+            });
+            if (renderedRows.length <= 3) return renderedRows.join('');
+            const hiddenCount = renderedRows.length - 3;
+            return `${renderedRows.slice(0, 3).join('')}
+                <details style="margin-top:5px; border-top:1px solid rgba(26,115,232,0.18); padding-top:5px;">
+                    <summary style="cursor:pointer; color:#1a73e8; font-size:10px; font-weight:800; user-select:none; padding:2px 0;">Show ${hiddenCount} more date${hiddenCount !== 1 ? 's' : ''}</summary>
+                    <div style="padding-top:3px;">${renderedRows.slice(3).join('')}</div>
+                </details>`;
         }
 
         function hydrateMapBuildingPopupState(root) {
@@ -15168,17 +15383,20 @@
                 if (noteTitle) noteTitle.textContent = `📝 Building Note${hasNote ? ' ✓' : ''}`;
             }
 
-            const dates = getTestDatesForBin(bin);
+            const dates = getMapBuildingTestDateRows(bin);
             const hasDates = dates.length > 0;
+            const dateCount = dates.reduce((sum, row) => sum + (Array.isArray(row.dates) && row.dates.length ? row.dates.length : 1), 0);
             const scheduleEditor = popupRoot.querySelector(`#mapScheduleEditor_${bin}`);
             const scheduleArrow = popupRoot.querySelector(`#mapScheduleArrow_${bin}`);
             const scheduleDateList = popupRoot.querySelector(`#mapScheduleDateList_${bin}`);
+            const categoryStatus = popupRoot.querySelector(`#mapCategoryCompletionStatus_${bin}`);
             if (scheduleEditor) scheduleEditor.style.display = hasDates ? 'block' : 'none';
             if (scheduleArrow) {
                 scheduleArrow.textContent = hasDates ? '▲' : '▼';
                 const scheduleTitle = scheduleArrow.parentElement ? scheduleArrow.parentElement.querySelector('span:first-child') : null;
-                if (scheduleTitle) scheduleTitle.textContent = `🗓️ Scheduled Test Dates${hasDates ? ' (' + dates.length + ')' : ''}`;
+                if (scheduleTitle) scheduleTitle.textContent = `🗓️ Scheduled Test Dates${hasDates ? ' (' + dateCount + ')' : ''}`;
             }
+            if (categoryStatus) categoryStatus.innerHTML = renderMapCategoryCompletionStatusHtml(bin);
             if (scheduleDateList) scheduleDateList.innerHTML = renderMapScheduleDateRows(bin);
         }
 
@@ -15265,9 +15483,9 @@
                     initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                 }
             } else {
-                if (!confirmMapCompletionRequirements(bin)) return;
                 showMapCompletedDetailsPicker(bin, {
                     onConfirm: ({ testType, timestamp, address }) => {
+                        if (!confirmMapCompletionRequirements(bin, testType)) return;
                         const result = saveMapCompletedEntry(bin, { testType, timestamp, address, source: 'Manual' });
                         addMapActivity('Marked completed', {
                             type: 'Completed',
@@ -15293,7 +15511,9 @@
                 address,
                 onConfirm: ({ testType, timestamp }) => {
                 const oldDate = completed[bin].timestamp ? new Date(completed[bin].timestamp).toLocaleDateString() : '';
+                if (!confirmMapCompletionRequirements(bin, testType)) return;
                 completed[bin].timestamp = timestamp;
+                completed[bin].completionType = testType;
                 completed[bin].testType = testType;
                 completed[bin].source = completed[bin].source || 'Manual';
                 setMapCompleted(completed);
@@ -15370,7 +15590,6 @@
         function moveInProcessToCompleted(bin) {
             const inProcess = getMapInProcess();
             if (!inProcess[bin]) return;
-            if (!confirmMapCompletionRequirements(bin)) return;
 
             let address = inProcess[bin].address || '';
             delete inProcess[bin];
@@ -15387,6 +15606,7 @@
             showMapCompletedDetailsPicker(bin, {
                 address,
                 onConfirm: ({ testType, timestamp }) => {
+                    if (!confirmMapCompletionRequirements(bin, testType)) return;
                     const result = saveMapCompletedEntry(bin, { testType, timestamp, address, source: 'Manual' });
                     addMapActivity('Moved in process to completed', {
                         type: 'Completed',
@@ -15973,38 +16193,524 @@
         }
 
         function setMapTestDates(dates) {
-            mapTestDates = dates && typeof dates === 'object' ? dates : {};
+            mapTestDates = {};
+            if (!dates || typeof dates !== 'object' || Array.isArray(dates)) return;
+            Object.entries(dates).forEach(([bin, value]) => {
+                const record = normalizeMapScheduleRecord(value);
+                if (getMapScheduleDates(record).length > 0) mapTestDates[bin] = record;
+            });
         }
 
-        function getTestDatesForBin(bin) {
-            return Array.isArray(mapTestDates[bin]) ? mapTestDates[bin] : [];
+        function normalizeMapDateList(value) {
+            const values = Array.isArray(value) ? value : (typeof value === 'string' ? [value] : []);
+            return Array.from(new Set(values.map(item => {
+                const text = String(item || '').trim();
+                if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+                const legacy = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+                if (!legacy) return '';
+                const rawYear = parseInt(legacy[3], 10);
+                const year = rawYear < 100 ? 2000 + rawYear : rawYear;
+                return `${year}-${legacy[1].padStart(2, '0')}-${legacy[2].padStart(2, '0')}`;
+            }).filter(Boolean))).sort();
+        }
+
+        function normalizeMapScheduleType(value) {
+            const text = String(value || '').trim().toLowerCase();
+            if (text === 'pvi' || text === 'periodic') return 'pvi';
+            if (text === 'category' || text === 'cat' || text === 'cat1' || text === 'cat 1' || text === 'cat5' || text === 'cat 5') return 'category';
+            return 'general';
+        }
+
+        function normalizeMapScheduleRecord(value) {
+            if (Array.isArray(value) || typeof value === 'string') {
+                return { pvi: [], category: [], general: normalizeMapDateList(value) };
+            }
+            const record = value && typeof value === 'object' ? value : {};
+            return {
+                pvi: normalizeMapDateList(record.pvi || record.periodic),
+                category: normalizeMapDateList(record.category || record.cat),
+                general: normalizeMapDateList(record.general || record.unspecified || record.dates)
+            };
+        }
+
+        function getMapScheduleDates(value, type) {
+            const record = normalizeMapScheduleRecord(value);
+            const normalizedType = type ? normalizeMapScheduleType(type) : '';
+            if (normalizedType) return record[normalizedType].slice();
+            return Array.from(new Set([...record.pvi, ...record.category, ...record.general])).sort();
+        }
+
+        function getTestDatesForBin(bin, type) {
+            return getMapScheduleDates(mapTestDates[bin], type);
+        }
+
+        function getMapTypedScheduleRows(bin) {
+            const record = normalizeMapScheduleRecord(mapTestDates[bin]);
+            return ['pvi', 'category', 'general'].flatMap(type => record[type].map(date => ({
+                type,
+                date,
+                source: 'scheduled',
+                testLabels: [],
+                allDevicesCompletedSameDay: false
+            })));
+        }
+
+        function getMapDobCompletedTestDateRows(bin, year) {
+            const targetYear = Number(year) || new Date().getFullYear();
+            const group = getMapGroupForBin(bin);
+            const completionFacts = getMapBuildingCompletionFacts(group, targetYear, bin);
+            const deviceFacts = Array.isArray(completionFacts.deviceFacts) ? completionFacts.deviceFacts : [];
+            const groupedRows = new Map();
+
+            function addDobRow(type, value, testLabel, deviceNumber) {
+                const parsed = parseMapInspectionDate(value);
+                if (!parsed || parsed.getFullYear() !== targetYear) return;
+                const date = formatLocalDateInputValue(parsed);
+                const key = `${type}:${date}`;
+                if (!groupedRows.has(key)) {
+                    groupedRows.set(key, {
+                        type,
+                        date,
+                        source: 'dob',
+                        testLabels: [],
+                        deviceNumbers: [],
+                        allDevicesCompletedSameDay: false
+                    });
+                }
+                const row = groupedRows.get(key);
+                if (!row.testLabels.includes(testLabel)) row.testLabels.push(testLabel);
+                const number = String(deviceNumber || '').trim();
+                if (number && !row.deviceNumbers.includes(number)) row.deviceNumbers.push(number);
+            }
+
+            deviceFacts.forEach(({ device, info }) => {
+                if (completionFacts.pviComplete && info.requiresPVI) {
+                    addDobRow('pvi', device.periodic_latest_inspection, 'PVI', device.device_number);
+                }
+                if (completionFacts.categoryComplete) {
+                    if (info.requiresCat1) {
+                        addDobRow('category', device.cat1_latest_report_filed, 'CAT 1', device.device_number);
+                    }
+                    if (!info.cat5NotRequired && mapDobDateIsInYear(device.cat5_latest_report_filed, targetYear)) {
+                        addDobRow('category', device.cat5_latest_report_filed, 'CAT 5', device.device_number);
+                    }
+                }
+            });
+
+            function factDateMatches(fact, field, date) {
+                const parsed = parseMapInspectionDate(fact.device[field]);
+                return !!parsed && parsed.getFullYear() === targetYear && formatLocalDateInputValue(parsed) === date;
+            }
+
+            const pviDeviceFacts = deviceFacts.filter(fact => fact.info.requiresPVI);
+            const categoryDeviceFacts = deviceFacts.filter(fact =>
+                fact.info.requiresCat1 || (!fact.info.cat5NotRequired && mapDobDateIsInYear(fact.device.cat5_latest_report_filed, targetYear))
+            );
+            groupedRows.forEach(row => {
+                if (row.type === 'pvi') {
+                    row.allDevicesCompletedSameDay = pviDeviceFacts.length > 0
+                        && pviDeviceFacts.every(fact => factDateMatches(fact, 'periodic_latest_inspection', row.date));
+                } else if (row.type === 'category') {
+                    row.allDevicesCompletedSameDay = categoryDeviceFacts.length > 0 && categoryDeviceFacts.every(fact => {
+                        const cat1Matches = !fact.info.requiresCat1 || factDateMatches(fact, 'cat1_latest_report_filed', row.date);
+                        const cat5FiledThisYear = !fact.info.cat5NotRequired && mapDobDateIsInYear(fact.device.cat5_latest_report_filed, targetYear);
+                        const cat5Matches = !cat5FiledThisYear || factDateMatches(fact, 'cat5_latest_report_filed', row.date);
+                        return cat1Matches && cat5Matches;
+                    });
+                }
+            });
+
+            return Array.from(groupedRows.values()).sort((a, b) => a.date.localeCompare(b.date));
+        }
+
+        function getMapTestRequirementCounts(bin, year) {
+            const targetYear = Number(year) || new Date().getFullYear();
+            const group = getMapGroupForBin(bin);
+            const facts = getMapBuildingCompletionFacts(group, targetYear, bin);
+            const deviceFacts = Array.isArray(facts.deviceFacts) ? facts.deviceFacts : [];
+            const cat1PerformedCount = deviceFacts.filter(fact =>
+                fact.info.requiresCat1 && mapDobDateIsInYear(fact.device.cat1_latest_report_filed, targetYear)
+            ).length;
+            const cat5PerformedCount = deviceFacts.filter(fact =>
+                !fact.info.cat5NotRequired && mapDobDateIsInYear(fact.device.cat5_latest_report_filed, targetYear)
+            ).length;
+            const cat5DueCount = deviceFacts.filter(fact =>
+                mapDobDeviceCat5DueForSelectedYear(fact.device, targetYear, bin)
+            ).length;
+            return {
+                pviRequiredCount: deviceFacts.filter(fact => fact.info.requiresPVI).length,
+                cat1RequiredCount: deviceFacts.filter(fact => fact.info.requiresCat1).length,
+                cat5RequiredCount: Math.max(cat5PerformedCount, cat5DueCount),
+                cat1PerformedCount,
+                cat5PerformedCount
+            };
+        }
+
+        function getMapCategoryCompletionStatus(bin, year) {
+            const targetYear = Number(year) || new Date().getFullYear();
+            const group = getMapGroupForBin(bin);
+            const facts = getMapBuildingCompletionFacts(group, targetYear, bin);
+            const deviceFacts = Array.isArray(facts.deviceFacts) ? facts.deviceFacts : [];
+            const requiredDeviceFacts = deviceFacts.filter(fact => fact.info.requiresCat1 || fact.info.requiresCat5);
+            const incompleteDevices = requiredDeviceFacts.map((fact, index) => {
+                const missingTests = [];
+                if (fact.info.requiresCat1 && !fact.info.hasCat1) missingTests.push('CAT 1');
+                if (fact.info.requiresCat5 && !fact.info.hasCat5) missingTests.push('CAT 5');
+                return {
+                    deviceNumber: String(fact.device.device_number || '').trim() || `Device ${index + 1}`,
+                    deviceType: String(fact.device.device_type || '').trim(),
+                    missingTests
+                };
+            }).filter(device => device.missingTests.length > 0);
+            const dobComplete = requiredDeviceFacts.length > 0 && incompleteDevices.length === 0;
+            const savedCompletion = getMapSavedCategoryCompletionForYear(bin, targetYear);
+            return {
+                year: targetYear,
+                requiredDeviceCount: requiredDeviceFacts.length,
+                completedDeviceCount: requiredDeviceFacts.length - incompleteDevices.length,
+                allComplete: dobComplete || savedCompletion.isComplete,
+                dobComplete,
+                savedComplete: savedCompletion.isComplete,
+                incompleteDevices,
+                counts: getMapTestRequirementCounts(bin, targetYear)
+            };
+        }
+
+        function renderMapCategoryCompletionStatusHtml(bin, year) {
+            const status = getMapCategoryCompletionStatus(bin, year);
+            if (status.requiredDeviceCount === 0) {
+                return `<div style="margin:0 0 8px; padding:7px 8px; border-radius:6px; border:1px solid rgba(96,125,139,0.28); background:rgba(96,125,139,0.08); color:var(--text-color,#ccc); font-size:10px; line-height:1.4;">
+                    No devices require Category testing for ${status.year}.
+                </div>`;
+            }
+            if (status.allComplete) {
+                if (status.savedComplete && !status.dobComplete) {
+                    return `<div style="margin:0 0 8px; padding:7px 8px; border-radius:6px; border:1px solid rgba(39,174,96,0.35); background:rgba(39,174,96,0.09); color:#27ae60; font-size:10px; line-height:1.4; font-weight:700;">
+                        ✓ Category testing is marked complete for ${status.year}.<br>
+                        <span style="font-weight:600; color:#ff9800;">DOB confirmation is still pending for ${status.incompleteDevices.length} device${status.incompleteDevices.length !== 1 ? 's' : ''}.</span><br>
+                        <span style="font-weight:600; opacity:0.9;">Next Category testing year: ${status.year + 1}.</span>
+                    </div>`;
+                }
+                return `<div style="margin:0 0 8px; padding:7px 8px; border-radius:6px; border:1px solid rgba(39,174,96,0.35); background:rgba(39,174,96,0.09); color:#27ae60; font-size:10px; line-height:1.4; font-weight:700;">
+                    ✓ All devices requiring Category testing are complete for ${status.year}.<br>
+                    <span style="font-weight:600; opacity:0.9;">CAT 1 filed: ${status.counts.cat1PerformedCount} · CAT 5 filed: ${status.counts.cat5PerformedCount} · Next Category testing year: ${status.year + 1}</span>
+                </div>`;
+            }
+
+            const deviceRows = status.incompleteDevices.map(device => {
+                const typeText = device.deviceType ? ` · ${escapeMapSuggestionHtml(device.deviceType)}` : '';
+                return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; padding:4px 0; border-top:1px solid rgba(255,107,107,0.14);">
+                    <span style="font-weight:700; color:var(--text-color,#fff);">${escapeMapSuggestionHtml(device.deviceNumber)}${typeText}</span>
+                    <span style="color:#ff6b6b; font-weight:800; text-align:right;">Needs ${device.missingTests.join(' + ')}</span>
+                </div>`;
+            });
+            const hiddenCount = Math.max(0, deviceRows.length - 3);
+            const remainingRows = hiddenCount > 0
+                ? `<details style="margin-top:2px;"><summary style="cursor:pointer; color:#ff6b6b; font-weight:800; padding:3px 0;">Show ${hiddenCount} more device${hiddenCount !== 1 ? 's' : ''}</summary>${deviceRows.slice(3).join('')}</details>`
+                : '';
+            return `<div style="margin:0 0 8px; padding:7px 8px; border-radius:6px; border:1px solid rgba(255,107,107,0.35); background:rgba(255,107,107,0.08); color:var(--text-color,#ccc); font-size:10px; line-height:1.4;">
+                <div style="color:#ff6b6b; font-weight:800; margin-bottom:3px;">⚠ Category testing incomplete for ${status.year} · ${status.incompleteDevices.length} of ${status.requiredDeviceCount} device${status.requiredDeviceCount !== 1 ? 's' : ''} remaining</div>
+                ${deviceRows.slice(0, 3).join('')}${remainingRows}
+            </div>`;
+        }
+
+        function getMapDobCategoryCompletionSummaryRow(bin, year, dobRows) {
+            const categoryRows = (dobRows || []).filter(row => row.type === 'category');
+            if (categoryRows.length === 0) return null;
+            const dates = Array.from(new Set(categoryRows.map(row => row.date))).sort();
+            const counts = getMapTestRequirementCounts(bin, year);
+            return {
+                type: 'category',
+                date: dates[0],
+                endDate: dates[dates.length - 1],
+                dates,
+                source: 'dob',
+                testLabels: [
+                    ...(counts.cat1PerformedCount > 0 ? ['CAT 1'] : []),
+                    ...(counts.cat5PerformedCount > 0 ? ['CAT 5'] : [])
+                ],
+                cat1Count: counts.cat1PerformedCount,
+                cat5Count: counts.cat5PerformedCount,
+                deviceNumbers: Array.from(new Set(categoryRows.flatMap(row => row.deviceNumbers || []))),
+                allDevicesCompletedSameDay: dates.length === 1 && categoryRows.every(row => row.allDevicesCompletedSameDay),
+                isTimeframe: dates.length > 1
+            };
+        }
+
+        function formatMapTestDateRange(startDate, endDate) {
+            const start = new Date(startDate + 'T00:00:00');
+            const end = new Date((endDate || startDate) + 'T00:00:00');
+            const options = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' };
+            const startDisplay = start.toLocaleDateString('en-US', options);
+            if (!endDate || endDate === startDate) return startDisplay;
+            return `${startDisplay} – ${end.toLocaleDateString('en-US', options)}`;
+        }
+
+        function getMapDobCompletionTimeframe(bin, type, year) {
+            const normalizedType = normalizeMapScheduleType(type);
+            const dates = Array.from(new Set(
+                getMapDobCompletedTestDateRows(bin, year)
+                    .filter(row => row.type === normalizedType)
+                    .map(row => row.date)
+            )).sort();
+            if (dates.length === 0) return null;
+            return {
+                startDate: dates[0],
+                endDate: dates[dates.length - 1],
+                dateCount: dates.length,
+                display: formatMapTestDateRange(dates[0], dates[dates.length - 1])
+            };
+        }
+
+        function renderMapScheduledTimeframeSummary(bin, type, rows) {
+            const normalizedType = normalizeMapScheduleType(type);
+            const scheduledRows = (rows || []).filter(row => row.source === 'scheduled');
+            if (scheduledRows.length === 0) return '';
+            const rowsByYear = new Map();
+            scheduledRows.forEach(row => {
+                const year = Number(String(row.date || '').slice(0, 4));
+                if (!year) return;
+                if (!rowsByYear.has(year)) rowsByYear.set(year, []);
+                rowsByYear.get(year).push(row.date);
+            });
+            const color = normalizedType === 'pvi' ? '#1a73e8' : normalizedType === 'category' ? '#9b59b6' : '#607d8b';
+            return Array.from(rowsByYear.entries()).sort((a, b) => a[0] - b[0]).map(([year, values]) => {
+                const dates = Array.from(new Set(values)).sort();
+                const counts = getMapTestRequirementCounts(bin, year);
+                const countText = normalizedType === 'category'
+                    ? `CAT 1: <strong>${counts.cat1RequiredCount}</strong> · CAT 5: <strong>${counts.cat5RequiredCount}</strong>`
+                    : normalizedType === 'pvi'
+                        ? `PVI inspections: <strong>${counts.pviRequiredCount}</strong>`
+                        : '';
+                const dateLabel = dates.length > 1 ? 'Scheduled timeframe' : 'Scheduled date';
+                return `<div style="margin:0 0 8px; padding:7px 8px; border-radius:6px; border:1px solid ${color}55; background:${color}0f; color:var(--text-color,#ccc); font-size:10px; line-height:1.45;">
+                    <div><strong style="color:${color};">${dateLabel}:</strong> ${formatMapTestDateRange(dates[0], dates[dates.length - 1])}</div>
+                    ${countText ? `<div style="margin-top:2px;">Planned work · ${countText}</div>` : ''}
+                </div>`;
+            }).join('');
+        }
+
+        function getMapBuildingTestDateRows(bin, year) {
+            const dobRows = getMapDobCompletedTestDateRows(bin, year);
+            const dobKeys = new Set(dobRows.map(row => `${row.type}:${row.date}`));
+            const scheduledRows = getMapTypedScheduleRows(bin).filter(row => !dobKeys.has(`${row.type}:${row.date}`));
+            const categorySummary = getMapDobCategoryCompletionSummaryRow(bin, year, dobRows);
+            const displayDobRows = dobRows.filter(row => row.type !== 'category');
+            if (categorySummary) displayDobRows.push(categorySummary);
+            return [...scheduledRows, ...displayDobRows].sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
+        }
+
+        function mapDobHasCompletedTestDate(bin, type, dateStr) {
+            const normalizedType = normalizeMapScheduleType(type);
+            const year = /^\d{4}/.test(String(dateStr || '')) ? Number(String(dateStr).slice(0, 4)) : new Date().getFullYear();
+            return getMapDobCompletedTestDateRows(bin, year).some(row => row.type === normalizedType && row.date === dateStr);
+        }
+
+        function reconcileMapScheduledDatesWithDob(bin) {
+            if (!mapTestDates[bin]) return 0;
+            const record = normalizeMapScheduleRecord(mapTestDates[bin]);
+            const currentYear = new Date().getFullYear();
+            const completionFacts = getMapBuildingCompletionFacts(getMapGroupForBin(bin), currentYear, bin);
+            let removedCount = 0;
+            if (completionFacts.pviComplete) {
+                const before = record.pvi.length;
+                record.pvi = record.pvi.filter(date => !String(date).startsWith(`${currentYear}-`));
+                removedCount += before - record.pvi.length;
+            }
+            if (completionFacts.categoryComplete) {
+                const before = record.category.length;
+                record.category = record.category.filter(date => !String(date).startsWith(`${currentYear}-`));
+                removedCount += before - record.category.length;
+            }
+            if (removedCount > 0) {
+                if (getMapScheduleDates(record).length > 0) mapTestDates[bin] = record;
+                else delete mapTestDates[bin];
+            }
+            return removedCount;
+        }
+
+        function clearScheduledDatesForCompletion(bin, completionType) {
+            if (!mapTestDates[bin]) return;
+            const record = normalizeMapScheduleRecord(mapTestDates[bin]);
+            const normalized = normalizeMapCompletedTestType(completionType);
+            if (normalized === 'PVI' || normalized === 'Full') record.pvi = [];
+            if (normalized === 'Category' || normalized === 'Full') record.category = [];
+            if (normalized === 'Full') record.general = [];
+            if (getMapScheduleDates(record).length > 0) mapTestDates[bin] = record;
+            else delete mapTestDates[bin];
+        }
+
+        function addMapCalendarMonths(value, months) {
+            const date = new Date(value.getTime());
+            const originalDay = date.getDate();
+            date.setDate(1);
+            date.setMonth(date.getMonth() + months);
+            const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+            date.setDate(Math.min(originalDay, lastDay));
+            date.setHours(0, 0, 0, 0);
+            return date;
+        }
+
+        function parseMapInspectionDate(value) {
+            if (!value) return null;
+            if (value instanceof Date) return isNaN(value.getTime()) ? null : new Date(value.getTime());
+            const text = String(value).trim();
+            const isoDate = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
+            if (isoDate) {
+                const localDate = new Date(Number(isoDate[1]), Number(isoDate[2]) - 1, Number(isoDate[3]));
+                return isNaN(localDate.getTime()) ? null : localDate;
+            }
+            const parsed = new Date(text);
+            return isNaN(parsed.getTime()) ? null : parsed;
+        }
+
+        function getMapCategoryScheduleRules(bin, scheduledYear) {
+            const group = getMapGroupForBin(bin);
+            const devices = group && Array.isArray(group.devices) ? group.devices.filter(mapDobDeviceIsActiveForCompletion) : [];
+            const targetYear = Number(scheduledYear) || new Date().getFullYear();
+            const categoryCompletion = getMapTestCompletionForYear(bin, 'Category', targetYear);
+            const categoryCompleteForYear = categoryCompletion.isComplete;
+            let earliestAllowed = null;
+            let cat5Deadline = null;
+            const cat5DueDevices = [];
+
+            devices.forEach(device => {
+                const testInfo = getMapDeviceReportTestInfo(device, targetYear, bin);
+                if (!testInfo.requiresCat1 && !testInfo.requiresCat5) return;
+                const cat1Date = parseMapInspectionDate(device.cat1_latest_report_filed);
+                const cat5Date = parseMapInspectionDate(device.cat5_latest_report_filed);
+                const validCategoryDates = [cat1Date, cat5Date].filter(Boolean);
+                if (validCategoryDates.length > 0) {
+                    const latestCategory = new Date(Math.max(...validCategoryDates.map(date => date.getTime())));
+                    const deviceEligible = addMapCalendarMonths(latestCategory, 6);
+                    if (!earliestAllowed || deviceEligible > earliestAllowed) earliestAllowed = deviceEligible;
+                }
+
+                if (mapDobDeviceCat5DueForSelectedYear(device, targetYear, bin) && cat5Date && !isNaN(cat5Date.getTime())) {
+                    const deviceDeadline = new Date(targetYear, cat5Date.getMonth() + 1, 0);
+                    deviceDeadline.setHours(23, 59, 59, 999);
+                    if (!cat5Deadline || deviceDeadline < cat5Deadline) cat5Deadline = deviceDeadline;
+                    cat5DueDevices.push(String(device.device_number || '').trim());
+                }
+            });
+
+            return {
+                scheduledYear: targetYear,
+                categoryCompleteForYear,
+                categoryCompletionSource: categoryCompletion.source,
+                nextCategoryYear: categoryCompleteForYear ? targetYear + 1 : null,
+                earliestAllowed: categoryCompleteForYear ? null : earliestAllowed,
+                cat5Deadline: categoryCompleteForYear ? null : cat5Deadline,
+                cat5DueDevices
+            };
+        }
+
+        function getMapCategoryRuleSummaryHtml(rules) {
+            if (rules && rules.categoryCompleteForYear) {
+                const completeText = rules.categoryCompletionSource === 'saved'
+                    ? `Category testing is marked complete for ${rules.scheduledYear}.`
+                    : `Category testing is complete for ${rules.scheduledYear}.`;
+                return `<strong>${completeText}</strong> Schedule the next Category test in ${rules.nextCategoryYear}. The six-month spacing rule will still be checked.`;
+            }
+            const parts = [];
+            if (rules && rules.earliestAllowed) parts.push(`Earliest Category date: <strong>${rules.earliestAllowed.toLocaleDateString()}</strong>`);
+            if (rules && rules.cat5Deadline) parts.push(`CAT 5 deadline: <strong>${rules.cat5Deadline.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</strong>`);
+            return parts.length ? parts.join('. ') + '.' : 'No 6-month or CAT 5 deadline restriction was found for the selected year.';
+        }
+
+        function validateMapScheduledTestDate(bin, type, dateStr) {
+            const normalizedType = normalizeMapScheduleType(type);
+            if (normalizedType !== 'pvi' && normalizedType !== 'category') return { valid: true, message: '', rules: null };
+            const scheduledDate = new Date(dateStr + 'T00:00:00');
+            const testLabel = normalizedType === 'pvi' ? 'PVI' : 'Category';
+            if (isNaN(scheduledDate.getTime())) return { valid: false, message: `Please select a valid ${testLabel} date.`, rules: null };
+            if (normalizedType === 'pvi') {
+                const completion = getMapTestCompletionForYear(bin, 'PVI', scheduledDate.getFullYear());
+                const rules = {
+                    scheduledYear: completion.year,
+                    pviCompleteForYear: completion.isComplete,
+                    completionSource: completion.source,
+                    nextPviYear: completion.nextYear
+                };
+                if (completion.isComplete) {
+                    const completionMessage = completion.source === 'saved'
+                        ? `PVI testing is already marked complete for ${completion.year}`
+                        : `All required PVI inspections are already filed for ${completion.year}`;
+                    return {
+                        valid: false,
+                        message: `${completionMessage}. Schedule the next PVI test in ${completion.nextYear}.`,
+                        rules
+                    };
+                }
+                return { valid: true, message: '', rules };
+            }
+            const rules = getMapCategoryScheduleRules(bin, scheduledDate.getFullYear());
+            if (rules.categoryCompleteForYear) {
+                const completionMessage = rules.categoryCompletionSource === 'saved'
+                    ? `Category testing is already marked complete for ${rules.scheduledYear}`
+                    : `All required Category inspections are already filed for ${rules.scheduledYear}`;
+                return {
+                    valid: false,
+                    message: `${completionMessage}. Schedule the next Category test in ${rules.nextCategoryYear}.`,
+                    rules
+                };
+            }
+            if (rules.earliestAllowed && scheduledDate < rules.earliestAllowed) {
+                return {
+                    valid: false,
+                    message: `Category testing must be at least 6 months after the latest Category inspection. Earliest available date: ${rules.earliestAllowed.toLocaleDateString()}.`,
+                    rules
+                };
+            }
+            if (rules.cat5Deadline && scheduledDate > rules.cat5Deadline) {
+                const devices = rules.cat5DueDevices.filter(Boolean).join(', ');
+                return {
+                    valid: false,
+                    message: `CAT 5 is due no later than ${rules.cat5Deadline.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}${devices ? ` for device${rules.cat5DueDevices.length === 1 ? '' : 's'} ${devices}` : ''}. Choose that month or earlier.`,
+                    rules
+                };
+            }
+            return { valid: true, message: '', rules };
         }
 
         function addTestDateForBin(bin, dateStr, options) {
             if (!dateStr) return false;
-            if (!Array.isArray(mapTestDates[bin])) mapTestDates[bin] = [];
-            if (!mapTestDates[bin].includes(dateStr)) {
-                mapTestDates[bin].push(dateStr);
-                mapTestDates[bin].sort();
-                const opts = options || {};
+            const opts = options || {};
+            const type = normalizeMapScheduleType(opts.type);
+            const validation = validateMapScheduledTestDate(bin, type, dateStr);
+            if (!validation.valid) {
+                if (!opts.quiet) showMapNotification(validation.message, '#ff6b6b');
+                return false;
+            }
+            const record = normalizeMapScheduleRecord(mapTestDates[bin]);
+            if (!record[type].includes(dateStr)) {
+                record[type].push(dateStr);
+                record[type].sort();
+                mapTestDates[bin] = record;
                 addMapActivity('Added scheduled date', {
                     type: 'Schedule',
                     bin,
                     address: opts.address || '',
                     date: dateStr,
-                    details: opts.source || ''
+                    details: `${type === 'pvi' ? 'PVI' : type === 'category' ? 'Category' : 'Unspecified'}${opts.source ? ` · ${opts.source}` : ''}`
                 });
                 return true;
             }
             return false;
         }
 
-        function removeTestDateForBin(bin, dateStr) {
-            if (!Array.isArray(mapTestDates[bin])) return;
-            const existed = mapTestDates[bin].includes(dateStr);
-            mapTestDates[bin] = mapTestDates[bin].filter(d => d !== dateStr);
-            if (mapTestDates[bin].length === 0) delete mapTestDates[bin];
-            if (existed) addMapActivity('Removed scheduled date', { type: 'Schedule', bin, date: dateStr });
+        function removeTestDateForBin(bin, dateStr, type) {
+            if (!mapTestDates[bin]) return;
+            const record = normalizeMapScheduleRecord(mapTestDates[bin]);
+            const types = type ? [normalizeMapScheduleType(type)] : ['pvi', 'category', 'general'];
+            let existed = false;
+            types.forEach(scheduleType => {
+                if (record[scheduleType].includes(dateStr)) existed = true;
+                record[scheduleType] = record[scheduleType].filter(date => date !== dateStr);
+            });
+            if (getMapScheduleDates(record).length > 0) mapTestDates[bin] = record;
+            else delete mapTestDates[bin];
+            if (existed) addMapActivity('Removed scheduled date', { type: 'Schedule', bin, date: dateStr, details: type ? normalizeMapScheduleType(type) : '' });
         }
 
         function showDeviceDetailModal(bin) {
@@ -16083,7 +16789,7 @@
                     if (info.hasCat1) summary.cat1Complete++;
                     else summary.cat1Missing++;
                 }
-                if (info.requiresCat5) {
+                if (info.requiresCat5 || info.hasCat5) {
                     summary.cat5Required++;
                     if (info.hasCat5) summary.cat5Complete++;
                     else {
@@ -16265,8 +16971,10 @@
                         : testInfo.nextCat5DueYear
                             ? `<span style="font-size:10px;color:${testInfo.nextCat5DueYear <= currentYear ? '#ff9800' : 'var(--text-color)'};font-weight:700;">Next CAT 5: ${testInfo.nextCat5DueYear}</span>`
                             : '<span style="font-size:10px;opacity:0.65;">Next CAT 5: No prior CAT 5 date</span>';
-                    const cat5Html = testInfo.requiresCat5
-                        ? `<span style="color:${hasCat5 ? '#4CAF50' : '#ff9800'};font-weight:700;">${hasCat5 ? '✓' : '⚠'} ${fmt(cat5Date)}</span><br>${nextCat5Html}`
+                    const cat5Html = hasCat5
+                        ? `<span style="color:#4CAF50;font-weight:700;">✓ ${fmt(cat5Date)}</span><br>${nextCat5Html}`
+                        : testInfo.requiresCat5
+                        ? `<span style="color:#ff9800;font-weight:700;">⚠ ${fmt(cat5Date)}</span><br>${nextCat5Html}`
                         : testInfo.cat5Bypassed
                             ? `<span style="color:#4CAF50;font-style:italic;">Not required (bypassed)</span><br>${nextCat5Html}`
                             : `${fmt(cat5Date)}<br>${nextCat5Html}`;
@@ -16565,53 +17273,106 @@
             `;
 
             const today = formatLocalDateInputValue(new Date());
+            const planningYear = new Date().getFullYear();
+            const initialPviCompletion = getMapTestCompletionForYear(bin, 'PVI', planningYear);
+            const pviDefaultDate = initialPviCompletion.isComplete ? `${initialPviCompletion.nextYear}-01-01` : today;
+            const pviCompletionNotice = initialPviCompletion.isComplete
+                ? `<div style="margin:0 0 10px; padding:7px 8px; border-radius:6px; border:1px solid rgba(39,174,96,0.35); background:rgba(39,174,96,0.09); color:#27ae60; font-size:10px; line-height:1.4; font-weight:700;">✓ All required PVI inspections are complete for ${planningYear}. Next PVI testing year: ${initialPviCompletion.nextYear}.</div>`
+                : '';
+            const initialRules = getMapCategoryScheduleRules(bin, planningYear);
+            const ruleSummary = getMapCategoryRuleSummaryHtml(initialRules);
+            let categoryDefaultDate = today;
+            if (initialRules.categoryCompleteForYear) {
+                const nextYearRules = getMapCategoryScheduleRules(bin, initialRules.nextCategoryYear);
+                const nextYearStart = new Date(initialRules.nextCategoryYear, 0, 1);
+                const nextEligibleDate = nextYearRules.earliestAllowed && nextYearRules.earliestAllowed > nextYearStart
+                    ? nextYearRules.earliestAllowed
+                    : nextYearStart;
+                categoryDefaultDate = formatLocalDateInputValue(nextEligibleDate);
+            }
 
             overlay.innerHTML = `
-                <div style="background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 24px; min-width: 320px; max-width: 420px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.5); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
-                        <h3 style="margin: 0; color: var(--text-color, #fff); font-size: 16px;">🗓️ Scheduled Test Dates</h3>
-                        <button id="testDatesCloseBtn" style="background: none; border: none; color: var(--text-color, #ccc); font-size: 20px; cursor: pointer; line-height: 1; padding: 0;">×</button>
-                    </div>
-                    <p style="margin: 0 0 16px 0; font-size: 12px; opacity: 0.7; color: var(--text-color, #ccc);">${address || 'BIN ' + bin}</p>
-
-                    <div id="testDatesList" style="margin-bottom: 14px; max-height: 200px; overflow-y: auto;"></div>
-
-                    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 16px;">
-                        <input type="date" id="testDateInput" value="${today}"
-                               style="flex: 1; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); font-size: 13px; box-sizing: border-box;">
-                        <button id="testDateAddBtn" style="padding: 9px 16px; border-radius: 6px; border: none; background: #1a73e8; color: white; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap;">+ Add Date</button>
+                <div style="background:var(--card-bg,#1e1e2e); border:1px solid var(--input-border,#444); border-radius:16px; padding:24px; max-width:620px; width:calc(100% - 32px); max-height:calc(100vh - 40px); overflow-y:auto; box-sizing:border-box; box-shadow:0 18px 55px rgba(0,0,0,0.5); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:18px;">
+                        <div><h3 style="margin:0 0 5px; color:var(--text-color,#fff); font-size:18px;">Schedule building tests</h3><p style="margin:0; font-size:12px; opacity:0.7; color:var(--text-color,#ccc);">${address || 'BIN ' + bin}</p></div>
+                        <button id="testDatesCloseBtn" aria-label="Close" style="margin:0; background:none; border:none; color:var(--text-color,#ccc); font-size:22px; cursor:pointer; line-height:1; padding:2px;">×</button>
                     </div>
 
-                    <button id="testDatesDoneBtn" style="width: 100%; padding: 10px; border-radius: 6px; border: none; background: #27ae60; color: white; cursor: pointer; font-size: 13px; font-weight: 600;">Done</button>
-                </div>
-            `;
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px;">
+                        <section style="padding:14px; border:1px solid rgba(155,89,182,0.38); border-radius:11px; background:rgba(155,89,182,0.07);">
+                            <div style="font-size:13px; font-weight:800; color:#9b59b6; margin-bottom:3px;">CATEGORY TESTING</div>
+                            <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:8px;">CAT 1 plus CAT 5 where required. Multiple testing days are allowed.</div>
+                            <div id="categoryScheduleRule" style="display:${initialRules.categoryCompleteForYear ? 'none' : 'block'}; font-size:10.5px; line-height:1.4; color:var(--text-color,#ccc); padding:7px 8px; margin-bottom:10px; border-radius:6px; background:rgba(155,89,182,0.09);">${ruleSummary}</div>
+                            <div id="categoryCompletionStatus">${renderMapCategoryCompletionStatusHtml(bin)}</div>
+                            <div id="testDatesListCategory" style="margin-bottom:10px;"></div>
+                            <div style="display:flex; gap:7px;"><input type="date" id="testDateInputCategory" value="${categoryDefaultDate}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;"><button id="testDateAddCategory" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#8e44ad; color:white; font-size:12px; font-weight:700;">+ Add</button></div>
+                            <div id="categoryScheduleError" role="alert" style="display:none; margin-top:8px; color:#ff6b6b; font-size:11px; line-height:1.35;"></div>
+                        </section>
+
+                        <section style="padding:14px; border:1px solid rgba(26,115,232,0.34); border-radius:11px; background:rgba(26,115,232,0.07);">
+                            <div style="font-size:13px; font-weight:800; color:#1a73e8; margin-bottom:3px;">PVI TESTING</div>
+                            <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:11px;">Add every day needed for periodic inspections.</div>
+                            ${pviCompletionNotice}
+                            <div id="testDatesListPvi" style="margin-bottom:10px;"></div>
+                            <div style="display:flex; gap:7px;"><input type="date" id="testDateInputPvi" value="${pviDefaultDate}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;"><button id="testDateAddPvi" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#1a73e8; color:white; font-size:12px; font-weight:700;">+ Add</button></div>
+                            <div id="pviScheduleError" role="alert" style="display:none; margin-top:8px; color:#ff6b6b; font-size:11px; line-height:1.35;"></div>
+                        </section>
+                    </div>
+
+                    <div id="testDatesLegacySection" style="display:none; margin-top:12px; padding:11px 13px; border:1px dashed var(--input-border,#555); border-radius:9px;"><div style="font-size:11px; font-weight:700; opacity:0.7; margin-bottom:7px; color:var(--text-color,#ccc);">LEGACY / UNSPECIFIED DATES</div><div id="testDatesListGeneral"></div></div>
+                    <button id="testDatesDoneBtn" style="width:100%; margin:16px 0 0; padding:10px; border-radius:7px; border:none; background:#27ae60; color:white; cursor:pointer; font-size:13px; font-weight:700;">Done</button>
+                </div>`;
 
             document.body.appendChild(overlay);
 
-            function renderDates() {
-                const dates = getTestDatesForBin(bin);
-                const list = document.getElementById('testDatesList');
+            function renderDateLane(type, listId) {
+                const rows = getMapBuildingTestDateRows(bin).filter(row => row.type === normalizeMapScheduleType(type));
+                const list = document.getElementById(listId);
                 if (!list) return;
-                if (dates.length === 0) {
-                    list.innerHTML = '<div style="font-size: 12px; opacity: 0.55; text-align: center; padding: 8px 0;">No dates scheduled yet.</div>';
+                if (rows.length === 0) {
+                    list.innerHTML = '<div style="font-size:11px; opacity:0.52; padding:5px 0;">No dates scheduled.</div>';
                 } else {
-                    list.innerHTML = dates.map(d => {
-                        const display = new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
-                        return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; background: rgba(26,115,232,0.1); border-radius: 6px; border: 1px solid rgba(26,115,232,0.3); margin-bottom: 6px;">
-                            <span style="font-size: 13px; color: var(--text-color, #fff);">📅 ${display}</span>
-                            <button data-date="${d}"
-                                    style="background: rgba(255,107,107,0.15); border: 1px solid rgba(255,107,107,0.4); color: #ff6b6b; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; font-weight: 600;">✕</button>
+                    const timeframeSummary = renderMapScheduledTimeframeSummary(bin, type, rows);
+                    const renderedRows = rows.map(row => {
+                        const d = row.date;
+                        const display = formatMapTestDateRange(d, row.endDate);
+                        const filedTests = row.source === 'dob' && row.type === 'category'
+                            ? `<span style="display:block; margin-top:2px; font-size:9px; color:#27ae60; font-weight:700;">DOB FILED · CAT 1: ${Number(row.cat1Count) || 0} · CAT 5: ${Number(row.cat5Count) || 0}</span>`
+                            : row.source === 'dob' && row.testLabels.length ? `<span style="display:block; margin-top:2px; font-size:9px; color:#27ae60; font-weight:700;">DOB COMPLETED · ${row.testLabels.join(' + ')}</span>` : '';
+                        const allDevicesLabel = row.source === 'dob' && row.allDevicesCompletedSameDay
+                            ? '<span style="display:inline-block; margin-left:6px; padding:2px 6px; border-radius:999px; background:rgba(39,174,96,0.14); color:#27ae60; font-size:9px; font-weight:800; white-space:nowrap;">✓ All Devices Completed</span>'
+                            : '';
+                        const action = row.source === 'dob'
+                            ? '<span style="padding:2px 6px; border-radius:999px; background:rgba(39,174,96,0.14); color:#27ae60; font-size:9px; font-weight:800; white-space:nowrap;">FILED</span>'
+                            : `<button data-date="${d}" data-type="${type}" style="margin:0; background:rgba(255,107,107,0.12); border:1px solid rgba(255,107,107,0.35); color:#ff6b6b; border-radius:4px; padding:2px 7px; font-size:11px; font-weight:700;">✕</button>`;
+                        return `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 8px; background:var(--input-bg); border-radius:6px; border:1px solid var(--input-border); margin-bottom:5px;">
+                            <span style="font-size:11px; color:var(--text-color,#fff);">${display}${allDevicesLabel}${filedTests}</span>${action}
                         </div>`;
-                    }).join('');
-                    // Wire up remove buttons
+                    });
+                    const hiddenCount = Math.max(0, renderedRows.length - 3);
+                    list.innerHTML = hiddenCount === 0
+                        ? timeframeSummary + renderedRows.join('')
+                        : `${timeframeSummary}${renderedRows.slice(0, 3).join('')}
+                            <details style="margin-top:5px; border-top:1px solid var(--input-border,#555); padding-top:5px;">
+                                <summary style="cursor:pointer; color:${type === 'pvi' ? '#1a73e8' : type === 'category' ? '#9b59b6' : '#607d8b'}; font-size:10px; font-weight:800; user-select:none; padding:2px 0;">Show ${hiddenCount} more date${hiddenCount !== 1 ? 's' : ''}</summary>
+                                <div style="padding-top:4px;">${renderedRows.slice(3).join('')}</div>
+                            </details>`;
                     list.querySelectorAll('button[data-date]').forEach(btn => {
                         btn.onclick = () => {
-                            removeTestDateForBin(bin, btn.dataset.date);
+                            removeTestDateForBin(bin, btn.dataset.date, btn.dataset.type);
                             renderDates();
                             refreshMapAfterTestDateChange();
                         };
                     });
                 }
+            }
+
+            function renderDates() {
+                renderDateLane('pvi', 'testDatesListPvi');
+                renderDateLane('category', 'testDatesListCategory');
+                renderDateLane('general', 'testDatesListGeneral');
+                const legacySection = document.getElementById('testDatesLegacySection');
+                if (legacySection) legacySection.style.display = getTestDatesForBin(bin, 'general').length ? 'block' : 'none';
             }
 
             function refreshMapAfterTestDateChange() {
@@ -16623,13 +17384,48 @@
 
             renderDates();
 
-            document.getElementById('testDateAddBtn').addEventListener('click', () => {
-                const val = document.getElementById('testDateInput').value;
+            function addTypedDate(type, inputId) {
+                const input = document.getElementById(inputId);
+                const val = input ? input.value : '';
+                const error = document.getElementById(type === 'pvi' ? 'pviScheduleError' : 'categoryScheduleError');
+                if (error) error.style.display = 'none';
                 if (!val) { showMapNotification('Please select a date', '#ff6b6b'); return; }
-                addTestDateForBin(bin, val);
+                if (mapDobHasCompletedTestDate(bin, type, val)) {
+                    showMapNotification(`That ${type === 'pvi' ? 'PVI' : 'Category'} date is already filed with DOB`, '#27ae60');
+                    return;
+                }
+                const validation = validateMapScheduledTestDate(bin, type, val);
+                if (!validation.valid) {
+                    if (error) { error.textContent = validation.message; error.style.display = 'block'; }
+                    showMapNotification(validation.message, '#ff6b6b');
+                    return;
+                }
+                if (!addTestDateForBin(bin, val, { type, address })) {
+                    showMapNotification('That date is already scheduled', '#ff9800');
+                    return;
+                }
                 renderDates();
                 refreshMapAfterTestDateChange();
-                showMapNotification('Test date added', '#1a73e8');
+                showMapNotification(`${type === 'pvi' ? 'PVI' : 'Category'} test date added`, type === 'pvi' ? '#1a73e8' : '#9b59b6');
+            }
+
+            document.getElementById('testDateAddPvi').addEventListener('click', () => addTypedDate('pvi', 'testDateInputPvi'));
+            document.getElementById('testDateAddCategory').addEventListener('click', () => addTypedDate('category', 'testDateInputCategory'));
+            document.getElementById('testDateInputPvi').addEventListener('change', event => {
+                const validation = validateMapScheduledTestDate(bin, 'pvi', event.target.value);
+                const error = document.getElementById('pviScheduleError');
+                if (error) { error.textContent = validation.message || ''; error.style.display = validation.valid ? 'none' : 'block'; }
+            });
+            document.getElementById('testDateInputCategory').addEventListener('change', event => {
+                const validation = validateMapScheduledTestDate(bin, 'category', event.target.value);
+                const error = document.getElementById('categoryScheduleError');
+                if (error) { error.textContent = validation.message || ''; error.style.display = validation.valid ? 'none' : 'block'; }
+                const summary = document.getElementById('categoryScheduleRule');
+                if (summary && validation.rules) {
+                    const completedYear = validation.rules.categoryCompleteForYear;
+                    summary.style.display = completedYear ? 'none' : 'block';
+                    if (!completedYear) summary.innerHTML = getMapCategoryRuleSummaryHtml(validation.rules);
+                }
             });
 
             document.getElementById('testDatesDoneBtn').addEventListener('click', () => overlay.remove());
@@ -16639,7 +17435,7 @@
 
         function clearAllTestDates() {
             if (confirm('Clear all scheduled test dates from all buildings?')) {
-                const count = Object.values(getMapTestDates() || {}).reduce((sum, dates) => sum + (Array.isArray(dates) ? dates.length : 0), 0);
+                const count = Object.values(getMapTestDates() || {}).reduce((sum, dates) => sum + getMapScheduleDates(dates).length, 0);
                 setMapTestDates({});
                 if (count > 0) addMapActivity('Cleared all scheduled dates', { type: 'Schedule', details: `${count} date${count !== 1 ? 's' : ''} cleared` });
                 updateTestDatesPanel();
@@ -16650,7 +17446,7 @@
             }
         }
 
-        function confirmTestDone(bin, dateStr) {
+        function confirmTestDone(bin, dateStr, scheduledType) {
             let address = '';
             if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && window.lastBulkSearchResults.binGroups[bin]) {
                 address = window.lastBulkSearchResults.binGroups[bin].address || '';
@@ -16674,14 +17470,20 @@
             `;
 
             const defaultCompletionDate = dateStr || formatLocalDateInputValue(new Date());
+            const normalizedScheduledType = normalizeMapScheduleType(scheduledType);
+            const defaultCompletionType = normalizedScheduledType === 'category' ? 'Category' : normalizedScheduledType === 'pvi' ? 'PVI' : 'Full';
 
             overlay.innerHTML = `
                 <div style="background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 26px; min-width: 320px; max-width: 440px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.55); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                     <div style="font-size: 28px; text-align: center; margin-bottom: 12px;">🗓️</div>
                     <h3 style="margin: 0 0 8px 0; color: var(--text-color, #fff); font-size: 16px; text-align: center;">Confirm Test Completion</h3>
                     <p style="margin: 0 0 6px 0; font-size: 13px; color: var(--text-color, #ccc); text-align: center; font-weight: 600;">${address || 'BIN ' + bin}</p>
-                    <p style="margin: 0 0 16px 0; font-size: 12px; opacity: 0.7; color: var(--text-color, #ccc); text-align: center;">Scheduled date: <strong>${display}</strong></p>
+                    <p style="margin: 0 0 16px 0; font-size: 12px; opacity: 0.7; color: var(--text-color, #ccc); text-align: center;">${normalizedScheduledType === 'category' ? 'Category' : normalizedScheduledType === 'pvi' ? 'PVI' : 'Test'} date: <strong>${display}</strong></p>
                     <div style="margin-bottom: 18px; padding: 14px; background: rgba(39,174,96,0.08); border-radius: 8px; border: 1px solid rgba(39,174,96,0.25);">
+                        <label style="display:block; font-size:12px; font-weight:600; color:var(--text-color,#ccc); margin-bottom:7px;">What was completed?</label>
+                        <select id="confirmTestCompletionType" style="width:100%; padding:9px 10px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); font-size:13px; box-sizing:border-box; margin-bottom:12px;">
+                            ${renderMapCompletedTestOptions(defaultCompletionType)}
+                        </select>
                         <label style="display: block; font-size: 12px; font-weight: 600; color: var(--text-color, #ccc); margin-bottom: 7px;">Actual completion date:</label>
                         <input type="date" id="confirmTestActualDate" value="${defaultCompletionDate}"
                             style="width: 100%; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); font-size: 13px; box-sizing: border-box;">
@@ -16701,22 +17503,31 @@
 
             document.getElementById('confirmTestYes').addEventListener('click', () => {
                 const actualDateVal = document.getElementById('confirmTestActualDate').value;
+                const selectedCompletionType = normalizeMapCompletedTestType(document.getElementById('confirmTestCompletionType').value);
                 if (!actualDateVal) { showMapNotification('Please select a completion date', '#ff6b6b'); return; }
+                if (!selectedCompletionType) { showMapNotification('Please select what was completed', '#ff6b6b'); return; }
+                if (!confirmMapCompletionRequirements(bin, selectedCompletionType)) return;
+                if (!confirmMapManualDateForDobCompletedTest(bin, selectedCompletionType, actualDateVal)) return;
                 const completionTimestamp = new Date(actualDateVal + 'T00:00:00').getTime();
 
-                // Save then clear ALL test dates for this building — it's done
-                const savedDates = Array.isArray(mapTestDates[bin]) ? mapTestDates[bin].slice() : [];
+                const savedSchedule = normalizeMapScheduleRecord(mapTestDates[bin]);
+                const savedDates = getMapScheduleDates(savedSchedule);
 
                 // Mark building as completed (or update existing record), preserving scheduled dates
                 const completed = getMapCompleted();
                 const existing = completed[bin] || {};
-                const prevDates = Array.isArray(existing.scheduledDates) ? existing.scheduledDates : [];
-                const allDates = Array.from(new Set([...prevDates, ...savedDates])).sort();
+                const prevSchedule = normalizeMapScheduleRecord(existing.scheduledDates);
+                const allDates = {
+                    pvi: Array.from(new Set([...prevSchedule.pvi, ...savedSchedule.pvi])).sort(),
+                    category: Array.from(new Set([...prevSchedule.category, ...savedSchedule.category])).sort(),
+                    general: Array.from(new Set([...prevSchedule.general, ...savedSchedule.general])).sort()
+                };
+                const completionType = mergeMapCompletionTypes(existing.completionType || existing.testType, selectedCompletionType);
                 saveMapCompletedEntry(bin, {
                     address: address || existing.address || '',
                     timestamp: completionTimestamp,
                     scheduledDates: allDates,
-                    testType: existing.testType || '',
+                    testType: completionType,
                     source: 'Manual',
                     markedCompletedAt: existing.markedCompletedAt || Date.now()
                 });
@@ -16725,7 +17536,7 @@
                     bin,
                     address,
                     date: actualDateVal,
-                    details: savedDates.length ? `Scheduled date: ${dateStr}; cleared ${savedDates.length} scheduled date${savedDates.length !== 1 ? 's' : ''}` : `Scheduled date: ${dateStr}`
+                    details: `${getMapCompletedTestLabel(completionType)}; ${normalizedScheduledType === 'category' ? 'Category' : normalizedScheduledType === 'pvi' ? 'PVI' : 'scheduled'} date: ${dateStr}`
                 });
 
                 overlay.remove();
@@ -16748,12 +17559,11 @@
 
             // Build list of bins that still have dates, resolve addresses
             const bins = Object.keys(allTestDates).filter(bin => {
-                const arr = allTestDates[bin];
-                return Array.isArray(arr) && arr.length > 0;
+                return getMapScheduleDates(allTestDates[bin]).length > 0;
             });
 
             // Total individual date count
-            const totalDates = bins.reduce((sum, bin) => sum + allTestDates[bin].length, 0);
+            const totalDates = bins.reduce((sum, bin) => sum + getMapScheduleDates(allTestDates[bin]).length, 0);
             if (countEl) countEl.textContent = totalDates;
 
             if (bins.length === 0) {
@@ -16775,21 +17585,24 @@
 
             // Sort bins by their earliest scheduled date
             bins.sort((a, b) => {
-                const aMin = allTestDates[a].slice().sort()[0] || '';
-                const bMin = allTestDates[b].slice().sort()[0] || '';
+                const aMin = getMapScheduleDates(allTestDates[a])[0] || '';
+                const bMin = getMapScheduleDates(allTestDates[b])[0] || '';
                 return aMin.localeCompare(bMin);
             });
 
             listEl.innerHTML = bins.map(bin => {
                 const address = resolveAddress(bin);
-                const sortedDates = allTestDates[bin].slice().sort();
-                const hasPast = sortedDates.some(d => new Date(d + 'T00:00:00') <= today);
+                const typedRows = getMapTypedScheduleRows(bin).sort((a, b) => a.date.localeCompare(b.date));
+                const sortedDates = typedRows.map(row => row.date);
+                const hasPast = typedRows.some(row => new Date(row.date + 'T00:00:00') <= today);
 
                 const headerBg = hasPast ? 'rgba(255,107,107,0.08)' : 'rgba(26,115,232,0.06)';
                 const headerBorder = hasPast ? 'rgba(255,107,107,0.3)' : 'rgba(26,115,232,0.25)';
                 const headerIconColor = hasPast ? '#ff6b6b' : '#1a73e8';
 
-                const dateRows = sortedDates.map(date => {
+                const renderedDateRows = typedRows.map(scheduleRow => {
+                    const date = scheduleRow.date;
+                    const scheduleType = scheduleRow.type;
                     const dateObj = new Date(date + 'T00:00:00');
                     const isPast = dateObj <= today;
                     const isToday = dateObj.getTime() === today.getTime();
@@ -16802,26 +17615,37 @@
                         ? '<span style="font-size:0.72em;background:#ff6b6b;color:white;border-radius:3px;padding:1px 5px;font-weight:700;">PAST DUE</span>'
                         : '';
 
-                    const removeBtnLarge = `<button onclick="removeTestDateForBin('${bin}','${date}'); updateTestDatesPanel(); if(window.lastBulkSearchResults&&window.lastBulkSearchResults.binGroups){initBuildingMap(window.lastBulkSearchResults.binGroups,true);}"
+                    const typeLabel = scheduleType === 'pvi' ? 'PVI' : scheduleType === 'category' ? 'CATEGORY' : 'UNSPECIFIED';
+                    const typeColor = scheduleType === 'pvi' ? '#1a73e8' : scheduleType === 'category' ? '#9b59b6' : '#607d8b';
+                    const removeBtnLarge = `<button onclick="removeTestDateForBin('${bin}','${date}','${scheduleType}'); updateTestDatesPanel(); if(window.lastBulkSearchResults&&window.lastBulkSearchResults.binGroups){initBuildingMap(window.lastBulkSearchResults.binGroups,true);}"
                         style="flex-shrink:0; padding:6px 14px; background:rgba(255,107,107,0.1); color:#ff6b6b; border:1px solid rgba(255,107,107,0.3); border-radius:6px; cursor:pointer; font-size:1.04em; font-weight:600;">✕</button>`;
 
-                    const removeBtnSmall = `<button onclick="removeTestDateForBin('${bin}','${date}'); updateTestDatesPanel(); if(window.lastBulkSearchResults&&window.lastBulkSearchResults.binGroups){initBuildingMap(window.lastBulkSearchResults.binGroups,true);}"
+                    const removeBtnSmall = `<button onclick="removeTestDateForBin('${bin}','${date}','${scheduleType}'); updateTestDatesPanel(); if(window.lastBulkSearchResults&&window.lastBulkSearchResults.binGroups){initBuildingMap(window.lastBulkSearchResults.binGroups,true);}"
                         style="flex-shrink:0; padding:1px 6px; background:rgba(255,107,107,0.1); color:#ff6b6b; border:1px solid rgba(255,107,107,0.3); border-radius:4px; cursor:pointer; font-size:0.8em; font-weight:600; line-height:1.6;">✕</button>`;
 
                     const confirmBtn = isPast
-                        ? `<button onclick="confirmTestDone('${bin}', '${date}')"
+                        ? `<button onclick="confirmTestDone('${bin}', '${date}', '${scheduleType}')"
                             style="flex-shrink:0; padding:6px 14px; background:#27ae60; color:white; border:none; border-radius:6px; cursor:pointer; font-size:1.04em; font-weight:600;">✓ Done</button>`
                         : '';
 
                     return `<div style="display:flex; flex-direction:column; gap:4px; padding:5px 8px; background:${isPast ? 'rgba(255,107,107,0.06)' : isToday ? 'rgba(230,126,34,0.06)' : 'transparent'}; border-radius:4px; margin-bottom:3px;">
                         <div style="display:flex; align-items:center; gap:6px;">
+                            <span style="font-size:0.72em; color:${typeColor}; font-weight:800; min-width:62px;">${typeLabel}</span>
                             <span style="font-size:0.88em; color:${rowColor}; font-weight:${isPast ? '600' : '400'}; flex:1;">📅 ${display}</span>
                             ${badge}
                             ${!isPast ? removeBtnSmall : ''}
                         </div>
                         ${isPast ? `<div style="display:flex; align-items:center; gap:4px;">${confirmBtn}${removeBtnLarge}</div>` : ''}
                     </div>`;
-                }).join('');
+                });
+                const hiddenDateCount = Math.max(0, renderedDateRows.length - 3);
+                const dateRows = hiddenDateCount === 0
+                    ? renderedDateRows.join('')
+                    : `${renderedDateRows.slice(0, 3).join('')}
+                        <details style="margin:4px 0 2px; border-top:1px solid ${headerBorder}; padding-top:4px;">
+                            <summary style="cursor:pointer; color:#1a73e8; font-size:0.82em; font-weight:700; user-select:none; padding:3px 1px;">Show ${hiddenDateCount} more date${hiddenDateCount !== 1 ? 's' : ''}</summary>
+                            <div style="padding-top:3px;">${renderedDateRows.slice(3).join('')}</div>
+                        </details>`;
 
                 const datesForFilter = sortedDates.join(' ').replace(/"/g, '&quot;');
                 const addrForData = (address || '').replace(/"/g, '&quot;');
@@ -18033,21 +18857,25 @@
                         var completedOn = (data && data.timestamp)
                             ? new Date(data.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                             : '';
-                        var scheduledDates = (data && Array.isArray(data.scheduledDates) && data.scheduledDates.length > 0)
-                            ? data.scheduledDates
-                            : [];
+                        var scheduledRecord = normalizeMapScheduleRecord(data && data.scheduledDates);
+                        var scheduledDates = getMapScheduleDates(scheduledRecord);
                         var completedTestType = normalizeMapCompletedTestType(data && data.testType);
+                        var completedScopeColor = getMapCompletionColor(completedTestType);
                         var completedSource = data && data.source ? String(data.source) : '';
-                        var allRequiredTestsCompleted = mapDobGroupHasCurrentYearCompletion(getMapGroupForBin(bin), new Date().getFullYear(), bin);
-                        var testLabel = allRequiredTestsCompleted ? 'All Test Completed:' : 'Test:';
-                        var testLabelColor = allRequiredTestsCompleted ? '#27ae60' : 'inherit';
+                        var completionFacts = getMapBuildingCompletionFacts(getMapGroupForBin(bin), new Date().getFullYear(), bin);
+                        var allRequiredTestsCompleted = completionFacts.fullyComplete;
+                        var testLabel = 'Completion:';
+                        var testLabelColor = completedTestType === 'Full' ? '#27ae60' : completedTestType === 'Category' ? '#9b59b6' : '#1a73e8';
 
                         var datesHtml = '';
                         if (scheduledDates.length > 0) {
                             var dateRows = '';
-                            scheduledDates.forEach(function(d) {
-                                var disp = new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-                                dateRows += '<div style="font-size: 0.88em; padding: 2px 0; color: var(--text-color);">📅 ' + disp + '</div>';
+                            ['pvi', 'category', 'general'].forEach(function(scheduleType) {
+                                scheduledRecord[scheduleType].forEach(function(d) {
+                                    var disp = new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+                                    var lane = scheduleType === 'pvi' ? 'PVI' : scheduleType === 'category' ? 'CATEGORY' : 'UNSPECIFIED';
+                                    dateRows += '<div style="font-size: 0.88em; padding: 2px 0; color: var(--text-color);"><strong>' + lane + '</strong> · 📅 ' + disp + '</div>';
+                                });
                             });
                             var label = scheduledDates.length !== 1 ? 'Scheduled test dates' : 'Scheduled test date';
                             datesHtml = '<div style="margin-top: 6px; padding: 6px 8px; background: rgba(39,174,96,0.1); border-radius: 4px; border-left: 3px solid #27ae60;">'
@@ -18080,7 +18908,7 @@
                             '<div data-bin="' + bin + '" data-address="' + (address || '').replace(/"/g, '&quot;') + '" style="padding: 6px 8px; background: var(--input-bg); border-radius: 4px; margin-bottom: 4px; font-size: 1em;">'
                             + '<span style="display: block; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapBuilding(\'' + bin + '\')">'
                             + '<span style="display: flex; align-items: center; gap: 4px; overflow: hidden;">'
-                            + '<span style="color: #27ae60; font-weight: 700; flex-shrink: 0;">✓</span>'
+                            + '<span style="color:' + completedScopeColor + '; font-weight:800; flex-shrink:0;">' + (completedTestType === 'PVI' ? 'P' : completedTestType === 'Category' ? 'C' : '✓') + '</span>'
                             + addrLine
                             + '</span>'
                             + subLine
@@ -18359,6 +19187,9 @@
             // Always open in fullscreen — covers the full viewport on load.
             // toggleMapFullscreen handles body-scroll locking and saves _scrollY.
             if (!_mapFullscreen) toggleMapFullscreen();
+
+            // Preserve map space on narrow layouts; users can still open Settings manually.
+            applyMapControlsNarrowDefault(true);
 
 
             // Add event listener to close modal on ESC key
@@ -18775,6 +19606,7 @@
             _mapIsMinimized = false;
             modal.style.display = 'flex';
             if (pill) pill.style.display = 'none';
+            applyMapControlsNarrowDefault(true);
             // Give Leaflet a moment to recalculate after the container is visible again
             setTimeout(function() {
                 if (buildingMap) buildingMap.invalidateSize();
@@ -18786,7 +19618,38 @@
         var mapControlsDockedWidthPx = MAP_CONTROLS_DEFAULT_PANEL_WIDTH;
         const MAP_CONTROLS_MIN_PANEL_WIDTH = 280;
         const MAP_CONTROLS_MIN_MAP_WIDTH = 220;
+        const MAP_CONTROLS_NARROW_LAYOUT_WIDTH = 1100;
         let _mapControlsResizeFrame = null;
+        let _mapControlsLastNarrowState = null;
+
+        function isMapControlsNarrowLayout() {
+            const container = document.getElementById('mapModalContainer');
+            const rect = container && typeof container.getBoundingClientRect === 'function'
+                ? container.getBoundingClientRect()
+                : null;
+            const viewportWidth = Number(window.innerWidth) || Infinity;
+            const containerWidth = rect && rect.width > 0 ? rect.width : viewportWidth;
+            const availableWidth = Math.min(viewportWidth, containerWidth);
+            return availableWidth <= MAP_CONTROLS_NARROW_LAYOUT_WIDTH;
+        }
+
+        function applyMapControlsNarrowDefault(force) {
+            const isNarrow = isMapControlsNarrowLayout();
+            const panel = document.getElementById('mapControlsPanel');
+            const enteredNarrowLayout = _mapControlsLastNarrowState === false && isNarrow;
+            if (panel && isNarrow && !mapControlsPanelIsPopped && (force || enteredNarrowLayout)) {
+                panel.style.display = 'none';
+                requestMapResizeAfterControlsChange();
+            }
+            _mapControlsLastNarrowState = isNarrow;
+            return isNarrow;
+        }
+
+        window.addEventListener('resize', function() {
+            const modal = document.getElementById('buildingMapModal');
+            if (!modal || modal.style.display !== 'flex') return;
+            applyMapControlsNarrowDefault(false);
+        });
 
         function requestMapResizeAfterControlsChange() {
             if (!buildingMap) return;
@@ -19064,7 +19927,7 @@
 
             let markerColor;
             if (isCompleted) {
-                markerColor = '#27ae60'; // Dark green - manually marked complete
+                markerColor = getMapCompletionColor(building.completionType);
             } else if (isInProcess) {
                 markerColor = '#e67e22'; // Orange - in process
             } else if (isHold) {
@@ -19083,7 +19946,7 @@
             const showNoteStar = hasBuildingNote && !isHold;
             const markerLabel = showNoteStar
                 ? '★'
-                : (isCompleted ? '✓' : isInProcess ? '⟳' : isHold ? '⏸' : building.deviceCount);
+                : (isCompleted ? (building.completionType === 'PVI' ? 'P' : building.completionType === 'Category' ? 'C' : '✓') : isInProcess ? '⟳' : isHold ? '⏸' : building.deviceCount);
 
             return L.divIcon({
                 className: 'custom-map-marker',
@@ -19299,6 +20162,7 @@
                             calendarYear: currentYear,
                             isHidden: !!hidden[bin],
                             isCompleted: !!completed[bin],
+                            completionType: completed[bin] ? normalizeMapCompletedTestType(completed[bin].completionType || completed[bin].testType) : '',
                             isInProcess: !!inProcess[bin],
                             inProcessDate: inProcess[bin] ? inProcess[bin].date : null,
                             isHold: !!hold[bin]
@@ -19460,22 +20324,26 @@
                 const rawBuildingNote = getMapNote(building.bin);
                 const currentBuildingNote = escapeMapSuggestionHtml(rawBuildingNote);
                 const hasBuildingNote = !!rawBuildingNote.trim();
-                const scheduledDatesForBuilding = getTestDatesForBin(building.bin);
+                const scheduledDatesForBuilding = getMapBuildingTestDateRows(building.bin);
                 const hasScheduledTestDates = scheduledDatesForBuilding.length > 0;
+                const scheduledTestDayCount = scheduledDatesForBuilding.reduce((sum, row) =>
+                    sum + (Array.isArray(row.dates) && row.dates.length ? row.dates.length : 1), 0
+                );
                 const completedData = getMapCompleted()[building.bin] || {};
-                const completedTestLabel = getMapCompletedTestLabel(completedData.testType);
+                const completedTestLabel = getMapCompletedTestLabel(completedData.completionType || completedData.testType);
+                const completionColor = getMapCompletionColor(completedData.completionType || completedData.testType);
                 const completedSourceLabel = completedData.source ? ` · ${escapeMapSuggestionHtml(completedData.source)}` : '';
                 
                 const popupContent = `
                     <div class="map-popup-content" style="min-width: 380px; max-width: 460px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-                        <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isCompleted ? '#27ae60' : isInProcess ? '#e67e22' : isHold ? '#607d8b' : isFavorited ? '#9b59b6' : '#1a73e8'};">
+                        <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isCompleted ? completionColor : isInProcess ? '#e67e22' : isHold ? '#607d8b' : isFavorited ? '#9b59b6' : '#1a73e8'};">
                             <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${building.address}</div>
                             <div style="display: flex; gap: 6px; justify-content: space-between;">
                                 <button onclick="toggleMapCompleted('${building.bin}')" 
                                         title="${isCompleted ? 'Unmark as completed' : 'Mark as completed'}"
-                                        style="background: ${isCompleted ? '#27ae60' : 'rgba(39,174,96,0.1)'}; 
+                                        style="background: ${isCompleted ? completionColor : 'rgba(39,174,96,0.1)'};
                                                color: ${isCompleted ? 'white' : '#27ae60'}; 
-                                               border: 1px solid #27ae60; 
+                                               border: 1px solid ${isCompleted ? completionColor : '#27ae60'};
                                                border-radius: 6px; 
                                                width: 36px; height: 32px;
                                                cursor: pointer; 
@@ -19559,8 +20427,8 @@
                         </div>
                         
                         ${isCompleted ? `
-                        <div style="font-size: 11px; color: #27ae60; font-weight: 600; margin-bottom: 10px; padding: 4px 8px; background: rgba(39,174,96,0.1); border-radius: 4px; text-align: center;">
-                            ✓ Completed: ${completedTestLabel}${completedSourceLabel}
+                        <div style="font-size: 11px; color: ${completionColor}; font-weight: 700; margin-bottom: 10px; padding: 5px 8px; background: color-mix(in srgb, ${completionColor} 11%, transparent); border: 1px solid color-mix(in srgb, ${completionColor} 28%, transparent); border-radius: 5px; text-align: center;">
+                            ${building.completionType === 'PVI' ? 'P' : building.completionType === 'Category' ? 'C' : '✓'} ${completedTestLabel}${completedSourceLabel}
                         </div>` : ''}
                         
                         ${isInProcess ? `
@@ -19636,13 +20504,16 @@
                         <div style="margin-bottom: 10px; background: rgba(26,115,232,0.08); border-radius: 6px; border: 1px solid rgba(26,115,232,0.25); overflow: hidden;">
                             <div onclick="toggleMapScheduleEditor('${building.bin}')"
                                  style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 10px; cursor: pointer;">
-                                <span style="font-size: 12px; color: #1a73e8; font-weight: 600;">🗓️ Scheduled Test Dates${hasScheduledTestDates ? ' (' + scheduledDatesForBuilding.length + ')' : ''}</span>
+                                <span style="font-size: 12px; color: #1a73e8; font-weight: 600;">🗓️ Scheduled Test Dates${hasScheduledTestDates ? ' (' + scheduledTestDayCount + ')' : ''}</span>
                                 <span id="mapScheduleArrow_${building.bin}" style="font-size: 11px; color: #1a73e8; font-weight: 700;">${hasScheduledTestDates ? '▲' : '▼'}</span>
                             </div>
                             <div id="mapScheduleEditor_${building.bin}" style="display: ${hasScheduledTestDates ? 'block' : 'none'}; padding: 0 10px 10px 10px;">
                                 <div style="display: flex; justify-content: flex-end; margin-bottom: 6px;">
                                     <button onclick="openTestDatesModal('${building.bin}')"
                                             style="background: #1a73e8; border: none; border-radius: 4px; padding: 3px 10px; cursor: pointer; color: white; font-size: 11px; font-weight: 600;">+ Add / Edit</button>
+                                </div>
+                                <div id="mapCategoryCompletionStatus_${building.bin}">
+                                    ${renderMapCategoryCompletionStatusHtml(building.bin)}
                                 </div>
                                 <div id="mapScheduleDateList_${building.bin}">
                                     ${renderMapScheduleDateRows(building.bin)}
@@ -20168,8 +21039,11 @@
                 const searchInput = document.getElementById('mapSearchInput');
 
                 if (controlsPanel && typeof loadedState.controlsPanelVisible === 'boolean') {
-                    controlsPanel.style.display = loadedState.controlsPanelVisible ? 'flex' : 'none';
-                    if (loadedState.controlsPanelVisible && !mapControlsPanelIsPopped) {
+                    // A saved wide-screen preference must not reopen Settings when
+                    // the same map file is loaded on a narrow page.
+                    const restoreControlsPanelVisible = loadedState.controlsPanelVisible && !isMapControlsNarrowLayout();
+                    controlsPanel.style.display = restoreControlsPanelVisible ? 'flex' : 'none';
+                    if (restoreControlsPanelVisible && !mapControlsPanelIsPopped) {
                         setDockedMapControlsToDefaultWidth(controlsPanel);
                     }
                     setTimeout(() => {
@@ -30996,11 +31870,12 @@
             }
         }
     });
+
     </script>
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5.6</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5.7</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
