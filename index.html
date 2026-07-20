@@ -13975,11 +13975,14 @@
 
         function mapViewHasScheduledDates(view, bin, building) {
             const key = String(bin);
+            // Only active schedules count — completed.scheduledDates are historical and must not
+            // keep a building in the Scheduled Test Dates filter after it is marked complete.
             const testDates = getMapScheduleDates(view.testDates && view.testDates[key]);
-            const completedDates = getMapScheduleDates(view.completed && view.completed[key] && view.completed[key].scheduledDates);
-            const buildingDates = getMapScheduleDates(building && building.scheduledDates);
             const liveDates = getTestDatesForBin(key);
-            return testDates.length > 0 || completedDates.length > 0 || buildingDates.length > 0 || liveDates.length > 0;
+            if (testDates.length > 0 || liveDates.length > 0) return true;
+            if (mapViewIsCompleted(view, key, building)) return false;
+            const buildingDates = getMapScheduleDates(building && building.scheduledDates);
+            return buildingDates.length > 0;
         }
 
         function mapViewIsCompleted(view, bin, building) {
@@ -16674,9 +16677,12 @@
             const existing = completed[bin] || {};
             const suppliedSchedule = normalizeMapScheduleRecord(opts.scheduledDates || savedSchedule);
             const existingSchedule = normalizeMapScheduleRecord(existing.scheduledDates);
-            const capturePvi = completionType === 'PVI' || completionType === 'Full';
-            const captureCategory = completionType === 'Category' || completionType === 'Full';
-            const captureGeneral = completionType === 'Full';
+            const clearAllScheduled = !!opts.clearAllScheduled;
+            const capturePvi = clearAllScheduled || completionType === 'PVI' || completionType === 'Full' || completionType === 'Legacy';
+            const captureCategory = clearAllScheduled || completionType === 'Category' || completionType === 'Full' || completionType === 'Legacy';
+            // Unspecified/legacy dates have no type — capture (and clear) them with any completion
+            // so the building leaves the Scheduled Test Dates list.
+            const captureGeneral = clearAllScheduled || !!completionType;
             const capturedSchedule = {
                 pvi: capturePvi ? suppliedSchedule.pvi : [],
                 category: captureCategory ? suppliedSchedule.category : [],
@@ -16702,7 +16708,11 @@
                 ...(markedCompletedAt ? { markedCompletedAt } : {}),
                 status: 'Completed'
             };
-            clearScheduledDatesForCompletion(bin, completionType);
+            if (clearAllScheduled) {
+                delete mapTestDates[bin];
+            } else {
+                clearScheduledDatesForCompletion(bin, completionType);
+            }
             setMapCompleted(completed);
             return { address, savedDates, savedSchedule: capturedSchedule, completionType };
         }
@@ -18250,9 +18260,13 @@
             if (!mapTestDates[bin]) return;
             const record = normalizeMapScheduleRecord(mapTestDates[bin]);
             const normalized = normalizeMapCompletedTestType(completionType);
-            if (normalized === 'PVI' || normalized === 'Full') record.pvi = [];
-            if (normalized === 'Category' || normalized === 'Full') record.category = [];
-            if (normalized === 'Full') record.general = [];
+            if (normalized === 'PVI' || normalized === 'Full' || normalized === 'Legacy') record.pvi = [];
+            if (normalized === 'Category' || normalized === 'Full' || normalized === 'Legacy') record.category = [];
+            // Unspecified/legacy schedule dates (Excel import, older map files) are not typed.
+            // Clear them on any completion so the building leaves Scheduled Test Dates.
+            if (normalized === 'PVI' || normalized === 'Category' || normalized === 'Full' || normalized === 'Legacy') {
+                record.general = [];
+            }
             if (getMapScheduleDates(record).length > 0) mapTestDates[bin] = record;
             else delete mapTestDates[bin];
         }
@@ -19248,7 +19262,10 @@
                     scheduledDates: allDates,
                     testType: completionType,
                     source: 'Manual',
-                    markedCompletedAt: existing.markedCompletedAt || Date.now()
+                    markedCompletedAt: existing.markedCompletedAt || Date.now(),
+                    // Manual completion from Scheduled Test Dates always removes the building
+                    // from that list and moves the saved schedule into Completed.
+                    clearAllScheduled: true
                 });
                 addMapActivity('Completed scheduled test', {
                     type: 'Completed',
