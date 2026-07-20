@@ -1005,8 +1005,11 @@
                                 <span>📄</span> <span>Save As</span>
                             </button>
                             <div class="map-modal-dob-group" style="display: flex; align-items: center; gap: 5px; flex-wrap: wrap;">
-                                <button id="mapDeviceSearchButton" onclick="runMapDeviceSearch()" title="Search BINs for new devices not already on the map" style="background: #17a2b8; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
-                                    <span>🔍</span> <span id="mapDeviceSearchButtonLabel">Device Search</span>
+                                <button id="mapTableViewButton" onclick="openMapTableView()" title="View, filter, and edit the data loaded into this map" style="background: #198754; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
+                                    <span>▦</span> <span>Table View</span>
+                                </button>
+                                <button id="mapLiveTableButton" hidden onclick="toggleMapLiveTable()" aria-pressed="false" title="Open a floating table containing only the currently displayed locations" style="background: #0f766e; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
+                                    <span>▤</span> <span>Live Table</span>
                                 </button>
                                 <button id="mapDobUpdateButton" onclick="updateMapViewDobInfo()" title="Refresh saved device test dates from DOB" style="background: #0d6efd; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
                                     <span>🔄</span> <span id="mapDobUpdateButtonLabel">DOB Info Update</span>
@@ -1498,8 +1501,51 @@
                         <div class="mcp-rh mcp-rh-br"     onmousedown="event.stopPropagation();_startPanelResize(event,'br')"></div>
                     </div>
                 </div>
-                <div style="padding: 8px 20px; background: var(--panel-bg); border-top: 1px solid var(--input-border); font-size: 0.85em; color: var(--text-color); display: flex; justify-content: space-between; align-items: center;">
-                    <span style="opacity: 0.7;">Click a marker to view building details</span>
+                <style>
+                    #mapLiveTablePanel { display:none; position:absolute; right:18px; bottom:44px; width:min(980px,calc(100% - 36px)); height:min(340px,46%); min-width:320px; min-height:180px; max-width:calc(100% - 20px); max-height:calc(100% - 90px); z-index:1800; border:1px solid var(--input-border); border-top:3px solid #0f766e; border-radius:10px; box-shadow:0 12px 36px rgba(0,0,0,.45); background:var(--card-bg); color:var(--text-color); overflow:hidden; flex-direction:column; box-sizing:border-box; }
+                    #mapLiveTablePanel .mlt-resize-handle { position:absolute; top:0; left:10px; right:10px; height:7px; z-index:4; cursor:ns-resize; background:linear-gradient(180deg,rgba(15,118,110,.32),transparent); touch-action:none; }
+                    #mapLiveTablePanel .mlt-header { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 9px 5px; background:var(--panel-bg); border-bottom:1px solid var(--input-border); flex-shrink:0; }
+                    #mapLiveTablePanel .mlt-title { color:var(--header-color); font-size:12px; font-weight:800; white-space:nowrap; cursor:move; user-select:none; touch-action:none; }
+                    #mapLiveTableTabs { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+                    #mapLiveTableTabs button { padding:4px 8px; border:1px solid var(--input-border); border-radius:5px; background:var(--input-bg); color:var(--text-color); cursor:pointer; font-size:10px; font-weight:700; }
+                    #mapLiveTableTabs button.active { background:#0f766e; border-color:#0f766e; color:#fff; }
+                    #mapLiveTableSearch { min-width:150px; flex:1 1 210px; max-width:340px; padding:5px 8px; border:1px solid var(--input-border); border-radius:5px; background:var(--input-bg); color:var(--text-color); font-size:10px; }
+                    #mapLiveTablePanel .mlt-close { border:1px solid var(--input-border); border-radius:5px; padding:3px 8px; background:var(--input-bg); color:var(--text-color); cursor:pointer; font-size:13px; line-height:1; }
+                    #mapLiveTableGrid { flex:1; min-height:0; overflow:auto; position:relative; isolation:isolate; }
+                    #mapLiveTableGrid table { border-collapse:separate; border-spacing:0; width:max-content; min-width:100%; font-size:10px; }
+                    #mapLiveTableGrid thead { position:sticky; top:0; z-index:20; }
+                    #mapLiveTableGrid th, #mapLiveTableGrid td { min-width:145px; max-width:250px; height:30px; padding:6px 8px; border-right:1px solid var(--input-border); border-bottom:1px solid var(--input-border); background:var(--card-bg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left; }
+                    #mapLiveTableGrid th { padding:0; height:31px; background:var(--panel-bg); }
+                    #mapLiveTableGrid th button { width:100%; height:100%; padding:6px 8px; border:0; background:transparent; color:var(--header-color); cursor:pointer; text-align:left; font:inherit; font-weight:800; white-space:nowrap; }
+                    #mapLiveTableGrid th:first-child, #mapLiveTableGrid td:first-child { position:sticky; left:0; z-index:4; min-width:220px; max-width:280px; }
+                    #mapLiveTableGrid th:first-child { z-index:22; }
+                    #mapLiveTableGrid tbody tr { cursor:pointer; }
+                    #mapLiveTableGrid tbody tr:hover td { background:color-mix(in srgb,var(--panel-bg) 82%,#0f766e 18%); }
+                    #mapLiveTableGrid .mlt-empty { padding:24px!important; text-align:center; opacity:.65; cursor:default; }
+                    #mapLiveTablePanel .mlt-footer { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:4px 9px; background:var(--panel-bg); border-top:1px solid var(--input-border); flex-shrink:0; font-size:10px; }
+                    #mapLiveTablePanel .mlt-footer button { padding:3px 8px; border:1px solid var(--input-border); border-radius:5px; background:var(--input-bg); color:var(--text-color); cursor:pointer; font-size:10px; }
+                    #mapLiveTablePanel .mlt-footer button:disabled { opacity:.42; cursor:not-allowed; }
+                    @media (max-width:700px) { #mapLiveTablePanel { right:8px; bottom:38px; width:calc(100% - 16px); min-width:0; height:min(330px,52%); max-width:calc(100% - 16px); max-height:calc(100% - 80px); } #mapLiveTablePanel .mlt-title { width:100%; } }
+                </style>
+                <div id="mapLiveTablePanel" role="dialog" aria-modal="false" aria-label="Currently displayed MAP data table">
+                    <div class="mlt-resize-handle" title="Drag to resize the table" onmousedown="startMapLiveTableResize(event)" ontouchstart="startMapLiveTableResize(event)"></div>
+                    <div class="mlt-header">
+                        <span class="mlt-title" title="Drag to move the floating table" onmousedown="startMapLiveTableDrag(event)" ontouchstart="startMapLiveTableDrag(event)">▤ Currently Displayed MAP Data</span>
+                        <div id="mapLiveTableTabs" role="tablist"></div>
+                        <input id="mapLiveTableSearch" type="search" placeholder="Filter the displayed rows…" aria-label="Filter currently displayed MAP data" oninput="setMapLiveTableFilter(this.value)">
+                        <span id="mapLiveTableScopeCount" style="font-size:10px;opacity:.72;white-space:nowrap;"></span>
+                        <button type="button" class="mlt-close" onclick="toggleMapLiveTable(false)" title="Close Live Table">×</button>
+                    </div>
+                    <div id="mapLiveTableGrid"></div>
+                    <div class="mlt-footer">
+                        <span id="mapLiveTableSummary"></span>
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <span style="opacity:.62;">Click a row to locate it on the map</span>
+                            <button id="mapLiveTablePrevious" type="button" onclick="changeMapLiveTablePage(-1)">← Previous</button>
+                            <span id="mapLiveTablePage"></span>
+                            <button id="mapLiveTableNext" type="button" onclick="changeMapLiveTablePage(1)">Next →</button>
+                        </div>
+                    </div>
                 </div>
                 <!-- Resize handles (only shown in windowed mode) -->
                 <style>
@@ -12179,6 +12225,1676 @@
             return keys;
         }
 
+        function formatMapTableColumnLabel(key) {
+            return String(key || '')
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, letter => letter.toUpperCase());
+        }
+
+        function orderMapTableKeys(keys, preferredKeys) {
+            const remaining = new Set(keys || []);
+            const ordered = [];
+            (preferredKeys || []).forEach(key => {
+                if (!remaining.has(key)) return;
+                ordered.push(key);
+                remaining.delete(key);
+            });
+            return ordered.concat(Array.from(remaining).sort((a, b) => String(a).localeCompare(String(b))));
+        }
+
+        function getMapTableValueType(value) {
+            if (Array.isArray(value)) return 'array';
+            if (value && typeof value === 'object') return 'object';
+            if (typeof value === 'number') return 'number';
+            if (typeof value === 'boolean') return 'boolean';
+            return 'string';
+        }
+
+        function formatMapTableCellValue(value) {
+            if (value === null || value === undefined) return '';
+            if (value instanceof Date) return value.toISOString();
+            if (Array.isArray(value) || typeof value === 'object') {
+                try {
+                    return JSON.stringify(value);
+                } catch (error) {
+                    return String(value);
+                }
+            }
+            return String(value);
+        }
+
+        function formatMapTableReadableDate(value) {
+            if (!value) return 'Not filed';
+            const parsed = parseMapInspectionDate(value);
+            if (!parsed) return formatMapTableCellValue(value);
+            return parsed.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            });
+        }
+
+        function parseMapTableReadableDate(rawValue) {
+            const value = String(rawValue || '').trim();
+            if (!value || value.toLowerCase() === 'not filed') return { valid: true, value: '' };
+            const parsed = parseMapTableSingleDateInput(value);
+            return parsed.valid
+                ? parsed
+                : { valid: false, message: 'Enter a valid inspection date or leave it blank.' };
+        }
+
+        function parseMapTableCellValue(rawValue, valueType) {
+            const raw = String(rawValue === undefined || rawValue === null ? '' : rawValue);
+            if (valueType === 'number') {
+                if (!raw.trim()) return { valid: true, value: '' };
+                const value = Number(raw);
+                return Number.isFinite(value)
+                    ? { valid: true, value }
+                    : { valid: false, message: 'Enter a valid number.' };
+            }
+            if (valueType === 'boolean') {
+                const normalized = raw.trim().toLowerCase();
+                if (['true', 'yes', '1'].includes(normalized)) return { valid: true, value: true };
+                if (['false', 'no', '0'].includes(normalized)) return { valid: true, value: false };
+                return { valid: false, message: 'Enter true or false.' };
+            }
+            if (valueType === 'array' || valueType === 'object') {
+                if (!raw.trim()) return { valid: true, value: valueType === 'array' ? [] : {} };
+                try {
+                    const value = JSON.parse(raw);
+                    const validShape = valueType === 'array'
+                        ? Array.isArray(value)
+                        : !!value && typeof value === 'object' && !Array.isArray(value);
+                    return validShape
+                        ? { valid: true, value }
+                        : { valid: false, message: `Enter valid JSON for an ${valueType}.` };
+                } catch (error) {
+                    return { valid: false, message: `Enter valid JSON for an ${valueType}.` };
+                }
+            }
+            return { valid: true, value: raw };
+        }
+
+        function syncMapTableBuildingAddress(bin, address) {
+            [mapFavorites, mapHidden, mapCompleted, mapInProcess, mapHold, mapDeviceMonitors].forEach(store => {
+                if (store && store[bin] && typeof store[bin] === 'object') store[bin].address = address;
+            });
+        }
+
+        function syncMapTableDeviceNumber(bin, previousNumber, nextNumber) {
+            const previousKey = getMapCat5BypassKey(bin, previousNumber);
+            const nextKey = getMapCat5BypassKey(bin, nextNumber);
+            if (!previousNumber || !nextNumber || previousKey === nextKey || !mapCat5Bypasses[previousKey]) return;
+            const entry = mapCat5Bypasses[previousKey];
+            delete mapCat5Bypasses[previousKey];
+            mapCat5Bypasses[nextKey] = {
+                ...entry,
+                bin: String(bin || ''),
+                deviceNumber: String(nextNumber)
+            };
+        }
+
+        function parseMapTableDateListInput(rawValue) {
+            const values = String(rawValue || '').split(/[;,\n]+/).map(value => value.trim()).filter(Boolean);
+            const normalized = [];
+            for (const value of values) {
+                const parsed = normalizeMapDateList([value]);
+                const parsedDate = parsed.length ? parseMapInspectionDate(parsed[0]) : null;
+                const normalizedDate = parsedDate ? formatLocalDateInputValue(parsedDate) : '';
+                if (!normalizedDate || normalizedDate !== parsed[0]) {
+                    return { valid: false, message: `“${value}” is not a valid testing date. Use YYYY-MM-DD or MM/DD/YY.` };
+                }
+                if (!normalized.includes(normalizedDate)) normalized.push(normalizedDate);
+            }
+            normalized.sort();
+            return { valid: true, value: normalized };
+        }
+
+        function parseMapTableSingleDateInput(rawValue) {
+            const value = String(rawValue || '').trim();
+            if (!value) return { valid: true, value: '' };
+            const parsed = parseMapInspectionDate(value);
+            const normalized = parsed ? formatLocalDateInputValue(parsed) : '';
+            if (!normalized || (/^\d{4}-\d{2}-\d{2}$/.test(value) && normalized !== value)) {
+                return { valid: false, message: 'Enter a valid date.' };
+            }
+            return { valid: true, value: normalized };
+        }
+
+        function getMapTablePlanningAddress(bin, group) {
+            if (group) return group.address || group.customName || group.label || '';
+            const sources = [mapCompleted, mapInProcess, mapHold, mapFavorites, mapHidden, mapDeviceMonitors];
+            for (const source of sources) {
+                if (source && source[bin] && source[bin].address) return source[bin].address;
+            }
+            return '';
+        }
+
+        function setMapTableFlagEntry(store, bin, enabled, address, extraValues) {
+            if (!enabled) {
+                delete store[bin];
+                return;
+            }
+            const existing = store[bin] && typeof store[bin] === 'object' ? store[bin] : {};
+            store[bin] = {
+                ...existing,
+                address: address || existing.address || '',
+                timestamp: existing.timestamp || Date.now(),
+                ...(extraValues || {})
+            };
+        }
+
+        function commitMapTableDeviceManualRow(row) {
+            if (!row || !row.manualChangedFields || row.manualChangedFields.size === 0) return;
+            const deviceNumber = String(row.device && row.device.device_number || '').trim();
+            if (!row.bin || !deviceNumber) return;
+            setMapDeviceCat5Bypass(row.bin, deviceNumber, {
+                bypassed: !!row.manualValues.cat5Bypassed,
+                note: row.manualValues.cat5BypassNote || ''
+            });
+            row.manualChangedFields.clear();
+        }
+
+        function commitMapTablePlanningRow(row) {
+            if (!row || !row.bin || !row.changedFields || row.changedFields.size === 0) return;
+            const bin = row.bin;
+            const address = getMapTablePlanningAddress(bin, row.group) || row.address || '';
+            const values = row.values;
+
+            if (values.scheduledMonth) mapMonthLabels[bin] = values.scheduledMonth;
+            else delete mapMonthLabels[bin];
+
+            if (values.note) mapNotes[bin] = values.note;
+            else delete mapNotes[bin];
+
+            const schedule = {
+                pvi: values.scheduledPviDates.slice(),
+                category: values.scheduledCategoryDates.slice(),
+                general: values.scheduledGeneralDates.slice()
+            };
+            if (getMapScheduleDates(schedule).length > 0) mapTestDates[bin] = schedule;
+            else delete mapTestDates[bin];
+
+            setMapTableFlagEntry(mapFavorites, bin, values.favorite, address);
+            setMapTableFlagEntry(mapHidden, bin, values.hidden, address);
+            setMapTableFlagEntry(mapInProcess, bin, values.inProcess, address, { date: values.inProcessDate || '' });
+            setMapTableFlagEntry(mapHold, bin, values.onHold, address);
+            setMapTableFlagEntry(mapDeviceMonitors, bin, values.deviceMonitor, address);
+
+            const completionType = normalizeMapCompletedTestType(values.completionType);
+            if (!completionType) {
+                delete mapCompleted[bin];
+            } else {
+                const existing = mapCompleted[bin] && typeof mapCompleted[bin] === 'object' ? mapCompleted[bin] : {};
+                const completionFieldsChanged = row.changedFields.has('completionType') || row.changedFields.has('completionDate');
+                const completionTypeChanged = row.changedFields.has('completionType');
+                const completionDate = values.completionDate
+                    ? new Date(values.completionDate + 'T00:00:00').getTime()
+                    : (existing.timestamp || Date.now());
+                const completedSchedule = {
+                    pvi: values.completedPviDates.slice(),
+                    category: values.completedCategoryDates.slice(),
+                    general: values.completedGeneralDates.slice()
+                };
+                if (completionTypeChanged) {
+                    if (completionType === 'PVI' || completionType === 'Full') {
+                        completedSchedule.pvi = Array.from(new Set([...completedSchedule.pvi, ...schedule.pvi])).sort();
+                    }
+                    if (completionType === 'Category' || completionType === 'Full') {
+                        completedSchedule.category = Array.from(new Set([...completedSchedule.category, ...schedule.category])).sort();
+                    }
+                    if (completionType === 'Full') {
+                        completedSchedule.general = Array.from(new Set([...completedSchedule.general, ...schedule.general])).sort();
+                    }
+                }
+                mapCompleted[bin] = {
+                    ...existing,
+                    address,
+                    timestamp: completionDate,
+                    scheduledDates: completedSchedule,
+                    completionType,
+                    testType: completionType,
+                    source: completionFieldsChanged ? 'Manual' : (existing.source || 'Manual'),
+                    ...((completionFieldsChanged && !existing.markedCompletedAt) ? { markedCompletedAt: Date.now() } : {}),
+                    status: 'Completed'
+                };
+                if (completionTypeChanged) clearScheduledDatesForCompletion(bin, completionType);
+            }
+            row.changedFields.clear();
+        }
+
+        function buildMapTableSheets() {
+            const results = window.lastBulkSearchResults || {};
+            const binGroups = results.binGroups || {};
+            const groupRows = Object.entries(binGroups).map(([bin, group]) => ({
+                bin,
+                group: group && typeof group === 'object' ? group : {},
+                sourceLabel: 'Building'
+            }));
+            getAdditionalLocations().forEach((location, locationIndex) => {
+                if (!location || typeof location !== 'object') return;
+                groupRows.push({
+                    bin: String(location.bin || ''),
+                    group: location,
+                    sourceLabel: 'Additional Location',
+                    locationIndex
+                });
+            });
+            const deviceRows = [];
+            const violationRows = [];
+
+            groupRows.forEach(groupRow => {
+                const devices = Array.isArray(groupRow.group.devices) ? groupRow.group.devices : [];
+                devices.forEach((device, deviceIndex) => {
+                    const normalizedDevice = device && typeof device === 'object' ? device : {};
+                    const bypassEntry = getMapDeviceCat5Bypass(groupRow.bin, normalizedDevice.device_number);
+                    const deviceRow = {
+                        bin: groupRow.bin,
+                        group: groupRow.group,
+                        device: normalizedDevice,
+                        deviceIndex,
+                        sourceLabel: groupRow.sourceLabel,
+                        manualValues: {
+                            cat5Bypassed: !!(bypassEntry && bypassEntry.bypassed),
+                            cat5BypassNote: bypassEntry && bypassEntry.note ? String(bypassEntry.note) : ''
+                        },
+                        manualChangedFields: new Set()
+                    };
+                    deviceRows.push(deviceRow);
+                    const violations = Array.isArray(normalizedDevice.violations) ? normalizedDevice.violations : [];
+                    violations.forEach((violation, violationIndex) => {
+                        violationRows.push({
+                            bin: groupRow.bin,
+                            group: groupRow.group,
+                            device: normalizedDevice,
+                            violation: violation && typeof violation === 'object' ? violation : {},
+                            violationIndex,
+                            sourceLabel: groupRow.sourceLabel
+                        });
+                    });
+                });
+            });
+
+            const hiddenFieldNames = new Set([
+                'housenumber', 'bbl', 'block', 'censustract', 'citycouncildistrict', 'citycouncildstrict',
+                'communitydistrict', 'latitude', 'longitude', 'lot', 'ntaname', 'nitaname',
+                'streetname', 'borough', 'equipmenttype', 'devicebin', 'source', 'sourcelabel'
+            ]);
+            const normalizeTableFieldName = key => String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const isHiddenTableField = key => {
+                const normalized = normalizeTableFieldName(key);
+                return hiddenFieldNames.has(normalized)
+                    || (normalized.startsWith('cat1') && normalized.includes('report') && normalized.endsWith('year'))
+                    || (normalized.startsWith('periodic') && normalized.includes('report') && normalized.endsWith('year'));
+            };
+            const isSourceTableField = key => ['source', 'sourcelabel'].includes(normalizeTableFieldName(key));
+            const groupKeys = orderMapTableKeys(
+                collectMapExcelObjectKeys(groupRows.map(row => row.group), ['devices', 'bin', 'address'])
+                    .filter(key => !isSourceTableField(key)),
+                ['address', 'latitude', 'longitude']
+            );
+            const orderedDeviceKeys = orderMapTableKeys(
+                collectMapExcelObjectKeys(deviceRows.map(row => row.device), ['violations'])
+                    .filter(key => !isSourceTableField(key)),
+                [
+                    'device_number', 'device_type', 'device_status', 'machine_type', 'bin',
+                    'periodic_latest_inspection', 'cat1_latest_report_filed', 'cat5_latest_report_filed'
+                ]
+            );
+            const deviceKeys = orderedDeviceKeys;
+            const violationKeys = orderMapTableKeys(
+                collectMapExcelObjectKeys(violationRows.map(row => row.violation), [])
+                    .filter(key => !isSourceTableField(key)),
+                ['violation_number', 'violation_status', 'violation_date', 'violation_type', 'violation_description']
+            );
+            const notFound = Array.isArray(results.notFound) ? results.notFound : [];
+            const notFoundRows = notFound.map((value, index) => ({ value, index, source: notFound }));
+            const groupRowByBin = new Map();
+            groupRows.forEach(row => {
+                if (!row.bin) return;
+                if (!groupRowByBin.has(row.bin) || row.sourceLabel === 'Building') groupRowByBin.set(row.bin, row);
+            });
+            const planningBins = new Set(groupRowByBin.keys());
+            [mapMonthLabels, mapTestDates, mapNotes, mapFavorites, mapHidden, mapInProcess, mapHold, mapDeviceMonitors, mapCompleted]
+                .forEach(store => Object.keys(store || {}).forEach(bin => planningBins.add(String(bin))));
+            const planningRows = Array.from(planningBins).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(bin => {
+                const groupRow = groupRowByBin.get(bin);
+                const group = groupRow ? groupRow.group : null;
+                const schedule = normalizeMapScheduleRecord(mapTestDates[bin]);
+                const completedEntry = mapCompleted[bin] && typeof mapCompleted[bin] === 'object' ? mapCompleted[bin] : null;
+                const completedSchedule = normalizeMapScheduleRecord(completedEntry && completedEntry.scheduledDates);
+                return {
+                    bin,
+                    group,
+                    sourceLabel: groupRow ? groupRow.sourceLabel : 'Saved MAP State',
+                    address: getMapTablePlanningAddress(bin, group),
+                    changedFields: new Set(),
+                    values: {
+                        scheduledMonth: mapMonthLabels[bin] || '',
+                        scheduledPviDates: schedule.pvi.slice(),
+                        scheduledCategoryDates: schedule.category.slice(),
+                        scheduledGeneralDates: schedule.general.slice(),
+                        completedPviDates: completedSchedule.pvi.slice(),
+                        completedCategoryDates: completedSchedule.category.slice(),
+                        completedGeneralDates: completedSchedule.general.slice(),
+                        note: mapNotes[bin] || '',
+                        favorite: !!mapFavorites[bin],
+                        hidden: !!mapHidden[bin],
+                        inProcess: !!mapInProcess[bin],
+                        inProcessDate: mapInProcess[bin] && mapInProcess[bin].date ? String(mapInProcess[bin].date) : '',
+                        onHold: !!mapHold[bin],
+                        deviceMonitor: !!mapDeviceMonitors[bin],
+                        completionType: completedEntry ? normalizeMapCompletedTestType(completedEntry.completionType || completedEntry.testType) : '',
+                        completionDate: completedEntry && completedEntry.timestamp ? formatLocalDateInputValue(completedEntry.timestamp) : '',
+                        completionSource: completedEntry && completedEntry.source ? String(completedEntry.source) : ''
+                    }
+                };
+            });
+
+            const readOnlyColumn = (id, label, getter, options) => ({ id, label, readOnly: true, get: getter, ...(options || {}) });
+            const fieldColumn = (scope, key, targetName, options) => ({
+                id: `${scope}:${key}`,
+                label: options && options.label ? options.label : formatMapTableColumnLabel(key),
+                readOnly: false,
+                get: row => row[targetName][key],
+                set: (row, value) => {
+                    const previousValue = row[targetName][key];
+                    row[targetName][key] = value;
+                    if (scope === 'building' && key === 'address') syncMapTableBuildingAddress(row.bin, value);
+                    if (scope === 'device' && key === 'device_number') syncMapTableDeviceNumber(row.bin, previousValue, value);
+                },
+                ...(options || {})
+            });
+            const deviceManualColumn = (id, label, field, options) => ({
+                id: `manual:${id}`,
+                label,
+                readOnly: false,
+                isReadOnly: row => !row.bin || !String(row.device && row.device.device_number || '').trim(),
+                get: row => row.manualValues[field],
+                set: (row, value) => {
+                    row.manualValues[field] = value;
+                    row.manualChangedFields.add(field);
+                },
+                ...(options || {})
+            });
+            const planningColumn = (id, label, field, options) => ({
+                id: `planning:${id}`,
+                label,
+                field,
+                readOnly: false,
+                get: row => row.values[field],
+                set: (row, value) => {
+                    row.values[field] = value;
+                    row.changedFields.add(field);
+                },
+                ...(options || {})
+            });
+            const planningDateListColumn = (id, label, field, scheduleType) => planningColumn(id, label, field, {
+                format: value => (Array.isArray(value) ? value : []).join('; '),
+                parse: (rawValue, row) => {
+                    const parsed = parseMapTableDateListInput(rawValue);
+                    if (!parsed.valid || !scheduleType) return parsed;
+                    for (const date of parsed.value) {
+                        const validation = validateMapScheduledTestDate(row.bin, scheduleType, date);
+                        if (!validation.valid) return { valid: false, message: validation.message };
+                    }
+                    return parsed;
+                }
+            });
+            const monthOptions = [{ value: '', label: 'No month' }].concat(ALL_MONTHS.map(month => ({ value: month, label: month })));
+            const completionOptions = [
+                { value: '', label: 'Not Completed' },
+                { value: 'Category', label: 'Category completed' },
+                { value: 'PVI', label: 'PVI completed' },
+                { value: 'Full', label: 'Full (existing/DOB)', disabled: true },
+                { value: 'Legacy', label: 'Legacy (existing)', disabled: true }
+            ];
+            const deviceDateColumns = {
+                periodic_latest_inspection: {
+                    label: 'Latest PVI Inspection',
+                    format: formatMapTableReadableDate,
+                    parse: parseMapTableReadableDate,
+                    sortValue: value => {
+                        const parsed = parseMapInspectionDate(value);
+                        return parsed ? parsed.getTime() : 0;
+                    }
+                },
+                cat1_latest_report_filed: {
+                    label: 'Latest CAT 1 Report Filed',
+                    format: formatMapTableReadableDate,
+                    parse: parseMapTableReadableDate,
+                    sortValue: value => {
+                        const parsed = parseMapInspectionDate(value);
+                        return parsed ? parsed.getTime() : 0;
+                    }
+                },
+                cat5_latest_report_filed: {
+                    label: 'Latest CAT 5 Report Filed',
+                    format: formatMapTableReadableDate,
+                    parse: parseMapTableReadableDate,
+                    sortValue: value => {
+                        const parsed = parseMapInspectionDate(value);
+                        return parsed ? parsed.getTime() : 0;
+                    }
+                },
+                status_date: {
+                    label: 'Status Date',
+                    format: formatMapTableReadableDate,
+                    parse: parseMapTableReadableDate,
+                    sortValue: value => {
+                        const parsed = parseMapInspectionDate(value);
+                        return parsed ? parsed.getTime() : 0;
+                    }
+                }
+            };
+
+            return [
+                {
+                    id: 'devices',
+                    label: 'Devices',
+                    rows: deviceRows,
+                    commitRow: commitMapTableDeviceManualRow,
+                    columns: [
+                        readOnlyColumn('context:address', 'Building Address', row => getMapTablePlanningAddress(row.bin, row.group)),
+                        readOnlyColumn('context:bin', 'BIN', row => row.bin, { defaultHidden: true }),
+                        readOnlyColumn('context:source', 'Source', row => row.sourceLabel, { defaultHidden: true }),
+                        deviceManualColumn('cat5_bypassed', 'CAT 5 Bypassed', 'cat5Bypassed', { inputType: 'boolean', defaultHidden: true }),
+                        deviceManualColumn('cat5_bypass_note', 'CAT 5 Bypass Note', 'cat5BypassNote', { multiline: true, defaultHidden: true }),
+                        ...deviceKeys.map(key => fieldColumn('device', key, 'device', {
+                            ...(deviceDateColumns[key] || {}),
+                            defaultHidden: isHiddenTableField(key) || String(key).toLowerCase() === 'bin'
+                        }))
+                    ]
+                },
+                {
+                    id: 'buildings',
+                    label: 'Buildings',
+                    rows: groupRows,
+                    columns: [
+                        readOnlyColumn('context:address', 'Building Address', row => getMapTablePlanningAddress(row.bin, row.group)),
+                        readOnlyColumn('context:bin', 'BIN', row => row.bin, { defaultHidden: true }),
+                        readOnlyColumn('context:source', 'Source', row => row.sourceLabel, { defaultHidden: true }),
+                        readOnlyColumn('context:device_count', 'Device Count', row => Array.isArray(row.group.devices) ? row.group.devices.length : 0),
+                        ...groupKeys.map(key => fieldColumn('building', key, 'group', { defaultHidden: isHiddenTableField(key) }))
+                    ]
+                },
+                {
+                    id: 'planning',
+                    label: 'Planning',
+                    rows: planningRows,
+                    commitRow: commitMapTablePlanningRow,
+                    columns: [
+                        readOnlyColumn('context:address', 'Building Address', row => getMapTablePlanningAddress(row.bin, row.group) || row.address),
+                        readOnlyColumn('context:bin', 'BIN', row => row.bin, { defaultHidden: true }),
+                        readOnlyColumn('context:source', 'Source', row => row.sourceLabel, { defaultHidden: true }),
+                        planningColumn('scheduled_month', 'Scheduled Test Month', 'scheduledMonth', {
+                            options: monthOptions,
+                            parse: rawValue => {
+                                const value = String(rawValue || '').trim();
+                                return !value || ALL_MONTHS.includes(value)
+                                    ? { valid: true, value }
+                                    : { valid: false, message: 'Choose a valid scheduled month.' };
+                            }
+                        }),
+                        planningDateListColumn('scheduled_category_dates', 'Scheduled Category Dates', 'scheduledCategoryDates', 'category'),
+                        planningDateListColumn('scheduled_pvi_dates', 'Scheduled PVI Dates', 'scheduledPviDates', 'pvi'),
+                        planningDateListColumn('scheduled_unspecified_dates', 'Scheduled Unspecified Dates', 'scheduledGeneralDates', ''),
+                        planningColumn('building_note', 'Building Note', 'note', { multiline: true }),
+                        planningColumn('favorite', 'Favorite', 'favorite', { inputType: 'boolean' }),
+                        planningColumn('hidden', 'Hidden', 'hidden', { inputType: 'boolean' }),
+                        planningColumn('in_process', 'In Process', 'inProcess', { inputType: 'boolean' }),
+                        planningColumn('in_process_date', 'In Process Date', 'inProcessDate', { parse: parseMapTableSingleDateInput }),
+                        planningColumn('on_hold', 'On Hold', 'onHold', { inputType: 'boolean' }),
+                        planningColumn('device_monitor', 'Device Monitor', 'deviceMonitor', { inputType: 'boolean' }),
+                        readOnlyColumn('planning:completion_status', 'Completion Status', row => row.values.completionType ? 'Completed' : 'Not Completed'),
+                        planningColumn('completion_scope', 'Completion Scope', 'completionType', {
+                            options: completionOptions,
+                            parse: (rawValue, row) => {
+                                const value = normalizeMapCompletedTestType(rawValue);
+                                if (!String(rawValue || '').trim()) return { valid: true, value: '' };
+                                if (value === 'Category' || value === 'PVI') return { valid: true, value };
+                                if (value && value === row.values.completionType) return { valid: true, value };
+                                return { valid: false, message: 'Choose Category or PVI for a manual completion.' };
+                            }
+                        }),
+                        planningColumn('completion_date', 'Completion Date', 'completionDate', { parse: parseMapTableSingleDateInput }),
+                        readOnlyColumn('planning:completion_source', 'Completion Source', row => row.values.completionSource),
+                        planningDateListColumn('completed_pvi_dates', 'Completed Saved PVI Dates', 'completedPviDates', ''),
+                        planningDateListColumn('completed_category_dates', 'Completed Saved Category Dates', 'completedCategoryDates', ''),
+                        planningDateListColumn('completed_unspecified_dates', 'Completed Saved Unspecified Dates', 'completedGeneralDates', '')
+                    ]
+                },
+                {
+                    id: 'violations',
+                    label: 'Violations',
+                    rows: violationRows,
+                    columns: [
+                        readOnlyColumn('context:address', 'Building Address', row => getMapTablePlanningAddress(row.bin, row.group)),
+                        readOnlyColumn('context:bin', 'BIN', row => row.bin, { defaultHidden: true }),
+                        readOnlyColumn('context:source', 'Source', row => row.sourceLabel, { defaultHidden: true }),
+                        readOnlyColumn('context:device', 'Device Number', row => row.device.device_number || ''),
+                        ...violationKeys.map(key => fieldColumn('violation', key, 'violation', { defaultHidden: isHiddenTableField(key) }))
+                    ]
+                },
+                {
+                    id: 'not_found',
+                    label: 'Not Found',
+                    rows: notFoundRows,
+                    columns: [
+                        readOnlyColumn('context:row', 'Row', row => row.index + 1),
+                        {
+                            id: 'not_found:value',
+                            label: 'Saved Entry',
+                            readOnly: false,
+                            get: row => row.value,
+                            set: (row, value) => {
+                                row.value = value;
+                                row.source[row.index] = value;
+                            }
+                        }
+                    ]
+                }
+            ];
+        }
+
+        function getMapTableSheet(state, sheetId) {
+            return state.sheets.find(sheet => sheet.id === (sheetId || state.activeSheetId)) || state.sheets[0];
+        }
+
+        function getMapTableEditKey(sheetId, rowIndex, columnId) {
+            return `${sheetId}::${rowIndex}::${columnId}`;
+        }
+
+        function getMapTableVisibleCellValue(state, sheet, rowIndex, column) {
+            const edit = state.edits.get(getMapTableEditKey(sheet.id, rowIndex, column.id));
+            if (edit) return edit.rawValue;
+            const value = column.get(sheet.rows[rowIndex]);
+            return typeof column.format === 'function' ? column.format(value) : formatMapTableCellValue(value);
+        }
+
+        function ensureMapTableColumnVisibilityState(state) {
+            if (!state) return;
+            if (!state.hiddenColumnsBySheet || typeof state.hiddenColumnsBySheet !== 'object') {
+                state.hiddenColumnsBySheet = {};
+            }
+            (state.sheets || []).forEach(sheet => {
+                if (!(state.hiddenColumnsBySheet[sheet.id] instanceof Set)) {
+                    state.hiddenColumnsBySheet[sheet.id] = new Set(
+                        sheet.columns.filter(column => column.defaultHidden).map(column => column.id)
+                    );
+                    return;
+                }
+                const currentColumnIds = new Set(sheet.columns.map(column => column.id));
+                Array.from(state.hiddenColumnsBySheet[sheet.id]).forEach(columnId => {
+                    if (!currentColumnIds.has(columnId)) state.hiddenColumnsBySheet[sheet.id].delete(columnId);
+                });
+            });
+        }
+
+        function getMapTableVisibleColumns(state, sheet) {
+            ensureMapTableColumnVisibilityState(state);
+            const hiddenColumns = state.hiddenColumnsBySheet[sheet.id] || new Set();
+            const visibleColumns = sheet.columns.filter((column, index) => index === 0 || !hiddenColumns.has(column.id));
+            return visibleColumns.length ? visibleColumns : sheet.columns.slice(0, 1);
+        }
+
+        function invalidateMapTableValueCache(state, sheetId) {
+            if (!state || !state.valueCacheBySheet) return;
+            if (sheetId) delete state.valueCacheBySheet[sheetId];
+            else state.valueCacheBySheet = {};
+        }
+
+        function getMapTableCachedRowValues(state, sheet, visibleColumns) {
+            if (!state.valueCacheBySheet) state.valueCacheBySheet = {};
+            const columnSignature = visibleColumns.map(column => column.id).join('\u001f');
+            const existing = state.valueCacheBySheet[sheet.id];
+            if (existing && existing.rows === sheet.rows && existing.columnSignature === columnSignature) {
+                return existing.values;
+            }
+            const values = sheet.rows.map((row, rowIndex) => visibleColumns.map(column =>
+                String(getMapTableVisibleCellValue(state, sheet, rowIndex, column)).toLowerCase()
+            ));
+            state.valueCacheBySheet[sheet.id] = { rows: sheet.rows, columnSignature, values };
+            return values;
+        }
+
+        function getFilteredMapTableRows(state, sheet) {
+            const globalFilter = String(state.globalFilter || '').trim().toLowerCase();
+            const columnFilters = state.columnFilters[sheet.id] || {};
+            const visibleColumns = getMapTableVisibleColumns(state, sheet);
+            const normalizedColumnFilters = visibleColumns.map(column => String(columnFilters[column.id] || '').trim().toLowerCase());
+            const needsFiltering = !!globalFilter || normalizedColumnFilters.some(Boolean);
+            const cachedValues = needsFiltering ? getMapTableCachedRowValues(state, sheet, visibleColumns) : null;
+            const filtered = sheet.rows.map((row, rowIndex) => ({ row, rowIndex })).filter(entry => {
+                if (!needsFiltering) return true;
+                const values = cachedValues[entry.rowIndex];
+                if (globalFilter && !values.some(value => value.includes(globalFilter))) return false;
+                return normalizedColumnFilters.every((filterValue, columnIndex) =>
+                    !filterValue || values[columnIndex].includes(filterValue)
+                );
+            });
+
+            const sort = state.sortBySheet[sheet.id];
+            if (sort && sort.columnId) {
+                const column = sheet.columns.find(item => item.id === sort.columnId);
+                if (column) {
+                    const visibleColumnIndex = visibleColumns.findIndex(item => item.id === column.id);
+                    const sortableValues = visibleColumnIndex >= 0
+                        ? (cachedValues || getMapTableCachedRowValues(state, sheet, visibleColumns))
+                        : null;
+                    filtered.sort((left, right) => {
+                        const leftValue = typeof column.sortValue === 'function'
+                            ? column.sortValue(column.get(sheet.rows[left.rowIndex]), sheet.rows[left.rowIndex])
+                            : (sortableValues ? sortableValues[left.rowIndex][visibleColumnIndex] : getMapTableVisibleCellValue(state, sheet, left.rowIndex, column));
+                        const rightValue = typeof column.sortValue === 'function'
+                            ? column.sortValue(column.get(sheet.rows[right.rowIndex]), sheet.rows[right.rowIndex])
+                            : (sortableValues ? sortableValues[right.rowIndex][visibleColumnIndex] : getMapTableVisibleCellValue(state, sheet, right.rowIndex, column));
+                        const compared = typeof leftValue === 'number' && typeof rightValue === 'number'
+                            ? leftValue - rightValue
+                            : String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' });
+                        return sort.direction === 'desc' ? -compared : compared;
+                    });
+                }
+            }
+            return filtered;
+        }
+
+        // Change this to true to restore the Live Table without removing any of its implementation.
+        const MAP_LIVE_TABLE_ENABLED = false;
+        let mapLiveTableRefreshTimer = null;
+        let mapLiveTableResizeState = null;
+        let mapLiveTableDragState = null;
+
+        function getMapLiveTableDisplayScope() {
+            const bins = new Set();
+            const additionalGroups = new Set();
+            if (!buildingMap) return { bins, additionalGroups };
+
+            (mapMarkers || []).forEach((marker, index) => {
+                const building = mapBuildingsData && mapBuildingsData[index];
+                if (marker && building && buildingMap.hasLayer(marker)) bins.add(String(building.bin));
+            });
+            const locations = getAdditionalLocations();
+            (additionalLocationMarkers || []).forEach((marker, index) => {
+                const location = locations[index];
+                if (marker && location && buildingMap.hasLayer(marker)) additionalGroups.add(location);
+            });
+            return { bins, additionalGroups };
+        }
+
+        function rowIsInMapLiveTableScope(row, scope) {
+            if (!row || !scope) return false;
+            if (row.group && scope.additionalGroups.has(row.group)) return true;
+            return !!row.bin && scope.bins.has(String(row.bin));
+        }
+
+        function buildMapLiveTableSheets(scope) {
+            const includedSheetIds = new Set(['buildings', 'devices', 'planning', 'violations']);
+            return buildMapTableSheets()
+                .filter(sheet => includedSheetIds.has(sheet.id))
+                .map(sheet => ({
+                    ...sheet,
+                    rows: sheet.rows.filter(row => rowIsInMapLiveTableScope(row, scope))
+                }));
+        }
+
+        function getMapLiveTableState() {
+            const panel = document.getElementById('mapLiveTablePanel');
+            if (!panel) return null;
+            if (!panel._mapLiveTableState) {
+                panel._mapLiveTableState = {
+                    sheets: [],
+                    activeSheetId: 'buildings',
+                    edits: new Map(),
+                    globalFilter: '',
+                    columnFilters: {},
+                    sortBySheet: {},
+                    page: 1,
+                    pageSize: 50
+                };
+            }
+            return panel._mapLiveTableState;
+        }
+
+        function isMapLiveTableOpen() {
+            const panel = document.getElementById('mapLiveTablePanel');
+            return !!panel && panel.style.display === 'flex';
+        }
+
+        function getMapLiveTableSheet(state) {
+            return state.sheets.find(sheet => sheet.id === state.activeSheetId) || state.sheets[0] || null;
+        }
+
+        function renderMapLiveTable() {
+            const panel = document.getElementById('mapLiveTablePanel');
+            const state = getMapLiveTableState();
+            const grid = document.getElementById('mapLiveTableGrid');
+            if (!panel || !isMapLiveTableOpen() || !state || !grid) return;
+
+            const sheet = getMapLiveTableSheet(state);
+            const tabs = document.getElementById('mapLiveTableTabs');
+            if (tabs) {
+                tabs.innerHTML = state.sheets.map(item => `
+                    <button type="button" class="${item.id === state.activeSheetId ? 'active' : ''}" data-map-live-table-sheet="${escapeMapSuggestionHtml(item.id)}" aria-selected="${item.id === state.activeSheetId ? 'true' : 'false'}">
+                        ${escapeMapSuggestionHtml(item.label)} (${item.rows.length})
+                    </button>`).join('');
+                tabs.querySelectorAll('[data-map-live-table-sheet]').forEach(button => {
+                    button.addEventListener('click', () => setMapLiveTableSheet(button.dataset.mapLiveTableSheet));
+                });
+            }
+
+            if (!sheet) {
+                grid.innerHTML = '<div class="mlt-empty">No displayed MAP data is available.</div>';
+                return;
+            }
+
+            const visibleColumns = getMapTableVisibleColumns(state, sheet);
+            const filteredRows = getFilteredMapTableRows(state, sheet);
+            const totalPages = Math.max(1, Math.ceil(filteredRows.length / state.pageSize));
+            state.page = Math.max(1, Math.min(state.page, totalPages));
+            const start = (state.page - 1) * state.pageSize;
+            const pageRows = filteredRows.slice(start, start + state.pageSize);
+            const sort = state.sortBySheet[sheet.id] || {};
+            const headers = visibleColumns.map(column => {
+                const indicator = sort.columnId === column.id ? (sort.direction === 'desc' ? ' ▼' : ' ▲') : '';
+                return `<th><button type="button" data-map-live-table-sort="${escapeMapSuggestionHtml(column.id)}" title="Sort by ${escapeMapSuggestionHtml(column.label)}">${escapeMapSuggestionHtml(column.label)}${indicator}</button></th>`;
+            }).join('');
+            const rowsHtml = pageRows.length ? pageRows.map(entry => {
+                const row = sheet.rows[entry.rowIndex];
+                const cells = visibleColumns.map(column => {
+                    const value = getMapTableVisibleCellValue(state, sheet, entry.rowIndex, column);
+                    return `<td title="${escapeMapSuggestionHtml(value)}">${escapeMapSuggestionHtml(value)}</td>`;
+                }).join('');
+                const isAdditional = !!(row && row.group && getAdditionalLocations().includes(row.group));
+                const latitude = row && row.group ? row.group.latitude : '';
+                const longitude = row && row.group ? row.group.longitude : '';
+                return `<tr data-map-live-row data-map-live-bin="${escapeMapSuggestionHtml(row && row.bin || '')}" data-map-live-additional="${isAdditional ? 'true' : 'false'}" data-map-live-latitude="${escapeMapSuggestionHtml(latitude || '')}" data-map-live-longitude="${escapeMapSuggestionHtml(longitude || '')}">${cells}</tr>`;
+            }).join('') : `<tr><td colspan="${Math.max(1, visibleColumns.length)}" class="mlt-empty">No ${escapeMapSuggestionHtml(sheet.label.toLowerCase())} match the current MAP display and table filter.</td></tr>`;
+
+            grid.innerHTML = `<table><thead><tr>${headers}</tr></thead><tbody>${rowsHtml}</tbody></table>`;
+            grid.querySelectorAll('[data-map-live-table-sort]').forEach(button => {
+                button.addEventListener('click', () => sortMapLiveTable(button.dataset.mapLiveTableSort));
+            });
+            grid.querySelectorAll('[data-map-live-row]').forEach(rowElement => {
+                rowElement.addEventListener('click', () => focusMapLiveTableRow(rowElement));
+            });
+            const first = filteredRows.length ? start + 1 : 0;
+            const last = Math.min(start + state.pageSize, filteredRows.length);
+            const summary = document.getElementById('mapLiveTableSummary');
+            const pageLabel = document.getElementById('mapLiveTablePage');
+            const previous = document.getElementById('mapLiveTablePrevious');
+            const next = document.getElementById('mapLiveTableNext');
+            if (summary) summary.textContent = `Showing ${first}–${last} of ${filteredRows.length} ${sheet.label.toLowerCase()}`;
+            if (pageLabel) pageLabel.textContent = `Page ${state.page} of ${totalPages}`;
+            if (previous) previous.disabled = state.page <= 1;
+            if (next) next.disabled = state.page >= totalPages;
+        }
+
+        function refreshMapLiveTable() {
+            const panel = document.getElementById('mapLiveTablePanel');
+            if (!panel || !isMapLiveTableOpen()) return;
+            const state = getMapLiveTableState();
+            const scope = getMapLiveTableDisplayScope();
+            state.sheets = buildMapLiveTableSheets(scope);
+            state.sheets.forEach(sheet => {
+                if (!state.columnFilters[sheet.id]) state.columnFilters[sheet.id] = {};
+                if (!state.sortBySheet[sheet.id]) state.sortBySheet[sheet.id] = {};
+            });
+            if (!state.sheets.some(sheet => sheet.id === state.activeSheetId)) {
+                state.activeSheetId = state.sheets.length ? state.sheets[0].id : 'buildings';
+            }
+            const count = scope.bins.size + scope.additionalGroups.size;
+            const countEl = document.getElementById('mapLiveTableScopeCount');
+            if (countEl) countEl.textContent = `${count} displayed location${count !== 1 ? 's' : ''}`;
+            renderMapLiveTable();
+        }
+
+        function scheduleMapLiveTableRefresh() {
+            const panel = document.getElementById('mapLiveTablePanel');
+            if (!panel || !isMapLiveTableOpen()) return;
+            if (mapLiveTableRefreshTimer) clearTimeout(mapLiveTableRefreshTimer);
+            mapLiveTableRefreshTimer = setTimeout(() => {
+                mapLiveTableRefreshTimer = null;
+                refreshMapLiveTable();
+            }, 60);
+        }
+
+        function setMapLiveTableSheet(sheetId) {
+            const state = getMapLiveTableState();
+            if (!state || !state.sheets.some(sheet => sheet.id === sheetId)) return;
+            state.activeSheetId = sheetId;
+            state.page = 1;
+            renderMapLiveTable();
+        }
+
+        function setMapLiveTableFilter(value) {
+            const state = getMapLiveTableState();
+            if (!state) return;
+            state.globalFilter = String(value || '');
+            state.page = 1;
+            renderMapLiveTable();
+        }
+
+        function sortMapLiveTable(columnId) {
+            const state = getMapLiveTableState();
+            const sheet = state && getMapLiveTableSheet(state);
+            if (!sheet || !sheet.columns.some(column => column.id === columnId)) return;
+            const current = state.sortBySheet[sheet.id] || {};
+            state.sortBySheet[sheet.id] = {
+                columnId,
+                direction: current.columnId === columnId && current.direction === 'asc' ? 'desc' : 'asc'
+            };
+            state.page = 1;
+            renderMapLiveTable();
+        }
+
+        function changeMapLiveTablePage(change) {
+            const state = getMapLiveTableState();
+            if (!state) return;
+            state.page += Number(change) || 0;
+            renderMapLiveTable();
+        }
+
+        function focusMapLiveTableRow(rowElement) {
+            if (!rowElement) return;
+            const isAdditional = rowElement.dataset.mapLiveAdditional === 'true';
+            const latitude = Number(rowElement.dataset.mapLiveLatitude);
+            const longitude = Number(rowElement.dataset.mapLiveLongitude);
+            if (isAdditional && Number.isFinite(latitude) && Number.isFinite(longitude)) {
+                flyToAdditionalLocation(latitude, longitude);
+                return;
+            }
+            const bin = rowElement.dataset.mapLiveBin;
+            if (bin) flyToMapBuilding(bin, { temporarilyShowHidden: true });
+        }
+
+        function setMapLiveTableManualPosition(panel, container) {
+            if (!panel || !container || !isMapLiveTableOpen()) return null;
+            const panelRect = panel.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            const edgeGap = 8;
+            const availableWidth = Math.max(1, containerRect.width - edgeGap * 2);
+            const availableHeight = Math.max(1, containerRect.height - edgeGap * 2);
+            const width = Math.min(panelRect.width, availableWidth);
+            const height = Math.min(panelRect.height, availableHeight);
+            const left = Math.max(edgeGap, Math.min(panelRect.left - containerRect.left, containerRect.width - width - edgeGap));
+            const top = Math.max(edgeGap, Math.min(panelRect.top - containerRect.top, containerRect.height - height - edgeGap));
+
+            panel.style.left = `${Math.round(left)}px`;
+            panel.style.top = `${Math.round(top)}px`;
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+            panel.style.width = `${Math.round(width)}px`;
+            panel.style.height = `${Math.round(height)}px`;
+            return { left, top, width, height };
+        }
+
+        function positionMapLiveTableWithinContainer() {
+            const panel = document.getElementById('mapLiveTablePanel');
+            const container = document.getElementById('mapModalContainer');
+            if (!panel || !container || !isMapLiveTableOpen()) return;
+            setMapLiveTableManualPosition(panel, container);
+        }
+
+        function startMapLiveTableDrag(event) {
+            const panel = document.getElementById('mapLiveTablePanel');
+            const container = document.getElementById('mapModalContainer');
+            if (!panel || !container || !isMapLiveTableOpen()) return;
+            if (typeof event.button === 'number' && event.button !== 0) return;
+            const point = event.touches && event.touches[0] ? event.touches[0] : event;
+            if (!point) return;
+            event.preventDefault();
+            event.stopPropagation();
+            stopMapLiveTableDrag();
+            stopMapLiveTableResize();
+            const position = setMapLiveTableManualPosition(panel, container);
+            if (!position) return;
+            mapLiveTableDragState = {
+                startX: point.clientX,
+                startY: point.clientY,
+                startLeft: position.left,
+                startTop: position.top,
+                panelWidth: position.width,
+                panelHeight: position.height
+            };
+            document.addEventListener('mousemove', dragMapLiveTable);
+            document.addEventListener('mouseup', stopMapLiveTableDrag);
+            document.addEventListener('touchmove', dragMapLiveTable, { passive: false });
+            document.addEventListener('touchend', stopMapLiveTableDrag);
+            document.addEventListener('touchcancel', stopMapLiveTableDrag);
+        }
+
+        function dragMapLiveTable(event) {
+            if (!mapLiveTableDragState) return;
+            const point = event.touches && event.touches[0] ? event.touches[0] : event;
+            const panel = document.getElementById('mapLiveTablePanel');
+            const container = document.getElementById('mapModalContainer');
+            if (!point || !panel || !container) return;
+            event.preventDefault();
+            const containerRect = container.getBoundingClientRect();
+            const edgeGap = 8;
+            const maxLeft = Math.max(edgeGap, containerRect.width - mapLiveTableDragState.panelWidth - edgeGap);
+            const maxTop = Math.max(edgeGap, containerRect.height - mapLiveTableDragState.panelHeight - edgeGap);
+            const left = Math.max(edgeGap, Math.min(maxLeft, mapLiveTableDragState.startLeft + point.clientX - mapLiveTableDragState.startX));
+            const top = Math.max(edgeGap, Math.min(maxTop, mapLiveTableDragState.startTop + point.clientY - mapLiveTableDragState.startY));
+            panel.style.left = `${Math.round(left)}px`;
+            panel.style.top = `${Math.round(top)}px`;
+        }
+
+        function stopMapLiveTableDrag() {
+            mapLiveTableDragState = null;
+            document.removeEventListener('mousemove', dragMapLiveTable);
+            document.removeEventListener('mouseup', stopMapLiveTableDrag);
+            document.removeEventListener('touchmove', dragMapLiveTable);
+            document.removeEventListener('touchend', stopMapLiveTableDrag);
+            document.removeEventListener('touchcancel', stopMapLiveTableDrag);
+        }
+
+        function toggleMapLiveTable(forceOpen) {
+            const panel = document.getElementById('mapLiveTablePanel');
+            const button = document.getElementById('mapLiveTableButton');
+            const container = document.getElementById('mapModalContainer');
+            if (!panel || !container) return;
+            const isOpen = isMapLiveTableOpen();
+            const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : !isOpen;
+            if (!MAP_LIVE_TABLE_ENABLED && shouldOpen) {
+                panel.style.display = 'none';
+                if (button) {
+                    button.hidden = true;
+                    button.style.display = 'none';
+                    button.setAttribute('aria-pressed', 'false');
+                }
+                return;
+            }
+            panel.style.display = shouldOpen ? 'flex' : 'none';
+            if (button) {
+                button.setAttribute('aria-pressed', shouldOpen ? 'true' : 'false');
+                button.style.background = shouldOpen ? '#115e59' : '#0f766e';
+                button.title = shouldOpen ? 'Close the floating MAP table' : 'Open a floating table containing only the currently displayed locations';
+            }
+            if (shouldOpen) {
+                const state = getMapLiveTableState();
+                const search = document.getElementById('mapLiveTableSearch');
+                if (search) search.value = state.globalFilter || '';
+                refreshMapLiveTable();
+                requestAnimationFrame(positionMapLiveTableWithinContainer);
+            } else {
+                stopMapLiveTableDrag();
+                stopMapLiveTableResize();
+            }
+        }
+
+        function syncMapLiveTableFeatureAvailability() {
+            const button = document.getElementById('mapLiveTableButton');
+            const panel = document.getElementById('mapLiveTablePanel');
+            if (button) {
+                button.hidden = !MAP_LIVE_TABLE_ENABLED;
+                button.style.display = MAP_LIVE_TABLE_ENABLED ? 'flex' : 'none';
+            }
+            if (!MAP_LIVE_TABLE_ENABLED && panel) panel.style.display = 'none';
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', syncMapLiveTableFeatureAvailability, { once: true });
+        } else {
+            syncMapLiveTableFeatureAvailability();
+        }
+
+        function resetMapLiveTable() {
+            const panel = document.getElementById('mapLiveTablePanel');
+            toggleMapLiveTable(false);
+            if (mapLiveTableRefreshTimer) clearTimeout(mapLiveTableRefreshTimer);
+            mapLiveTableRefreshTimer = null;
+            stopMapLiveTableDrag();
+            stopMapLiveTableResize();
+            if (panel) {
+                panel._mapLiveTableState = null;
+                panel.style.left = '';
+                panel.style.top = '';
+                panel.style.right = '';
+                panel.style.bottom = '';
+                panel.style.width = '';
+                panel.style.height = '';
+                panel.style.flexBasis = '';
+            }
+            const search = document.getElementById('mapLiveTableSearch');
+            if (search) search.value = '';
+        }
+
+        function startMapLiveTableResize(event) {
+            const panel = document.getElementById('mapLiveTablePanel');
+            const container = document.getElementById('mapModalContainer');
+            if (!panel || !container || !isMapLiveTableOpen()) return;
+            const point = event.touches && event.touches[0] ? event.touches[0] : event;
+            if (!point) return;
+            event.preventDefault();
+            event.stopPropagation();
+            stopMapLiveTableDrag();
+            stopMapLiveTableResize();
+            const position = setMapLiveTableManualPosition(panel, container);
+            if (!position) return;
+            mapLiveTableResizeState = {
+                startY: point.clientY,
+                startTop: position.top,
+                startHeight: position.height,
+                bottom: position.top + position.height
+            };
+            document.addEventListener('mousemove', resizeMapLiveTable);
+            document.addEventListener('mouseup', stopMapLiveTableResize);
+            document.addEventListener('touchmove', resizeMapLiveTable, { passive: false });
+            document.addEventListener('touchend', stopMapLiveTableResize);
+            document.addEventListener('touchcancel', stopMapLiveTableResize);
+        }
+
+        function resizeMapLiveTable(event) {
+            if (!mapLiveTableResizeState) return;
+            const point = event.touches && event.touches[0] ? event.touches[0] : event;
+            if (!point) return;
+            event.preventDefault();
+            const panel = document.getElementById('mapLiveTablePanel');
+            if (!panel) return;
+            const minimumHeight = 180;
+            const maximumTop = Math.max(8, mapLiveTableResizeState.bottom - minimumHeight);
+            const top = Math.max(8, Math.min(
+                maximumTop,
+                mapLiveTableResizeState.startTop + point.clientY - mapLiveTableResizeState.startY
+            ));
+            panel.style.top = `${Math.round(top)}px`;
+            panel.style.height = `${Math.round(mapLiveTableResizeState.bottom - top)}px`;
+        }
+
+        function stopMapLiveTableResize() {
+            mapLiveTableResizeState = null;
+            document.removeEventListener('mousemove', resizeMapLiveTable);
+            document.removeEventListener('mouseup', stopMapLiveTableResize);
+            document.removeEventListener('touchmove', resizeMapLiveTable);
+            document.removeEventListener('touchend', stopMapLiveTableResize);
+            document.removeEventListener('touchcancel', stopMapLiveTableResize);
+        }
+
+        function updateMapTableDirtyState(modal) {
+            const state = modal && modal._mapTableState;
+            if (!state) return;
+            const count = state.edits.size;
+            const dirty = document.getElementById('mapTableDirtyCount');
+            const applyButton = document.getElementById('mapTableApplyButton');
+            if (dirty) {
+                dirty.textContent = count ? `${count} unsaved edit${count !== 1 ? 's' : ''}` : 'No pending edits';
+                dirty.style.color = count ? '#ff9800' : 'var(--text-color)';
+            }
+            if (applyButton) applyButton.disabled = count === 0;
+        }
+
+        function setMapTableStatus(modal, message, color) {
+            const status = modal && modal.querySelector('#mapTableStatus');
+            if (!status) return;
+            status.textContent = message || '';
+            status.style.display = message ? 'block' : 'none';
+            status.style.color = color || 'var(--text-color)';
+        }
+
+        function cancelMapTableFilterRender(modal) {
+            if (!modal || !modal._mapTableFilterTimer) return;
+            clearTimeout(modal._mapTableFilterTimer);
+            modal._mapTableFilterTimer = null;
+        }
+
+        function renderPendingMapTableFilter(modal) {
+            if (!modal || !modal.isConnected || !modal._mapTableState) return;
+            cancelMapTableFilterRender(modal);
+            modal._mapTableState.page = 1;
+            renderMapTableGrid(modal);
+        }
+
+        function scheduleMapTableFilterRender(modal, value) {
+            if (!modal || !modal._mapTableState) return;
+            modal._mapTableState.globalFilter = String(value || '');
+            cancelMapTableFilterRender(modal);
+            modal._mapTableFilterTimer = setTimeout(() => renderPendingMapTableFilter(modal), 140);
+        }
+
+        function renderMapTableColumnChooser(modal, sheet) {
+            const state = modal && modal._mapTableState;
+            const menu = modal && modal.querySelector('#mapTableColumnMenu');
+            const summary = modal && modal.querySelector('#mapTableColumnSummary');
+            if (!state || !sheet || !menu || !summary) return;
+            ensureMapTableColumnVisibilityState(state);
+            if (!state.columnSearchBySheet) state.columnSearchBySheet = {};
+            const hiddenColumns = state.hiddenColumnsBySheet[sheet.id];
+            const visibleCount = sheet.columns.filter((column, index) => index === 0 || !hiddenColumns.has(column.id)).length;
+            const hiddenCount = Math.max(0, sheet.columns.length - visibleCount);
+            const searchValue = state.columnSearchBySheet[sheet.id] || '';
+            summary.innerHTML = `<span>Columns</span><span class="map-table-column-summary-count">${visibleCount}/${sheet.columns.length}</span>`;
+            const renderSignature = `${sheet.id}::${sheet.columns.map(column => column.id).join('|')}::${Array.from(hiddenColumns).sort().join('|')}`;
+            if (menu.dataset.mapTableColumnSignature === renderSignature) return;
+            menu.dataset.mapTableColumnSignature = renderSignature;
+            menu.innerHTML = `
+                <div class="map-table-column-menu-heading">
+                    <div class="map-table-column-menu-icon">▦</div>
+                    <div class="map-table-column-menu-title">
+                        <strong>Choose columns</strong>
+                        <span>${escapeMapSuggestionHtml(sheet.label)} · ${visibleCount} visible · ${hiddenCount} hidden</span>
+                    </div>
+                    <button type="button" class="map-table-column-menu-close" data-map-table-columns-close aria-label="Close column menu">×</button>
+                </div>
+                <div class="map-table-column-search-wrap">
+                    <span aria-hidden="true">⌕</span>
+                    <input type="search" class="map-table-column-search" data-map-table-column-search value="${escapeMapSuggestionHtml(searchValue)}" placeholder="Find a column…" aria-label="Find a column">
+                </div>
+                <div class="map-table-column-menu-actions">
+                    <button type="button" data-map-table-columns-action="show-all"><span>✓</span> Show all</button>
+                    <button type="button" data-map-table-columns-action="defaults"><span>↺</span> Use defaults</button>
+                </div>
+                <div class="map-table-column-list">
+                    ${sheet.columns.map((column, index) => {
+                        const visible = index === 0 || !hiddenColumns.has(column.id);
+                        const locked = index === 0;
+                        const searchText = String(column.label || '').toLowerCase();
+                        return `<label class="map-table-column-option${visible ? ' is-visible' : ''}${locked ? ' is-locked' : ''}" data-map-table-column-option data-map-table-column-name="${escapeMapSuggestionHtml(searchText)}" title="${locked ? 'The first column stays visible for row identification.' : escapeMapSuggestionHtml(column.label)}">
+                            <input type="checkbox" data-map-table-column-visibility="${escapeMapSuggestionHtml(column.id)}" ${visible ? 'checked' : ''} ${locked ? 'disabled' : ''}>
+                            <span class="map-table-column-check" aria-hidden="true">✓</span>
+                            <span class="map-table-column-option-text">
+                                <strong>${escapeMapSuggestionHtml(column.label)}</strong>
+                                <span>${locked ? 'Always visible' : (column.defaultHidden ? 'Hidden by default' : 'Shown by default')}</span>
+                            </span>
+                            ${locked ? '<span class="map-table-column-badge">Locked</span>' : ''}
+                        </label>`;
+                    }).join('')}
+                    <div class="map-table-column-empty">No columns match your search.</div>
+                </div>
+                <div class="map-table-column-menu-footer">Changes apply immediately to this table.</div>`;
+
+            const applyColumnSearch = () => {
+                const query = String(state.columnSearchBySheet[sheet.id] || '').trim().toLowerCase();
+                let matches = 0;
+                menu.querySelectorAll('[data-map-table-column-option]').forEach(option => {
+                    const matchesSearch = !query || String(option.dataset.mapTableColumnName || '').includes(query);
+                    option.style.display = matchesSearch ? 'flex' : 'none';
+                    if (matchesSearch) matches += 1;
+                });
+                const empty = menu.querySelector('.map-table-column-empty');
+                if (empty) empty.style.display = matches ? 'none' : 'block';
+            };
+            applyColumnSearch();
+
+            const search = menu.querySelector('[data-map-table-column-search]');
+            if (search) {
+                search.addEventListener('input', () => {
+                    state.columnSearchBySheet[sheet.id] = search.value;
+                    applyColumnSearch();
+                });
+            }
+            const closeButton = menu.querySelector('[data-map-table-columns-close]');
+            if (closeButton) {
+                closeButton.addEventListener('click', () => {
+                    const chooser = modal.querySelector('#mapTableColumnChooser');
+                    if (chooser) chooser.open = false;
+                });
+            }
+
+            menu.querySelectorAll('[data-map-table-column-visibility]').forEach(input => {
+                input.addEventListener('change', () => {
+                    const columnId = input.dataset.mapTableColumnVisibility;
+                    if (input.checked) hiddenColumns.delete(columnId);
+                    else hiddenColumns.add(columnId);
+                    if (!input.checked) {
+                        delete state.columnFilters[sheet.id][columnId];
+                        if (state.sortBySheet[sheet.id] && state.sortBySheet[sheet.id].columnId === columnId) {
+                            state.sortBySheet[sheet.id] = {};
+                        }
+                    }
+                    state.page = 1;
+                    renderMapTableGrid(modal);
+                });
+            });
+            menu.querySelectorAll('[data-map-table-columns-action]').forEach(button => {
+                button.addEventListener('click', () => {
+                    if (button.dataset.mapTableColumnsAction === 'show-all') {
+                        hiddenColumns.clear();
+                    } else {
+                        state.hiddenColumnsBySheet[sheet.id] = new Set(
+                            sheet.columns.filter(column => column.defaultHidden).map(column => column.id)
+                        );
+                        const defaults = state.hiddenColumnsBySheet[sheet.id];
+                        Object.keys(state.columnFilters[sheet.id] || {}).forEach(columnId => {
+                            if (defaults.has(columnId)) delete state.columnFilters[sheet.id][columnId];
+                        });
+                        if (state.sortBySheet[sheet.id] && defaults.has(state.sortBySheet[sheet.id].columnId)) {
+                            state.sortBySheet[sheet.id] = {};
+                        }
+                    }
+                    state.page = 1;
+                    renderMapTableGrid(modal);
+                });
+            });
+        }
+
+        function renderMapTableGrid(modal) {
+            const state = modal && modal._mapTableState;
+            const grid = modal && modal.querySelector('#mapTableGrid');
+            if (!state || !grid) return;
+            cancelMapTableFilterRender(modal);
+            const sheet = getMapTableSheet(state);
+            const visibleColumns = getMapTableVisibleColumns(state, sheet);
+            const filteredRows = getFilteredMapTableRows(state, sheet);
+            const totalPages = Math.max(1, Math.ceil(filteredRows.length / state.pageSize));
+            state.page = Math.max(1, Math.min(state.page, totalPages));
+            const start = (state.page - 1) * state.pageSize;
+            const pageRows = filteredRows.slice(start, start + state.pageSize);
+            const columnFilters = state.columnFilters[sheet.id] || {};
+            const sort = state.sortBySheet[sheet.id] || {};
+
+            modal.querySelectorAll('[data-map-table-sheet]').forEach(button => {
+                const active = button.dataset.mapTableSheet === sheet.id;
+                button.classList.toggle('active', active);
+                button.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+            renderMapTableColumnChooser(modal, sheet);
+
+            const resultSummary = modal.querySelector('#mapTableResultSummary');
+            if (resultSummary) {
+                const firstNumber = filteredRows.length ? start + 1 : 0;
+                const lastNumber = Math.min(start + state.pageSize, filteredRows.length);
+                resultSummary.textContent = `Showing ${firstNumber}–${lastNumber} of ${filteredRows.length} ${sheet.label.toLowerCase()} (${sheet.rows.length} total)`;
+            }
+
+            const headers = visibleColumns.map(column => {
+                const indicator = sort.columnId === column.id ? (sort.direction === 'desc' ? ' ▼' : ' ▲') : '';
+                return `<th><button type="button" data-map-table-sort="${escapeMapSuggestionHtml(column.id)}" title="Sort by ${escapeMapSuggestionHtml(column.label)}">${escapeMapSuggestionHtml(column.label)}${indicator}</button></th>`;
+            }).join('');
+            const filters = visibleColumns.map(column => `<th><input type="search" data-map-table-column-filter="${escapeMapSuggestionHtml(column.id)}" value="${escapeMapSuggestionHtml(columnFilters[column.id] || '')}" placeholder="Filter…" aria-label="Filter ${escapeMapSuggestionHtml(column.label)}"></th>`).join('');
+            const body = pageRows.length ? pageRows.map(entry => {
+                const cells = visibleColumns.map(column => {
+                    const value = getMapTableVisibleCellValue(state, sheet, entry.rowIndex, column);
+                    const row = sheet.rows[entry.rowIndex];
+                    const isReadOnly = column.readOnly || (typeof column.isReadOnly === 'function' && column.isReadOnly(row));
+                    if (isReadOnly) {
+                        return `<td class="map-table-readonly" title="${escapeMapSuggestionHtml(value)}"><span>${escapeMapSuggestionHtml(value)}</span></td>`;
+                    }
+                    const originalValue = column.get(row);
+                    const valueType = getMapTableValueType(originalValue);
+                    const editKey = getMapTableEditKey(sheet.id, entry.rowIndex, column.id);
+                    const attributes = `class="map-table-cell-input${column.multiline ? ' multiline' : ''}" data-map-table-edit="${escapeMapSuggestionHtml(editKey)}" data-map-table-row="${entry.rowIndex}" data-map-table-column="${escapeMapSuggestionHtml(column.id)}" data-map-table-value-type="${valueType}" title="${escapeMapSuggestionHtml(value)}"`;
+                    const optionList = column.inputType === 'boolean'
+                        ? [{ value: 'false', label: 'No' }, { value: 'true', label: 'Yes' }]
+                        : (Array.isArray(column.options) ? column.options : null);
+                    if (optionList) {
+                        const optionsHtml = optionList.map(option => {
+                            const optionValue = String(option.value);
+                            const selected = optionValue === String(value) ? ' selected' : '';
+                            return `<option value="${escapeMapSuggestionHtml(optionValue)}"${selected}${option.disabled ? ' disabled' : ''}>${escapeMapSuggestionHtml(option.label)}</option>`;
+                        }).join('');
+                        return `<td><select ${attributes}>${optionsHtml}</select></td>`;
+                    }
+                    if (column.multiline) {
+                        return `<td><textarea ${attributes} spellcheck="false">${escapeMapSuggestionHtml(value)}</textarea></td>`;
+                    }
+                    return `<td><input ${attributes} value="${escapeMapSuggestionHtml(value)}" spellcheck="false"></td>`;
+                }).join('');
+                return `<tr>${cells}</tr>`;
+            }).join('') : `<tr><td colspan="${Math.max(1, visibleColumns.length)}" class="map-table-empty">No rows match the current filters.</td></tr>`;
+
+            grid.innerHTML = `
+                <table class="map-data-grid">
+                    <thead><tr>${headers}</tr><tr class="map-table-filter-row">${filters}</tr></thead>
+                    <tbody>${body}</tbody>
+                </table>
+                <div class="map-table-pagination">
+                    <button type="button" data-map-table-page="previous" ${state.page <= 1 ? 'disabled' : ''}>← Previous</button>
+                    <span>Page ${state.page} of ${totalPages}</span>
+                    <button type="button" data-map-table-page="next" ${state.page >= totalPages ? 'disabled' : ''}>Next →</button>
+                </div>`;
+
+            grid.querySelectorAll('[data-map-table-sort]').forEach(button => {
+                button.addEventListener('click', () => {
+                    const current = state.sortBySheet[sheet.id] || {};
+                    state.sortBySheet[sheet.id] = {
+                        columnId: button.dataset.mapTableSort,
+                        direction: current.columnId === button.dataset.mapTableSort && current.direction === 'asc' ? 'desc' : 'asc'
+                    };
+                    state.page = 1;
+                    renderMapTableGrid(modal);
+                });
+            });
+            grid.querySelectorAll('[data-map-table-column-filter]').forEach(input => {
+                input.addEventListener('change', () => {
+                    state.columnFilters[sheet.id][input.dataset.mapTableColumnFilter] = input.value;
+                    state.page = 1;
+                    renderMapTableGrid(modal);
+                });
+                input.addEventListener('keydown', event => {
+                    if (event.key === 'Enter') input.blur();
+                });
+            });
+            grid.querySelectorAll('[data-map-table-edit]').forEach(input => {
+                input.addEventListener('input', () => {
+                    const rowIndex = Number(input.dataset.mapTableRow);
+                    const column = sheet.columns.find(item => item.id === input.dataset.mapTableColumn);
+                    if (!column) return;
+                    invalidateMapTableValueCache(state, sheet.id);
+                    const originalValue = column.get(sheet.rows[rowIndex]);
+                    const originalText = typeof column.format === 'function'
+                        ? column.format(originalValue)
+                        : formatMapTableCellValue(originalValue);
+                    if (input.value === originalText) {
+                        state.edits.delete(input.dataset.mapTableEdit);
+                        input.classList.remove('edited');
+                    } else {
+                        state.edits.set(input.dataset.mapTableEdit, {
+                            sheetId: sheet.id,
+                            rowIndex,
+                            columnId: column.id,
+                            valueType: input.dataset.mapTableValueType,
+                            rawValue: input.value
+                        });
+                        input.classList.add('edited');
+                    }
+                    input.title = input.value;
+                    setMapTableStatus(modal, '', '');
+                    updateMapTableDirtyState(modal);
+                });
+                if (state.edits.has(input.dataset.mapTableEdit)) input.classList.add('edited');
+            });
+            grid.querySelectorAll('[data-map-table-page]').forEach(button => {
+                button.addEventListener('click', () => {
+                    state.page += button.dataset.mapTablePage === 'next' ? 1 : -1;
+                    renderMapTableGrid(modal);
+                });
+            });
+            updateMapTableDirtyState(modal);
+        }
+
+        async function applyMapTableViewEdits(saveAfterApply) {
+            const modal = document.getElementById('mapDataTableModal');
+            const state = modal && modal._mapTableState;
+            if (!state) return false;
+            cancelMapTableFilterRender(modal);
+            if (state.edits.size === 0) {
+                if (saveAfterApply) await downloadMapViewFile();
+                else setMapTableStatus(modal, 'There are no pending edits to apply.', 'var(--text-color)');
+                return true;
+            }
+
+            const parsedEdits = [];
+            for (const edit of state.edits.values()) {
+                const sheet = getMapTableSheet(state, edit.sheetId);
+                const column = sheet && sheet.columns.find(item => item.id === edit.columnId);
+                const row = sheet && sheet.rows[edit.rowIndex];
+                if (!sheet || !column || !row || typeof column.set !== 'function') continue;
+                const parsed = typeof column.parse === 'function'
+                    ? column.parse(edit.rawValue, row)
+                    : parseMapTableCellValue(edit.rawValue, edit.valueType);
+                if (!parsed.valid) {
+                    setMapTableStatus(modal, `${sheet.label}, row ${edit.rowIndex + 1}, ${column.label}: ${parsed.message}`, '#ff6b6b');
+                    return false;
+                }
+                parsedEdits.push({ sheet, row, rowIndex: edit.rowIndex, column, value: parsed.value });
+            }
+
+            const proposedCompletionRows = new Map();
+            parsedEdits.forEach(edit => {
+                if (edit.sheet.id !== 'planning' || !['completionType', 'completionDate'].includes(edit.column.field)) return;
+                const proposed = proposedCompletionRows.get(edit.row) || { ...edit.row.values };
+                proposed[edit.column.field] = edit.value;
+                proposedCompletionRows.set(edit.row, proposed);
+            });
+            for (const [row, proposed] of proposedCompletionRows) {
+                const completionType = normalizeMapCompletedTestType(proposed.completionType);
+                if (!completionType) continue;
+                const completionDate = proposed.completionDate || formatLocalDateInputValue(new Date());
+                if (!confirmMapManualDateForDobCompletedTest(row.bin, completionType, completionDate)) {
+                    setMapTableStatus(modal, 'Completion change canceled. Your pending Table View edits were kept.', '#ff9800');
+                    return false;
+                }
+                if (!confirmMapCompletionRequirements(row.bin, completionType)) {
+                    setMapTableStatus(modal, 'Completion change canceled. Your pending Table View edits were kept.', '#ff9800');
+                    return false;
+                }
+            }
+
+            const rowsToCommit = new Map();
+            parsedEdits.forEach(edit => {
+                edit.column.set(edit.row, edit.value);
+                if (typeof edit.sheet.commitRow === 'function') {
+                    rowsToCommit.set(`${edit.sheet.id}::${edit.rowIndex}`, { sheet: edit.sheet, row: edit.row });
+                }
+            });
+            rowsToCommit.forEach(item => item.sheet.commitRow(item.row));
+            const editCount = parsedEdits.length;
+            state.edits.clear();
+            addMapActivity('Edited MAP table data', {
+                type: 'Table View',
+                details: `${editCount} field${editCount !== 1 ? 's' : ''} updated`
+            });
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+            if (typeof updateMapControlsPanel === 'function') updateMapControlsPanel();
+            if (typeof updateMapCategory5Panel === 'function') updateMapCategory5Panel();
+            state.sheets = buildMapTableSheets();
+            renderMapTableGrid(modal);
+            setMapTableStatus(modal, `${editCount} change${editCount !== 1 ? 's' : ''} applied to the MAP data.${saveAfterApply ? ' Saving the MAP file…' : ' Use MAP Save to keep them in the file.'}`, '#27ae60');
+            showMapNotification(`${editCount} table edit${editCount !== 1 ? 's' : ''} applied`, '#27ae60');
+            if (saveAfterApply) await downloadMapViewFile();
+            return true;
+        }
+
+        function closeMapTableView(forceClose) {
+            const modal = document.getElementById('mapDataTableModal');
+            if (!modal) return;
+            const state = modal._mapTableState;
+            if (!forceClose && state && state.edits.size > 0 && !confirm('Discard the unsaved Table View edits?')) return;
+            if (modal._mapTableEscapeHandler) document.removeEventListener('keydown', modal._mapTableEscapeHandler);
+            cancelMapTableFilterRender(modal);
+            modal.remove();
+        }
+
+        function openMapTableView() {
+            if (!window.lastBulkSearchResults || !window.lastBulkSearchResults.binGroups) {
+                alert('No map data loaded. Load a map view file or run a bulk lookup first.');
+                return;
+            }
+            const existing = document.getElementById('mapDataTableModal');
+            if (existing) return;
+            syncMapNoteDraftsFromDom();
+
+            const modal = document.createElement('div');
+            modal.id = 'mapDataTableModal';
+            modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.68);z-index:10050;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+            const sheets = buildMapTableSheets();
+            modal._mapTableState = {
+                sheets,
+                activeSheetId: 'devices',
+                edits: new Map(),
+                globalFilter: '',
+                columnFilters: objectFromEntriesSafe(sheets.map(sheet => [sheet.id, {}])),
+                sortBySheet: objectFromEntriesSafe(sheets.map(sheet => [sheet.id, {}])),
+                hiddenColumnsBySheet: {},
+                columnSearchBySheet: {},
+                valueCacheBySheet: {},
+                page: 1,
+                pageSize: 50
+            };
+
+            modal.innerHTML = `
+                <style>
+                    #mapDataTableModal * { box-sizing:border-box; }
+                    #mapDataTableModal .map-table-shell { width:min(1560px,100%); height:min(900px,100%); background:var(--card-bg,#1e1e2e); color:var(--text-color,#fff); border:1px solid var(--input-border,#444); border-radius:14px; box-shadow:0 18px 60px rgba(0,0,0,.5); display:flex; flex-direction:column; overflow:hidden; }
+                    #mapDataTableModal .map-table-header { padding:13px 16px 10px; border-bottom:1px solid var(--input-border,#444); background:var(--panel-bg,#252536); }
+                    #mapDataTableModal .map-table-topline { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+                    #mapDataTableModal .map-table-tabs { display:flex; gap:5px; flex-wrap:wrap; margin-top:10px; }
+                    #mapDataTableModal .map-table-sheet-tab { border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); border-radius:6px 6px 0 0; padding:6px 11px; cursor:pointer; font-size:12px; font-weight:700; }
+                    #mapDataTableModal .map-table-sheet-tab.active { background:#198754; border-color:#198754; color:white; }
+                    #mapDataTableModal .map-table-toolbar { position:relative; z-index:30; display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:9px 12px; border-bottom:1px solid var(--input-border,#444); background:var(--card-bg,#1e1e2e); }
+                    #mapDataTableModal .map-table-toolbar input, #mapDataTableModal .map-table-toolbar select { background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); border:1px solid var(--input-border,#555); border-radius:6px; padding:7px 9px; font-size:12px; }
+                    #mapDataTableModal .map-table-toolbar button { background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); border:1px solid var(--input-border,#555); border-radius:6px; padding:7px 10px; cursor:pointer; font-size:11px; font-weight:700; }
+                    #mapDataTableModal .map-table-column-picker { position:relative; }
+                    #mapDataTableModal .map-table-column-picker > summary { display:flex; align-items:center; gap:7px; list-style:none; min-height:32px; border:1px solid var(--input-border,#555); border-radius:7px; padding:6px 9px; background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); cursor:pointer; font-size:11px; font-weight:750; white-space:nowrap; user-select:none; transition:border-color .16s ease,background .16s ease,box-shadow .16s ease; }
+                    #mapDataTableModal .map-table-column-picker > summary::-webkit-details-marker { display:none; }
+                    #mapDataTableModal .map-table-column-picker > summary::before { content:'▦'; color:#38b987; font-size:14px; }
+                    #mapDataTableModal .map-table-column-picker > summary::after { content:'⌄'; margin-left:1px; opacity:.58; font-size:12px; transition:transform .16s ease; }
+                    #mapDataTableModal .map-table-column-picker[open] > summary { border-color:#2ca777; background:color-mix(in srgb,var(--input-bg,#2a2a3e) 80%,#198754 20%); box-shadow:0 0 0 3px rgba(25,135,84,.12); }
+                    #mapDataTableModal .map-table-column-picker[open] > summary::after { transform:rotate(180deg); }
+                    #mapDataTableModal .map-table-column-summary-count { display:inline-flex; align-items:center; justify-content:center; min-width:34px; padding:1px 6px; border-radius:999px; background:rgba(25,135,84,.16); color:#49c58f; font-size:9px; line-height:16px; }
+                    #mapDataTableModal .map-table-column-menu { position:absolute; top:calc(100% + 8px); right:0; width:min(390px,calc(100vw - 40px)); max-height:min(530px,70vh); display:flex; flex-direction:column; overflow:hidden; border:1px solid color-mix(in srgb,var(--input-border,#555) 72%,#198754 28%); border-radius:13px; background:var(--card-bg,#1e1e2e); box-shadow:0 18px 48px rgba(0,0,0,.52),0 2px 10px rgba(0,0,0,.18); }
+                    #mapDataTableModal .map-table-column-menu-heading { display:flex; align-items:center; gap:10px; padding:13px 14px 11px; border-bottom:1px solid var(--input-border,#444); background:linear-gradient(135deg,rgba(25,135,84,.16),rgba(25,135,84,.03)); }
+                    #mapDataTableModal .map-table-column-menu-icon { display:flex; align-items:center; justify-content:center; width:34px; height:34px; flex:0 0 34px; border:1px solid rgba(66,195,141,.28); border-radius:9px; background:rgba(25,135,84,.16); color:#49c58f; font-size:18px; }
+                    #mapDataTableModal .map-table-column-menu-title { min-width:0; display:flex; flex:1; flex-direction:column; gap:2px; }
+                    #mapDataTableModal .map-table-column-menu-title strong { color:var(--header-color,var(--text-color,#fff)); font-size:13px; }
+                    #mapDataTableModal .map-table-column-menu-title span { overflow:hidden; color:var(--text-color,#fff); opacity:.58; font-size:10px; white-space:nowrap; text-overflow:ellipsis; }
+                    #mapDataTableModal .map-table-column-menu-close { width:28px; height:28px; flex:0 0 28px; padding:0!important; border:0!important; border-radius:7px!important; background:transparent!important; color:var(--text-color,#fff)!important; opacity:.6; font-size:19px!important; line-height:1!important; }
+                    #mapDataTableModal .map-table-column-menu-close:hover { opacity:1; background:rgba(255,255,255,.07)!important; }
+                    #mapDataTableModal .map-table-column-search-wrap { position:relative; padding:11px 12px 8px; }
+                    #mapDataTableModal .map-table-column-search-wrap > span { position:absolute; left:23px; top:50%; transform:translateY(-42%); color:#49c58f; font-size:16px; pointer-events:none; }
+                    #mapDataTableModal .map-table-column-search { width:100%; height:34px; padding:7px 10px 7px 32px!important; border:1px solid var(--input-border,#555)!important; border-radius:8px!important; outline:0; background:var(--input-bg,#2a2a3e)!important; color:var(--text-color,#fff)!important; font-size:11px!important; }
+                    #mapDataTableModal .map-table-column-search:focus { border-color:#2ca777!important; box-shadow:0 0 0 3px rgba(25,135,84,.12); }
+                    #mapDataTableModal .map-table-column-menu-actions { display:flex; gap:7px; padding:0 12px 9px; border-bottom:1px solid var(--input-border,#444); }
+                    #mapDataTableModal .map-table-column-menu-actions button { flex:1; padding:6px 9px!important; border-radius:7px!important; font-size:10px!important; }
+                    #mapDataTableModal .map-table-column-menu-actions button span { color:#49c58f; margin-right:3px; }
+                    #mapDataTableModal .map-table-column-list { min-height:90px; overflow:auto; padding:7px 8px; scrollbar-width:thin; }
+                    #mapDataTableModal .map-table-column-option { position:relative; display:flex; align-items:center; gap:9px; min-height:44px; padding:6px 8px; border:1px solid transparent; border-radius:8px; cursor:pointer; transition:background .13s ease,border-color .13s ease; }
+                    #mapDataTableModal .map-table-column-option:hover { border-color:rgba(25,135,84,.2); background:rgba(25,135,84,.08); }
+                    #mapDataTableModal .map-table-column-option.is-visible { background:rgba(25,135,84,.045); }
+                    #mapDataTableModal .map-table-column-option input { position:absolute; width:1px; height:1px; margin:0; padding:0!important; opacity:0; pointer-events:none; }
+                    #mapDataTableModal .map-table-column-check { display:flex; align-items:center; justify-content:center; width:20px; height:20px; flex:0 0 20px; border:1px solid var(--input-border,#666); border-radius:6px; background:var(--input-bg,#2a2a3e); color:transparent; font-size:12px; font-weight:900; transition:background .13s ease,border-color .13s ease,color .13s ease; }
+                    #mapDataTableModal .map-table-column-option input:checked + .map-table-column-check { border-color:#249d70; background:#198754; color:white; }
+                    #mapDataTableModal .map-table-column-option input:focus-visible + .map-table-column-check { box-shadow:0 0 0 3px rgba(25,135,84,.2); }
+                    #mapDataTableModal .map-table-column-option input:disabled + .map-table-column-check { border-color:rgba(25,135,84,.35); background:rgba(25,135,84,.22); color:#7ee2b2; }
+                    #mapDataTableModal .map-table-column-option-text { min-width:0; display:flex; flex:1; flex-direction:column; gap:1px; }
+                    #mapDataTableModal .map-table-column-option-text strong { overflow:hidden; color:var(--text-color,#fff); font-size:11px; font-weight:650; white-space:nowrap; text-overflow:ellipsis; }
+                    #mapDataTableModal .map-table-column-option-text > span { color:var(--text-color,#fff); opacity:.46; font-size:9px; }
+                    #mapDataTableModal .map-table-column-badge { flex:0 0 auto; padding:2px 6px; border:1px solid rgba(25,135,84,.28); border-radius:999px; background:rgba(25,135,84,.1); color:#67d6a3; font-size:8px; font-weight:750; text-transform:uppercase; letter-spacing:.04em; }
+                    #mapDataTableModal .map-table-column-empty { display:none; padding:25px 12px; color:var(--text-color,#fff); opacity:.54; font-size:11px; text-align:center; }
+                    #mapDataTableModal .map-table-column-menu-footer { padding:8px 12px 9px; border-top:1px solid var(--input-border,#444); color:var(--text-color,#fff); opacity:.48; font-size:9px; text-align:center; }
+                    #mapDataTableModal #mapTableGrid { position:relative; isolation:isolate; flex:1; min-height:0; overflow:auto; background:var(--card-bg,#1e1e2e); }
+                    #mapDataTableModal .map-data-grid { border-collapse:separate; border-spacing:0; width:max-content; min-width:100%; font-size:11px; }
+                    #mapDataTableModal .map-data-grid th, #mapDataTableModal .map-data-grid td { min-width:155px; max-width:260px; height:34px; padding:0; border-right:1px solid var(--input-border,#444); border-bottom:1px solid var(--input-border,#444); background:var(--card-bg,#1e1e2e); }
+                    #mapDataTableModal .map-data-grid thead { position:sticky; top:0; z-index:20; filter:drop-shadow(0 2px 2px rgba(0,0,0,.22)); }
+                    #mapDataTableModal .map-data-grid th { position:relative; height:34px; background:var(--panel-bg,#252536); }
+                    #mapDataTableModal .map-data-grid thead .map-table-filter-row th { height:33px; }
+                    #mapDataTableModal .map-data-grid th:first-child, #mapDataTableModal .map-data-grid td:first-child { position:sticky; left:0; z-index:3; min-width:220px; max-width:280px; }
+                    #mapDataTableModal .map-data-grid th:first-child { z-index:22; }
+                    #mapDataTableModal .map-data-grid th button { width:100%; height:100%; border:0; background:transparent; color:var(--header-color,var(--text-color,#fff)); cursor:pointer; padding:7px 9px; text-align:left; font:inherit; font-weight:800; white-space:nowrap; }
+                    #mapDataTableModal .map-data-grid th input { width:calc(100% - 8px); margin:3px 4px; padding:4px 6px; border:1px solid var(--input-border,#555); border-radius:4px; background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); font-size:10px; }
+                    #mapDataTableModal .map-table-cell-input { width:100%; height:33px; border:0; outline:0; padding:6px 8px; background:transparent; color:var(--text-color,#fff); font:inherit; text-overflow:ellipsis; }
+                    #mapDataTableModal select.map-table-cell-input { cursor:pointer; }
+                    #mapDataTableModal textarea.map-table-cell-input.multiline { display:block; height:52px; min-height:52px; padding-top:7px; resize:vertical; line-height:1.35; white-space:pre-wrap; }
+                    #mapDataTableModal .map-table-cell-input:focus { background:rgba(25,135,84,.12); box-shadow:inset 0 0 0 2px #198754; }
+                    #mapDataTableModal .map-table-cell-input.edited { background:rgba(255,152,0,.13); box-shadow:inset 3px 0 0 #ff9800; }
+                    #mapDataTableModal .map-table-readonly { background:var(--panel-bg,#252536); color:var(--text-color,#fff); opacity:.78; }
+                    #mapDataTableModal .map-table-readonly span { display:block; padding:7px 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+                    #mapDataTableModal .map-table-empty { padding:30px!important; text-align:center; opacity:.65; }
+                    #mapDataTableModal .map-table-pagination { position:sticky; left:0; display:flex; align-items:center; justify-content:center; gap:12px; width:100vw; max-width:100%; padding:8px; border-top:1px solid var(--input-border,#444); background:var(--panel-bg,#252536); font-size:11px; }
+                    #mapDataTableModal .map-table-pagination button, #mapDataTableModal .map-table-footer button { border:1px solid var(--input-border,#555); border-radius:6px; padding:7px 11px; background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); cursor:pointer; font-size:12px; font-weight:700; }
+                    #mapDataTableModal button:disabled { opacity:.45; cursor:not-allowed; }
+                    #mapDataTableModal .map-table-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; padding:10px 13px; border-top:1px solid var(--input-border,#444); background:var(--panel-bg,#252536); }
+                    @media (max-width:700px) { #mapDataTableModal { padding:0!important; } #mapDataTableModal .map-table-shell { border-radius:0; } #mapDataTableModal .map-table-column-menu { position:fixed; top:104px; right:10px; bottom:54px; left:10px; width:auto; max-height:none; border-radius:12px; } #mapDataTableModal .map-table-column-list { flex:1; } }
+                </style>
+                <div class="map-table-shell" role="dialog" aria-modal="true" aria-labelledby="mapTableTitle">
+                    <div class="map-table-header">
+                        <div class="map-table-topline">
+                            <div>
+                                <h3 id="mapTableTitle" style="margin:0;color:var(--header-color);font-size:17px;">▦ Editable MAP Table View</h3>
+                                <div style="margin-top:3px;font-size:11px;opacity:.68;">Edit loaded data and saved planning details. Building Address and context columns are locked to protect map grouping.</div>
+                            </div>
+                            <button type="button" id="mapTableCloseButton" aria-label="Close Table View" style="border:0;background:none;color:var(--text-color);font-size:24px;line-height:1;cursor:pointer;">×</button>
+                        </div>
+                        <div class="map-table-tabs" role="tablist">
+                            ${sheets.map(sheet => `<button type="button" class="map-table-sheet-tab${sheet.id === 'devices' ? ' active' : ''}" data-map-table-sheet="${sheet.id}" role="tab" aria-selected="${sheet.id === 'devices' ? 'true' : 'false'}">${sheet.label} (${sheet.rows.length})</button>`).join('')}
+                        </div>
+                    </div>
+                    <div class="map-table-toolbar">
+                        <input id="mapTableGlobalFilter" type="search" placeholder="Filter all columns…" aria-label="Filter all table columns" style="flex:1 1 260px;min-width:180px;">
+                        <button type="button" id="mapTableClearFilters">Clear Filters</button>
+                        <details id="mapTableColumnChooser" class="map-table-column-picker">
+                            <summary id="mapTableColumnSummary">Columns</summary>
+                            <div id="mapTableColumnMenu" class="map-table-column-menu"></div>
+                        </details>
+                        <label style="display:flex;align-items:center;gap:5px;font-size:11px;white-space:nowrap;">Rows per page
+                            <select id="mapTablePageSize"><option value="50">50</option><option value="100">100</option><option value="250">250</option></select>
+                        </label>
+                        <span id="mapTableResultSummary" style="font-size:11px;opacity:.72;"></span>
+                    </div>
+                    <div id="mapTableStatus" role="status" style="display:none;padding:7px 12px;border-bottom:1px solid var(--input-border);background:rgba(25,135,84,.08);font-size:11px;font-weight:700;"></div>
+                    <div id="mapTableGrid"></div>
+                    <div class="map-table-footer">
+                        <div><span id="mapTableDirtyCount" style="font-size:11px;opacity:.85;">No pending edits</span><span style="font-size:10px;opacity:.55;margin-left:8px;">JSON fields must remain valid JSON.</span></div>
+                        <div style="display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;">
+                            <button type="button" id="mapTableCancelButton">Close</button>
+                            <button type="button" id="mapTableApplyButton" style="background:#198754;color:white;border-color:#198754;">Apply Changes</button>
+                            <button type="button" id="mapTableApplySaveButton" style="background:#6f42c1;color:white;border-color:#6f42c1;">Apply &amp; Save MAP File</button>
+                        </div>
+                    </div>
+                </div>`;
+
+            document.body.appendChild(modal);
+            renderMapTableGrid(modal);
+
+            modal.querySelectorAll('[data-map-table-sheet]').forEach(button => {
+                button.addEventListener('click', () => {
+                    cancelMapTableFilterRender(modal);
+                    modal._mapTableState.activeSheetId = button.dataset.mapTableSheet;
+                    modal._mapTableState.page = 1;
+                    document.getElementById('mapTableGlobalFilter').value = '';
+                    modal._mapTableState.globalFilter = '';
+                    renderMapTableGrid(modal);
+                });
+            });
+            document.getElementById('mapTableGlobalFilter').addEventListener('input', event => {
+                scheduleMapTableFilterRender(modal, event.target.value);
+            });
+            document.getElementById('mapTableGlobalFilter').addEventListener('keydown', event => {
+                if (event.key === 'Enter') renderPendingMapTableFilter(modal);
+            });
+            document.getElementById('mapTableClearFilters').addEventListener('click', () => {
+                const state = modal._mapTableState;
+                cancelMapTableFilterRender(modal);
+                state.globalFilter = '';
+                state.columnFilters[state.activeSheetId] = {};
+                state.page = 1;
+                document.getElementById('mapTableGlobalFilter').value = '';
+                renderMapTableGrid(modal);
+            });
+            document.getElementById('mapTablePageSize').addEventListener('change', event => {
+                modal._mapTableState.pageSize = Number(event.target.value) || 50;
+                modal._mapTableState.page = 1;
+                renderMapTableGrid(modal);
+            });
+            document.getElementById('mapTableColumnChooser').addEventListener('toggle', event => {
+                if (!event.currentTarget.open) return;
+                requestAnimationFrame(() => {
+                    const search = modal.querySelector('[data-map-table-column-search]');
+                    if (search) search.focus();
+                });
+            });
+            document.getElementById('mapTableCloseButton').addEventListener('click', () => closeMapTableView(false));
+            document.getElementById('mapTableCancelButton').addEventListener('click', () => closeMapTableView(false));
+            document.getElementById('mapTableApplyButton').addEventListener('click', () => applyMapTableViewEdits(false));
+            document.getElementById('mapTableApplySaveButton').addEventListener('click', () => applyMapTableViewEdits(true));
+            modal.addEventListener('click', event => {
+                const columnChooser = modal.querySelector('#mapTableColumnChooser');
+                if (columnChooser && columnChooser.open && !columnChooser.contains(event.target)) {
+                    columnChooser.open = false;
+                }
+                if (event.target === modal) closeMapTableView(false);
+            });
+            modal._mapTableEscapeHandler = event => {
+                if (event.key === 'Escape') {
+                    const columnChooser = modal.querySelector('#mapTableColumnChooser');
+                    if (columnChooser && columnChooser.open) {
+                        columnChooser.open = false;
+                        return;
+                    }
+                    closeMapTableView(false);
+                }
+                if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+                    event.preventDefault();
+                    applyMapTableViewEdits(true);
+                }
+            };
+            document.addEventListener('keydown', modal._mapTableEscapeHandler);
+        }
+
         function splitMapExcelJson(jsonString) {
             const chunks = [];
             for (let index = 0; index < jsonString.length; index += MAP_EXCEL_CHUNK_SIZE) {
@@ -15325,6 +17041,7 @@
                 delete mapNotes[bin];
             }
             refreshMapNoteMarkerIcon(bin);
+            scheduleMapLiveTableRefresh();
             return note;
         }
 
@@ -16694,6 +18411,7 @@
                     date: dateStr,
                     details: `${type === 'pvi' ? 'PVI' : type === 'category' ? 'Category' : 'Unspecified'}${opts.source ? ` · ${opts.source}` : ''}`
                 });
+                scheduleMapLiveTableRefresh();
                 return true;
             }
             return false;
@@ -16711,6 +18429,7 @@
             if (getMapScheduleDates(record).length > 0) mapTestDates[bin] = record;
             else delete mapTestDates[bin];
             if (existed) addMapActivity('Removed scheduled date', { type: 'Schedule', bin, date: dateStr, details: type ? normalizeMapScheduleType(type) : '' });
+            if (existed) scheduleMapLiveTableRefresh();
         }
 
         function showDeviceDetailModal(bin) {
@@ -19208,6 +20927,8 @@
         }
 
         function closeBuildingMap() {
+            resetMapLiveTable();
+
             // Dock the panel before closing so it resets cleanly for next open
             if (mapControlsPanelIsPopped) dockControlsPanel();
 
@@ -20197,6 +21918,8 @@
 
             // Initialize the map centered on NYC
             buildingMap = L.map(mapContainer).setView([40.7128, -74.0060], 11);
+            buildingMap.on('layeradd', scheduleMapLiveTableRefresh);
+            buildingMap.on('layerremove', scheduleMapLiveTableRefresh);
             
             // Set up ResizeObserver to handle map container resizing
             const modalContainer = document.getElementById('mapModalContainer');
@@ -20205,6 +21928,7 @@
                     if (buildingMap) {
                         buildingMap.invalidateSize();
                     }
+                    positionMapLiveTableWithinContainer();
                 });
                 resizeObserver.observe(modalContainer);
             }
@@ -21132,6 +22856,7 @@
                 return div;
             };
             legend.addTo(buildingMap);
+            scheduleMapLiveTableRefresh();
         }
         
         // Toggle map legend visibility
@@ -31875,7 +33600,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5.7</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 5.8</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
