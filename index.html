@@ -18491,29 +18491,42 @@
             const activeReportDevices = devices.filter(device => !getDeviceReportTestInfo(device).isRemoved);
             const reportSummary = activeReportDevices.reduce((summary, device) => {
                 const info = getDeviceReportTestInfo(device);
+                const pending = getDeviceReportPendingTests(info);
+                const entry = {
+                    number: device.device_number || 'N/A',
+                    type: device.device_type || 'Unknown',
+                    pending,
+                    lastCat5: info.cat5Date,
+                    dueYear: info.nextCat5DueYear || currentYear,
+                    hasAnyTestThisYear: !!(info.hasPVI || info.hasCat1 || info.hasCat5)
+                };
                 if (info.requiresPVI) {
                     summary.pviRequired++;
                     if (info.hasPVI) summary.pviComplete++;
-                    else summary.pviMissing++;
+                    else {
+                        summary.pviMissing++;
+                        summary.pviMissingDevices.push(entry);
+                    }
                 }
                 if (info.requiresCat1) {
                     summary.cat1Required++;
                     if (info.hasCat1) summary.cat1Complete++;
-                    else summary.cat1Missing++;
+                    else {
+                        summary.cat1Missing++;
+                        summary.cat1MissingDevices.push(entry);
+                    }
                 }
                 if (info.requiresCat5 || info.hasCat5) {
                     summary.cat5Required++;
                     if (info.hasCat5) summary.cat5Complete++;
                     else {
                         summary.cat5Missing++;
-                        summary.cat5RequiredDevices.push({
-                            number: device.device_number || 'N/A',
-                            type: device.device_type || 'Unknown',
-                            lastCat5: info.cat5Date,
-                            dueYear: info.nextCat5DueYear || currentYear
-                        });
+                        summary.cat5RequiredDevices.push(entry);
                     }
                 }
+                if (pending.length > 0) summary.devicesMissingRequired.push(entry);
+                else summary.devicesComplete.push(entry);
+                if (!entry.hasAnyTestThisYear) summary.devicesNoTestsThisYear.push(entry);
                 return summary;
             }, {
                 pviRequired: 0,
@@ -18525,23 +18538,65 @@
                 cat5Required: 0,
                 cat5Complete: 0,
                 cat5Missing: 0,
-                cat5RequiredDevices: []
+                pviMissingDevices: [],
+                cat1MissingDevices: [],
+                cat5RequiredDevices: [],
+                devicesMissingRequired: [],
+                devicesComplete: [],
+                devicesNoTestsThisYear: []
             });
 
-            const cat5RequiredList = reportSummary.cat5RequiredDevices.slice(0, 8).map(device => `
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:5px 0;border-top:1px solid rgba(255,152,0,0.16);">
-                    <span style="font-weight:700;color:var(--text-color);">${escapeMapSuggestionHtml(device.number)}</span>
-                    <span style="text-align:right;font-size:12px;line-height:1.35;">
-                        <span style="display:block;color:var(--text-color);opacity:0.78;">${escapeMapSuggestionHtml(device.type)}</span>
-                        <span style="display:block;color:#ff9800;font-weight:700;">Due ${device.dueYear} · Last CAT 5 ${device.lastCat5 ? device.lastCat5.toLocaleDateString() : 'N/A'}</span>
-                    </span>
-                </div>
-            `).join('');
+            const sortOverviewDevices = list => list.slice().sort((a, b) =>
+                String(a.number).localeCompare(String(b.number), undefined, { numeric: true })
+            );
+
+            const renderOverviewDeviceRows = (list, options) => {
+                const opts = options || {};
+                const maxRows = opts.maxRows || 12;
+                const sorted = sortOverviewDevices(list);
+                const rowsHtml = sorted.slice(0, maxRows).map(device => {
+                    const pendingHtml = Array.isArray(device.pending) && device.pending.length
+                        ? device.pending.map(test => {
+                            const color = test === 'CAT 5' ? '#ff9800' : '#ff6b6b';
+                            return `<span style="display:inline-block;padding:2px 7px;border-radius:999px;background:${color}18;border:1px solid ${color}55;color:${color};font-size:11px;font-weight:700;margin:0 4px 4px 0;">${escapeMapSuggestionHtml(test)}</span>`;
+                        }).join('')
+                        : '<span style="color:#4CAF50;font-weight:700;font-size:12px;">All required done</span>';
+                    const extra = opts.showCat5Due
+                        ? `<div style="font-size:11px;color:#ff9800;font-weight:700;margin-top:2px;">Due ${device.dueYear} · Last CAT 5 ${device.lastCat5 ? device.lastCat5.toLocaleDateString() : 'N/A'}</div>`
+                        : '';
+                    return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:7px 0;border-top:1px solid var(--input-border);">
+                        <div style="min-width:0;">
+                            <div style="font-weight:800;color:var(--text-color);">${escapeMapSuggestionHtml(device.number)}</div>
+                            <div style="font-size:12px;opacity:0.72;margin-top:1px;">${escapeMapSuggestionHtml(device.type)}</div>
+                            ${extra}
+                        </div>
+                        <div style="text-align:right;max-width:58%;">${pendingHtml}</div>
+                    </div>`;
+                }).join('');
+                const moreCount = Math.max(0, sorted.length - maxRows);
+                const moreHtml = moreCount > 0
+                    ? `<div style="font-size:11px;opacity:0.65;margin-top:6px;text-align:center;">+${moreCount} more device${moreCount === 1 ? '' : 's'}...</div>`
+                    : '';
+                return rowsHtml + moreHtml;
+            };
+
+            const renderMissingGroup = (title, color, devicesList, filterValue, emptyText, options) => {
+                const count = devicesList.length;
+                return `<div style="background:var(--panel-bg);border:1px solid ${color}40;border-radius:8px;padding:10px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+                        <div style="font-size:13px;font-weight:800;color:${color};">${title} · ${count}</div>
+                        ${count > 0 ? `<button type="button" onclick="document.getElementById('deviceReportTestFilter').value='${filterValue}';filterDeviceReportModal();" style="padding:4px 8px;border-radius:5px;border:1px solid ${color}66;background:${color}14;color:${color};font-size:11px;font-weight:700;cursor:pointer;">Show in list</button>` : ''}
+                    </div>
+                    ${count > 0
+                        ? renderOverviewDeviceRows(devicesList, options)
+                        : `<div style="font-size:12px;color:var(--text-color);opacity:0.72;">${emptyText}</div>`}
+                </div>`;
+            };
 
             const reportSummaryHtml = `
                 <div style="background:rgba(26,115,232,0.08);border:1px solid rgba(26,115,232,0.25);border-radius:10px;padding:12px;margin-bottom:12px;">
-                    <div style="font-size:14px;font-weight:800;color:var(--header-color);margin-bottom:10px;">${currentYear} Test Summary</div>
-                    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px;">
+                    <div style="font-size:14px;font-weight:800;color:var(--header-color);margin-bottom:10px;">${currentYear} Testing Status Overview</div>
+                    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px;">
                         <div style="background:var(--panel-bg);border:1px solid var(--input-border);border-radius:8px;padding:9px;">
                             <div style="font-size:11px;opacity:0.65;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">PVI</div>
                             <div style="font-size:13px;"><span style="color:#4CAF50;font-weight:800;">${reportSummary.pviComplete}</span> done · <span style="color:${reportSummary.pviMissing > 0 ? '#ff6b6b' : '#4CAF50'};font-weight:800;">${reportSummary.pviMissing}</span> missing</div>
@@ -18555,11 +18610,35 @@
                             <div style="font-size:13px;"><span style="color:#ff9800;font-weight:800;">${reportSummary.cat5Missing}</span> missing · <span style="color:#4CAF50;font-weight:800;">${reportSummary.cat5Complete}</span> done</div>
                         </div>
                     </div>
-                    <div style="background:rgba(255,152,0,0.09);border:1px solid rgba(255,152,0,0.25);border-radius:8px;padding:10px;">
-                        <div style="font-size:13px;font-weight:800;color:#ff9800;margin-bottom:6px;">CAT 5 Required</div>
-                        ${reportSummary.cat5RequiredDevices.length > 0
-                            ? `${cat5RequiredList}${reportSummary.cat5RequiredDevices.length > 8 ? `<div style="font-size:11px;opacity:0.65;margin-top:6px;text-align:center;">+${reportSummary.cat5RequiredDevices.length - 8} more CAT 5 required device${reportSummary.cat5RequiredDevices.length - 8 === 1 ? '' : 's'}...</div>` : ''}`
-                            : `<div style="font-size:12px;color:var(--text-color);opacity:0.78;">None are due for this calendar year.</div>`}
+                    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px;">
+                        <div style="background:rgba(255,152,0,0.08);border:1px solid rgba(255,152,0,0.28);border-radius:8px;padding:9px;">
+                            <div style="font-size:11px;opacity:0.7;margin-bottom:3px;">No tests this year</div>
+                            <div style="font-size:18px;font-weight:800;color:#ff9800;">${reportSummary.devicesNoTestsThisYear.length}</div>
+                        </div>
+                        <div style="background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.28);border-radius:8px;padding:9px;">
+                            <div style="font-size:11px;opacity:0.7;margin-bottom:3px;">Missing required tests</div>
+                            <div style="font-size:18px;font-weight:800;color:#ff6b6b;">${reportSummary.devicesMissingRequired.length}</div>
+                        </div>
+                        <div style="background:rgba(76,175,80,0.08);border:1px solid rgba(76,175,80,0.28);border-radius:8px;padding:9px;">
+                            <div style="font-size:11px;opacity:0.7;margin-bottom:3px;">All required complete</div>
+                            <div style="font-size:18px;font-weight:800;color:#4CAF50;">${reportSummary.devicesComplete.length}</div>
+                        </div>
+                    </div>
+                    <div style="background:rgba(255,107,107,0.07);border:1px solid rgba(255,107,107,0.25);border-radius:8px;padding:10px;margin-bottom:8px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+                            <div style="font-size:13px;font-weight:800;color:#ff6b6b;">Devices missing required tests</div>
+                            ${reportSummary.devicesMissingRequired.length > 0
+                                ? `<button type="button" onclick="document.getElementById('deviceReportTestFilter').value='any-pending';filterDeviceReportModal();" style="padding:4px 8px;border-radius:5px;border:1px solid rgba(255,107,107,0.45);background:rgba(255,107,107,0.1);color:#ff6b6b;font-size:11px;font-weight:700;cursor:pointer;">Show in list</button>`
+                                : ''}
+                        </div>
+                        ${reportSummary.devicesMissingRequired.length > 0
+                            ? renderOverviewDeviceRows(reportSummary.devicesMissingRequired, { maxRows: 14 })
+                            : `<div style="font-size:12px;color:var(--text-color);opacity:0.78;">Every active device has its required ${currentYear} tests filed.</div>`}
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;">
+                        ${renderMissingGroup('Missing PVI', '#ff6b6b', reportSummary.pviMissingDevices, 'missing-pvi', 'No devices are missing PVI.', {})}
+                        ${renderMissingGroup('Missing CAT 1', '#ff6b6b', reportSummary.cat1MissingDevices, 'missing-cat1', 'No devices are missing CAT 1.', {})}
+                        ${renderMissingGroup('Missing CAT 5', '#ff9800', reportSummary.cat5RequiredDevices, 'missing-cat5', 'None are due for this calendar year.', { showCat5Due: true })}
                     </div>
                 </div>
             `;
