@@ -9,11 +9,16 @@
     <!-- PDF-lib for ELV3 PDF parsing -->
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     
-    <!-- Inline theme application to prevent flash: always follow system -->
+    <!-- Inline theme application to prevent flash: respect saved preference -->
     <script>
         (function() {
+            var theme = 'system';
+            try {
+                var saved = localStorage.getItem('theme');
+                if (saved === 'light' || saved === 'dark' || saved === 'system') theme = saved;
+            } catch (e) {}
             document.documentElement.classList.remove('light-theme', 'dark-theme', 'system-theme');
-            document.documentElement.classList.add('system-theme');
+            document.documentElement.classList.add(theme === 'light' ? 'light-theme' : theme === 'dark' ? 'dark-theme' : 'system-theme');
             // Pre-detect popout to avoid flashing the full UI
             try {
                 var params = new URLSearchParams(window.location.search);
@@ -289,34 +294,28 @@
 
     
 
-    <div id="settingsModal" class="settings-modal">
-        <h3>Settings</h3>
+    <button type="button" id="pageSettingsBtn" onclick="openSettings()" title="Settings" aria-label="Open settings">
+        ⚙️
+    </button>
+
+    <div id="settingsModal" class="settings-modal" role="dialog" aria-labelledby="settingsModalTitle" aria-modal="true">
+        <h3 id="settingsModalTitle">Settings</h3>
         <label for="defaultTab">Default Starting Tab:</label>
-        <select id="defaultTab" style="width: 100%; padding: 8px; margin: 10px 0;">
+        <select id="defaultTab" style="width: 100%; padding: 8px; margin: 10px 0; box-sizing: border-box; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 6px;">
             <option value="main">ELV3</option>
             <option value="dob">DOB</option>
-            <option value="dates">Dates</option>
-            <option value="pdf">PDF</option>
-            <!-- <option value="devices">Device Lookup</option> -->
+            <option value="map">MAP</option>
+            <option value="dates">DATES</option>
+            <option value="resources">RESOURCES</option>
+            <option value="knownIssues">BUGS</option>
         </select>
-        <div style="border-top: 1px solid var(--input-border); margin-top: 14px; padding-top: 14px;">
-            <div style="font-size: 0.95em; font-weight: 600; color: var(--header-color); margin-bottom: 10px;">MAP Settings</div>
-            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.9em; padding: 8px; background: var(--input-bg); border-radius: 6px; border: 1px solid var(--input-border);">
-                <input type="checkbox" id="mapHideCompletedToggle" style="width: 16px; height: 16px; cursor: pointer; accent-color: #27ae60;">
-                <span>Hide completed addresses on the map</span>
-            </label>
-            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.9em; padding: 8px; background: var(--input-bg); border-radius: 6px; border: 1px solid var(--input-border); margin-top: 6px;">
-                <input type="checkbox" id="mapHideInProcessToggle" style="width: 16px; height: 16px; cursor: pointer; accent-color: #e67e22;">
-                <span>Hide in-process addresses on the map</span>
-            </label>
-            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.9em; padding: 8px; background: var(--input-bg); border-radius: 6px; border: 1px solid var(--input-border); margin-top: 6px;">
-                <input type="checkbox" id="mapHideHoldToggle" style="width: 16px; height: 16px; cursor: pointer; accent-color: #607d8b;">
-                <span>Hide hold addresses on the map</span>
-            </label>
-            <div style="margin-top: 10px; padding: 10px; background: var(--input-bg); border-radius: 6px; border: 1px solid var(--input-border); font-size: 0.85em; color: var(--text-color); opacity: 0.85; line-height: 1.5;">
-                <strong style="color: #607d8b;">⏸ Hold</strong> — Click the <strong>⏸</strong> button in any building's popup to label it as <em>On Hold</em>. This is for addresses where scheduling has been paused. Hold buildings appear in <strong style="color:#607d8b;">blue-gray</strong> on the map. Use the <em>On Hold</em> panel in MAP Controls to manage or remove hold labels. Hold data is saved with your map view file.
-            </div>
-        </div>
+        <label for="themeSelect" style="display:block; margin-top: 12px;">Theme:</label>
+        <select id="themeSelect" style="width: 100%; padding: 8px; margin: 10px 0; box-sizing: border-box; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 6px;">
+            <option value="system">Automatic (match computer)</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+        </select>
+        <p style="margin: 0 0 8px; font-size: 0.82em; opacity: 0.75; line-height: 1.4;">Saved in this browser only. Tab choice applies on the next visit; theme applies as soon as you save.</p>
         <div style="margin-top: 16px; display: flex; gap: 10px;">
             <button onclick="saveSettings()">Save</button>
             <button onclick="closeSettings()" style="background-color: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; padding: 10px 20px; font-size: 1.2em; transition: background-color 0.3s ease, color 0.3s ease;">Cancel</button>
@@ -3090,10 +3089,13 @@
             calculateNinetyDayStart();
             calculateTenDaysAfter();
 
-            // Load default tab if set
+            // Load default starting tab (saved in this browser via Settings)
+            const allowedDefaultTabs = ['main', 'dob', 'map', 'dates', 'resources', 'knownIssues'];
             const defaultTab = localStorage.getItem('defaultTab');
-            if (defaultTab) {
+            if (defaultTab && allowedDefaultTabs.includes(defaultTab)) {
                 showTab(defaultTab);
+            } else if (defaultTab) {
+                localStorage.setItem('defaultTab', 'main');
             }
 
             // Initialize Quick Lookup panel
@@ -3502,19 +3504,19 @@
             const overlay = document.getElementById('settingsOverlay');
             modal.style.display = 'block';
             overlay.style.display = 'block';
+            overlay.style.opacity = '1';
             
             // Load current settings
-            const savedTab = localStorage.getItem('defaultTab') || 'main';
-            document.getElementById('defaultTab').value = savedTab;
+            const allowedDefaultTabs = ['main', 'dob', 'map', 'dates', 'resources', 'knownIssues'];
+            let savedTab = localStorage.getItem('defaultTab') || 'main';
+            if (!allowedDefaultTabs.includes(savedTab)) savedTab = 'main';
+            const defaultTabSelect = document.getElementById('defaultTab');
+            if (defaultTabSelect) defaultTabSelect.value = savedTab;
 
-            const hideCompletedToggle = document.getElementById('mapHideCompletedToggle');
-            if (hideCompletedToggle) hideCompletedToggle.checked = isHideCompletedActive();
-
-            const hideInProcessToggle = document.getElementById('mapHideInProcessToggle');
-            if (hideInProcessToggle) hideInProcessToggle.checked = isHideInProcessActive();
-
-            const hideHoldToggle = document.getElementById('mapHideHoldToggle');
-            if (hideHoldToggle) hideHoldToggle.checked = isHideHoldActive();
+            const themeSelect = document.getElementById('themeSelect');
+            if (themeSelect) {
+                themeSelect.value = (typeof getSavedTheme === 'function') ? getSavedTheme() : (localStorage.getItem('theme') || 'system');
+            }
 
             // Close settings when clicking outside (attach once to avoid stacking listeners)
             if (!overlay.dataset.settingsListenersAttached) {
@@ -3536,49 +3538,26 @@
             const overlay = document.getElementById('settingsOverlay');
             modal.style.display = 'none';
             overlay.style.display = 'none';
+            overlay.style.opacity = '0';
         }
 
         function saveSettings() {
-            const defaultTab = document.getElementById('defaultTab').value;
+            const allowedDefaultTabs = ['main', 'dob', 'map', 'dates', 'resources', 'knownIssues'];
+            const defaultTabSelect = document.getElementById('defaultTab');
+            const defaultTab = defaultTabSelect && allowedDefaultTabs.includes(defaultTabSelect.value)
+                ? defaultTabSelect.value
+                : 'main';
             localStorage.setItem('defaultTab', defaultTab);
+            showTab(defaultTab);
 
-            const hideCompletedToggle = document.getElementById('mapHideCompletedToggle');
-            if (hideCompletedToggle) {
-                mapHideCompleted = !!hideCompletedToggle.checked;
-                localStorage.setItem('mapHideCompleted', mapHideCompleted ? 'true' : 'false');
-                updateHideCompletedBtn();
-                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                    const modal = document.getElementById('buildingMapModal');
-                    if (modal && modal.style.display === 'flex') {
-                        initBuildingMap(window.lastBulkSearchResults.binGroups, true);
-                    }
-                }
-            }
-
-            const hideInProcessToggle = document.getElementById('mapHideInProcessToggle');
-            if (hideInProcessToggle) {
-                mapHideInProcess = !!hideInProcessToggle.checked;
-                localStorage.setItem('mapHideInProcess', mapHideInProcess ? 'true' : 'false');
-                updateHideInProcessBtn();
-                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                    const modal = document.getElementById('buildingMapModal');
-                    if (modal && modal.style.display === 'flex') {
-                        initBuildingMap(window.lastBulkSearchResults.binGroups, true);
-                    }
-                }
-            }
-
-            const hideHoldToggle = document.getElementById('mapHideHoldToggle');
-            if (hideHoldToggle) {
-                mapHideHold = !!hideHoldToggle.checked;
-                localStorage.setItem('mapHideHold', mapHideHold ? 'true' : 'false');
-                updateHideHoldBtn();
-                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
-                    const modal = document.getElementById('buildingMapModal');
-                    if (modal && modal.style.display === 'flex') {
-                        initBuildingMap(window.lastBulkSearchResults.binGroups, true);
-                    }
-                }
+            const themeSelect = document.getElementById('themeSelect');
+            const themeValue = themeSelect && ['light', 'dark', 'system'].includes(themeSelect.value)
+                ? themeSelect.value
+                : 'system';
+            if (typeof setTheme === 'function') {
+                setTheme(themeValue);
+            } else {
+                localStorage.setItem('theme', themeValue);
             }
 
             closeSettings();
@@ -18610,25 +18589,25 @@
                 };
 
                 const getDeviceReportSortRank = function(device) {
+                    const testInfo = getDeviceReportTestInfo(device);
+                    if (testInfo.isRemoved) return 4;
+
+                    // Devices with no tests filed in the current calendar year come first.
+                    const hasAnyTestThisYear = !!(testInfo.hasPVI || testInfo.hasCat1 || testInfo.hasCat5);
+                    if (!hasAnyTestThisYear) return 0;
+
                     const violationCount = Array.isArray(device.violations) ? device.violations.length : 0;
-                    if (violationCount > 0) return 0;
+                    if (violationCount > 0) return 1;
 
-                    const statusText = (device.device_status || '').toUpperCase();
-                    if (statusText.includes('REMOVED') || statusText.includes('DELETED')) return 3;
+                    const mostRecent = testInfo.isDismantled
+                        ? testInfo.pviDate
+                        : [testInfo.pviDate, testInfo.cat1Date, testInfo.cat5Date].filter(Boolean).reduce((latest, date) => !latest || date > latest ? date : latest, null);
 
-                    const pviDate  = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
-                    const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
-                    const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
-                    const isDismantled = statusText.includes('DISMANTLED');
-                    const mostRecent = isDismantled
-                        ? pviDate
-                        : [pviDate, cat1Date, cat5Date].filter(Boolean).reduce((latest, date) => !latest || date > latest ? date : latest, null);
-
-                    if (!mostRecent) return 2;
+                    if (!mostRecent) return 3;
                     const eligible = new Date(mostRecent);
                     eligible.setDate(eligible.getDate() + 91);
                     eligible.setHours(0,0,0,0);
-                    return eligible > today ? 1 : 2;
+                    return eligible > today ? 2 : 3;
                 };
 
                 const sortedDevices = devices.slice().sort(function(a, b) {
@@ -18639,7 +18618,7 @@
                     const aViolations = Array.isArray(a.violations) ? a.violations.length : 0;
                     const bViolations = Array.isArray(b.violations) ? b.violations.length : 0;
                     if (aViolations !== bViolations) return bViolations - aViolations;
-                    if (aRank === 1 && bRank === 1) {
+                    if (aRank === 2 && bRank === 2) {
                         const aDaysUntil = getDeviceReportDaysUntilEligible(a);
                         const bDaysUntil = getDeviceReportDaysUntilEligible(b);
                         if (aDaysUntil !== bDaysUntil) return bDaysUntil - aDaysUntil;
@@ -18811,12 +18790,24 @@
                             ? 'rgba(128,128,128,0.07)'
                             : pending.length === 0
                                 ? 'rgba(76,175,80,0.06)'
-                                : 'var(--panel-bg)';
+                                : (!(hasPVI || hasCat1 || hasCat5)
+                                    ? 'rgba(255,152,0,0.07)'
+                                    : 'var(--panel-bg)');
 
                     rows += `
                     <div class="device-report-item"
                          data-device-type="${escapeMapSuggestionHtml(type)}"
                          data-device-number="${escapeMapSuggestionHtml(num)}"
+                         data-has-pvi="${hasPVI ? '1' : '0'}"
+                         data-has-cat1="${hasCat1 ? '1' : '0'}"
+                         data-has-cat5="${hasCat5 ? '1' : '0'}"
+                         data-missing-pvi="${(!isRemoved && testInfo.requiresPVI && !hasPVI) ? '1' : '0'}"
+                         data-missing-cat1="${(!isRemoved && testInfo.requiresCat1 && !hasCat1) ? '1' : '0'}"
+                         data-missing-cat5="${(!isRemoved && testInfo.requiresCat5 && !hasCat5) ? '1' : '0'}"
+                         data-no-tests-year="${(!isRemoved && !(hasPVI || hasCat1 || hasCat5)) ? '1' : '0'}"
+                         data-all-complete="${(!isRemoved && pending.length === 0) ? '1' : '0'}"
+                         data-any-pending="${(!isRemoved && pending.length > 0) ? '1' : '0'}"
+                         data-removed="${isRemoved ? '1' : '0'}"
                          style="background:${rowBg};border:1px solid var(--input-border);border-radius:8px;padding:12px;margin-bottom:8px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
                             <div>
@@ -18879,6 +18870,23 @@
                                     style="padding:8px 10px;background:var(--card-bg);color:var(--text-color);border:1px solid var(--input-border);border-radius:6px;font-size:13px;min-width:140px;max-width:220px;">
                                 <option value="all">All Types</option>
                                 ${deviceReportTypeOptions}
+                            </select>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <label for="deviceReportTestFilter" style="color:var(--text-color);font-size:13px;white-space:nowrap;">Tests:</label>
+                            <select id="deviceReportTestFilter"
+                                    onchange="filterDeviceReportModal()"
+                                    style="padding:8px 10px;background:var(--card-bg);color:var(--text-color);border:1px solid var(--input-border);border-radius:6px;font-size:13px;min-width:190px;max-width:280px;">
+                                <option value="all">All devices</option>
+                                <option value="no-tests-year">No tests this year</option>
+                                <option value="any-pending">Missing any required test</option>
+                                <option value="missing-pvi">Missing PVI</option>
+                                <option value="missing-cat1">Missing CAT 1</option>
+                                <option value="missing-cat5">Missing CAT 5</option>
+                                <option value="has-pvi">PVI done this year</option>
+                                <option value="has-cat1">CAT 1 done this year</option>
+                                <option value="has-cat5">CAT 5 done this year</option>
+                                <option value="all-complete">All required tests complete</option>
                             </select>
                         </div>
                         <button type="button"
@@ -18944,12 +18952,14 @@
 
         function filterDeviceReportModal() {
             const typeFilter = document.getElementById('deviceReportTypeFilter');
+            const testFilter = document.getElementById('deviceReportTestFilter');
             const searchInput = document.getElementById('deviceReportSearchInput');
             const items = document.querySelectorAll('#deviceReportList .device-report-item');
             const countEl = document.getElementById('deviceReportFilterCount');
             if (!items.length) return;
 
             const selectedType = typeFilter ? typeFilter.value : 'all';
+            const selectedTest = testFilter ? testFilter.value : 'all';
             const search = searchInput ? searchInput.value.trim().toUpperCase() : '';
             let visible = 0;
 
@@ -18958,14 +18968,24 @@
                 const itemNumber = (item.getAttribute('data-device-number') || '').toUpperCase();
                 const typeMatch = selectedType === 'all' || itemType === selectedType;
                 const searchMatch = !search || itemNumber.includes(search);
-                const show = typeMatch && searchMatch;
+                let testMatch = true;
+                if (selectedTest === 'no-tests-year') testMatch = item.getAttribute('data-no-tests-year') === '1';
+                else if (selectedTest === 'any-pending') testMatch = item.getAttribute('data-any-pending') === '1';
+                else if (selectedTest === 'missing-pvi') testMatch = item.getAttribute('data-missing-pvi') === '1';
+                else if (selectedTest === 'missing-cat1') testMatch = item.getAttribute('data-missing-cat1') === '1';
+                else if (selectedTest === 'missing-cat5') testMatch = item.getAttribute('data-missing-cat5') === '1';
+                else if (selectedTest === 'has-pvi') testMatch = item.getAttribute('data-has-pvi') === '1';
+                else if (selectedTest === 'has-cat1') testMatch = item.getAttribute('data-has-cat1') === '1';
+                else if (selectedTest === 'has-cat5') testMatch = item.getAttribute('data-has-cat5') === '1';
+                else if (selectedTest === 'all-complete') testMatch = item.getAttribute('data-all-complete') === '1';
+                const show = typeMatch && searchMatch && testMatch;
                 item.style.display = show ? '' : 'none';
                 if (show) visible++;
             });
 
             if (countEl) {
                 const total = items.length;
-                const filtersActive = selectedType !== 'all' || search.length > 0;
+                const filtersActive = selectedType !== 'all' || selectedTest !== 'all' || search.length > 0;
                 if (filtersActive) {
                     countEl.style.display = '';
                     countEl.textContent = 'Showing ' + visible + ' of ' + total + ' device' + (total !== 1 ? 's' : '');
@@ -18978,8 +18998,10 @@
 
         function resetDeviceReportFilters() {
             const typeFilter = document.getElementById('deviceReportTypeFilter');
+            const testFilter = document.getElementById('deviceReportTestFilter');
             const searchInput = document.getElementById('deviceReportSearchInput');
             if (typeFilter) typeFilter.value = 'all';
+            if (testFilter) testFilter.value = 'all';
             if (searchInput) searchInput.value = '';
             filterDeviceReportModal();
         }

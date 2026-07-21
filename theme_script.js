@@ -1,52 +1,50 @@
 // Theme switching functionality
 function setTheme(theme) {
+    const normalized = (theme === 'light' || theme === 'dark' || theme === 'system') ? theme : 'system';
+
     // Remove existing theme classes
     document.documentElement.classList.remove('light-theme', 'dark-theme', 'system-theme');
-    
-    if (theme === 'light') {
+
+    if (normalized === 'light') {
         document.documentElement.classList.add('light-theme');
-        localStorage.setItem('theme', 'light');
-    } else if (theme === 'dark') {
+    } else if (normalized === 'dark') {
         document.documentElement.classList.add('dark-theme');
-        localStorage.setItem('theme', 'dark');
     } else {
-        // System theme
         document.documentElement.classList.add('system-theme');
-        localStorage.setItem('theme', 'system');
     }
-    
+
+    try {
+        localStorage.setItem('theme', normalized);
+    } catch (e) {}
+
     // Update dropdown selectors to match the current theme
-    if (document.getElementById('themeSelect')) {
-        document.getElementById('themeSelect').value = theme;
+    const themeSelect = document.getElementById('themeSelect');
+    if (themeSelect) {
+        themeSelect.value = normalized;
     }
 }
 
-// Initialize the theme as early as possible
-// Force system theme now that the manual menu has been removed
-try {
-    localStorage.setItem('theme', 'system');
-} catch (e) {}
-setTheme('system');
+function getSavedTheme() {
+    try {
+        const saved = localStorage.getItem('theme');
+        if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
+    } catch (e) {}
+    return 'system';
+}
+
+// Initialize the theme as early as possible from the user's saved preference
+setTheme(getSavedTheme());
 
 // Also check when DOM is fully loaded
 document.addEventListener('DOMContentLoaded', function() {
-    // Re-apply theme to ensure everything is properly styled
-    const currentTheme = localStorage.getItem('theme') || 'system';
-    setTheme(currentTheme);
-    
-    // Ensure themeSelect dropdown matches current theme
-    if (document.getElementById('themeSelect')) {
-        document.getElementById('themeSelect').value = currentTheme;
-    }
+    setTheme(getSavedTheme());
 });
 
-// Listen for system theme changes
+// Listen for system theme changes when Automatic is selected
 if (window.matchMedia) {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
-        const currentTheme = localStorage.getItem('theme') || 'system';
-        if (currentTheme === 'system') {
-            // System theme changes are handled by CSS media query
-            // This is just to force a re-render if needed
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        if (getSavedTheme() === 'system') {
+            // Force CSS to re-evaluate system preference
             document.documentElement.classList.remove('system-theme');
             setTimeout(() => {
                 document.documentElement.classList.add('system-theme');
