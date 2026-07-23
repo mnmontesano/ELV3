@@ -18283,6 +18283,66 @@
             return isNaN(parsed.getTime()) ? null : parsed;
         }
 
+        function getMapDeviceTestingReadyDate(device) {
+            if (!device) return null;
+            const status = String(device.device_status || '').toUpperCase();
+            const deviceType = String(device.device_type || '').toUpperCase();
+            const machineType = String(device.machine_type || '').toUpperCase();
+            const isDismantled = status.includes('DISMANTLED');
+            const isHydraulic = deviceType.includes('HYDRAULIC') || deviceType.includes('HYDRO')
+                || machineType.includes('HYDRAULIC') || machineType.includes('HYDRO');
+            const pviDate = parseMapInspectionDate(device.periodic_latest_inspection);
+            const cat1Date = parseMapInspectionDate(device.cat1_latest_report_filed);
+            const cat5Date = parseMapInspectionDate(device.cat5_latest_report_filed);
+            const relevantDates = isDismantled
+                ? [pviDate].filter(Boolean)
+                : [pviDate, cat1Date, isHydraulic ? null : cat5Date].filter(Boolean);
+            if (relevantDates.length === 0) return null;
+            const readyDate = new Date(Math.max(...relevantDates.map(date => date.getTime())));
+            readyDate.setDate(readyDate.getDate() + 91);
+            readyDate.setHours(0, 0, 0, 0);
+            return readyDate;
+        }
+
+        function getMapScheduledReadinessWarning(bin, type, dateStr) {
+            const normalizedType = normalizeMapScheduleType(type);
+            if (normalizedType !== 'pvi' && normalizedType !== 'category') return null;
+            const scheduledDate = parseMapInspectionDate(dateStr);
+            if (!scheduledDate) return null;
+            scheduledDate.setHours(0, 0, 0, 0);
+            const group = getMapGroupForBin(bin);
+            const devices = group && Array.isArray(group.devices)
+                ? group.devices.filter(mapDobDeviceIsActiveForCompletion)
+                : [];
+            const scheduledYear = scheduledDate.getFullYear();
+            const unreadyDevices = devices.map(device => {
+                const testInfo = getMapDeviceReportTestInfo(device, scheduledYear, bin);
+                const requiresScheduledTest = normalizedType === 'pvi'
+                    ? testInfo.requiresPVI
+                    : (testInfo.requiresCat1 || testInfo.requiresCat5);
+                if (!requiresScheduledTest) return null;
+                const readyDate = getMapDeviceTestingReadyDate(device);
+                if (!readyDate || readyDate <= scheduledDate) return null;
+                return {
+                    deviceNumber: String(device.device_number || 'Unknown').trim(),
+                    readyDate
+                };
+            }).filter(Boolean).sort((a, b) => a.readyDate - b.readyDate);
+            if (unreadyDevices.length === 0) return null;
+
+            const count = unreadyDevices.length;
+            const shownDevices = unreadyDevices.slice(0, 3).map(device =>
+                `${device.deviceNumber} (ready ${device.readyDate.toLocaleDateString()})`
+            );
+            const remaining = count - shownDevices.length;
+            const details = shownDevices.join(', ') + (remaining > 0 ? `, plus ${remaining} more` : '');
+            return {
+                count,
+                devices: unreadyDevices,
+                message: `Warning: ${count} device${count === 1 ? ' is' : 's are'} not ready to be tested by ${scheduledDate.toLocaleDateString()}. ${details}.`
+            };
+        }
+
         function getMapCategoryScheduleRules(bin, scheduledYear) {
             const group = getMapGroupForBin(bin);
             const devices = group && Array.isArray(group.devices) ? group.devices.filter(mapDobDeviceIsActiveForCompletion) : [];
@@ -19164,26 +19224,38 @@
                     showMapNotification(validation.message, '#ff6b6b');
                     return;
                 }
+                const readinessWarning = getMapScheduledReadinessWarning(bin, type, val);
+                if (readinessWarning && !confirm(`${readinessWarning.message}\n\nSchedule this date anyway?`)) return;
                 if (!addTestDateForBin(bin, val, { type, address })) {
                     showMapNotification('That date is already scheduled', '#ff9800');
                     return;
                 }
                 renderDates();
                 refreshMapAfterTestDateChange();
-                showMapNotification(`${type === 'pvi' ? 'PVI' : 'Category'} test date added`, type === 'pvi' ? '#1a73e8' : '#9b59b6');
+                showMapNotification(
+                    readinessWarning ? readinessWarning.message : `${type === 'pvi' ? 'PVI' : 'Category'} test date added`,
+                    readinessWarning ? '#ff9800' : (type === 'pvi' ? '#1a73e8' : '#9b59b6')
+                );
+            }
+
+            function showTypedDateFeedback(type, dateStr) {
+                const validation = validateMapScheduledTestDate(bin, type, dateStr);
+                const error = document.getElementById(type === 'pvi' ? 'pviScheduleError' : 'categoryScheduleError');
+                if (!error) return validation;
+                const readinessWarning = validation.valid ? getMapScheduledReadinessWarning(bin, type, dateStr) : null;
+                error.textContent = validation.message || (readinessWarning ? readinessWarning.message : '');
+                error.style.color = validation.valid ? '#ff9800' : '#ff6b6b';
+                error.style.display = validation.valid && !readinessWarning ? 'none' : 'block';
+                return validation;
             }
 
             document.getElementById('testDateAddPvi').addEventListener('click', () => addTypedDate('pvi', 'testDateInputPvi'));
             document.getElementById('testDateAddCategory').addEventListener('click', () => addTypedDate('category', 'testDateInputCategory'));
             document.getElementById('testDateInputPvi').addEventListener('change', event => {
-                const validation = validateMapScheduledTestDate(bin, 'pvi', event.target.value);
-                const error = document.getElementById('pviScheduleError');
-                if (error) { error.textContent = validation.message || ''; error.style.display = validation.valid ? 'none' : 'block'; }
+                showTypedDateFeedback('pvi', event.target.value);
             });
             document.getElementById('testDateInputCategory').addEventListener('change', event => {
-                const validation = validateMapScheduledTestDate(bin, 'category', event.target.value);
-                const error = document.getElementById('categoryScheduleError');
-                if (error) { error.textContent = validation.message || ''; error.style.display = validation.valid ? 'none' : 'block'; }
+                const validation = showTypedDateFeedback('category', event.target.value);
                 const summary = document.getElementById('categoryScheduleRule');
                 if (summary && validation.rules) {
                     const completedYear = validation.rules.categoryCompleteForYear;
