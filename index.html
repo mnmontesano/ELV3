@@ -304,12 +304,20 @@
 
     <div id="settingsModal" class="settings-modal" role="dialog" aria-labelledby="settingsModalTitle" aria-modal="true">
         <h3 id="settingsModalTitle">Settings</h3>
-        <label for="themeSelect">Theme:</label>
+        <label for="defaultTab">Default Starting Tab:</label>
+        <select id="defaultTab" style="width: 100%; padding: 8px; margin: 10px 0; box-sizing: border-box; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 6px;">
+            <option value="main">ELV3</option>
+            <option value="dob">DOB</option>
+            <option value="map">MAP</option>
+            <option value="dates">DATES</option>
+            <option value="resources">RESOURCES</option>
+        </select>
+        <label for="themeSelect" style="display:block; margin-top: 12px;">Theme:</label>
         <select id="themeSelect" style="width: 100%; padding: 8px; margin: 10px 0; box-sizing: border-box; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 6px;">
             <option value="light">Light</option>
             <option value="dark">Dark</option>
         </select>
-        <p style="margin: 0 0 8px; font-size: 0.82em; opacity: 0.75; line-height: 1.4;">Saved in this browser only. Theme applies as soon as you save.</p>
+        <p style="margin: 0 0 8px; font-size: 0.82em; opacity: 0.75; line-height: 1.4;">Saved in this browser only. Tab choice applies on the next visit; theme applies as soon as you save. The disclaimer still appears until you click Agree.</p>
         <div style="margin-top: 16px; display: flex; gap: 10px;">
             <button onclick="saveSettings()">Save</button>
             <button onclick="closeSettings()" style="background-color: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; padding: 10px 20px; font-size: 1.2em; transition: background-color 0.3s ease, color 0.3s ease;">Cancel</button>
@@ -3060,8 +3068,13 @@
             calculateNinetyDayStart();
             calculateTenDaysAfter();
 
-            // Open on ELV3; disclaimer modal is shown separately until Agree
-            showTab('main');
+            // Load default starting tab (saved in this browser via Settings)
+            const allowedDefaultTabs = ['main', 'dob', 'map', 'dates', 'resources'];
+            let defaultTab = localStorage.getItem('defaultTab');
+            if (!defaultTab || !allowedDefaultTabs.includes(defaultTab)) {
+                defaultTab = 'main';
+            }
+            showTab(defaultTab);
             showDisclaimerModal();
 
             // Initialize Quick Lookup panel
@@ -3472,6 +3485,13 @@
             overlay.style.display = 'block';
             overlay.style.opacity = '1';
 
+            // Load current settings
+            const allowedDefaultTabs = ['main', 'dob', 'map', 'dates', 'resources'];
+            let savedTab = localStorage.getItem('defaultTab') || 'main';
+            if (!allowedDefaultTabs.includes(savedTab)) savedTab = 'main';
+            const defaultTabSelect = document.getElementById('defaultTab');
+            if (defaultTabSelect) defaultTabSelect.value = savedTab;
+
             const themeSelect = document.getElementById('themeSelect');
             if (themeSelect) {
                 const savedTheme = (typeof getSavedTheme === 'function') ? getSavedTheme() : localStorage.getItem('theme');
@@ -3502,6 +3522,14 @@
         }
 
         function saveSettings() {
+            const allowedDefaultTabs = ['main', 'dob', 'map', 'dates', 'resources'];
+            const defaultTabSelect = document.getElementById('defaultTab');
+            const defaultTab = defaultTabSelect && allowedDefaultTabs.includes(defaultTabSelect.value)
+                ? defaultTabSelect.value
+                : 'main';
+            localStorage.setItem('defaultTab', defaultTab);
+            showTab(defaultTab);
+
             const themeSelect = document.getElementById('themeSelect');
             const themeValue = themeSelect && ['light', 'dark'].includes(themeSelect.value)
                 ? themeSelect.value
