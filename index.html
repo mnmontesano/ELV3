@@ -965,7 +965,7 @@
                          style="width: calc(100% - 10px); height: 100px; padding: 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); resize: vertical;"></textarea>
             </div>
 
-            <!-- Modified buttons div to stack vertically -->
+            <!-- Lookup / Clear above results; Export and other actions below -->
             <div style="display: flex; flex-direction: column; gap: 10px; align-items: center;">
                 <button onclick="lookupBulkDevices()" 
                         style="padding: 12px 20px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
@@ -975,6 +975,13 @@
                         style="padding: 12px 20px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
                     Clear
                 </button>
+            </div>
+
+            <div id="bulkResult" class="result" style="margin-top: 15px; display: none; background: var(--result-bg); color: var(--text-color); min-height: 100px; overflow-y: auto; resize: vertical; border: 2px solid var(--input-border); border-radius: 8px; padding: 10px;">
+                <!-- Results will be displayed here -->
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px; align-items: center; margin-top: 15px;">
                 <button id="exportButton" 
                         onclick="showExportModal()" 
                         style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
@@ -996,10 +1003,6 @@
                         style="padding: 12px 20px; background: #6f42c1; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
                     📂 Load Map View from File
                 </button>
-            </div>
-
-            <div id="bulkResult" class="result" style="margin-top: 15px; display: none; background: var(--result-bg); color: var(--text-color); min-height: 100px; overflow-y: auto; resize: vertical; border: 2px solid var(--input-border); border-radius: 8px; padding: 10px;">
-                <!-- Results will be displayed here -->
             </div>
             <input id="mapViewImportInput" type="file" accept=".json,application/json" style="display: none;" onchange="handleMapViewImport(event)">
         </div>
@@ -2247,6 +2250,12 @@
                         style="padding: 12px 20px; background: var(--panel-bg); color: #ff6b6b; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
                     Clear
                 </button>
+            </div>
+
+            <div id="mapTabBulkResult" class="result" style="margin-top: 15px; display: none; background: var(--result-bg); color: var(--text-color); min-height: 100px; overflow-y: auto; resize: vertical; border: 2px solid var(--input-border); border-radius: 8px; padding: 10px;">
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px; align-items: center; margin-top: 15px;">
                 <button id="mapTabExportButton" 
                         onclick="showExportModal()" 
                         style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: none;">
@@ -2261,9 +2270,6 @@
                         style="padding: 12px 20px; background: #6f42c1; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">
                     📂 Load Map View from File
                 </button>
-            </div>
-
-            <div id="mapTabBulkResult" class="result" style="margin-top: 15px; display: none; background: var(--result-bg); color: var(--text-color); min-height: 100px; overflow-y: auto; resize: vertical; border: 2px solid var(--input-border); border-radius: 8px; padding: 10px;">
             </div>
             <input id="mapTabMapViewImportInput" type="file" accept=".json,application/json" style="display: none;" onchange="handleMapViewImport(event)">
         </div>
@@ -3675,12 +3681,8 @@
                     // Generate device specification HTML if available
                     const deviceSpecsHTML = deviceInfo ? `
                         <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
-                            <button onclick="toggleDeviceInfo('deviceInfo_${deviceDomKey}')"
-                                    style="width: 100%; padding: 10px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
-                                <span>Device Information</span>
-                                <span class="arrow">▼</span>
-                            </button>
-                            <div id="deviceInfo_${deviceDomKey}" style="display: none; margin-top: 10px; padding: 10px; background: var(--panel-bg); border-radius: 4px; max-height: 300px; overflow-y: auto;">
+                            <strong style="color: var(--header-color); margin-bottom: 10px; display: block;">Device Information</strong>
+                            <div id="deviceInfo_${deviceDomKey}" style="padding: 10px; background: var(--panel-bg); border-radius: 4px;">
                                 ${deviceInfo.elevator_manufacturer ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 160px;">Manufacturer:</strong> 
@@ -3948,14 +3950,10 @@
                             
                             ${deviceSpecsHTML}
                             
-                            <!-- Add More Info button and dropdown -->
+                            <!-- More Info (always shown) -->
                             <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
-                                <button onclick="toggleMoreInfo('moreInfo_${deviceDomKey}')"
-                                        style="width: 100%; padding: 10px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
-                                    <span>More Info</span>
-                                    <span class="arrow">▼</span>
-                                </button>
-                                <div id="moreInfo_${deviceDomKey}" style="display: none; margin-top: 10px; padding: 10px; background: var(--panel-bg); border-radius: 4px;">
+                                <strong style="color: var(--header-color); margin-bottom: 10px; display: block;">More Info</strong>
+                                <div id="moreInfo_${deviceDomKey}" style="padding: 10px; background: var(--panel-bg); border-radius: 4px;">
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: var(--header-color); display: inline-block; width: 120px;">Block:</strong> 
                                         <span>${escapeMapSuggestionHtml(device.block || 'N/A')}</span>
@@ -3983,36 +3981,6 @@
                 resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up device. Please try again later.</span>';
                 console.error('Error:', error);
                 binInput.value = '';
-            }
-        }
-
-        // Add this function to toggle device information
-        function toggleDeviceInfo(elementId) {
-            const element = document.getElementById(elementId);
-            const button = element.previousElementSibling;
-            const arrow = button.querySelector('.arrow');
-            
-            if (element.style.display === 'none') {
-                element.style.display = 'block';
-                arrow.textContent = '▲';
-            } else {
-                element.style.display = 'none';
-                arrow.textContent = '▼';
-            }
-        }
-
-        // Add this new function to handle the dropdown toggle
-        function toggleMoreInfo(elementId) {
-            const element = document.getElementById(elementId);
-            const button = element.previousElementSibling;
-            const arrow = button.querySelector('.arrow');
-            
-            if (element.style.display === 'none') {
-                element.style.display = 'block';
-                arrow.textContent = '▲';
-            } else {
-                element.style.display = 'none';
-                arrow.textContent = '▼';
             }
         }
 
@@ -4231,8 +4199,19 @@
                             <div style="font-size: 1.5em; font-weight: 700; color: var(--header-color); margin-bottom: 8px;">
                                 🏢 ${buildingData.address}
                             </div>
-                            <div style="font-size: 1em; color: var(--text-color); opacity: 0.8;">
-                                BIN: <strong>${buildingData.bin}</strong>
+                            <div style="font-size: 1em; color: var(--text-color); opacity: 0.8; display: flex; align-items: center; gap: 8px;">
+                                BIN:
+                                <span data-bin="${String(buildingData.bin).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"
+                                      onclick="copyBinToClipboard(this.getAttribute('data-bin'), event)"
+                                      title="Click to copy BIN number"
+                                      style="cursor: pointer; padding: 4px 8px; border-radius: 4px; font-weight: 700; color: var(--text-color);
+                                             transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
+                                             border: 1px solid var(--input-border); background: var(--panel-bg);">
+                                    ${String(buildingData.bin).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;">
+                                        <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                    </svg>
+                                </span>
                             </div>
                         </div>
                         
@@ -4708,7 +4687,16 @@
                                     <div>
                                         <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
                                             <strong style="font-size: 1.05em;">${b.address}</strong>
-                                            <span style="opacity: 0.7; font-size: 0.9em;">(BIN: ${b.bin})</span>
+                                            <span data-bin="${String(b.bin).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"
+                                                  onclick="event.stopPropagation(); copyBinToClipboard(this.getAttribute('data-bin'), event)"
+                                                  title="Click to copy BIN number"
+                                                  style="cursor: pointer; opacity: 0.9; font-size: 0.9em; padding: 2px 6px; border-radius: 4px;
+                                                         border: 1px solid var(--input-border); background: var(--panel-bg); display: inline-flex; align-items: center; gap: 4px;">
+                                                BIN: ${String(b.bin).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;">
+                                                    <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                                </svg>
+                                            </span>
                                         </div>
                                         <div style="font-size: 0.85em; opacity: 0.7; margin-top: 2px; display: flex; gap: 12px;">
                                             <span>${b.deviceCount} device${b.deviceCount !== 1 ? 's' : ''}</span>
@@ -4823,7 +4811,16 @@
                                     <div>
                                         <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
                                             <strong style="font-size: 1.05em;">${b.address}</strong>
-                                            <span style="opacity: 0.7; font-size: 0.9em;">(BIN: ${b.bin})</span>
+                                            <span data-bin="${String(b.bin).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"
+                                                  onclick="event.stopPropagation(); copyBinToClipboard(this.getAttribute('data-bin'), event)"
+                                                  title="Click to copy BIN number"
+                                                  style="cursor: pointer; opacity: 0.9; font-size: 0.9em; padding: 2px 6px; border-radius: 4px;
+                                                         border: 1px solid var(--input-border); background: var(--panel-bg); display: inline-flex; align-items: center; gap: 4px;">
+                                                BIN: ${String(b.bin).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;">
+                                                    <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                                </svg>
+                                            </span>
                                         </div>
                                         <div style="font-size: 0.85em; opacity: 0.7; margin-top: 2px; display: flex; gap: 12px;">
                                             <span>${b.deviceCount} device${b.deviceCount !== 1 ? 's' : ''}</span>
@@ -4936,7 +4933,16 @@
                                     <div>
                                         <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
                                             <strong style="font-size: 1.05em;">${b.address}</strong>
-                                            <span style="opacity: 0.7; font-size: 0.9em;">(BIN: ${b.bin})</span>
+                                            <span data-bin="${String(b.bin).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"
+                                                  onclick="event.stopPropagation(); copyBinToClipboard(this.getAttribute('data-bin'), event)"
+                                                  title="Click to copy BIN number"
+                                                  style="cursor: pointer; opacity: 0.9; font-size: 0.9em; padding: 2px 6px; border-radius: 4px;
+                                                         border: 1px solid var(--input-border); background: var(--panel-bg); display: inline-flex; align-items: center; gap: 4px;">
+                                                BIN: ${String(b.bin).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;">
+                                                    <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                                </svg>
+                                            </span>
                                         </div>
                                         <div style="font-size: 0.85em; opacity: 0.7; margin-top: 2px; display: flex; gap: 12px;">
                                             <span>${b.deviceCount} device${b.deviceCount !== 1 ? 's' : ''}</span>
@@ -9332,9 +9338,19 @@
                                             <strong style="color: var(--header-color); font-size: 1.2em;">Address:</strong> 
                                             <span style="font-weight: 600; color: var(--text-color);">${group.address}</span>
                                         </div>
-                                        <div style="margin-bottom: 5px;">
+                                        <div style="margin-bottom: 5px; display: flex; align-items: center; gap: 8px;">
                                             <strong style="color: var(--header-color);">BIN:</strong> 
-                                            <span style="color: var(--text-color);">${bin}</span>
+                                            <span data-bin="${String(bin).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"
+                                                  onclick="event.stopPropagation(); copyBinToClipboard(this.getAttribute('data-bin'), event)"
+                                                  title="Click to copy BIN number"
+                                                  style="cursor: pointer; padding: 4px 8px; border-radius: 4px; color: var(--text-color);
+                                                         transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
+                                                         border: 1px solid var(--input-border); background: var(--input-bg);">
+                                                ${String(bin).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;">
+                                                    <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                                </svg>
+                                            </span>
                                         </div>
                                         <div style="display: flex; gap: 20px; flex-wrap: wrap;">
                                             <div>
@@ -25847,12 +25863,8 @@
                     // Generate device specification HTML if available
                     const deviceSpecsHTML = deviceInfo ? `
                         <div style="margin-top: 15px; border-top: 1px solid var(--input-border); padding-top: 15px;">
-                            <button onclick="toggleDeviceInfo('deviceInfo_${deviceNumber}_inline')"
-                                    style="width: 100%; padding: 10px; background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
-                                <span>Device Information</span>
-                                <span class="arrow">▼</span>
-                            </button>
-                            <div id="deviceInfo_${deviceNumber}_inline" style="display: none; margin-top: 10px; padding: 10px; background: var(--panel-bg); border-radius: 4px; max-height: 300px; overflow-y: auto;">
+                            <strong style="color: var(--header-color); margin-bottom: 10px; display: block;">Device Information</strong>
+                            <div id="deviceInfo_${deviceNumber}_inline" style="padding: 10px; background: var(--panel-bg); border-radius: 4px;">
                                 ${Object.entries({
                                     'Manufacturer': deviceInfo.elevator_manufacturer,
                                     'Machine Type': deviceInfo.machine_type,
@@ -26081,12 +26093,8 @@
                     // Generate device specification HTML if available
                     const deviceSpecsHTML = deviceInfo ? `
                         <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
-                            <button onclick="toggleDeviceInfo('quickDeviceInfo_${deviceNumber}')"
-                                    style="width: 100%; padding: 10px; background: #2c2c2c; color: #ffffff; border: 1px solid #444; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
-                                <span>Device Information</span>
-                                <span class="arrow">▼</span>
-                            </button>
-                            <div id="quickDeviceInfo_${deviceNumber}" style="display: none; margin-top: 10px; padding: 10px; background: #2c2c2c; border-radius: 4px; max-height: 300px; overflow-y: auto;">
+                            <strong style="color: #4a9eff; margin-bottom: 10px; display: block;">Device Information</strong>
+                            <div id="quickDeviceInfo_${deviceNumber}" style="padding: 10px; background: #2c2c2c; border-radius: 4px;">
                                 ${deviceInfo.elevator_manufacturer ? `
                                     <div style="margin-bottom: 10px;">
                                         <strong style="color: #4a9eff; display: inline-block; width: 160px;">Manufacturer:</strong> 
@@ -26363,21 +26371,6 @@
                 resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up device. Please try again later.</span>';
                 console.error('Error:', error);
                 binInput.value = '';
-            }
-        }
-
-        // Add this new function to handle the dropdown toggle
-        function toggleMoreInfo(elementId) {
-            const element = document.getElementById(elementId);
-            const button = element.previousElementSibling;
-            const arrow = button.querySelector('.arrow');
-            
-            if (element.style.display === 'none') {
-                element.style.display = 'block';
-                arrow.textContent = '▲';
-            } else {
-                element.style.display = 'none';
-                arrow.textContent = '▼';
             }
         }
 
@@ -33718,7 +33711,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.0</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.0.1</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
