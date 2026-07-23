@@ -191,6 +191,13 @@
                 .replace(/'/g, '&#39;');
         }
 
+        function escapeCsvCell(value) {
+            let text = String(value ?? '');
+            // Prevent spreadsheet applications from evaluating API data as formulas.
+            if (/^[\t\r ]*[=+\-@]/.test(text)) text = `'${text}`;
+            return `"${text.replace(/"/g, '""')}"`;
+        }
+
         async function fetchDevices() {
             const fetchBtn = document.getElementById('fetchBtn');
             const statusDiv = document.getElementById('status');
@@ -410,17 +417,10 @@
             const headers = Array.from(allKeys);
             
             // Create CSV content
-            let csv = headers.join(',') + '\n';
+            let csv = headers.map(escapeCsvCell).join(',') + '\n';
             
             filteredDevices.forEach(device => {
-                const row = headers.map(header => {
-                    const value = device[header] || '';
-                    // Escape commas and quotes in values
-                    if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
-                        return `"${value.replace(/"/g, '""')}"`;
-                    }
-                    return value;
-                });
+                const row = headers.map(header => escapeCsvCell(device[header]));
                 csv += row.join(',') + '\n';
             });
             
