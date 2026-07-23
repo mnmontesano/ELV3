@@ -317,7 +317,7 @@
             <option value="light">Light</option>
             <option value="dark">Dark</option>
         </select>
-        <p style="margin: 0 0 8px; font-size: 0.82em; opacity: 0.75; line-height: 1.4;">Saved in this browser only. Tab choice applies on the next visit; theme applies as soon as you save. The disclaimer still appears until you click Agree.</p>
+        <p style="margin: 0 0 8px; font-size: 0.82em; opacity: 0.75; line-height: 1.4;">Saved in this browser only. Tab choice applies on the next visit; theme applies as soon as you save. The disclaimer appears once until site data is cleared.</p>
         <div style="margin-top: 16px; display: flex; gap: 10px;">
             <button onclick="saveSettings()">Save</button>
             <button onclick="closeSettings()" style="background-color: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; padding: 10px 20px; font-size: 1.2em; transition: background-color 0.3s ease, color 0.3s ease;">Cancel</button>
@@ -29211,7 +29211,9 @@
             }
         }
 
-        // Disclaimer modal — must click Agree; no outside-click dismiss
+        // Disclaimer modal — must click Agree once; remembered until browser/site data is cleared
+        const DISCLAIMER_STORAGE_KEY = 'disclaimerAccepted';
+
         function showDisclaimerModal() {
             const modal = document.getElementById('disclaimerModal');
             if (!modal) return;
@@ -29221,10 +29223,19 @@
                     return;
                 }
             } catch (e) {}
-            modal.style.display = 'flex';
+
+            let accepted = false;
+            try {
+                accepted = localStorage.getItem(DISCLAIMER_STORAGE_KEY) === 'true';
+            } catch (e) {}
+
+            modal.style.display = accepted ? 'none' : 'flex';
         }
 
         function acceptDisclaimer() {
+            try {
+                localStorage.setItem(DISCLAIMER_STORAGE_KEY, 'true');
+            } catch (e) {}
             const modal = document.getElementById('disclaimerModal');
             if (modal) modal.style.display = 'none';
         }
