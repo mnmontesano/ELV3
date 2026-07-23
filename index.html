@@ -5,20 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vertical Terminal</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=20260722-light-dark-only">
     <!-- PDF-lib for ELV3 PDF parsing -->
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     
     <!-- Inline theme application to prevent flash: respect saved preference -->
     <script>
         (function() {
-            var theme = 'system';
+            var theme = '';
             try {
                 var saved = localStorage.getItem('theme');
-                if (saved === 'light' || saved === 'dark' || saved === 'system') theme = saved;
+                if (saved === 'light' || saved === 'dark') theme = saved;
             } catch (e) {}
+            if (!theme) theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
             document.documentElement.classList.remove('light-theme', 'dark-theme', 'system-theme');
-            document.documentElement.classList.add(theme === 'light' ? 'light-theme' : theme === 'dark' ? 'dark-theme' : 'system-theme');
+            document.documentElement.classList.add(theme + '-theme');
+            document.documentElement.style.colorScheme = theme;
             // Pre-detect popout to avoid flashing the full UI
             try {
                 var params = new URLSearchParams(window.location.search);
@@ -51,7 +53,7 @@
         }
     </style>
     
-    <script src="theme_script.js"></script>
+    <script src="theme_script.js?v=20260722-light-dark-only"></script>
     <!-- SheetJS library for Excel export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- Leaflet library for maps -->
@@ -311,7 +313,6 @@
         </select>
         <label for="themeSelect" style="display:block; margin-top: 12px;">Theme:</label>
         <select id="themeSelect" style="width: 100%; padding: 8px; margin: 10px 0; box-sizing: border-box; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--input-border); border-radius: 6px;">
-            <option value="system">Automatic (match computer)</option>
             <option value="light">Light</option>
             <option value="dark">Dark</option>
         </select>
@@ -3515,7 +3516,8 @@
 
             const themeSelect = document.getElementById('themeSelect');
             if (themeSelect) {
-                themeSelect.value = (typeof getSavedTheme === 'function') ? getSavedTheme() : (localStorage.getItem('theme') || 'system');
+                const savedTheme = (typeof getSavedTheme === 'function') ? getSavedTheme() : localStorage.getItem('theme');
+                themeSelect.value = savedTheme === 'dark' ? 'dark' : 'light';
             }
 
             // Close settings when clicking outside (attach once to avoid stacking listeners)
@@ -3551,9 +3553,9 @@
             showTab(defaultTab);
 
             const themeSelect = document.getElementById('themeSelect');
-            const themeValue = themeSelect && ['light', 'dark', 'system'].includes(themeSelect.value)
+            const themeValue = themeSelect && ['light', 'dark'].includes(themeSelect.value)
                 ? themeSelect.value
-                : 'system';
+                : 'light';
             if (typeof setTheme === 'function') {
                 setTheme(themeValue);
             } else {
@@ -29692,6 +29694,10 @@
      * Show the upload ELV3 scan modal
      */
     function showUploadELV3ScanModal() {
+        if (!confirm('Warning: Upload ELV3 is a reference aid only. Results may be inaccurate or incomplete and must be reviewed manually against the source documents and official DOB requirements before any filing.\n\nBy continuing, you agree that you (or anyone acting for you) will independently verify all information, and that you alone are responsible for any filings or decisions based on this tool. The creator assumes no liability for errors, omissions, or outcomes from use of this feature.\n\nContinue to Upload ELV3?')) {
+            return;
+        }
+
         const modal = document.getElementById('uploadELV3ScanModal');
         modal.style.display = 'flex';
         document.body.style.overflow = 'hidden';
