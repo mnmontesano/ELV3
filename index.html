@@ -31091,7 +31091,9 @@
         }
 
         function deviceIndexFromDeviceField(name, page) {
-            const match = String(name || '').match(/_(\d+)_Device/i);
+            const fieldName = String(name || '');
+            const match = fieldName.match(/_(\d+)_Device/i)
+                || fieldName.match(/(?:^|\.)Device\s+(\d+)$/i);
             if (!match) return null;
             const localIndex = parseInt(match[1], 10);
             if (page === 1 && localIndex >= 6) return localIndex;
@@ -31263,12 +31265,29 @@
 
         // Pass 2: reliable status signals. Literal text labels are handled later and
         // only accepted if they do not conflict for the same device.
+        const usesSimpleDeviceFieldNames = entries.some(function(entry) {
+            return /(?:^|\.)Device\s+\d+$/i.test(entry.name);
+        });
+        const usesStandardSummaryCheckboxLayout = (allFieldNames || []).some(function(name) {
+            return /CheckBox1_69_/i.test(name);
+        }) && (allFieldNames || []).some(function(name) {
+            return /_\d+_Device/i.test(name);
+        });
+        const usesKnownSummaryCheckboxLayout = usesSimpleDeviceFieldNames || usesStandardSummaryCheckboxLayout;
+
         entries.forEach(function(entry) {
             if (!isTruthy(entry.value)) return;
             const named = entry.name.match(/CheckBox1_(\d+)/);
             if (named && (!entry.page || entry.page === 1)) {
                 const checkboxNum = parseInt(named[1], 10);
-                if (checkboxNum >= 34) {
+                // Standard ELV3 summary rows use boxes 69-73 for Satisfactory
+                // and 74-78 for Unsatisfactory. Some generated copies rename
+                // the device fields to "Device 1", but retain this numbering.
+                if (usesKnownSummaryCheckboxLayout && checkboxNum >= 69 && checkboxNum <= 73) {
+                    markStatus(checkboxNum - 68, 'satisfactory', 'simple-summary-checkbox', 99);
+                } else if (usesKnownSummaryCheckboxLayout && checkboxNum >= 74 && checkboxNum <= 78) {
+                    markStatus(checkboxNum - 73, 'unsatisfactory', 'simple-summary-checkbox', 99);
+                } else if (!usesKnownSummaryCheckboxLayout && checkboxNum >= 34) {
                     const adjusted = checkboxNum - 34;
                     const pos = adjusted % 10;
                     const deviceIndex = (Math.floor(adjusted / 10) * 5) + (pos % 5) + 1;
@@ -31279,14 +31298,20 @@
             const bracket = entry.name.match(/CheckBox1\[(\d+)\]/);
             if (bracket && (!entry.page || entry.page === 1)) {
                 const n = parseInt(bracket[1], 10);
-                const stride = 34;
-                const satOffset = n - 31;
-                const unsatOffset = n - 36;
-                if (satOffset >= 0 && satOffset % stride < 5) {
-                    markStatus(6 + (Math.floor(satOffset / stride) * 5) + (satOffset % stride), 'satisfactory', 'summary-bracket-checkbox', 80);
-                }
-                if (unsatOffset >= 0 && unsatOffset % stride < 5) {
-                    markStatus(6 + (Math.floor(unsatOffset / stride) * 5) + (unsatOffset % stride), 'unsatisfactory', 'summary-bracket-checkbox', 80);
+                if (usesKnownSummaryCheckboxLayout && n >= 65 && n <= 69) {
+                    markStatus(6 + (n - 65), 'satisfactory', 'simple-summary-bracket-checkbox', 99);
+                } else if (usesKnownSummaryCheckboxLayout && n >= 70 && n <= 74) {
+                    markStatus(6 + (n - 70), 'unsatisfactory', 'simple-summary-bracket-checkbox', 99);
+                } else if (!usesKnownSummaryCheckboxLayout) {
+                    const stride = 34;
+                    const satOffset = n - 31;
+                    const unsatOffset = n - 36;
+                    if (satOffset >= 0 && satOffset % stride < 5) {
+                        markStatus(6 + (Math.floor(satOffset / stride) * 5) + (satOffset % stride), 'satisfactory', 'summary-bracket-checkbox', 80);
+                    }
+                    if (unsatOffset >= 0 && unsatOffset % stride < 5) {
+                        markStatus(6 + (Math.floor(unsatOffset / stride) * 5) + (unsatOffset % stride), 'unsatisfactory', 'summary-bracket-checkbox', 80);
+                    }
                 }
             }
         });
@@ -31772,6 +31797,13 @@
             });
         })();
 
+        if (!result.bin) {
+            const binEntry = entries.find(function(entry) {
+                return /Page1.*TextField1_5_/i.test(entry.name) && /^\d{7}$/.test(entry.value);
+            });
+            if (binEntry) result.bin = binEntry.value;
+        }
+
         if (!result.address) {
             const addressEntry = entries.find(function(entry) {
                 return /address|TextField1_0_/i.test(entry.name) && entry.value.length > 5 && !extractELV3DeviceNumber(entry.value);
@@ -31781,10 +31813,15 @@
 
         if (!result.inspectorName) {
             const namePattern = /^[A-Za-z\s.\-']{2,60}$/;
+            const knownInspectorEntry = entries.find(function(entry) {
+                return /Page2.*TextField1_157_/i.test(entry.name) && namePattern.test(entry.value);
+            });
             const inspectorEntry = entries.find(function(entry) {
                 return /inspector/i.test(entry.name) && !/date|license|licence/i.test(entry.name) && namePattern.test(entry.value);
             });
-            if (inspectorEntry) result.inspectorName = inspectorEntry.value;
+            if (knownInspectorEntry || inspectorEntry) {
+                result.inspectorName = (knownInspectorEntry || inspectorEntry).value;
+            }
         }
 
         // Final device and section classification.
