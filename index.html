@@ -1073,7 +1073,19 @@
                                 <button onclick="addAdditionalLocation()" title="Add location" style="background: var(--input-bg); border: none; border-left: 1px solid var(--input-border); cursor: pointer; padding: 3px 7px; color: var(--text-color); font-size: 0.78em; display: flex; align-items: center;">➕</button>
                             </div>
                         </div>
-                        <div id="mapMonthFilterStatus" style="display: none; width: 100%; margin-top: 2px; padding: 4px 8px; border-radius: 6px; background: #5f6670; border: 1px solid #7b838d; border-left: 3px solid #d0d5da; color: #fff; font-size: 0.8em; line-height: 1.2; font-weight: 700; box-shadow: 0 1px 5px rgba(0,0,0,0.14);"></div>
+                        <style>
+                            #mapMonthFilterStatus > summary { list-style: none; }
+                            #mapMonthFilterStatus > summary::-webkit-details-marker { display: none; }
+                            #mapMonthFilterStatus > summary .map-filter-status-arrow { display: inline-block; transition: transform 0.15s ease; }
+                            #mapMonthFilterStatus[open] > summary .map-filter-status-arrow { transform: rotate(180deg); }
+                        </style>
+                        <details id="mapMonthFilterStatus" style="display: none; width: 100%; margin-top: 2px; border-radius: 6px; background: #1e7a46; border: 1px solid #2ea35d; border-left: 3px solid #6ee7a0; color: #fff; font-size: 0.8em; line-height: 1.25; font-weight: 700; box-shadow: 0 1px 5px rgba(0,0,0,0.14);">
+                            <summary style="cursor: pointer; padding: 4px 8px; user-select: none; display: flex; align-items: center; gap: 6px;">
+                                <span class="map-filter-status-arrow" aria-hidden="true" style="font-size: 0.75em; opacity: 0.9;">▼</span>
+                                <span>Filters Active</span>
+                            </summary>
+                            <div id="mapMonthFilterStatusDetails" style="padding: 2px 8px 6px 22px; font-weight: 600; opacity: 0.95;"></div>
+                        </details>
                         <div id="mapSearchSuggestions" style="display: none; width: 100%; margin-top: 2px; border: 1px solid var(--input-border); border-radius: 6px; background: var(--panel-bg); padding: 6px;"></div>
                         <div id="additionalLocationSuggestions" style="display: none; width: 100%; margin-top: 2px; border: 1px solid var(--input-border); border-radius: 6px; background: var(--panel-bg); padding: 6px;"></div>
                     </div>
@@ -16147,7 +16159,8 @@
 
         function updateMonthFilterStatus() {
             const statusEl = document.getElementById('mapMonthFilterStatus');
-            if (!statusEl) return;
+            const detailsEl = document.getElementById('mapMonthFilterStatusDetails');
+            if (!statusEl || !detailsEl) return;
 
             const hideMonthLabeled = isHideMonthLabeledActive();
             const hideCompleted = isHideCompletedActive();
@@ -16157,7 +16170,8 @@
             const hasMapViewFilter = !!(mapViewFilter && mapViewFilter !== 'all');
             if (activeMonthFilters.size === 0 && !hideMonthLabeled && !hideCompleted && !hideInProcess && !hideHold && !hasMapViewFilter) {
                 statusEl.style.display = 'none';
-                statusEl.textContent = '';
+                statusEl.open = false;
+                detailsEl.textContent = '';
                 return;
             }
 
@@ -16225,7 +16239,12 @@
                 notices.push(`Filter active: hold hidden (${count})`);
             }
 
-            statusEl.textContent = notices.join(' | ');
+            detailsEl.replaceChildren(...notices.map(notice => {
+                const row = document.createElement('div');
+                row.style.cssText = 'padding: 2px 0; border-top: 1px solid rgba(255,255,255,0.18); font-weight: 600;';
+                row.textContent = notice;
+                return row;
+            }));
             statusEl.style.display = 'block';
         }
 
