@@ -1227,7 +1227,13 @@
                                 <span class="mcp-arrow" id="mcpTestDatesArrow">▼</span>
                             </div>
                             <div class="mcp-body" id="mcpTestDates">
-                                <p class="mcp-desc">Past due dates are flagged in red — click ✓ Done to confirm testing was completed</p>
+                                <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">Past due dates are flagged in red. Click <strong>✓ Done</strong> to confirm testing was completed.</p>
+                                <label for="testDatesTypeFilter" style="display:block; font-size:0.92em; font-weight:700; color:var(--text-color); margin-bottom:5px;">Testing type</label>
+                                <select id="testDatesTypeFilter" onchange="updateTestDatesPanel()" style="width:100%; padding:7px 9px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:1em; font-weight:600; box-sizing:border-box; margin-bottom:8px;">
+                                    <option value="all">Both — Category &amp; PVI</option>
+                                    <option value="category">Category testing</option>
+                                    <option value="pvi">PVI testing</option>
+                                </select>
                                 <input type="text" id="testDatesSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or date..."
                                        oninput="filterMcpBinRowList('testDatesPanelList', this.value)">
                                 <div id="testDatesPanelList" style="max-height: 260px; overflow-y: auto; margin-bottom: 8px;">
@@ -1478,6 +1484,7 @@
                                     <li>Use 👁️ in popup to hide a building</li>
                                     <li>Use 📅 dropdown to assign a month</li>
                                     <li>Use 🗓️ in popup to schedule test dates</li>
+                                    <li>Scheduled markers: octagon = CAT, square = PVI, diamond = both</li>
                                     <li>Past-due test dates appear in Settings to confirm</li>
                                     <li>Completion markers: green = Full, blue = PVI only, purple = Category only</li>
                                     <li>In-process buildings turn orange</li>
@@ -1501,6 +1508,8 @@
                                 <option value="in-process">In Process</option>
                                 <option value="hold">On Hold</option>
                                 <option value="scheduled">Scheduled Test Dates</option>
+                                <option value="scheduled-cat">CAT Scheduled Jobs</option>
+                                <option value="scheduled-pvi">PVI Scheduled Jobs</option>
                                 <option value="hide-scheduled">Hide Scheduled Test Dates &amp; Completed Jobs</option>
                                 <option value="notes">Buildings with Notes</option>
                                 <option value="month-labeled">Month-labeled</option>
@@ -13950,6 +13959,8 @@
                 'in-process': 'In Process',
                 hold: 'On Hold',
                 scheduled: 'Scheduled Test Dates',
+                'scheduled-cat': 'CAT Scheduled Jobs',
+                'scheduled-pvi': 'PVI Scheduled Jobs',
                 'hide-scheduled': 'Hide Scheduled Test Dates & Completed Jobs',
                 notes: 'Buildings with Notes',
                 'month-labeled': 'Month-labeled',
@@ -13990,6 +14001,17 @@
             if (mapViewIsCompleted(view, key, building)) return false;
             const buildingDates = getMapScheduleDates(building && building.scheduledDates);
             return buildingDates.length > 0;
+        }
+
+        function mapViewHasScheduledType(view, bin, type, building) {
+            const key = String(bin);
+            const normalizedType = normalizeMapScheduleType(type);
+            if (normalizedType !== 'pvi' && normalizedType !== 'category') return false;
+            const savedDates = getMapScheduleDates(view.testDates && view.testDates[key], normalizedType);
+            const liveDates = getTestDatesForBin(key, normalizedType);
+            if (savedDates.length > 0 || liveDates.length > 0) return true;
+            if (mapViewIsCompleted(view, key, building)) return false;
+            return getMapScheduleDates(building && building.scheduledDates, normalizedType).length > 0;
         }
 
         function mapViewIsCompleted(view, bin, building) {
@@ -14039,6 +14061,8 @@
             if (filterValue === 'in-process') return new Set(Object.keys(view.inProcess || {}).map(String));
             if (filterValue === 'hold') return new Set(Object.keys(view.hold || {}).map(String));
             if (filterValue === 'scheduled') return new Set(allBins.filter(bin => mapViewHasScheduledDates(view, bin)));
+            if (filterValue === 'scheduled-cat') return new Set(allBins.filter(bin => mapViewHasScheduledType(view, bin, 'category')));
+            if (filterValue === 'scheduled-pvi') return new Set(allBins.filter(bin => mapViewHasScheduledType(view, bin, 'pvi')));
             if (filterValue === 'hide-scheduled') return new Set(allBins.filter(bin => mapViewPassesHideScheduledCompletedFilter(view, bin)));
             if (filterValue === 'notes') return new Set(Object.keys(view.notes || {}).map(String));
             if (filterValue === 'month-labeled') {
@@ -19419,20 +19443,31 @@
             if (!listEl) return;
 
             const allTestDates = getMapTestDates();
+            const typeFilterEl = document.getElementById('testDatesTypeFilter');
+            const selectedType = typeFilterEl && (typeFilterEl.value === 'category' || typeFilterEl.value === 'pvi')
+                ? typeFilterEl.value
+                : 'all';
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
             // Build list of bins that still have dates, resolve addresses
             const bins = Object.keys(allTestDates).filter(bin => {
-                return getMapScheduleDates(allTestDates[bin]).length > 0;
+                const rows = getMapTypedScheduleRows(bin);
+                return selectedType === 'all'
+                    ? rows.length > 0
+                    : rows.some(row => row.type === selectedType);
             });
 
-            // Total individual date count
-            const totalDates = bins.reduce((sum, bin) => sum + getMapScheduleDates(allTestDates[bin]).length, 0);
+            // Total individual date count in the selected testing type
+            const totalDates = bins.reduce((sum, bin) => {
+                const rows = getMapTypedScheduleRows(bin);
+                return sum + (selectedType === 'all' ? rows.length : rows.filter(row => row.type === selectedType).length);
+            }, 0);
             if (countEl) countEl.textContent = totalDates;
 
             if (bins.length === 0) {
-                listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No scheduled test dates</div>';
+                const emptyLabel = selectedType === 'category' ? 'Category tests' : selectedType === 'pvi' ? 'PVI tests' : 'test dates';
+                listEl.innerHTML = `<div style="font-size:1em; color:var(--text-color); opacity:0.75; text-align:center; padding:14px 8px; line-height:1.45;">No scheduled ${emptyLabel}</div>`;
                 return;
             }
 
@@ -19450,14 +19485,18 @@
 
             // Sort bins by their earliest scheduled date
             bins.sort((a, b) => {
-                const aMin = getMapScheduleDates(allTestDates[a])[0] || '';
-                const bMin = getMapScheduleDates(allTestDates[b])[0] || '';
+                const aRows = getMapTypedScheduleRows(a).filter(row => selectedType === 'all' || row.type === selectedType);
+                const bRows = getMapTypedScheduleRows(b).filter(row => selectedType === 'all' || row.type === selectedType);
+                const aMin = aRows.map(row => row.date).sort()[0] || '';
+                const bMin = bRows.map(row => row.date).sort()[0] || '';
                 return aMin.localeCompare(bMin);
             });
 
             listEl.innerHTML = bins.map(bin => {
                 const address = resolveAddress(bin);
-                const typedRows = getMapTypedScheduleRows(bin).sort((a, b) => a.date.localeCompare(b.date));
+                const typedRows = getMapTypedScheduleRows(bin)
+                    .filter(row => selectedType === 'all' || row.type === selectedType)
+                    .sort((a, b) => a.date.localeCompare(b.date));
                 const sortedDates = typedRows.map(row => row.date);
                 const hasPast = typedRows.some(row => new Date(row.date + 'T00:00:00') <= today);
 
@@ -19482,6 +19521,7 @@
 
                     const typeLabel = scheduleType === 'pvi' ? 'PVI' : scheduleType === 'category' ? 'CATEGORY' : 'UNSPECIFIED';
                     const typeColor = scheduleType === 'pvi' ? '#1a73e8' : scheduleType === 'category' ? '#9b59b6' : '#607d8b';
+                    const typeBackground = scheduleType === 'pvi' ? 'rgba(26,115,232,0.16)' : scheduleType === 'category' ? 'rgba(155,89,182,0.16)' : 'rgba(96,125,139,0.16)';
                     const removeBtnLarge = `<button onclick="removeTestDateForBin('${bin}','${date}','${scheduleType}'); updateTestDatesPanel(); if(window.lastBulkSearchResults&&window.lastBulkSearchResults.binGroups){initBuildingMap(window.lastBulkSearchResults.binGroups,true);}"
                         style="flex-shrink:0; padding:6px 14px; background:rgba(255,107,107,0.1); color:#ff6b6b; border:1px solid rgba(255,107,107,0.3); border-radius:6px; cursor:pointer; font-size:1.04em; font-weight:600;">✕</button>`;
 
@@ -19493,10 +19533,10 @@
                             style="flex-shrink:0; padding:6px 14px; background:#27ae60; color:white; border:none; border-radius:6px; cursor:pointer; font-size:1.04em; font-weight:600;">✓ Done</button>`
                         : '';
 
-                    return `<div style="display:flex; flex-direction:column; gap:4px; padding:5px 8px; background:${isPast ? 'rgba(255,107,107,0.06)' : isToday ? 'rgba(230,126,34,0.06)' : 'transparent'}; border-radius:4px; margin-bottom:3px;">
-                        <div style="display:flex; align-items:center; gap:6px;">
-                            <span style="font-size:0.72em; color:${typeColor}; font-weight:800; min-width:62px;">${typeLabel}</span>
-                            <span style="font-size:0.88em; color:${rowColor}; font-weight:${isPast ? '600' : '400'}; flex:1;">📅 ${display}</span>
+                    return `<div style="display:flex; flex-direction:column; gap:7px; padding:9px 10px; background:${isPast ? 'rgba(255,107,107,0.09)' : isToday ? 'rgba(230,126,34,0.09)' : 'rgba(255,255,255,0.025)'}; border:1px solid ${isPast ? 'rgba(255,107,107,0.24)' : 'var(--input-border)'}; border-radius:6px; margin-bottom:6px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="display:inline-flex; align-items:center; justify-content:center; font-size:0.78em; color:${typeColor}; background:${typeBackground}; border:1px solid ${typeColor}66; border-radius:999px; padding:3px 7px; font-weight:900; min-width:68px; letter-spacing:0.02em; box-sizing:border-box;">${typeLabel}</span>
+                            <span style="font-size:0.98em; color:${rowColor}; font-weight:${isPast ? '750' : '600'}; line-height:1.35; flex:1;">📅 ${display}</span>
                             ${badge}
                             ${!isPast ? removeBtnSmall : ''}
                         </div>
@@ -19512,17 +19552,17 @@
                             <div style="padding-top:3px;">${renderedDateRows.slice(3).join('')}</div>
                         </details>`;
 
-                const datesForFilter = sortedDates.join(' ').replace(/"/g, '&quot;');
+                const datesForFilter = typedRows.map(row => `${row.date} ${row.type === 'category' ? 'category cat' : row.type === 'pvi' ? 'pvi' : 'unspecified'}`).join(' ').replace(/"/g, '&quot;');
                 const addrForData = (address || '').replace(/"/g, '&quot;');
-                return `<div data-bin="${bin}" data-address="${addrForData}" data-filter-text="${datesForFilter}" style="margin-bottom: 8px; border-radius: 6px; border: 1px solid ${headerBorder}; overflow: hidden;">
-                    <div style="padding: 7px 10px; background: ${headerBg}; display:flex; align-items:center; gap:6px;">
-                        <span style="font-size:0.96em; color:${headerIconColor}; flex-shrink:0;">📍</span>
-                        <span style="font-size:0.96em; font-weight:600; color:var(--text-color); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; text-decoration:underline dotted;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
+                return `<div data-bin="${bin}" data-address="${addrForData}" data-filter-text="${datesForFilter}" style="margin-bottom:10px; border-radius:7px; border:1px solid ${headerBorder}; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.12);">
+                    <div style="padding:9px 11px; background:${headerBg}; display:flex; align-items:center; gap:7px;">
+                        <span style="font-size:1.05em; color:${headerIconColor}; flex-shrink:0;">📍</span>
+                        <span style="font-size:1.02em; font-weight:750; line-height:1.3; color:var(--text-color); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; text-decoration:underline dotted;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                             ${address || '<span style="opacity:0.55">BIN ' + bin + '</span>'}
                         </span>
-                        <span style="font-size:0.8em; opacity:0.6; flex-shrink:0;">${sortedDates.length} date${sortedDates.length !== 1 ? 's' : ''}</span>
+                        <span style="font-size:0.88em; opacity:0.78; font-weight:650; flex-shrink:0;">${sortedDates.length} date${sortedDates.length !== 1 ? 's' : ''}</span>
                     </div>
-                    <div style="padding: 6px 8px; background: var(--input-bg);">
+                    <div style="padding:9px; background:var(--input-bg);">
                         ${dateRows}
                         <div style="margin-top:4px;">
                             <button onclick="openTestDatesModal('${bin}')"
@@ -21809,29 +21849,34 @@
                 markerColor = '#ff6b6b'; // Red - no devices ready to test
             }
 
-            const hasScheduledTestDates = getTestDatesForBin(building.bin).length > 0;
+            const hasCatScheduled = getTestDatesForBin(building.bin, 'category').length > 0;
+            const hasPviScheduled = getTestDatesForBin(building.bin, 'pvi').length > 0;
+            const hasLegacyScheduled = getTestDatesForBin(building.bin, 'general').length > 0;
             const showNoteStar = hasBuildingNote && !isHold;
             const markerLabel = showNoteStar
                 ? '★'
                 : (isCompleted ? (building.completionType === 'PVI' ? 'P' : building.completionType === 'Category' ? 'C' : '✓') : isInProcess ? '⟳' : isHold ? '⏸' : building.deviceCount);
+            const markerFontSize = showNoteStar ? 15 : 11;
+            let markerShape;
+            let markerTextY = 19;
+            if (hasCatScheduled && hasPviScheduled) {
+                markerShape = '<polygon points="15,1.5 28.5,15 15,28.5 1.5,15" />';
+                markerTextY = 19;
+            } else if (hasCatScheduled) {
+                markerShape = '<polygon points="9,1.5 21,1.5 28.5,9 28.5,21 21,28.5 9,28.5 1.5,21 1.5,9" />';
+                markerTextY = 19;
+            } else if (hasPviScheduled || hasLegacyScheduled) {
+                markerShape = '<rect x="1.5" y="1.5" width="27" height="27" rx="4" />';
+            } else {
+                markerShape = '<circle cx="15" cy="15" r="13.5" />';
+            }
 
             return L.divIcon({
                 className: 'custom-map-marker',
-                html: `<div style="
-                    background: ${markerColor};
-                    width: 24px;
-                    height: 24px;
-                    border-radius: ${hasScheduledTestDates ? '4px' : '50%'};
-                    border: 3px solid white;
-                    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: white;
-                    font-weight: bold;
-                    font-size: ${showNoteStar ? '15px' : '11px'};
-                    line-height: 1;
-                ">${markerLabel}</div>`,
+                html: `<svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true" style="display:block; overflow:visible; filter:drop-shadow(0 2px 3px rgba(0,0,0,0.4));">
+                    <g fill="${markerColor}" stroke="white" stroke-width="3" stroke-linejoin="round">${markerShape}</g>
+                    <text x="15" y="${markerTextY}" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="${markerFontSize}" font-weight="700">${markerLabel}</text>
+                </svg>`,
                 iconSize: [30, 30],
                 iconAnchor: [15, 15]
             });
@@ -22985,6 +23030,9 @@
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #4CAF50; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">All Devices Ready</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ffc107; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">Some Devices Ready</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ff6b6b; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">No Devices Ready</span></div>
+                        <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;"><span style="display:inline-block; width:14px; height:14px; background:#9b59b6; clip-path:polygon(30% 0,70% 0,100% 30%,100% 70%,70% 100%,30% 100%,0 70%,0 30%); flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">CAT Scheduled</span></div>
+                        <div style="display: flex; align-items: center; gap: 6px;"><span style="display:inline-block; width:14px; height:14px; border-radius:2px; background:#1a73e8; flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">PVI Scheduled</span></div>
+                        <div style="display: flex; align-items: center; gap: 6px;"><span style="display:inline-block; width:11px; height:11px; transform:rotate(45deg); background:#607d8b; margin:1px 2px; flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">CAT + PVI Scheduled</span></div>
                         <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #00bcd4; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">📍 Custom Location</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #8d6e63; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">🏠 House (custom)</span></div>
                         <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--input-border, #444); font-size: 10px; color: var(--text-color, #fff); opacity: 0.8;">
@@ -33750,7 +33798,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.0.1</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.0.2</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
