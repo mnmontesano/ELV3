@@ -1103,8 +1103,12 @@
                             </div>
                         </div>
                         <div id="mapControlsPanelBody" style="padding: 0.65em 0.75em; overflow-y: auto; flex: 1; min-height: 0;">
+                        <div id="mcpDetailBackBar" class="mcp-detail-back-bar">
+                            <button type="button" class="mcp-detail-back-btn" onclick="closeMcpDetailView()">← Back</button>
+                            <span id="mcpDetailBackTitle" class="mcp-detail-back-title"></span>
+                        </div>
 
-                        <!-- helper: toggle a section -->
+                        <!-- helper: settings menu + detail window styles -->
                         <style>
                             #mapControlsPanel { min-width: 280px; }
                             .mcp-dock-resize { display: none; position: absolute; left: 0; top: 0; bottom: 0; width: 10px; z-index: 12; cursor: ew-resize; background: linear-gradient(90deg, rgba(0,0,0,0.08), rgba(0,0,0,0)); touch-action: none; }
@@ -1112,17 +1116,42 @@
                             #mapControlsPanel.mcp-popped-out .mcp-dock-resize { display: none !important; }
                             .mcp-dock-resize:hover { background: linear-gradient(90deg, rgba(26,115,232,0.22), rgba(0,0,0,0)); }
                             #mapControlsPanel.mcp-resizing .mcp-dock-resize { background: linear-gradient(90deg, rgba(26,115,232,0.34), rgba(26,115,232,0.06)); }
-                            .mcp-section { border: 1px solid var(--input-border); border-radius: 6px; margin-bottom: 8px; overflow: hidden; }
-                            .mcp-header { display: flex; align-items: center; gap: 8px; padding: 0.6em 0.75em; cursor: pointer; user-select: none; background: var(--input-bg); transition: background 0.15s; }
+                            .mcp-section { border: 1px solid var(--input-border); border-radius: 8px; margin-bottom: 6px; overflow: hidden; background: var(--input-bg); }
+                            .mcp-header { display: flex; align-items: center; gap: 8px; padding: 0.72em 0.85em; cursor: pointer; user-select: none; background: var(--input-bg); transition: background 0.15s, border-color 0.15s; }
                             .mcp-header:hover { background: var(--panel-bg); }
                             .mcp-title { flex: 1; font-size: 1.04em; font-weight: 600; color: var(--header-color); display: flex; align-items: center; gap: 7px; }
-                            .mcp-arrow { font-size: 0.8em; color: var(--text-color); opacity: 0.5; transition: transform 0.2s; flex-shrink: 0; }
-                            .mcp-arrow.open { transform: rotate(180deg); }
+                            .mcp-arrow { font-size: 1.05em; color: var(--text-color); opacity: 0.45; flex-shrink: 0; line-height: 1; }
                             .mcp-body { display: none; padding: 0.65em 0.75em 0.75em; border-top: 1px solid var(--input-border); }
                             .mcp-body.open { display: block; }
                             .mcp-desc { font-size: 0.88em; opacity: 0.65; margin: 0 0 0.6em 0; line-height: 1.4; }
                             .mcp-btn { width: 100%; padding: 0.5em 0.55em; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 0.96em; margin-top: 0.4em; }
                             .mcp-search-input { width: 100%; padding: 0.5em 0.6em; border-radius: 5px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 0.96em; box-sizing: border-box; margin-bottom: 0.5em; }
+                            .mcp-detail-back-bar { display: none; align-items: center; gap: 8px; padding: 0 0 10px 0; margin-bottom: 8px; border-bottom: 1px solid var(--input-border); position: sticky; top: 0; z-index: 5; background: var(--panel-bg); }
+                            .mcp-detail-back-btn { flex-shrink: 0; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); cursor: pointer; font-size: 0.92em; font-weight: 700; }
+                            .mcp-detail-back-btn:hover { background: var(--panel-bg); }
+                            .mcp-detail-back-title { flex: 1; min-width: 0; font-size: 1.02em; font-weight: 700; color: var(--header-color); line-height: 1.3; }
+                            #mapControlsPanelBody.mcp-detail-mode .mcp-detail-back-bar { display: flex; }
+                            #mapControlsPanelBody.mcp-detail-mode .mcp-section:not(.mcp-active) { display: none; }
+                            #mapControlsPanelBody.mcp-detail-mode .mcp-menu-footer { display: none; }
+                            #mapControlsPanelBody.mcp-detail-mode .mcp-section.mcp-active { border: none; background: transparent; margin: 0; overflow: visible; }
+                            #mapControlsPanelBody.mcp-detail-mode .mcp-section.mcp-active .mcp-header { display: none; }
+                            #mapControlsPanelBody.mcp-detail-mode .mcp-section.mcp-active .mcp-body { display: block; border-top: none; padding: 0; }
+                            #mapControlsPanelBody.mcp-detail-mode #favoritesBuildingsList,
+                            #mapControlsPanelBody.mcp-detail-mode #monitoredBuildingsList,
+                            #mapControlsPanelBody.mcp-detail-mode #inProcessBuildingsList,
+                            #mapControlsPanelBody.mcp-detail-mode #holdBuildingsList,
+                            #mapControlsPanelBody.mcp-detail-mode #hiddenBuildingsList,
+                            #mapControlsPanelBody.mcp-detail-mode #additionalLocationsList,
+                            #mapControlsPanelBody.mcp-detail-mode #housesLocationsList,
+                            #mapControlsPanelBody.mcp-detail-mode #transportationLocationsList,
+                            #mapControlsPanelBody.mcp-detail-mode #customNamesList,
+                            #mapControlsPanelBody.mcp-detail-mode #completedBuildingsList,
+                            #mapControlsPanelBody.mcp-detail-mode #monthLabelsList,
+                            #mapControlsPanelBody.mcp-detail-mode #notesBuildingsList,
+                            #mapControlsPanelBody.mcp-detail-mode #mapActivityLogList,
+                            #mapControlsPanelBody.mcp-detail-mode #category5BuildingsList,
+                            #mapControlsPanelBody.mcp-detail-mode #category5BypassedList,
+                            #mapControlsPanelBody.mcp-detail-mode #testDatesPanelList { max-height: min(68vh, 620px) !important; }
                             #favoritesBuildingsList,
                             #monitoredBuildingsList,
                             #inProcessBuildingsList,
@@ -1165,7 +1194,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpFavorites')">
                                 <span class="mcp-title"><span style="color:#9b59b6;">⭐</span> Favorites - <span id="mapFavoritesCount">0</span></span>
-                                <span class="mcp-arrow" id="mcpFavoritesArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpFavoritesArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpFavorites">
                                 <p class="mcp-desc">Favorited buildings appear in purple on the map and always stay visible even when a month filter is active</p>
@@ -1182,7 +1211,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpDeviceMonitors')">
                                 <span class="mcp-title"><span style="color:#00acc1;">📡</span> Monitoring - <span id="mapDeviceMonitorsCount">0</span></span>
-                                <span class="mcp-arrow" id="mcpDeviceMonitorsArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpDeviceMonitorsArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpDeviceMonitors">
                                 <p class="mcp-desc">Buildings watched for new DOB devices. Checked automatically during DOB Info Update — new devices show in the results modal.</p>
@@ -1199,7 +1228,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpInProcess')">
                                 <span class="mcp-title"><span style="color:#e67e22;">🔄</span> In Process - <span id="mapInProcessCount">0</span></span>
-                                <span class="mcp-arrow" id="mcpInProcessArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpInProcessArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpInProcess">
                                 <p class="mcp-desc">Buildings marked as currently in process</p>
@@ -1217,7 +1246,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpHold')">
                                 <span class="mcp-title"><span style="color:#607d8b;">⏸</span> On Hold - <span id="mapHoldCount">0</span></span>
-                                <span class="mcp-arrow" id="mcpHoldArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpHoldArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpHold">
                                 <p class="mcp-desc">Buildings placed on hold — scheduling is paused for these addresses</p>
@@ -1236,7 +1265,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpTestDates')">
                                 <span class="mcp-title"><span style="color:#1a73e8;">🗓️</span> Scheduled Test Dates - <span id="mapTestDatesCount">0</span></span>
-                                <span class="mcp-arrow" id="mcpTestDatesArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpTestDatesArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpTestDates">
                                 <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">Past due dates are flagged in red. Click <strong>✓ Done</strong> to confirm testing was completed.</p>
@@ -1259,7 +1288,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpCategory5'); updateMapCategory5Panel();">
                                 <span class="mcp-title"><span style="color:#ff9800;">⚠</span> Category 5 - <span id="mapCategory5Count">0</span></span>
-                                <span class="mcp-arrow" id="mcpCategory5Arrow">▼</span>
+                                <span class="mcp-arrow" id="mcpCategory5Arrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpCategory5">
                                 <p class="mcp-desc">Devices that need CAT 5 testing for the selected year, grouped by building. Look ahead to plan future years.</p>
@@ -1289,7 +1318,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpScheduleImport')">
                                 <span class="mcp-title"><span style="color:#27ae60;">📋</span> Import Schedule from Excel</span>
-                                <span class="mcp-arrow" id="mcpScheduleImportArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpScheduleImportArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpScheduleImport">
                                 <p class="mcp-desc">Copy rows from your Excel schedule sheet and paste them here to bulk-add test dates. Addresses are matched to buildings already on the map.</p>
@@ -1301,7 +1330,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpDateCalculator'); refreshMapDateCalculatorSummary();">
                                 <span class="mcp-title"><span style="color:#1a73e8;">📆</span> Date Calculator</span>
-                                <span class="mcp-arrow" id="mcpDateCalculatorArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpDateCalculatorArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpDateCalculator" style="font-size: 0.95em; color: var(--text-color);">
                                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:8px;">
@@ -1343,7 +1372,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpHidden')">
                                 <span class="mcp-title"><span style="color:#888;">👁️</span> Hidden - <span id="mapHiddenCount">0</span></span>
-                                <span class="mcp-arrow" id="mcpHiddenArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpHiddenArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpHidden">
                                 <p class="mcp-desc">Hidden buildings are not shown on the map</p>
@@ -1360,7 +1389,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpAdditional')">
                                 <span class="mcp-title"><span style="color:#00bcd4;">📍</span> Additional Locations - <span id="additionalLocationsCount">0</span></span>
-                                <span class="mcp-arrow" id="mcpAdditionalArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpAdditionalArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpAdditional">
                                 <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> and <strong>Transportation</strong> sections to manage tagged pins. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
@@ -1377,7 +1406,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpCustomNames')">
                                 <span class="mcp-title"><span style="color:#e64a19;">🏷️</span> Custom - <span id="customNamesCount">0</span></span>
-                                <span class="mcp-arrow" id="mcpCustomNamesArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpCustomNamesArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpCustomNames">
                                 <p class="mcp-desc">Custom labels for additional locations (not marked as houses — those are listed under Houses below). Click a marker on the map and use the 🏷️ Custom Name field to label it.</p>
@@ -1397,7 +1426,7 @@
                                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" class="mcp-houses-header-icon"><path fill="#8d6e63" d="M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg>
                                     <span>Houses - <span id="housesLocationsCount">0</span></span>
                                 </span>
-                                <span class="mcp-arrow" id="mcpHousesArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpHousesArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpHouses">
                                 <p class="mcp-desc">Pins you marked as a house use the brown marker color below on the map. Unmark keeps the pin under Additional Locations; Remove deletes the pin entirely.</p>
@@ -1417,7 +1446,7 @@
                                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" class="mcp-transportation-header-icon"><path fill="#1565c0" d="M12 2C8 2 4 2.5 4 6v9.5C4 17.43 5.57 19 7.5 19L6 20.5v.5h2.23l2-2h3.54l2 2H18v-.5L16.5 19c1.93 0 3.5-1.57 3.5-3.5V6c0-3.5-4-4-8-4zM7.5 17C6.67 17 6 16.33 6 15.5S6.67 14 7.5 14 9 14.67 9 15.5 8.33 17 7.5 17zM11 10H6V6h5v4zm5.5 7c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM18 10h-5V6h5v4z"/></svg>
                                     <span>Transportation - <span id="transportationLocationsCount">0</span></span>
                                 </span>
-                                <span class="mcp-arrow" id="mcpTransportationArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpTransportationArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpTransportation">
                                 <p class="mcp-desc">Pins you marked as transportation use a blue train icon on the map. Unmark keeps the pin under Additional Locations; Remove deletes the pin entirely.</p>
@@ -1434,7 +1463,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpCompleted')">
                                 <span class="mcp-title"><span style="color:#27ae60;">✓</span> Completed - <span id="mapCompletedCount">0</span></span>
-                                <span class="mcp-arrow" id="mcpCompletedArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpCompletedArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpCompleted">
                                 <p class="mcp-desc">Buildings manually marked as completed — scheduled test dates are recorded here</p>
@@ -1452,7 +1481,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpMonths')">
                                 <span class="mcp-title"><span style="color:#17a2b8;">📅</span> Month Labels</span>
-                                <span class="mcp-arrow" id="mcpMonthsArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpMonthsArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpMonths">
                                 <div id="monthCompletionSummary" style="margin-bottom: 8px; padding: 8px 9px; border-radius: 6px; background: rgba(23,162,184,0.08); border: 1px solid rgba(23,162,184,0.25); color: var(--text-color); font-size: 0.92em; line-height: 1.35;"></div>
@@ -1483,7 +1512,7 @@
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpTips')">
                                 <span class="mcp-title">💡 Tips</span>
-                                <span class="mcp-arrow" id="mcpTipsArrow">▼</span>
+                                <span class="mcp-arrow" id="mcpTipsArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpTips">
                                 <input type="text" id="mcpTipsSearchInput" class="mcp-search-input" placeholder="🔍 Search tips..."
@@ -1507,43 +1536,45 @@
                             </div>
                         </div>
 
-                        <div style="margin-top: 10px; padding: 8px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px;">
-                            <label for="mapViewFilterSelect" style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:5px;">Map view filter</label>
-                            <select id="mapViewFilterSelect" onchange="applyMapViewDropdownFilter()" style="width:100%; padding:6px 8px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:0.95em;">
-                                <option value="all">Current map view</option>
-                                <option value="visible">Visible with current settings</option>
-                                <option value="active-month-filters">Current active month filter</option>
-                                <option value="favorites">Favorites</option>
-                                <option value="hidden">Hidden</option>
-                                <option value="completed">Completed</option>
-                                <option value="hide-completed">Hide Completed Jobs</option>
-                                <option value="in-process">In Process</option>
-                                <option value="hold">On Hold</option>
-                                <option value="scheduled">Scheduled Test Dates</option>
-                                <option value="scheduled-cat">CAT Scheduled Jobs</option>
-                                <option value="scheduled-pvi">PVI Scheduled Jobs</option>
-                                <option value="hide-scheduled">Hide Scheduled Test Dates &amp; Completed Jobs</option>
-                                <option value="notes">Buildings with Notes</option>
-                                <option value="month-labeled">Month-labeled</option>
-                                <option value="no-month">No month label</option>
-                                <option value="month:January">January</option>
-                                <option value="month:February">February</option>
-                                <option value="month:March">March</option>
-                                <option value="month:April">April</option>
-                                <option value="month:May">May</option>
-                                <option value="month:June">June</option>
-                                <option value="month:July">July</option>
-                                <option value="month:August">August</option>
-                                <option value="month:September">September</option>
-                                <option value="month:October">October</option>
-                                <option value="month:November">November</option>
-                                <option value="month:December">December</option>
-                                <option value="month:REVIEW">REVIEW</option>
-                            </select>
+                        <div class="mcp-menu-footer">
+                            <div style="margin-top: 10px; padding: 8px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px;">
+                                <label for="mapViewFilterSelect" style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:5px;">Map view filter</label>
+                                <select id="mapViewFilterSelect" onchange="applyMapViewDropdownFilter()" style="width:100%; padding:6px 8px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:0.95em;">
+                                    <option value="all">Current map view</option>
+                                    <option value="visible">Visible with current settings</option>
+                                    <option value="active-month-filters">Current active month filter</option>
+                                    <option value="favorites">Favorites</option>
+                                    <option value="hidden">Hidden</option>
+                                    <option value="completed">Completed</option>
+                                    <option value="hide-completed">Hide Completed Jobs</option>
+                                    <option value="in-process">In Process</option>
+                                    <option value="hold">On Hold</option>
+                                    <option value="scheduled">Scheduled Test Dates</option>
+                                    <option value="scheduled-cat">CAT Scheduled Jobs</option>
+                                    <option value="scheduled-pvi">PVI Scheduled Jobs</option>
+                                    <option value="hide-scheduled">Hide Scheduled Test Dates &amp; Completed Jobs</option>
+                                    <option value="notes">Buildings with Notes</option>
+                                    <option value="month-labeled">Month-labeled</option>
+                                    <option value="no-month">No month label</option>
+                                    <option value="month:January">January</option>
+                                    <option value="month:February">February</option>
+                                    <option value="month:March">March</option>
+                                    <option value="month:April">April</option>
+                                    <option value="month:May">May</option>
+                                    <option value="month:June">June</option>
+                                    <option value="month:July">July</option>
+                                    <option value="month:August">August</option>
+                                    <option value="month:September">September</option>
+                                    <option value="month:October">October</option>
+                                    <option value="month:November">November</option>
+                                    <option value="month:December">December</option>
+                                    <option value="month:REVIEW">REVIEW</option>
+                                </select>
+                            </div>
+                            <button id="mapExportExcelButton" onclick="showMapExportModal()" class="mcp-btn" style="background: #28a745; color: white; border-color: #28a745; font-weight: 600; margin-top: 10px;">
+                                Export
+                            </button>
                         </div>
-                        <button id="mapExportExcelButton" onclick="showMapExportModal()" class="mcp-btn" style="background: #28a745; color: white; border-color: #28a745; font-weight: 600; margin-top: 10px;">
-                            Export
-                        </button>
 
                         </div>
                         <!-- Custom resize handles (only active in floating/popped-out mode) -->
@@ -19041,7 +19072,7 @@
             modal.innerHTML = `
                 <div id="deviceDetailShell" style="width:90%;height:min(760px,88vh);max-width:760px;max-height:calc(100vh - 40px);min-width:420px;min-height:420px;display:flex;gap:12px;align-items:stretch;justify-content:center;resize:both;overflow:hidden;">
                 <div id="deviceReportPanel" style="order:1;background:var(--card-bg);border-radius:12px;flex:1 1 760px;max-width:760px;height:100%;max-height:100%;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,0.4);border:1px solid var(--input-border);overflow:hidden;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:2px solid var(--input-border);background:var(--panel-bg);flex-shrink:0;">
+                    <div id="deviceReportPanelHeader" style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:2px solid var(--input-border);background:var(--panel-bg);flex-shrink:0;cursor:grab;user-select:none;touch-action:none;">
                         <div>
                             <div style="font-weight:700;font-size:17px;color:var(--header-color);">📋 Device Report</div>
                             <div style="font-size:14px;opacity:0.65;margin-top:2px;">${address} &nbsp;·&nbsp; BIN ${bin} &nbsp;·&nbsp; ${activeDeviceCount} device${activeDeviceCount !== 1 ? 's' : ''}</div>
@@ -19086,6 +19117,100 @@
             });
 
             document.body.appendChild(modal);
+            enableDeviceDetailModalDrag(modal);
+        }
+
+        let deviceDetailModalDragState = null;
+
+        function stopDeviceDetailModalDrag() {
+            if (!deviceDetailModalDragState) return;
+            const header = deviceDetailModalDragState.header;
+            if (header) header.style.cursor = 'grab';
+            document.body.style.userSelect = '';
+            deviceDetailModalDragState = null;
+            document.removeEventListener('mousemove', dragDeviceDetailModal);
+            document.removeEventListener('mouseup', stopDeviceDetailModalDrag);
+            document.removeEventListener('touchmove', dragDeviceDetailModal);
+            document.removeEventListener('touchend', stopDeviceDetailModalDrag);
+            document.removeEventListener('touchcancel', stopDeviceDetailModalDrag);
+        }
+
+        function dragDeviceDetailModal(event) {
+            if (!deviceDetailModalDragState) return;
+            const point = event.touches && event.touches[0] ? event.touches[0] : event;
+            const shell = deviceDetailModalDragState.shell;
+            if (!point || !shell) return;
+            event.preventDefault();
+            const width = deviceDetailModalDragState.width;
+            const maxLeft = Math.max(8, window.innerWidth - Math.min(width, 120));
+            const maxTop = Math.max(8, window.innerHeight - 48);
+            const left = Math.max(8, Math.min(maxLeft, deviceDetailModalDragState.startLeft + point.clientX - deviceDetailModalDragState.startX));
+            const top = Math.max(8, Math.min(maxTop, deviceDetailModalDragState.startTop + point.clientY - deviceDetailModalDragState.startY));
+            shell.style.left = Math.round(left) + 'px';
+            shell.style.top = Math.round(top) + 'px';
+        }
+
+        function prepareDeviceDetailShellForDrag(modal, shell) {
+            if (!modal || !shell || shell.dataset.dragReady === '1') return;
+            const rect = shell.getBoundingClientRect();
+            modal.style.alignItems = 'flex-start';
+            modal.style.justifyContent = 'flex-start';
+            shell.style.position = 'fixed';
+            shell.style.left = Math.round(rect.left) + 'px';
+            shell.style.top = Math.round(rect.top) + 'px';
+            shell.style.margin = '0';
+            shell.style.width = Math.round(rect.width) + 'px';
+            shell.style.height = Math.round(rect.height) + 'px';
+            shell.style.maxWidth = 'none';
+            shell.style.maxHeight = 'none';
+            shell.dataset.dragReady = '1';
+        }
+
+        function startDeviceDetailModalDrag(event, modal) {
+            if (!modal) return;
+            if (typeof event.button === 'number' && event.button !== 0) return;
+            if (event.target.closest('button, a, input, select, textarea, label')) return;
+            const shell = modal.querySelector('#deviceDetailShell');
+            const header = modal.querySelector('#deviceReportPanelHeader');
+            if (!shell || !header) return;
+            const point = event.touches && event.touches[0] ? event.touches[0] : event;
+            if (!point) return;
+            event.preventDefault();
+            event.stopPropagation();
+            stopDeviceDetailModalDrag();
+            prepareDeviceDetailShellForDrag(modal, shell);
+            const rect = shell.getBoundingClientRect();
+            deviceDetailModalDragState = {
+                shell: shell,
+                header: header,
+                startX: point.clientX,
+                startY: point.clientY,
+                startLeft: rect.left,
+                startTop: rect.top,
+                width: rect.width,
+                height: rect.height
+            };
+            header.style.cursor = 'grabbing';
+            document.body.style.userSelect = 'none';
+            document.addEventListener('mousemove', dragDeviceDetailModal);
+            document.addEventListener('mouseup', stopDeviceDetailModalDrag);
+            document.addEventListener('touchmove', dragDeviceDetailModal, { passive: false });
+            document.addEventListener('touchend', stopDeviceDetailModalDrag);
+            document.addEventListener('touchcancel', stopDeviceDetailModalDrag);
+        }
+
+        function enableDeviceDetailModalDrag(modal) {
+            if (!modal) return;
+            const header = modal.querySelector('#deviceReportPanelHeader');
+            if (!header || header.dataset.dragBound === '1') return;
+            header.dataset.dragBound = '1';
+            header.title = 'Drag to move';
+            header.addEventListener('mousedown', function(event) {
+                startDeviceDetailModalDrag(event, modal);
+            });
+            header.addEventListener('touchstart', function(event) {
+                startDeviceDetailModalDrag(event, modal);
+            }, { passive: false });
         }
 
         function filterDeviceReportModal() {
@@ -19911,18 +20036,56 @@
             await promoteAdditionalLocation(index);
         }
 
-        function toggleMcpSection(id) {
-            var body = document.getElementById(id);
-            var arrow = document.getElementById(id + 'Arrow');
-            if (!body) return;
-            var isOpen = body.classList.contains('open');
-            if (isOpen) {
+        function closeMcpDetailView() {
+            var panelBody = document.getElementById('mapControlsPanelBody');
+            if (!panelBody) return;
+            panelBody.classList.remove('mcp-detail-mode');
+            panelBody.querySelectorAll('.mcp-section.mcp-active').forEach(function(section) {
+                section.classList.remove('mcp-active');
+            });
+            panelBody.querySelectorAll('.mcp-body.open').forEach(function(body) {
                 body.classList.remove('open');
-                if (arrow) arrow.classList.remove('open');
-            } else {
-                body.classList.add('open');
-                if (arrow) arrow.classList.add('open');
+            });
+            var backTitle = document.getElementById('mcpDetailBackTitle');
+            if (backTitle) backTitle.textContent = '';
+        }
+
+        function openMcpSection(id) {
+            var body = document.getElementById(id);
+            var panelBody = document.getElementById('mapControlsPanelBody');
+            if (!body || !panelBody) return;
+
+            var section = body.closest('.mcp-section');
+            if (!section) return;
+
+            closeMcpDetailView();
+
+            panelBody.classList.add('mcp-detail-mode');
+            section.classList.add('mcp-active');
+            body.classList.add('open');
+
+            var titleEl = section.querySelector('.mcp-title');
+            var backTitle = document.getElementById('mcpDetailBackTitle');
+            if (backTitle) {
+                if (titleEl) {
+                    backTitle.textContent = (titleEl.textContent || '').replace(/\s+/g, ' ').trim();
+                } else {
+                    backTitle.textContent = '';
+                }
             }
+
+            if (id === 'mcpCategory5' && typeof updateMapCategory5Panel === 'function') {
+                updateMapCategory5Panel();
+            }
+            if (id === 'mcpDateCalculator' && typeof refreshMapDateCalculatorSummary === 'function') {
+                refreshMapDateCalculatorSummary();
+            }
+
+            panelBody.scrollTop = 0;
+        }
+
+        function toggleMcpSection(id) {
+            openMcpSection(id);
         }
 
         let mapDateCalculatorMode = 'positive';
@@ -20174,7 +20337,7 @@
                 notesSection.innerHTML = `
                     <div class="mcp-header" onclick="toggleMcpSection('mcpNotes')">
                         <span class="mcp-title"><span style="color:#ffc107;">📝</span> Buildings with Notes - <span id="mapNotesCount">0</span></span>
-                        <span class="mcp-arrow" id="mcpNotesArrow">▼</span>
+                        <span class="mcp-arrow" id="mcpNotesArrow">›</span>
                     </div>
                     <div class="mcp-body" id="mcpNotes">
                         <p class="mcp-desc">Buildings with saved MAP notes. Click a row to view the building.</p>
@@ -20196,7 +20359,7 @@
                 activitySection.innerHTML = `
                     <div class="mcp-header" onclick="toggleMcpSection('mcpActivity')">
                         <span class="mcp-title"><span style="color:#607d8b;">Activity Monitor</span> - <span id="mapActivityCount">0</span></span>
-                        <span class="mcp-arrow" id="mcpActivityArrow">▼</span>
+                        <span class="mcp-arrow" id="mcpActivityArrow">›</span>
                     </div>
                     <div class="mcp-body" id="mcpActivity">
                         <p class="mcp-desc">Scheduling-related map changes, grouped by day and saved in the map view JSON file. Clearing this history removes it from future saves.</p>
