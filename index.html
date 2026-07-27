@@ -18497,7 +18497,9 @@
             return parts.length ? parts.join('. ') + '.' : 'No 6-month or CAT 5 deadline restriction was found for the selected year.';
         }
 
-        function validateMapScheduledTestDate(bin, type, dateStr) {
+        function validateMapScheduledTestDate(bin, type, dateStr, options) {
+            const opts = options || {};
+            const bypassEligibility = !!opts.bypassEligibility;
             const normalizedType = normalizeMapScheduleType(type);
             if (normalizedType !== 'pvi' && normalizedType !== 'category') return { valid: true, message: '', rules: null };
             const scheduledDate = new Date(dateStr + 'T00:00:00');
@@ -18515,6 +18517,14 @@
                     const completionMessage = completion.source === 'saved'
                         ? `PVI testing is already marked complete for ${completion.year}`
                         : `All required PVI inspections are already filed for ${completion.year}`;
+                    if (bypassEligibility) {
+                        return {
+                            valid: true,
+                            bypassed: true,
+                            message: `${completionMessage}. The recent-test restriction override is enabled.`,
+                            rules
+                        };
+                    }
                     return {
                         valid: false,
                         message: `${completionMessage}. Schedule the next PVI test in ${completion.nextYear}.`,
@@ -18528,13 +18538,21 @@
                 const completionMessage = rules.categoryCompletionSource === 'saved'
                     ? `Category testing is already marked complete for ${rules.scheduledYear}`
                     : `All required Category inspections are already filed for ${rules.scheduledYear}`;
+                if (bypassEligibility) {
+                    return {
+                        valid: true,
+                        bypassed: true,
+                        message: `${completionMessage}. The recent-test restriction override is enabled.`,
+                        rules
+                    };
+                }
                 return {
                     valid: false,
                     message: `${completionMessage}. Schedule the next Category test in ${rules.nextCategoryYear}.`,
                     rules
                 };
             }
-            if (rules.earliestAllowed && scheduledDate < rules.earliestAllowed) {
+            if (rules.earliestAllowed && scheduledDate < rules.earliestAllowed && !bypassEligibility) {
                 return {
                     valid: false,
                     message: `Category testing must be at least 6 months after the latest Category inspection. Earliest available date: ${rules.earliestAllowed.toLocaleDateString()}.`,
@@ -18549,14 +18567,23 @@
                     rules
                 };
             }
-            return { valid: true, message: '', rules };
+            return {
+                valid: true,
+                bypassed: !!(bypassEligibility && rules.earliestAllowed && scheduledDate < rules.earliestAllowed),
+                message: bypassEligibility && rules.earliestAllowed && scheduledDate < rules.earliestAllowed
+                    ? `The recent-test restriction override is enabled. The normal earliest Category date is ${rules.earliestAllowed.toLocaleDateString()}.`
+                    : '',
+                rules
+            };
         }
 
         function addTestDateForBin(bin, dateStr, options) {
             if (!dateStr) return false;
             const opts = options || {};
             const type = normalizeMapScheduleType(opts.type);
-            const validation = validateMapScheduledTestDate(bin, type, dateStr);
+            const validation = validateMapScheduledTestDate(bin, type, dateStr, {
+                bypassEligibility: !!opts.bypassEligibility
+            });
             if (!validation.valid) {
                 if (!opts.quiet) showMapNotification(validation.message, '#ff6b6b');
                 return false;
@@ -19324,6 +19351,13 @@
                             <div id="categoryCompletionStatus">${renderMapCategoryCompletionStatusHtml(bin)}</div>
                             <div id="testDatesListCategory" style="margin-bottom:10px;"></div>
                             <div style="display:flex; gap:7px;"><input type="date" id="testDateInputCategory" value="${categoryDefaultDate}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;"><button id="testDateAddCategory" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#8e44ad; color:white; font-size:12px; font-weight:700;">+ Add</button></div>
+                            <details style="margin-top:10px; padding:8px 9px; border:1px solid rgba(155,89,182,0.28); border-radius:7px; background:rgba(155,89,182,0.08);">
+                                <summary style="cursor:pointer; color:#b56bd4; font-size:12px; line-height:1.4; font-weight:800; user-select:none;">Advanced scheduling options</summary>
+                                <label style="display:flex; align-items:flex-start; gap:9px; margin-top:10px; color:var(--text-color,#eee); font-size:12px; line-height:1.45; cursor:pointer;">
+                                    <input type="checkbox" id="testDateBypassCategory" style="margin:3px 0 0; width:16px; height:16px; flex:0 0 auto;">
+                                    <span><strong style="font-size:12.5px;">Override recent-test restriction</strong><br><span style="opacity:0.9;">Schedule this Category test even when recent DOB testing would normally block the date.</span></span>
+                                </label>
+                            </details>
                             <div id="categoryScheduleError" role="alert" style="display:none; margin-top:8px; color:#ff6b6b; font-size:11px; line-height:1.35;"></div>
                         </section>
 
@@ -19333,6 +19367,13 @@
                             ${pviCompletionNotice}
                             <div id="testDatesListPvi" style="margin-bottom:10px;"></div>
                             <div style="display:flex; gap:7px;"><input type="date" id="testDateInputPvi" value="${pviDefaultDate}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;"><button id="testDateAddPvi" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#1a73e8; color:white; font-size:12px; font-weight:700;">+ Add</button></div>
+                            <details style="margin-top:10px; padding:8px 9px; border:1px solid rgba(26,115,232,0.28); border-radius:7px; background:rgba(26,115,232,0.08);">
+                                <summary style="cursor:pointer; color:#4a9eff; font-size:12px; line-height:1.4; font-weight:800; user-select:none;">Advanced scheduling options</summary>
+                                <label style="display:flex; align-items:flex-start; gap:9px; margin-top:10px; color:var(--text-color,#eee); font-size:12px; line-height:1.45; cursor:pointer;">
+                                    <input type="checkbox" id="testDateBypassPvi" style="margin:3px 0 0; width:16px; height:16px; flex:0 0 auto;">
+                                    <span><strong style="font-size:12.5px;">Override recent-test restriction</strong><br><span style="opacity:0.9;">Schedule this PVI test even when recent DOB testing would normally block the date.</span></span>
+                                </label>
+                            </details>
                             <div id="pviScheduleError" role="alert" style="display:none; margin-top:8px; color:#ff6b6b; font-size:11px; line-height:1.35;"></div>
                         </section>
                     </div>
@@ -19406,40 +19447,58 @@
                 const input = document.getElementById(inputId);
                 const val = input ? input.value : '';
                 const error = document.getElementById(type === 'pvi' ? 'pviScheduleError' : 'categoryScheduleError');
+                const bypassInput = document.getElementById(type === 'pvi' ? 'testDateBypassPvi' : 'testDateBypassCategory');
+                const bypassEligibility = !!(bypassInput && bypassInput.checked);
                 if (error) error.style.display = 'none';
                 if (!val) { showMapNotification('Please select a date', '#ff6b6b'); return; }
                 if (mapDobHasCompletedTestDate(bin, type, val)) {
                     showMapNotification(`That ${type === 'pvi' ? 'PVI' : 'Category'} date is already filed with DOB`, '#27ae60');
                     return;
                 }
-                const validation = validateMapScheduledTestDate(bin, type, val);
+                const validation = validateMapScheduledTestDate(bin, type, val, { bypassEligibility });
                 if (!validation.valid) {
                     if (error) { error.textContent = validation.message; error.style.display = 'block'; }
                     showMapNotification(validation.message, '#ff6b6b');
                     return;
                 }
                 const readinessWarning = getMapScheduledReadinessWarning(bin, type, val);
-                if (readinessWarning && !confirm(`${readinessWarning.message}\n\nSchedule this date anyway?`)) return;
-                if (!addTestDateForBin(bin, val, { type, address })) {
+                if (readinessWarning && !bypassEligibility) {
+                    const message = `${readinessWarning.message} Open Advanced scheduling options and select “Override recent-test restriction” to schedule this date anyway.`;
+                    if (error) { error.textContent = message; error.style.color = '#ff9800'; error.style.display = 'block'; }
+                    showMapNotification('This date is inside the 91-day waiting period', '#ff9800');
+                    return;
+                }
+                const bypassUsed = !!(bypassEligibility && (readinessWarning || validation.bypassed));
+                if (!addTestDateForBin(bin, val, {
+                    type,
+                    address,
+                    bypassEligibility,
+                    source: bypassUsed ? 'Recent-test restriction override' : ''
+                })) {
                     showMapNotification('That date is already scheduled', '#ff9800');
                     return;
                 }
                 renderDates();
                 refreshMapAfterTestDateChange();
                 showMapNotification(
-                    readinessWarning ? readinessWarning.message : `${type === 'pvi' ? 'PVI' : 'Category'} test date added`,
-                    readinessWarning ? '#ff9800' : (type === 'pvi' ? '#1a73e8' : '#9b59b6')
+                    bypassUsed ? `${type === 'pvi' ? 'PVI' : 'Category'} test date added with the recent-test restriction overridden` : `${type === 'pvi' ? 'PVI' : 'Category'} test date added`,
+                    bypassUsed ? '#ff9800' : (type === 'pvi' ? '#1a73e8' : '#9b59b6')
                 );
             }
 
             function showTypedDateFeedback(type, dateStr) {
-                const validation = validateMapScheduledTestDate(bin, type, dateStr);
                 const error = document.getElementById(type === 'pvi' ? 'pviScheduleError' : 'categoryScheduleError');
+                const bypassInput = document.getElementById(type === 'pvi' ? 'testDateBypassPvi' : 'testDateBypassCategory');
+                const bypassEligibility = !!(bypassInput && bypassInput.checked);
+                const validation = validateMapScheduledTestDate(bin, type, dateStr, { bypassEligibility });
                 if (!error) return validation;
                 const readinessWarning = validation.valid ? getMapScheduledReadinessWarning(bin, type, dateStr) : null;
-                error.textContent = validation.message || (readinessWarning ? readinessWarning.message : '');
+                const readinessMessage = readinessWarning
+                    ? `${readinessWarning.message} ${bypassEligibility ? 'The recent-test restriction override is enabled.' : 'Open Advanced scheduling options and select “Override recent-test restriction” to schedule this date anyway.'}`
+                    : '';
+                error.textContent = readinessMessage || validation.message;
                 error.style.color = validation.valid ? '#ff9800' : '#ff6b6b';
-                error.style.display = validation.valid && !readinessWarning ? 'none' : 'block';
+                error.style.display = validation.valid && !readinessWarning && !validation.message ? 'none' : 'block';
                 return validation;
             }
 
@@ -19456,6 +19515,14 @@
                     summary.style.display = completedYear ? 'none' : 'block';
                     if (!completedYear) summary.innerHTML = getMapCategoryRuleSummaryHtml(validation.rules);
                 }
+            });
+            document.getElementById('testDateBypassPvi').addEventListener('change', () => {
+                const input = document.getElementById('testDateInputPvi');
+                showTypedDateFeedback('pvi', input ? input.value : '');
+            });
+            document.getElementById('testDateBypassCategory').addEventListener('change', () => {
+                const input = document.getElementById('testDateInputCategory');
+                showTypedDateFeedback('category', input ? input.value : '');
             });
 
             document.getElementById('testDatesDoneBtn').addEventListener('click', () => overlay.remove());
@@ -33980,7 +34047,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.0.2</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.0.3</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
