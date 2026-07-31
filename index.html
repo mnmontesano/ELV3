@@ -1304,7 +1304,7 @@
                                 <label for="immediateAttentionTypeFilter" style="display:block; font-size:0.92em; font-weight:700; color:var(--text-color); margin-bottom:5px;">Attention type</label>
                                 <select id="immediateAttentionTypeFilter" onchange="updateImmediateAttentionPanel()" style="width:100%; padding:7px 9px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:1em; font-weight:600; box-sizing:border-box; margin-bottom:8px;">
                                     <option value="all">All immediate attention</option>
-                                    <option value="no-current-year-test">No test this year</option>
+                                    <option value="no-current-year-test">No test or schedule by midyear</option>
                                     <option value="overdue-schedule">Due / past-due schedules</option>
                                     <option value="cat5-due">CAT 5 due / overdue</option>
                                     <option value="active-violation">Active violations</option>
@@ -19892,15 +19892,22 @@
             Object.entries(binGroups).forEach(([bin, group]) => {
                 const devices = Array.isArray(group && group.devices) ? group.devices : [];
                 const buildingSchedule = normalizeMapScheduleRecord(schedules[bin]);
-                const hasGeneralSchedule = buildingSchedule.general.length > 0;
+                const isCurrentYearSchedule = date => String(date || '').startsWith(`${year}-`);
+                const hasCurrentYearGeneralSchedule = buildingSchedule.general.some(isCurrentYearSchedule);
+                const hasCurrentYearPviSchedule = buildingSchedule.pvi.some(isCurrentYearSchedule);
+                const hasCurrentYearCategorySchedule = buildingSchedule.category.some(isCurrentYearSchedule);
                 devices.forEach(device => {
                     const testInfo = getMapDeviceReportTestInfo(device || {}, year, bin);
                     const pending = getMapDeviceReportPendingTests(testInfo);
                     const hasAnyCurrentYearTest = testInfo.hasPVI || testInfo.hasCat1 || testInfo.hasCat5;
+                    const hasRelevantCurrentYearSchedule = hasCurrentYearGeneralSchedule
+                        || (pending.includes('PVI') && hasCurrentYearPviSchedule)
+                        || ((pending.includes('CAT 1') || pending.includes('CAT 5')) && hasCurrentYearCategorySchedule);
                     const wouldBeNoCurrentYearTest = noTestCheckActive
                         && !testInfo.isRemoved
                         && pending.length > 0
-                        && !hasAnyCurrentYearTest;
+                        && !hasAnyCurrentYearTest
+                        && !hasRelevantCurrentYearSchedule;
                     const deviceNumber = String(device.device_number || 'Unknown');
                     const deviceType = String(device.device_type || 'Unknown type');
 
@@ -19949,8 +19956,8 @@
                         const needsPvi = testInfo.requiresPVI && !testInfo.hasPVI;
                         const needsCategory = (testInfo.requiresCat1 && !testInfo.hasCat1)
                             || (testInfo.requiresCat5 && !testInfo.hasCat5);
-                        if (needsPvi && buildingSchedule.pvi.length === 0 && !hasGeneralSchedule) missingSchedules.push('PVI');
-                        if (needsCategory && buildingSchedule.category.length === 0 && !hasGeneralSchedule) missingSchedules.push('Category');
+                        if (needsPvi && !hasCurrentYearPviSchedule && !hasCurrentYearGeneralSchedule) missingSchedules.push('PVI');
+                        if (needsCategory && !hasCurrentYearCategorySchedule && !hasCurrentYearGeneralSchedule) missingSchedules.push('Category');
                         if (missingSchedules.length > 0) {
                             ensureItem(bin).alerts.push({
                                 kind: 'ready-unscheduled',
@@ -20016,7 +20023,7 @@
             if (countEl) countEl.textContent = totalCount;
             if (summaryEl) {
                 const noTestLabel = today >= new Date(year, 6, 1)
-                    ? `${noTestCount} no test in ${year}`
+                    ? `${noTestCount} no test or schedule`
                     : `No-test check starts Jul 1`;
                 summaryEl.innerHTML = `
                     <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#dc3545; background:rgba(220,53,69,0.12); border:1px solid rgba(220,53,69,0.3); font-weight:700;">${noTestLabel}</span>
@@ -20036,7 +20043,7 @@
 
             if (items.length === 0) {
                 const emptyText = selectedType === 'no-current-year-test' && today < new Date(year, 6, 1)
-                    ? `The no-test check becomes active on July 1, ${year}.`
+                    ? `The no-test and no-schedule check becomes active on July 1, ${year}.`
                     : 'No devices need immediate attention for this filter.';
                 listEl.innerHTML = `<div style="font-size:1em; color:var(--text-color); opacity:0.75; text-align:center; padding:14px 8px; line-height:1.45;">${emptyText}</div>`;
                 return;
@@ -20116,10 +20123,10 @@
                         const pending = escapeMapSuggestionHtml(alert.pending.join(', '));
                         return `<div data-attention-text="${escapeMapSuggestionHtml(`${alert.deviceNumber} ${alert.deviceType} ${alert.pending.join(' ')}`)}" style="padding:9px 10px; background:rgba(220,53,69,0.08); border:1px solid rgba(220,53,69,0.24); border-radius:6px; margin-bottom:6px;">
                             <div style="display:flex; align-items:flex-start; gap:7px;">
-                                <span style="font-size:0.7em; background:#dc3545; color:white; border-radius:3px; padding:2px 5px; font-weight:800; white-space:nowrap;">NO TEST IN ${year}</span>
+                                <span style="font-size:0.7em; background:#dc3545; color:white; border-radius:3px; padding:2px 5px; font-weight:800; white-space:nowrap;">NO TEST / SCHEDULE</span>
                                 <span style="font-size:0.94em; color:var(--text-color); font-weight:700; line-height:1.35;">Device ${deviceNumber} · ${deviceType}</span>
                             </div>
-                            <div style="font-size:0.82em; opacity:0.78; margin-top:5px;">Still required: ${pending}</div>
+                            <div style="font-size:0.82em; opacity:0.78; margin-top:5px;">No relevant ${year} test date is filed or scheduled · Still required: ${pending}</div>
                             ${item.manuallyCompleted ? '<div style="font-size:0.8em; color:#e67e22; margin-top:5px; font-weight:700;">Marked completed manually — verify the DOB filing.</div>' : ''}
                         </div>`;
                     }
