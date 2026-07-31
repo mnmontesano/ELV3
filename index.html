@@ -1308,7 +1308,7 @@
                                     <option value="overdue-schedule">Due / past-due schedules</option>
                                 </select>
                                 <input type="text" id="immediateAttentionSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or device..."
-                                       oninput="filterMcpBinRowList('immediateAttentionList', this.value)">
+                                       oninput="filterImmediateAttentionList(this.value)">
                                 <div id="immediateAttentionList" style="max-height:320px; overflow-y:auto; margin-bottom:8px;">
                                     <div style="font-size:1em; opacity:0.6; text-align:center; padding:8px;">No devices need immediate attention</div>
                                 </div>
@@ -19965,7 +19965,7 @@
                         const deviceNumber = escapeMapSuggestionHtml(alert.deviceNumber);
                         const deviceType = escapeMapSuggestionHtml(alert.deviceType);
                         const pending = escapeMapSuggestionHtml(alert.pending.join(', '));
-                        return `<div style="padding:9px 10px; background:rgba(220,53,69,0.08); border:1px solid rgba(220,53,69,0.24); border-radius:6px; margin-bottom:6px;">
+                        return `<div data-attention-text="${escapeMapSuggestionHtml(`${alert.deviceNumber} ${alert.deviceType} ${alert.pending.join(' ')}`)}" style="padding:9px 10px; background:rgba(220,53,69,0.08); border:1px solid rgba(220,53,69,0.24); border-radius:6px; margin-bottom:6px;">
                             <div style="display:flex; align-items:flex-start; gap:7px;">
                                 <span style="font-size:0.7em; background:#dc3545; color:white; border-radius:3px; padding:2px 5px; font-weight:800; white-space:nowrap;">NO TEST IN ${year}</span>
                                 <span style="font-size:0.94em; color:var(--text-color); font-weight:700; line-height:1.35;">Device ${deviceNumber} · ${deviceType}</span>
@@ -19978,7 +19978,7 @@
                     const displayDate = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
                     const typeLabel = alert.scheduleType === 'pvi' ? 'PVI' : alert.scheduleType === 'category' ? 'CATEGORY' : 'UNSPECIFIED';
                     const badge = alert.isToday ? 'DUE TODAY' : 'PAST DUE';
-                    return `<div style="padding:9px 10px; background:rgba(230,126,34,0.08); border:1px solid rgba(230,126,34,0.28); border-radius:6px; margin-bottom:6px;">
+                    return `<div data-attention-text="${escapeMapSuggestionHtml(`${typeLabel} ${alert.date} ${displayDate}`)}" style="padding:9px 10px; background:rgba(230,126,34,0.08); border:1px solid rgba(230,126,34,0.28); border-radius:6px; margin-bottom:6px;">
                         <div style="display:flex; align-items:center; gap:7px; margin-bottom:7px;">
                             <span style="font-size:0.7em; background:${alert.isToday ? '#e67e22' : '#dc3545'}; color:white; border-radius:3px; padding:2px 5px; font-weight:800;">${badge}</span>
                             <span style="font-size:0.9em; color:var(--text-color); font-weight:700;">${typeLabel} · ${displayDate}</span>
@@ -19986,7 +19986,7 @@
                         <button onclick="confirmTestDone('${binJs}', '${alert.date}', '${alert.scheduleType}')" style="padding:5px 10px; background:#27ae60; color:white; border:none; border-radius:5px; cursor:pointer; font-size:0.82em; font-weight:700;">✓ Done</button>
                     </div>`;
                 }).join('');
-                return `<div data-bin="${escapeMapSuggestionHtml(bin)}" data-address="${address}" data-filter-text="${filterText}" style="margin-bottom:10px; border:1px solid rgba(220,53,69,0.3); border-radius:7px; overflow:hidden; background:var(--input-bg);">
+                return `<div data-attention-card data-bin="${escapeMapSuggestionHtml(bin)}" data-address="${address}" data-filter-text="${filterText}" style="margin-bottom:10px; border:1px solid rgba(220,53,69,0.3); border-radius:7px; overflow:hidden; background:var(--input-bg);">
                     <div style="padding:9px 11px; background:rgba(220,53,69,0.07); display:flex; align-items:center; gap:7px;">
                         <span style="color:#dc3545;">📍</span>
                         <span onclick="flyToMapBuilding('${binJs}', { temporarilyShowHidden: true })" title="Click to view on map" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; text-decoration:underline dotted; color:var(--text-color); font-weight:750;">${address || 'BIN ' + escapeMapSuggestionHtml(bin)}</span>
@@ -19998,8 +19998,25 @@
 
             const searchInput = document.getElementById('immediateAttentionSearchInput');
             if (searchInput && searchInput.value.trim()) {
-                filterMcpBinRowList('immediateAttentionList', searchInput.value);
+                filterImmediateAttentionList(searchInput.value);
             }
+        }
+
+        function filterImmediateAttentionList(query) {
+            const listEl = document.getElementById('immediateAttentionList');
+            if (!listEl) return;
+            const normalizedQuery = String(query || '').trim().toLowerCase();
+            listEl.querySelectorAll('[data-attention-card]').forEach(card => {
+                const buildingText = `${card.getAttribute('data-bin') || ''} ${card.getAttribute('data-address') || ''}`.toLowerCase();
+                const buildingMatches = !normalizedQuery || buildingText.includes(normalizedQuery);
+                let visibleAlerts = 0;
+                card.querySelectorAll('[data-attention-text]').forEach(alertEl => {
+                    const alertMatches = buildingMatches || String(alertEl.getAttribute('data-attention-text') || '').toLowerCase().includes(normalizedQuery);
+                    alertEl.style.display = alertMatches ? '' : 'none';
+                    if (alertMatches) visibleAlerts++;
+                });
+                card.style.display = visibleAlerts > 0 ? '' : 'none';
+            });
         }
 
         function showImmediateAttentionOnMap() {
