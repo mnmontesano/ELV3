@@ -1298,7 +1298,7 @@
                             </div>
                             <div class="mcp-body" id="mcpImmediateAttention">
                                 <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">
-                                    Flags due or past-due schedules, plus active devices with no test filed in the current year beginning July 1.
+                                    Flags urgent testing, scheduling, violation, and DOB data issues that need follow-up.
                                 </p>
                                 <div id="immediateAttentionSummary" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;"></div>
                                 <label for="immediateAttentionTypeFilter" style="display:block; font-size:0.92em; font-weight:700; color:var(--text-color); margin-bottom:5px;">Attention type</label>
@@ -1306,6 +1306,10 @@
                                     <option value="all">All immediate attention</option>
                                     <option value="no-current-year-test">No test this year</option>
                                     <option value="overdue-schedule">Due / past-due schedules</option>
+                                    <option value="cat5-due">CAT 5 due / overdue</option>
+                                    <option value="active-violation">Active violations</option>
+                                    <option value="ready-unscheduled">Ready but unscheduled</option>
+                                    <option value="stale-dob-data">Stale DOB test data</option>
                                 </select>
                                 <input type="text" id="immediateAttentionSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or device..."
                                        oninput="filterImmediateAttentionList(this.value)">
@@ -14147,7 +14151,9 @@
             if (filterValue === 'in-process') return new Set(Object.keys(view.inProcess || {}).map(String));
             if (filterValue === 'hold') return new Set(Object.keys(view.hold || {}).map(String));
             if (filterValue === 'immediate-attention') {
-                return new Set(getMapImmediateAttentionItems(new Date(), view).map(item => String(item.bin)));
+                return new Set(getMapImmediateAttentionItems(new Date(), view)
+                    .filter(item => !item.viewLevel)
+                    .map(item => String(item.bin)));
             }
             if (filterValue === 'scheduled') return new Set(allBins.filter(bin => mapViewHasScheduledDates(view, bin)));
             if (filterValue === 'scheduled-cat') return new Set(allBins.filter(bin => mapViewHasScheduledType(view, bin, 'category')));
@@ -19883,27 +19889,104 @@
                 });
             });
 
-            if (noTestCheckActive) {
-                Object.entries(binGroups).forEach(([bin, group]) => {
-                    const devices = Array.isArray(group && group.devices) ? group.devices : [];
-                    devices.forEach(device => {
-                        const testInfo = getMapDeviceReportTestInfo(device || {}, year, bin);
-                        const pending = getMapDeviceReportPendingTests(testInfo);
-                        const hasAnyCurrentYearTest = testInfo.hasPVI || testInfo.hasCat1 || testInfo.hasCat5;
-                        if (testInfo.isRemoved || pending.length === 0 || hasAnyCurrentYearTest) return;
+            Object.entries(binGroups).forEach(([bin, group]) => {
+                const devices = Array.isArray(group && group.devices) ? group.devices : [];
+                const buildingSchedule = normalizeMapScheduleRecord(schedules[bin]);
+                const hasGeneralSchedule = buildingSchedule.general.length > 0;
+                devices.forEach(device => {
+                    const testInfo = getMapDeviceReportTestInfo(device || {}, year, bin);
+                    const pending = getMapDeviceReportPendingTests(testInfo);
+                    const hasAnyCurrentYearTest = testInfo.hasPVI || testInfo.hasCat1 || testInfo.hasCat5;
+                    const wouldBeNoCurrentYearTest = noTestCheckActive
+                        && !testInfo.isRemoved
+                        && pending.length > 0
+                        && !hasAnyCurrentYearTest;
+                    const deviceNumber = String(device.device_number || 'Unknown');
+                    const deviceType = String(device.device_type || 'Unknown type');
+
+                    const activeViolations = (Array.isArray(device.violations) ? device.violations : []).filter(violation => {
+                        const status = String(violation && violation.violation_status || '').toUpperCase();
+                        return status === 'ACTIVE' || status === 'OPEN';
+                    });
+                    activeViolations.forEach(violation => {
                         ensureItem(bin).alerts.push({
-                            kind: 'no-current-year-test',
-                            deviceNumber: String(device.device_number || 'Unknown'),
-                            deviceType: String(device.device_type || 'Unknown type'),
-                            pending
+                            kind: 'active-violation',
+                            deviceNumber,
+                            deviceType,
+                            violationNumber: String(violation.violation_number || 'Unknown'),
+                            status: String(violation.violation_status || 'Active'),
+                            issueDate: String(violation.violation_issue_date || violation.violation_date || ''),
+                            description: String(violation.violation_description || violation.violation_remarks || violation.violation_type || 'No description available')
                         });
                     });
+
+                    if (testInfo.isRemoved || pending.length === 0) return;
+
+                    if (wouldBeNoCurrentYearTest) {
+                        ensureItem(bin).alerts.push({
+                            kind: 'no-current-year-test',
+                            deviceNumber,
+                            deviceType,
+                            pending
+                        });
+                    }
+
+                    const cat5Due = mapDobDeviceCat5DueForSelectedYear(device, year, bin)
+                        && !mapDobDateIsInYear(device.cat5_latest_report_filed, year);
+                    if (cat5Due && !wouldBeNoCurrentYearTest) {
+                        ensureItem(bin).alerts.push({
+                            kind: 'cat5-due',
+                            deviceNumber,
+                            deviceType,
+                            dueYear: getMapCategory5NextDueYear(device, bin),
+                            lastCat5Date: String(device.cat5_latest_report_filed || '')
+                        });
+                    }
+
+                    const availability = getMapDeviceReportNextTestAvailability(testInfo, new Date(today.getTime()));
+                    if (availability.isAvailableNow && !wouldBeNoCurrentYearTest) {
+                        const missingSchedules = [];
+                        const needsPvi = testInfo.requiresPVI && !testInfo.hasPVI;
+                        const needsCategory = (testInfo.requiresCat1 && !testInfo.hasCat1)
+                            || (testInfo.requiresCat5 && !testInfo.hasCat5);
+                        if (needsPvi && buildingSchedule.pvi.length === 0 && !hasGeneralSchedule) missingSchedules.push('PVI');
+                        if (needsCategory && buildingSchedule.category.length === 0 && !hasGeneralSchedule) missingSchedules.push('Category');
+                        if (missingSchedules.length > 0) {
+                            ensureItem(bin).alerts.push({
+                                kind: 'ready-unscheduled',
+                                deviceNumber,
+                                deviceType,
+                                pending,
+                                missingSchedules
+                            });
+                        }
+                    }
+                });
+            });
+
+            const dobUpdatedAt = parseMapTimestamp(view ? view.dobInfoUpdatedAt : mapDobInfoUpdatedAt);
+            const dobAgeDays = dobUpdatedAt
+                ? Math.max(0, Math.floor((today.getTime() - dobUpdatedAt) / (1000 * 60 * 60 * 24)))
+                : null;
+            if (Object.keys(binGroups).length > 0 && (!dobUpdatedAt || dobAgeDays >= 30)) {
+                itemMap.set('__map_dob_data__', {
+                    bin: '__map_dob_data__',
+                    address: 'MAP DOB test data',
+                    viewLevel: true,
+                    manuallyCompleted: false,
+                    alerts: [{
+                        kind: 'stale-dob-data',
+                        lastUpdatedAt: dobUpdatedAt,
+                        ageDays: dobAgeDays,
+                        neverUpdated: !dobUpdatedAt
+                    }]
                 });
             }
 
             return Array.from(itemMap.values())
                 .filter(item => item.alerts.length > 0)
                 .sort((a, b) => {
+                    if (a.viewLevel !== b.viewLevel) return a.viewLevel ? -1 : 1;
                     const aOverdue = a.alerts.filter(alert => alert.kind === 'overdue-schedule').map(alert => alert.date).sort()[0] || '9999-12-31';
                     const bOverdue = b.alerts.filter(alert => alert.kind === 'overdue-schedule').map(alert => alert.date).sort()[0] || '9999-12-31';
                     if (aOverdue !== bOverdue) return aOverdue.localeCompare(bOverdue);
@@ -19925,6 +20008,10 @@
             const allAlerts = allItems.flatMap(item => item.alerts);
             const noTestCount = allAlerts.filter(alert => alert.kind === 'no-current-year-test').length;
             const scheduleCount = allAlerts.filter(alert => alert.kind === 'overdue-schedule').length;
+            const cat5Count = allAlerts.filter(alert => alert.kind === 'cat5-due').length;
+            const violationCount = allAlerts.filter(alert => alert.kind === 'active-violation').length;
+            const unscheduledCount = allAlerts.filter(alert => alert.kind === 'ready-unscheduled').length;
+            const staleCount = allAlerts.filter(alert => alert.kind === 'stale-dob-data').length;
             const totalCount = allAlerts.length;
             if (countEl) countEl.textContent = totalCount;
             if (summaryEl) {
@@ -19933,7 +20020,11 @@
                     : `No-test check starts Jul 1`;
                 summaryEl.innerHTML = `
                     <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#dc3545; background:rgba(220,53,69,0.12); border:1px solid rgba(220,53,69,0.3); font-weight:700;">${noTestLabel}</span>
-                    <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#e67e22; background:rgba(230,126,34,0.12); border:1px solid rgba(230,126,34,0.3); font-weight:700;">${scheduleCount} due schedules</span>`;
+                    <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#e67e22; background:rgba(230,126,34,0.12); border:1px solid rgba(230,126,34,0.3); font-weight:700;">${scheduleCount} due schedules</span>
+                    <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#ff9800; background:rgba(255,152,0,0.12); border:1px solid rgba(255,152,0,0.3); font-weight:700;">${cat5Count} CAT 5 due</span>
+                    <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#c62828; background:rgba(198,40,40,0.1); border:1px solid rgba(198,40,40,0.28); font-weight:700;">${violationCount} violations</span>
+                    <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#1a73e8; background:rgba(26,115,232,0.1); border:1px solid rgba(26,115,232,0.28); font-weight:700;">${unscheduledCount} unscheduled</span>
+                    ${staleCount ? '<span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#795548; background:rgba(121,85,72,0.1); border:1px solid rgba(121,85,72,0.28); font-weight:700;">DOB data stale</span>' : ''}`;
             }
 
             const items = allItems.map(item => ({
@@ -19956,11 +20047,69 @@
                 const binJs = bin.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 const address = escapeMapSuggestionHtml(item.address || '');
                 const filterText = escapeMapSuggestionHtml(item.alerts.map(alert => {
-                    return alert.kind === 'no-current-year-test'
-                        ? `${alert.deviceNumber} ${alert.deviceType} ${alert.pending.join(' ')}`
-                        : `${alert.date} ${alert.scheduleType}`;
+                    if (alert.kind === 'stale-dob-data') return 'stale DOB test data refresh update';
+                    if (alert.kind === 'active-violation') return `${alert.deviceNumber} ${alert.deviceType} ${alert.violationNumber} ${alert.status} ${alert.description}`;
+                    if (alert.kind === 'cat5-due') return `${alert.deviceNumber} ${alert.deviceType} CAT 5 ${alert.dueYear}`;
+                    if (alert.kind === 'ready-unscheduled') return `${alert.deviceNumber} ${alert.deviceType} ${alert.pending.join(' ')} ${alert.missingSchedules.join(' ')}`;
+                    if (alert.kind === 'no-current-year-test') return `${alert.deviceNumber} ${alert.deviceType} ${alert.pending.join(' ')}`;
+                    return `${alert.date} ${alert.scheduleType}`;
                 }).join(' '));
                 const alertsHtml = item.alerts.map(alert => {
+                    if (alert.kind === 'stale-dob-data') {
+                        const freshnessText = alert.neverUpdated
+                            ? 'This MAP file has never refreshed its DOB test filing dates.'
+                            : `DOB test filing dates were last refreshed ${alert.ageDays} days ago (${formatMapDobInfoUpdatedAt(alert.lastUpdatedAt)}).`;
+                        return `<div data-attention-text="stale DOB test data refresh update" style="padding:10px; background:rgba(121,85,72,0.08); border:1px solid rgba(121,85,72,0.26); border-radius:6px; margin-bottom:6px;">
+                            <div style="display:flex; align-items:center; gap:7px;">
+                                <span style="font-size:0.7em; background:#795548; color:white; border-radius:3px; padding:2px 5px; font-weight:800;">DOB DATA STALE</span>
+                                <span style="font-size:0.92em; color:var(--text-color); font-weight:700;">Refresh test filing dates</span>
+                            </div>
+                            <div style="font-size:0.82em; opacity:0.8; margin-top:6px; line-height:1.4;">${freshnessText}</div>
+                            <button onclick="updateMapViewDobInfo()" style="margin-top:7px; padding:5px 10px; background:#0d6efd; color:white; border:none; border-radius:5px; cursor:pointer; font-size:0.82em; font-weight:700;">↻ DOB Info Update</button>
+                        </div>`;
+                    }
+                    if (alert.kind === 'active-violation') {
+                        const deviceNumber = escapeMapSuggestionHtml(alert.deviceNumber);
+                        const violationNumber = escapeMapSuggestionHtml(alert.violationNumber);
+                        const status = escapeMapSuggestionHtml(alert.status);
+                        const description = escapeMapSuggestionHtml(alert.description.length > 150 ? alert.description.slice(0, 150) + '…' : alert.description);
+                        const issueDate = alert.issueDate ? ` · ${escapeMapSuggestionHtml(alert.issueDate)}` : '';
+                        return `<div data-attention-text="${escapeMapSuggestionHtml(`${alert.deviceNumber} ${alert.deviceType} ${alert.violationNumber} ${alert.status} ${alert.description}`)}" style="padding:9px 10px; background:rgba(198,40,40,0.08); border:1px solid rgba(198,40,40,0.25); border-radius:6px; margin-bottom:6px;">
+                            <div style="display:flex; align-items:flex-start; gap:7px;">
+                                <span style="font-size:0.7em; background:#c62828; color:white; border-radius:3px; padding:2px 5px; font-weight:800; white-space:nowrap;">${status}</span>
+                                <span style="font-size:0.92em; color:var(--text-color); font-weight:700;">Violation ${violationNumber} · Device ${deviceNumber}</span>
+                            </div>
+                            <div style="font-size:0.8em; opacity:0.75; margin-top:5px;">${description}${issueDate}</div>
+                        </div>`;
+                    }
+                    if (alert.kind === 'cat5-due') {
+                        const deviceNumber = escapeMapSuggestionHtml(alert.deviceNumber);
+                        const deviceType = escapeMapSuggestionHtml(alert.deviceType);
+                        const lastDate = parseMapInspectionDate(alert.lastCat5Date);
+                        const lastText = lastDate ? lastDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No filing date';
+                        const badge = alert.dueYear < year ? 'CAT 5 OVERDUE' : 'CAT 5 DUE';
+                        return `<div data-attention-text="${escapeMapSuggestionHtml(`${alert.deviceNumber} ${alert.deviceType} CAT 5 ${alert.dueYear}`)}" style="padding:9px 10px; background:rgba(255,152,0,0.09); border:1px solid rgba(255,152,0,0.28); border-radius:6px; margin-bottom:6px;">
+                            <div style="display:flex; align-items:flex-start; gap:7px;">
+                                <span style="font-size:0.7em; background:#ff9800; color:white; border-radius:3px; padding:2px 5px; font-weight:800; white-space:nowrap;">${badge}</span>
+                                <span style="font-size:0.92em; color:var(--text-color); font-weight:700;">Device ${deviceNumber} · ${deviceType}</span>
+                            </div>
+                            <div style="font-size:0.82em; opacity:0.78; margin-top:5px;">Due year: ${alert.dueYear} · Last CAT 5: ${lastText}</div>
+                        </div>`;
+                    }
+                    if (alert.kind === 'ready-unscheduled') {
+                        const deviceNumber = escapeMapSuggestionHtml(alert.deviceNumber);
+                        const deviceType = escapeMapSuggestionHtml(alert.deviceType);
+                        const pending = escapeMapSuggestionHtml(alert.pending.join(', '));
+                        const missingSchedules = escapeMapSuggestionHtml(alert.missingSchedules.join(' & '));
+                        return `<div data-attention-text="${escapeMapSuggestionHtml(`${alert.deviceNumber} ${alert.deviceType} ${alert.pending.join(' ')} ${alert.missingSchedules.join(' ')}`)}" style="padding:9px 10px; background:rgba(26,115,232,0.08); border:1px solid rgba(26,115,232,0.25); border-radius:6px; margin-bottom:6px;">
+                            <div style="display:flex; align-items:flex-start; gap:7px;">
+                                <span style="font-size:0.7em; background:#1a73e8; color:white; border-radius:3px; padding:2px 5px; font-weight:800; white-space:nowrap;">READY · UNSCHEDULED</span>
+                                <span style="font-size:0.92em; color:var(--text-color); font-weight:700;">Device ${deviceNumber} · ${deviceType}</span>
+                            </div>
+                            <div style="font-size:0.82em; opacity:0.78; margin-top:5px;">Still required: ${pending} · Add ${missingSchedules} schedule</div>
+                            <button onclick="openTestDatesModal('${binJs}')" style="margin-top:7px; padding:5px 10px; background:#1a73e8; color:white; border:none; border-radius:5px; cursor:pointer; font-size:0.82em; font-weight:700;">+ Schedule Test</button>
+                        </div>`;
+                    }
                     if (alert.kind === 'no-current-year-test') {
                         const deviceNumber = escapeMapSuggestionHtml(alert.deviceNumber);
                         const deviceType = escapeMapSuggestionHtml(alert.deviceType);
@@ -19986,10 +20135,13 @@
                         <button onclick="confirmTestDone('${binJs}', '${alert.date}', '${alert.scheduleType}')" style="padding:5px 10px; background:#27ae60; color:white; border:none; border-radius:5px; cursor:pointer; font-size:0.82em; font-weight:700;">✓ Done</button>
                     </div>`;
                 }).join('');
+                const cardHeader = item.viewLevel
+                    ? `<span style="color:#795548;">↻</span><span style="flex:1; color:var(--text-color); font-weight:750;">MAP DOB test data</span>`
+                    : `<span style="color:#dc3545;">📍</span>
+                        <span onclick="flyToMapBuilding('${binJs}', { temporarilyShowHidden: true })" title="Click to view on map" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; text-decoration:underline dotted; color:var(--text-color); font-weight:750;">${address || 'BIN ' + escapeMapSuggestionHtml(bin)}</span>`;
                 return `<div data-attention-card data-bin="${escapeMapSuggestionHtml(bin)}" data-address="${address}" data-filter-text="${filterText}" style="margin-bottom:10px; border:1px solid rgba(220,53,69,0.3); border-radius:7px; overflow:hidden; background:var(--input-bg);">
                     <div style="padding:9px 11px; background:rgba(220,53,69,0.07); display:flex; align-items:center; gap:7px;">
-                        <span style="color:#dc3545;">📍</span>
-                        <span onclick="flyToMapBuilding('${binJs}', { temporarilyShowHidden: true })" title="Click to view on map" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; text-decoration:underline dotted; color:var(--text-color); font-weight:750;">${address || 'BIN ' + escapeMapSuggestionHtml(bin)}</span>
+                        ${cardHeader}
                         <span style="font-size:0.82em; opacity:0.7; font-weight:700;">${item.alerts.length}</span>
                     </div>
                     <div style="padding:9px;">${alertsHtml}</div>
@@ -20020,7 +20172,7 @@
         }
 
         function showImmediateAttentionOnMap() {
-            const items = getMapImmediateAttentionItems();
+            const items = getMapImmediateAttentionItems().filter(item => !item.viewLevel);
             if (items.length === 0) {
                 showMapNotification('No buildings currently need immediate attention', '#27ae60');
                 return;
