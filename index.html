@@ -1154,6 +1154,7 @@
                             #mapControlsPanelBody.mcp-detail-mode #mapActivityLogList,
                             #mapControlsPanelBody.mcp-detail-mode #category5BuildingsList,
                             #mapControlsPanelBody.mcp-detail-mode #category5BypassedList,
+                            #mapControlsPanelBody.mcp-detail-mode #immediateAttentionList,
                             #mapControlsPanelBody.mcp-detail-mode #testDatesPanelList { max-height: min(68vh, 620px) !important; }
                             #favoritesBuildingsList,
                             #monitoredBuildingsList,
@@ -1167,6 +1168,7 @@
                             #monthLabelsList,
                             #notesBuildingsList,
                             #mapActivityLogList,
+                            #immediateAttentionList,
                             #testDatesPanelList { max-height: min(52vh, 460px) !important; }
                             /* Popped-out panel: lift list height caps so content fills available space */
                             #mapControlsPanel.mcp-popped-out #favoritesBuildingsList,
@@ -1181,6 +1183,7 @@
                             #mapControlsPanel.mcp-popped-out #monthLabelsList,
                             #mapControlsPanel.mcp-popped-out #notesBuildingsList,
                             #mapControlsPanel.mcp-popped-out #mapActivityLogList,
+                            #mapControlsPanel.mcp-popped-out #immediateAttentionList,
                             #mapControlsPanel.mcp-popped-out #testDatesPanelList { max-height: none !important; }
                             /* Custom resize handles (floating mode only) */
                             .mcp-rh { display: none; position: absolute; z-index: 10; }
@@ -1284,6 +1287,32 @@
                                     <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No scheduled test dates</div>
                                 </div>
                                 <button onclick="clearAllTestDates()" class="mcp-btn" style="color:#ff6b6b;">Clear All Test Dates</button>
+                            </div>
+                        </div>
+
+                        <!-- Immediate Attention -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpImmediateAttention'); updateImmediateAttentionPanel();">
+                                <span class="mcp-title"><span style="color:#dc3545;">🚨</span> Immediate Attention - <span id="mapImmediateAttentionCount">0</span></span>
+                                <span class="mcp-arrow" id="mcpImmediateAttentionArrow">›</span>
+                            </div>
+                            <div class="mcp-body" id="mcpImmediateAttention">
+                                <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">
+                                    Flags due or past-due schedules, plus active devices with no test filed in the current year beginning July 1.
+                                </p>
+                                <div id="immediateAttentionSummary" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;"></div>
+                                <label for="immediateAttentionTypeFilter" style="display:block; font-size:0.92em; font-weight:700; color:var(--text-color); margin-bottom:5px;">Attention type</label>
+                                <select id="immediateAttentionTypeFilter" onchange="updateImmediateAttentionPanel()" style="width:100%; padding:7px 9px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:1em; font-weight:600; box-sizing:border-box; margin-bottom:8px;">
+                                    <option value="all">All immediate attention</option>
+                                    <option value="no-current-year-test">No test this year</option>
+                                    <option value="overdue-schedule">Due / past-due schedules</option>
+                                </select>
+                                <input type="text" id="immediateAttentionSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or device..."
+                                       oninput="filterMcpBinRowList('immediateAttentionList', this.value)">
+                                <div id="immediateAttentionList" style="max-height:320px; overflow-y:auto; margin-bottom:8px;">
+                                    <div style="font-size:1em; opacity:0.6; text-align:center; padding:8px;">No devices need immediate attention</div>
+                                </div>
+                                <button onclick="showImmediateAttentionOnMap()" class="mcp-btn" style="color:#dc3545; font-weight:700;">Show on MAP</button>
                             </div>
                         </div>
 
@@ -1552,6 +1581,7 @@
                                     <option value="hide-completed">Hide Completed Jobs</option>
                                     <option value="in-process">In Process</option>
                                     <option value="hold">On Hold</option>
+                                    <option value="immediate-attention">Immediate Attention</option>
                                     <option value="scheduled">Scheduled Test Dates</option>
                                     <option value="scheduled-cat">CAT Scheduled Jobs</option>
                                     <option value="scheduled-pvi">PVI Scheduled Jobs</option>
@@ -14013,6 +14043,7 @@
                 'hide-completed': 'Hide Completed Jobs',
                 'in-process': 'In Process',
                 hold: 'On Hold',
+                'immediate-attention': 'Immediate Attention',
                 scheduled: 'Scheduled Test Dates',
                 'scheduled-cat': 'CAT Scheduled Jobs',
                 'scheduled-pvi': 'PVI Scheduled Jobs',
@@ -14115,6 +14146,9 @@
             if (filterValue === 'hide-completed') return new Set(allBins.filter(bin => !(view.completed && view.completed[bin])));
             if (filterValue === 'in-process') return new Set(Object.keys(view.inProcess || {}).map(String));
             if (filterValue === 'hold') return new Set(Object.keys(view.hold || {}).map(String));
+            if (filterValue === 'immediate-attention') {
+                return new Set(getMapImmediateAttentionItems(new Date(), view).map(item => String(item.bin)));
+            }
             if (filterValue === 'scheduled') return new Set(allBins.filter(bin => mapViewHasScheduledDates(view, bin)));
             if (filterValue === 'scheduled-cat') return new Set(allBins.filter(bin => mapViewHasScheduledType(view, bin, 'category')));
             if (filterValue === 'scheduled-pvi') return new Set(allBins.filter(bin => mapViewHasScheduledType(view, bin, 'pvi')));
@@ -19800,6 +19834,190 @@
             }
         }
 
+        function getMapImmediateAttentionItems(referenceDate, sourceView) {
+            const today = referenceDate instanceof Date ? new Date(referenceDate.getTime()) : new Date();
+            today.setHours(0, 0, 0, 0);
+            const year = today.getFullYear();
+            const midpoint = new Date(year, 6, 1);
+            const noTestCheckActive = today >= midpoint;
+            const todayKey = [
+                year,
+                String(today.getMonth() + 1).padStart(2, '0'),
+                String(today.getDate()).padStart(2, '0')
+            ].join('-');
+            const view = sourceView || null;
+            const binGroups = (view && view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups)
+                || (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups)
+                || {};
+            const schedules = view ? (view.testDates || {}) : getMapTestDates();
+            const completed = view ? (view.completed || {}) : getMapCompleted();
+            const itemMap = new Map();
+
+            function ensureItem(bin) {
+                const key = String(bin);
+                if (!itemMap.has(key)) {
+                    const group = binGroups[key] || {};
+                    itemMap.set(key, {
+                        bin: key,
+                        address: group.address || (completed[key] && completed[key].address) || '',
+                        manuallyCompleted: !!completed[key],
+                        alerts: []
+                    });
+                }
+                return itemMap.get(key);
+            }
+
+            Object.keys(schedules).forEach(bin => {
+                const schedule = normalizeMapScheduleRecord(schedules[bin]);
+                ['pvi', 'category', 'general'].forEach(type => {
+                    (schedule[type] || []).forEach(date => {
+                        if (date && date <= todayKey) {
+                            ensureItem(bin).alerts.push({
+                                kind: 'overdue-schedule',
+                                date,
+                                scheduleType: type,
+                                isToday: date === todayKey
+                            });
+                        }
+                    });
+                });
+            });
+
+            if (noTestCheckActive) {
+                Object.entries(binGroups).forEach(([bin, group]) => {
+                    const devices = Array.isArray(group && group.devices) ? group.devices : [];
+                    devices.forEach(device => {
+                        const testInfo = getMapDeviceReportTestInfo(device || {}, year, bin);
+                        const pending = getMapDeviceReportPendingTests(testInfo);
+                        const hasAnyCurrentYearTest = testInfo.hasPVI || testInfo.hasCat1 || testInfo.hasCat5;
+                        if (testInfo.isRemoved || pending.length === 0 || hasAnyCurrentYearTest) return;
+                        ensureItem(bin).alerts.push({
+                            kind: 'no-current-year-test',
+                            deviceNumber: String(device.device_number || 'Unknown'),
+                            deviceType: String(device.device_type || 'Unknown type'),
+                            pending
+                        });
+                    });
+                });
+            }
+
+            return Array.from(itemMap.values())
+                .filter(item => item.alerts.length > 0)
+                .sort((a, b) => {
+                    const aOverdue = a.alerts.filter(alert => alert.kind === 'overdue-schedule').map(alert => alert.date).sort()[0] || '9999-12-31';
+                    const bOverdue = b.alerts.filter(alert => alert.kind === 'overdue-schedule').map(alert => alert.date).sort()[0] || '9999-12-31';
+                    if (aOverdue !== bOverdue) return aOverdue.localeCompare(bOverdue);
+                    return (a.address || a.bin).localeCompare(b.address || b.bin);
+                });
+        }
+
+        function updateImmediateAttentionPanel() {
+            const listEl = document.getElementById('immediateAttentionList');
+            if (!listEl) return;
+            const countEl = document.getElementById('mapImmediateAttentionCount');
+            const summaryEl = document.getElementById('immediateAttentionSummary');
+            const filterEl = document.getElementById('immediateAttentionTypeFilter');
+            const selectedType = filterEl ? filterEl.value : 'all';
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const year = today.getFullYear();
+            const allItems = getMapImmediateAttentionItems(today);
+            const allAlerts = allItems.flatMap(item => item.alerts);
+            const noTestCount = allAlerts.filter(alert => alert.kind === 'no-current-year-test').length;
+            const scheduleCount = allAlerts.filter(alert => alert.kind === 'overdue-schedule').length;
+            const totalCount = allAlerts.length;
+            if (countEl) countEl.textContent = totalCount;
+            if (summaryEl) {
+                const noTestLabel = today >= new Date(year, 6, 1)
+                    ? `${noTestCount} no test in ${year}`
+                    : `No-test check starts Jul 1`;
+                summaryEl.innerHTML = `
+                    <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#dc3545; background:rgba(220,53,69,0.12); border:1px solid rgba(220,53,69,0.3); font-weight:700;">${noTestLabel}</span>
+                    <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#e67e22; background:rgba(230,126,34,0.12); border:1px solid rgba(230,126,34,0.3); font-weight:700;">${scheduleCount} due schedules</span>`;
+            }
+
+            const items = allItems.map(item => ({
+                ...item,
+                alerts: selectedType === 'all'
+                    ? item.alerts
+                    : item.alerts.filter(alert => alert.kind === selectedType)
+            })).filter(item => item.alerts.length > 0);
+
+            if (items.length === 0) {
+                const emptyText = selectedType === 'no-current-year-test' && today < new Date(year, 6, 1)
+                    ? `The no-test check becomes active on July 1, ${year}.`
+                    : 'No devices need immediate attention for this filter.';
+                listEl.innerHTML = `<div style="font-size:1em; color:var(--text-color); opacity:0.75; text-align:center; padding:14px 8px; line-height:1.45;">${emptyText}</div>`;
+                return;
+            }
+
+            listEl.innerHTML = items.map(item => {
+                const bin = String(item.bin);
+                const binJs = bin.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const address = escapeMapSuggestionHtml(item.address || '');
+                const filterText = escapeMapSuggestionHtml(item.alerts.map(alert => {
+                    return alert.kind === 'no-current-year-test'
+                        ? `${alert.deviceNumber} ${alert.deviceType} ${alert.pending.join(' ')}`
+                        : `${alert.date} ${alert.scheduleType}`;
+                }).join(' '));
+                const alertsHtml = item.alerts.map(alert => {
+                    if (alert.kind === 'no-current-year-test') {
+                        const deviceNumber = escapeMapSuggestionHtml(alert.deviceNumber);
+                        const deviceType = escapeMapSuggestionHtml(alert.deviceType);
+                        const pending = escapeMapSuggestionHtml(alert.pending.join(', '));
+                        return `<div style="padding:9px 10px; background:rgba(220,53,69,0.08); border:1px solid rgba(220,53,69,0.24); border-radius:6px; margin-bottom:6px;">
+                            <div style="display:flex; align-items:flex-start; gap:7px;">
+                                <span style="font-size:0.7em; background:#dc3545; color:white; border-radius:3px; padding:2px 5px; font-weight:800; white-space:nowrap;">NO TEST IN ${year}</span>
+                                <span style="font-size:0.94em; color:var(--text-color); font-weight:700; line-height:1.35;">Device ${deviceNumber} · ${deviceType}</span>
+                            </div>
+                            <div style="font-size:0.82em; opacity:0.78; margin-top:5px;">Still required: ${pending}</div>
+                            ${item.manuallyCompleted ? '<div style="font-size:0.8em; color:#e67e22; margin-top:5px; font-weight:700;">Marked completed manually — verify the DOB filing.</div>' : ''}
+                        </div>`;
+                    }
+                    const dateObj = new Date(alert.date + 'T00:00:00');
+                    const displayDate = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+                    const typeLabel = alert.scheduleType === 'pvi' ? 'PVI' : alert.scheduleType === 'category' ? 'CATEGORY' : 'UNSPECIFIED';
+                    const badge = alert.isToday ? 'DUE TODAY' : 'PAST DUE';
+                    return `<div style="padding:9px 10px; background:rgba(230,126,34,0.08); border:1px solid rgba(230,126,34,0.28); border-radius:6px; margin-bottom:6px;">
+                        <div style="display:flex; align-items:center; gap:7px; margin-bottom:7px;">
+                            <span style="font-size:0.7em; background:${alert.isToday ? '#e67e22' : '#dc3545'}; color:white; border-radius:3px; padding:2px 5px; font-weight:800;">${badge}</span>
+                            <span style="font-size:0.9em; color:var(--text-color); font-weight:700;">${typeLabel} · ${displayDate}</span>
+                        </div>
+                        <button onclick="confirmTestDone('${binJs}', '${alert.date}', '${alert.scheduleType}')" style="padding:5px 10px; background:#27ae60; color:white; border:none; border-radius:5px; cursor:pointer; font-size:0.82em; font-weight:700;">✓ Done</button>
+                    </div>`;
+                }).join('');
+                return `<div data-bin="${escapeMapSuggestionHtml(bin)}" data-address="${address}" data-filter-text="${filterText}" style="margin-bottom:10px; border:1px solid rgba(220,53,69,0.3); border-radius:7px; overflow:hidden; background:var(--input-bg);">
+                    <div style="padding:9px 11px; background:rgba(220,53,69,0.07); display:flex; align-items:center; gap:7px;">
+                        <span style="color:#dc3545;">📍</span>
+                        <span onclick="flyToMapBuilding('${binJs}', { temporarilyShowHidden: true })" title="Click to view on map" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; text-decoration:underline dotted; color:var(--text-color); font-weight:750;">${address || 'BIN ' + escapeMapSuggestionHtml(bin)}</span>
+                        <span style="font-size:0.82em; opacity:0.7; font-weight:700;">${item.alerts.length}</span>
+                    </div>
+                    <div style="padding:9px;">${alertsHtml}</div>
+                </div>`;
+            }).join('');
+
+            const searchInput = document.getElementById('immediateAttentionSearchInput');
+            if (searchInput && searchInput.value.trim()) {
+                filterMcpBinRowList('immediateAttentionList', searchInput.value);
+            }
+        }
+
+        function showImmediateAttentionOnMap() {
+            const items = getMapImmediateAttentionItems();
+            if (items.length === 0) {
+                showMapNotification('No buildings currently need immediate attention', '#27ae60');
+                return;
+            }
+            if (!buildingMap || !Array.isArray(mapMarkers)) {
+                showMapNotification('Open the map first, then try Show on MAP', '#ff6b6b');
+                return;
+            }
+            const select = document.getElementById('mapViewFilterSelect');
+            if (select) select.value = 'immediate-attention';
+            applyMapViewDropdownFilter({ fitMap: true });
+            showMapNotification(`${items.length} building${items.length !== 1 ? 's' : ''} need immediate attention`, '#dc3545');
+        }
+
         function isHideInProcessActive() {
             return mapHideInProcess;
         }
@@ -21173,6 +21391,7 @@
 
             // Update scheduled test dates panel
             updateTestDatesPanel();
+            updateImmediateAttentionPanel();
 
             function reapplyBinSidebarSearch(inputId, listId) {
                 var inp = document.getElementById(inputId);
