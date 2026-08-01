@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://data.cityofnewyork.us; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'self'; upgrade-insecure-requests">
     <title>Device Search - NYC DOB API</title>
     <style>
         body {
@@ -143,6 +145,10 @@
                 <option value="DISMANTLED">Dismantled</option>
                 <option value="REMOVED">Removed</option>
                 <option value="ACTIVE">Active</option>
+                <option value="WORK IN PROGRESS">Work in Progress</option>
+                <option value="DELETED">Deleted</option>
+                <option value="WITHDRAWN">Withdrawn</option>
+                <option value="SEALED">Sealed</option>
             </select>
         </div>
         <div class="filter-group">
@@ -150,9 +156,13 @@
             <select id="typeFilter">
                 <option value="all">All Types</option>
                 <option value="ELEVATOR">Elevator</option>
+                <option value="ACCESSIBILITY LIFT">Accessibility Lift</option>
+                <option value="PERSONNEL HOIST">Personnel Hoist</option>
                 <option value="ESCALATOR">Escalator</option>
-                <option value="DUMWAITER">Dumwaiter</option>
-                <option value="MOVING WALKWAY">Moving Walkway</option>
+                <option value="DUMBWAITER">Dumbwaiter</option>
+                <option value="CONVEYOR">Conveyor</option>
+                <option value="MANLIFT">Manlift</option>
+                <option value="MOVING WALK">Moving Walk</option>
             </select>
         </div>
         <div class="filter-group">
@@ -198,6 +208,20 @@
             return `"${text.replace(/"/g, '""')}"`;
         }
 
+        async function fetchWithTimeout(url, timeoutMs = 20000) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                return await fetch(url, {
+                    signal: controller.signal,
+                    credentials: 'omit',
+                    referrerPolicy: 'no-referrer'
+                });
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
         async function fetchDevices() {
             const fetchBtn = document.getElementById('fetchBtn');
             const statusDiv = document.getElementById('status');
@@ -237,10 +261,13 @@
                     queryParts.push(`upper(borough)='${boroughFilter}'`);
                 }
                 
-                let whereClause = queryParts.length > 0 ? `$where=${queryParts.join(' AND ')}` : '';
-                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?${whereClause}&$limit=${Math.min(limit, 50000)}&$order=device_number`;
+                const params = new URLSearchParams();
+                if (queryParts.length > 0) params.set('$where', queryParts.join(' AND '));
+                params.set('$limit', String(Math.min(limit, 50000)));
+                params.set('$order', 'device_number');
+                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?${params.toString()}`;
                 
-                const response = await fetch(url);
+                const response = await fetchWithTimeout(url);
                 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -344,6 +371,7 @@
                         <tr>
                             <th>Device Number</th>
                             <th>Device Type</th>
+                            <th>Equipment Type</th>
                             <th>Device Status</th>
                             <th>Status Date</th>
                             <th>BIN</th>
@@ -363,7 +391,8 @@
                 const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection).toLocaleDateString() : 'N/A';
                 const pviYear = device.periodic_report_year || 'N/A';
                 const cat1Year = device.cat1_report_year || 'N/A';
-                const cat5Year = device.cat5_report_year || 'N/A';
+                const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                const cat5Year = cat5Date && !Number.isNaN(cat5Date.getTime()) ? cat5Date.getFullYear() : 'N/A';
                 const statusDate = device.status_date ? new Date(device.status_date).toLocaleDateString() : 'N/A';
                 const deviceStatus = device.device_status || 'N/A';
                 
@@ -381,6 +410,7 @@
                     <tr>
                         <td>${escapeHtml(device.device_number || 'N/A')}</td>
                         <td>${escapeHtml(device.device_type || 'N/A')}</td>
+                        <td>${escapeHtml(device.equipment_type || 'N/A')}</td>
                         <td style="color: ${statusColor};">${escapeHtml(deviceStatus)}</td>
                         <td>${escapeHtml(statusDate)}</td>
                         <td>${escapeHtml(device.bin || 'N/A')}</td>
