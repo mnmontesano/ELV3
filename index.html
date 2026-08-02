@@ -31721,6 +31721,525 @@
         return garbled > check * 0.5;
     }
 
+    function pdfBufferLooksEncrypted(arrayBuffer) {
+        try {
+            var bytes = new Uint8Array(arrayBuffer);
+            // /Encrypt usually lives in the trailer near EOF, so check both ends.
+            var chunkSize = Math.min(bytes.length, 256000);
+            var head = '';
+            var tail = '';
+            for (var i = 0; i < chunkSize; i++) head += String.fromCharCode(bytes[i]);
+            for (var j = bytes.length - chunkSize; j < bytes.length; j++) {
+                if (j >= 0) tail += String.fromCharCode(bytes[j]);
+            }
+            return /\/Encrypt\b/.test(head) || /\/Encrypt\b/.test(tail);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // RFC 1321 MD5 (for Standard Security Handler V2/R3 empty-password decrypt).
+    function elv3Md5(bytes) {
+        var input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+        var bitLen = input.length * 8;
+        var withPad = new Uint8Array((((input.length + 8) >>> 6) << 6) + 64);
+        withPad.set(input);
+        withPad[input.length] = 0x80;
+        var dv = new DataView(withPad.buffer);
+        dv.setUint32(withPad.length - 8, bitLen >>> 0, true);
+        dv.setUint32(withPad.length - 4, Math.floor(bitLen / 0x100000000), true);
+
+        var h0 = 0x67452301, h1 = 0xEFCDAB89, h2 = 0x98BADCFE, h3 = 0x10325476;
+        var K = new Uint32Array(64);
+        var S = [
+            7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+            5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+            4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+            6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21
+        ];
+        for (var i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296) >>> 0;
+
+        function rotl(x, c) { return ((x << c) | (x >>> (32 - c))) >>> 0; }
+
+        for (var offset = 0; offset < withPad.length; offset += 64) {
+            var M = new Uint32Array(16);
+            for (var j = 0; j < 16; j++) M[j] = dv.getUint32(offset + j * 4, true);
+            var A = h0, B = h1, C = h2, D = h3;
+            for (var k = 0; k < 64; k++) {
+                var F, g;
+                if (k < 16) { F = (B & C) | (~B & D); g = k; }
+                else if (k < 32) { F = (D & B) | (~D & C); g = (5 * k + 1) % 16; }
+                else if (k < 48) { F = B ^ C ^ D; g = (3 * k + 5) % 16; }
+                else { F = C ^ (B | ~D); g = (7 * k) % 16; }
+                F = (F + A + K[k] + M[g]) >>> 0;
+                A = D; D = C; C = B; B = (B + rotl(F, S[k])) >>> 0;
+            }
+            h0 = (h0 + A) >>> 0; h1 = (h1 + B) >>> 0; h2 = (h2 + C) >>> 0; h3 = (h3 + D) >>> 0;
+        }
+
+        var out = new Uint8Array(16);
+        var o = new DataView(out.buffer);
+        o.setUint32(0, h0, true);
+        o.setUint32(4, h1, true);
+        o.setUint32(8, h2, true);
+        o.setUint32(12, h3, true);
+        return out;
+    }
+
+    function elv3Rc4(key, data) {
+        var s = new Uint8Array(256);
+        var i, j = 0, t;
+        for (i = 0; i < 256; i++) s[i] = i;
+        for (i = 0; i < 256; i++) {
+            j = (j + s[i] + key[i % key.length]) & 255;
+            t = s[i]; s[i] = s[j]; s[j] = t;
+        }
+        var out = new Uint8Array(data.length);
+        i = 0; j = 0;
+        for (var k = 0; k < data.length; k++) {
+            i = (i + 1) & 255;
+            j = (j + s[i]) & 255;
+            t = s[i]; s[i] = s[j]; s[j] = t;
+            out[k] = data[k] ^ s[(s[i] + s[j]) & 255];
+        }
+        return out;
+    }
+
+    function elv3Latin1(bytes) {
+        var out = '';
+        for (var i = 0; i < bytes.length; i++) out += String.fromCharCode(bytes[i]);
+        return out;
+    }
+
+    function elv3ParsePdfLiteral(dict, key) {
+        var idx = dict.indexOf('/' + key);
+        if (idx < 0) return null;
+        var i = idx + key.length + 1;
+        while (i < dict.length && /\s/.test(dict.charAt(i))) i++;
+        if (dict.charAt(i) === '<') {
+            var end = dict.indexOf('>', i);
+            var hex = dict.slice(i + 1, end);
+            var hb = new Uint8Array(hex.length / 2);
+            for (var hi = 0; hi < hb.length; hi++) hb[hi] = parseInt(hex.substr(hi * 2, 2), 16);
+            return hb;
+        }
+        if (dict.charAt(i) === '(') {
+            i++;
+            var bytes = [];
+            while (i < dict.length) {
+                var ch = dict.charAt(i);
+                if (ch === ')') break;
+                if (ch === '\\') {
+                    i++;
+                    var n = dict.charAt(i);
+                    if (n >= '0' && n <= '7') {
+                        var oct = n;
+                        if (dict.charAt(i + 1) >= '0' && dict.charAt(i + 1) <= '7') { i++; oct += dict.charAt(i); }
+                        if (dict.charAt(i + 1) >= '0' && dict.charAt(i + 1) <= '7') { i++; oct += dict.charAt(i); }
+                        bytes.push(parseInt(oct, 8));
+                    } else if (n === 'n') bytes.push(10);
+                    else if (n === 'r') bytes.push(13);
+                    else if (n === 't') bytes.push(9);
+                    else bytes.push(dict.charCodeAt(i));
+                    i++;
+                    continue;
+                }
+                bytes.push(dict.charCodeAt(i));
+                i++;
+            }
+            return new Uint8Array(bytes);
+        }
+        return null;
+    }
+
+    function elv3GetPdfObject(bytes, text, objNum) {
+        var re = new RegExp('(?:^|[\\r\\n])' + objNum + '\\s+0\\s+obj');
+        var m = re.exec(text);
+        if (!m) return null;
+        var start = m.index;
+        if (text.charAt(start) === '\r' || text.charAt(start) === '\n') start++;
+        var end = text.indexOf('endobj', start);
+        if (end < 0) return null;
+        var bodyStart = text.indexOf('obj', start) + 3;
+        var body = text.slice(bodyStart, end);
+        var sm = body.match(/stream\r?\n/);
+        if (!sm) return { dict: body, data: null, objNum: objNum };
+        var dict = body.slice(0, sm.index);
+        var dataStart = bodyStart + sm.index + sm[0].length;
+        var dataEnd = text.indexOf('endstream', dataStart);
+        if (dataEnd < 0) return null;
+        var data = bytes.subarray(dataStart, dataEnd);
+        if (data.length && data[data.length - 1] === 0x0a) data = data.subarray(0, data.length - 1);
+        if (data.length && data[data.length - 1] === 0x0d) data = data.subarray(0, data.length - 1);
+        return { dict: dict, data: data, objNum: objNum };
+    }
+
+    function elv3ObjectCryptKey(fileKey, objNum, genNum) {
+        var extra = new Uint8Array(5);
+        extra[0] = objNum & 255;
+        extra[1] = (objNum >> 8) & 255;
+        extra[2] = (objNum >> 16) & 255;
+        extra[3] = genNum & 255;
+        extra[4] = (genNum >> 8) & 255;
+        var joined = new Uint8Array(fileKey.length + 5);
+        joined.set(fileKey, 0);
+        joined.set(extra, fileKey.length);
+        return elv3Md5(joined).subarray(0, Math.min(fileKey.length + 5, 16));
+    }
+
+    function elv3ComputeEmptyUserFileKey(encryptDict, id0) {
+        var O = elv3ParsePdfLiteral(encryptDict, 'O');
+        var PMatch = encryptDict.match(/\/P\s+(-?\d+)/);
+        var RMatch = encryptDict.match(/\/R\s+(\d+)/);
+        var LengthMatch = encryptDict.match(/\/Length\s+(\d+)/);
+        if (!O || !PMatch || !RMatch || !id0) return null;
+        var P = parseInt(PMatch[1], 10) | 0;
+        var R = parseInt(RMatch[1], 10);
+        var keyLen = (LengthMatch ? parseInt(LengthMatch[1], 10) : 40) / 8;
+        if (R < 2 || R > 3 || (keyLen !== 5 && keyLen !== 16)) return null;
+        var padding = new Uint8Array([
+            0x28,0xBF,0x4E,0x5E,0x4E,0x75,0x8A,0x41,0x64,0x00,0x4E,0x56,0xFF,0xFA,0x01,0x08,
+            0x2E,0x2E,0x00,0xB6,0xD0,0x68,0x3E,0x80,0x2F,0x0C,0xA9,0xFE,0x64,0x53,0x69,0x7A
+        ]);
+        var pBytes = new Uint8Array(4);
+        pBytes[0] = P & 255; pBytes[1] = (P >> 8) & 255; pBytes[2] = (P >> 16) & 255; pBytes[3] = (P >> 24) & 255;
+        var material = new Uint8Array(32 + O.length + 4 + id0.length);
+        material.set(padding, 0);
+        material.set(O, 32);
+        material.set(pBytes, 32 + O.length);
+        material.set(id0, 32 + O.length + 4);
+        var hash = elv3Md5(material);
+        if (R >= 3) {
+            for (var i = 0; i < 50; i++) hash = elv3Md5(hash.subarray(0, keyLen));
+        }
+        return hash.subarray(0, keyLen);
+    }
+
+    function elv3ParseXfaDatasetValuesFromXml(xmlText) {
+        var values = {};
+        if (!xmlText) return values;
+        var re = /<(topmostSubform_0_\.[A-Za-z0-9_.:-]+)\s*>([\s\S]*?)<\/\1\s*>/g;
+        var match;
+        while ((match = re.exec(xmlText))) {
+            var val = String(match[2] || '').replace(/\s+/g, ' ').trim();
+            if (!val || val === 'Off' || val === 'off') continue;
+            values[match[1]] = val;
+        }
+        return values;
+    }
+
+    function elv3MapXfaTagToFieldNames(tag) {
+        var pageMatch = String(tag || '').match(/Page(\d+)_0_\./i);
+        var page = pageMatch ? parseInt(pageMatch[1], 10) : null;
+        var leaf = String(tag || '').split('.').pop();
+        var leafIndexed = /_\[\d+\]$/.test(leaf) ? leaf : (leaf + '[0]');
+        var names = [leafIndexed, leaf];
+        if (page) {
+            names.push('Page' + page + '.' + leafIndexed);
+            names.push(
+                'topmostSubform[0].Page' + page + '[0].topmostSubform_0_\\.Page' + page +
+                '_0_\\.' + leafIndexed
+            );
+        }
+        return { page: page, names: names, leaf: leafIndexed };
+    }
+
+    function elv3NormalizeXfaFieldValue(tag, rawValue) {
+        var value = String(rawValue || '').trim();
+        if (!value || value === 'Off' || value === 'off') return null;
+        if (/CheckBox/i.test(tag) || /_Year_Test|_Category_|Hoist_Jump|Replacement__|Real_Estate__/i.test(tag)) {
+            return (value !== 'Off' && value !== 'off' && value !== '') ? true : null;
+        }
+        return value;
+    }
+
+    /**
+     * Parse a PDF dictionary value for an exact key (/T, /V, etc).
+     * Returns { type: 'string', bytes } | { type: 'name', value } | null.
+     */
+    function elv3ParsePdfDictValue(dict, key) {
+        var re = new RegExp('/' + key + '(?![A-Za-z0-9_])\\s*');
+        var m = re.exec(dict);
+        if (!m) return null;
+        var i = m.index + m[0].length;
+        while (i < dict.length && /\s/.test(dict.charAt(i))) i++;
+        var ch = dict.charAt(i);
+        if (ch === '(') {
+            i++;
+            var bytes = [];
+            while (i < dict.length) {
+                if (dict.charAt(i) === ')') break;
+                if (dict.charAt(i) === '\\') {
+                    i++;
+                    var n = dict.charAt(i);
+                    if (n >= '0' && n <= '7') {
+                        var oct = n;
+                        if (dict.charAt(i + 1) >= '0' && dict.charAt(i + 1) <= '7') { i++; oct += dict.charAt(i); }
+                        if (dict.charAt(i + 1) >= '0' && dict.charAt(i + 1) <= '7') { i++; oct += dict.charAt(i); }
+                        bytes.push(parseInt(oct, 8));
+                    } else if (n === 'n') bytes.push(10);
+                    else if (n === 'r') bytes.push(13);
+                    else if (n === 't') bytes.push(9);
+                    else bytes.push(dict.charCodeAt(i));
+                    i++;
+                    continue;
+                }
+                bytes.push(dict.charCodeAt(i));
+                i++;
+            }
+            return { type: 'string', bytes: new Uint8Array(bytes) };
+        }
+        if (ch === '<') {
+            var end = dict.indexOf('>', i);
+            if (end < 0) return null;
+            var hex = dict.slice(i + 1, end).replace(/\s+/g, '');
+            var hb = new Uint8Array(hex.length / 2);
+            for (var hi = 0; hi < hb.length; hi++) hb[hi] = parseInt(hex.substr(hi * 2, 2), 16);
+            return { type: 'string', bytes: hb };
+        }
+        if (ch === '/') {
+            var j = i + 1;
+            while (j < dict.length && !/[\s\/\[\]<>()]/.test(dict.charAt(j))) j++;
+            return { type: 'name', value: dict.slice(i + 1, j) };
+        }
+        return null;
+    }
+
+    function elv3GetEmptyPasswordFileKeyFromPdf(bytes, text) {
+        var idMatch = text.match(/\/ID\s*\[\s*<([0-9A-Fa-f]+)>/i);
+        var encRefMatch = text.match(/\/Encrypt\s+(\d+)\s+\d+\s+R/);
+        if (!idMatch || !encRefMatch) return null;
+        var id0Hex = idMatch[1];
+        var id0 = new Uint8Array(id0Hex.length / 2);
+        for (var ii = 0; ii < id0.length; ii++) id0[ii] = parseInt(id0Hex.substr(ii * 2, 2), 16);
+        var encObj = elv3GetPdfObject(bytes, text, parseInt(encRefMatch[1], 10));
+        if (!encObj) return null;
+        return elv3ComputeEmptyUserFileKey(encObj.dict, id0);
+    }
+
+    function elv3DecryptPdfStringValue(fileKey, objNum, genNum, parsed) {
+        if (!parsed) return null;
+        if (parsed.type === 'name') return parsed.value;
+        if (parsed.type !== 'string' || !parsed.bytes) return null;
+        var key = elv3ObjectCryptKey(fileKey, objNum, genNum || 0);
+        var plain = elv3Rc4(key, parsed.bytes);
+        var out = '';
+        for (var i = 0; i < plain.length; i++) {
+            if (plain[i] === 0) break;
+            out += String.fromCharCode(plain[i]);
+        }
+        return out;
+    }
+
+    function elv3MapAcroFormFieldNames(fullName) {
+        var name = String(fullName || '');
+        var pageMatch = name.match(/Page(\d+)/i);
+        var page = pageMatch ? parseInt(pageMatch[1], 10) : null;
+        var leaf = name.split('.').pop();
+        var names = [name];
+        if (leaf && leaf !== name) names.push(leaf);
+        if (page && leaf) names.push('Page' + page + '.' + leaf);
+        return { page: page, names: names, leaf: leaf };
+    }
+
+    /**
+     * Decrypt AcroForm /T and /V from official DOB ELV3 PDFs that use Standard
+     * Security Handler V2/R3 with an empty user password. Works after Adobe save
+     * strips XFA and without depending on pdf.js in the browser.
+     */
+    function extractELV3EncryptedAcroFormData(arrayBuffer) {
+        var result = { formData: {}, fieldNames: [], fieldMeta: {} };
+        try {
+            var bytes = new Uint8Array(arrayBuffer);
+            var text = elv3Latin1(bytes);
+            if (!/\/Encrypt\b/.test(text) || !/\/AcroForm\b/.test(text)) return result;
+
+            var fileKey = elv3GetEmptyPasswordFileKeyFromPdf(bytes, text);
+            if (!fileKey) return result;
+
+            var acroRefMatch = text.match(/\/AcroForm\s+(\d+)\s+\d+\s+R/);
+            if (!acroRefMatch) return result;
+            var acroObj = elv3GetPdfObject(bytes, text, parseInt(acroRefMatch[1], 10));
+            if (!acroObj) return result;
+
+            var fieldsMatch = acroObj.dict.match(/\/Fields\s*\[([\s\S]*?)\]/);
+            if (!fieldsMatch) return result;
+
+            var queue = [];
+            var refRe = /(\d+)\s+(\d+)\s+R/g;
+            var rm;
+            while ((rm = refRe.exec(fieldsMatch[1]))) {
+                queue.push({ objNum: parseInt(rm[1], 10), genNum: parseInt(rm[2], 10) });
+            }
+
+            var seen = {};
+            var knownNames = {};
+            while (queue.length) {
+                var item = queue.shift();
+                var seenKey = item.objNum + ' ' + item.genNum;
+                if (seen[seenKey]) continue;
+                seen[seenKey] = true;
+
+                var obj = elv3GetPdfObject(bytes, text, item.objNum);
+                if (!obj) continue;
+
+                var kidsMatch = obj.dict.match(/\/Kids\s*\[([\s\S]*?)\]/);
+                if (kidsMatch) {
+                    var km;
+                    var kidsRe = /(\d+)\s+(\d+)\s+R/g;
+                    while ((km = kidsRe.exec(kidsMatch[1]))) {
+                        queue.push({ objNum: parseInt(km[1], 10), genNum: parseInt(km[2], 10) });
+                    }
+                }
+
+                var tVal = elv3ParsePdfDictValue(obj.dict, 'T');
+                if (!tVal) continue;
+                var fieldName = elv3DecryptPdfStringValue(fileKey, item.objNum, item.genNum, tVal);
+                if (!fieldName) continue;
+
+                var vVal = elv3ParsePdfDictValue(obj.dict, 'V');
+                var rawValue = vVal ? elv3DecryptPdfStringValue(fileKey, item.objNum, item.genNum, vVal) : null;
+                var normalized = null;
+                if (rawValue !== null && rawValue !== undefined) {
+                    var trimmed = String(rawValue).trim();
+                    if (trimmed && trimmed !== 'Off' && trimmed !== 'off') {
+                        if (/^(1|on|yes|true|checked)$/i.test(trimmed)) normalized = true;
+                        else normalized = trimmed;
+                    }
+                }
+
+                var mapped = elv3MapAcroFormFieldNames(fieldName);
+                var meta = {
+                    page: mapped.page,
+                    rect: null,
+                    fieldType: /CheckBox/i.test(fieldName) ? 'Btn' : 'Tx',
+                    source: 'encrypted-acroform'
+                };
+                for (var ni = 0; ni < mapped.names.length; ni++) {
+                    var name = mapped.names[ni];
+                    if (!knownNames[name]) {
+                        knownNames[name] = true;
+                        result.fieldNames.push(name);
+                    }
+                    if (normalized !== null && normalized !== undefined && normalized !== '') {
+                        result.formData[name] = normalized;
+                    }
+                    result.fieldMeta[name] = meta;
+                }
+            }
+
+            elv3DebugLog('Encrypted AcroForm extracted ' + result.fieldNames.length + ' fields (' + Object.keys(result.formData).length + ' with values)');
+        } catch (e) {
+            console.error('Encrypted AcroForm extraction failed:', e);
+        }
+        return result;
+    }
+
+    /**
+     * Official DOB ELV3 PDFs are encrypted XFA+AcroForm hybrids. Adobe often stores
+     * filled values in XFA datasets while AcroForm /V stays empty, and pdf.js will not
+     * promote those dataset values when AcroForm already has an empty string.
+     */
+    function extractELV3XfaDatasetFormData(arrayBuffer) {
+        var result = { formData: {}, fieldNames: [], fieldMeta: {} };
+        try {
+            var bytes = new Uint8Array(arrayBuffer);
+            var text = elv3Latin1(bytes);
+            var xmlText = null;
+
+            // Fast path: plaintext datasets (unencrypted / rewritten saves).
+            var plainIdx = text.indexOf('<xfa:datasets');
+            if (plainIdx >= 0) {
+                var plainEnd = text.indexOf('</xfa:datasets', plainIdx);
+                if (plainEnd > plainIdx) {
+                    var gt = text.indexOf('>', plainEnd);
+                    xmlText = text.slice(plainIdx, gt >= 0 ? gt + 1 : plainEnd + 14);
+                }
+            }
+
+            // Encrypted official DOB ELV3: Standard V2/R3 empty user password + datasets obj.
+            if (!xmlText && /\/Encrypt\b/.test(text) && /\/XFA\[/.test(text)) {
+                var idMatch = text.match(/\/ID\s*\[\s*<([0-9A-Fa-f]+)>/i);
+                var encRefMatch = text.match(/\/Encrypt\s+(\d+)\s+\d+\s+R/);
+                var xfaIdx = text.indexOf('/XFA[');
+                var xfaEnd = text.indexOf(']', xfaIdx);
+                if (idMatch && encRefMatch && xfaIdx >= 0 && xfaEnd > xfaIdx) {
+                    var id0Hex = idMatch[1];
+                    var id0 = new Uint8Array(id0Hex.length / 2);
+                    for (var ii = 0; ii < id0.length; ii++) id0[ii] = parseInt(id0Hex.substr(ii * 2, 2), 16);
+                    var encObj = elv3GetPdfObject(bytes, text, parseInt(encRefMatch[1], 10));
+                    var fileKey = encObj ? elv3ComputeEmptyUserFileKey(encObj.dict, id0) : null;
+                    var refs = [];
+                    var refRe = /(\d+)\s+0\s+R/g;
+                    var xfaChunk = text.slice(xfaIdx, xfaEnd);
+                    var rm;
+                    while ((rm = refRe.exec(xfaChunk))) refs.push(parseInt(rm[1], 10));
+                    // Packet order: xdp, config, template, datasets, ...
+                    if (fileKey && refs.length >= 4) {
+                        var dsObj = elv3GetPdfObject(bytes, text, refs[3]);
+                        if (dsObj && dsObj.data) {
+                            var decrypted = elv3Rc4(elv3ObjectCryptKey(fileKey, refs[3], 0), dsObj.data);
+                            xmlText = elv3Latin1(decrypted);
+                        }
+                    }
+                }
+            }
+
+            if (!xmlText || xmlText.indexOf('topmostSubform_0_') === -1) return result;
+
+            var values = elv3ParseXfaDatasetValuesFromXml(xmlText);
+            var tags = Object.keys(values);
+            for (var ti = 0; ti < tags.length; ti++) {
+                var tag = tags[ti];
+                var normalized = elv3NormalizeXfaFieldValue(tag, values[tag]);
+                if (normalized === null || normalized === undefined || normalized === '') continue;
+                var mapped = elv3MapXfaTagToFieldNames(tag);
+                var meta = { page: mapped.page, rect: null, fieldType: /CheckBox/i.test(tag) ? 'Btn' : 'Tx', source: 'xfa-datasets' };
+                for (var ni = 0; ni < mapped.names.length; ni++) {
+                    var name = mapped.names[ni];
+                    if (!result.formData.hasOwnProperty(name)) result.fieldNames.push(name);
+                    result.formData[name] = normalized;
+                    result.fieldMeta[name] = meta;
+                }
+            }
+            elv3DebugLog('XFA datasets extracted ' + tags.length + ' raw tags, ' + Object.keys(result.formData).length + ' mapped values');
+        } catch (e) {
+            console.error('XFA dataset extraction failed:', e);
+        }
+        return result;
+    }
+
+    function mergeELV3FormExtraction(target, extra, preferExtra) {
+        if (!extra) return target;
+        target.formData = target.formData || {};
+        target.fieldNames = target.fieldNames || [];
+        target.fieldMeta = target.fieldMeta || {};
+        var known = {};
+        for (var i = 0; i < target.fieldNames.length; i++) known[target.fieldNames[i]] = true;
+        for (var name in extra.formData) {
+            if (!extra.formData.hasOwnProperty(name)) continue;
+            var current = target.formData[name];
+            var incoming = extra.formData[name];
+            var currentEmpty = current === undefined || current === null || current === '' || current === false || current === 'Off';
+            if (preferExtra || currentEmpty) target.formData[name] = incoming;
+            if (!known[name]) {
+                known[name] = true;
+                target.fieldNames.push(name);
+            }
+            if (extra.fieldMeta && extra.fieldMeta[name]) target.fieldMeta[name] = extra.fieldMeta[name];
+        }
+        if (extra.fieldNames) {
+            for (var fi = 0; fi < extra.fieldNames.length; fi++) {
+                var fn = extra.fieldNames[fi];
+                if (!known[fn]) {
+                    known[fn] = true;
+                    target.fieldNames.push(fn);
+                }
+            }
+        }
+        return target;
+    }
+
     var pdfJsLoadPromise = null;
 
     /**
@@ -31745,6 +32264,20 @@
         return pdfJsLoadPromise;
     }
 
+    function elv3NormalizePdfJsFieldValue(raw) {
+        if (raw === null || raw === undefined) return null;
+        if (typeof raw === 'boolean') return raw ? true : null;
+        if (Array.isArray(raw)) {
+            if (raw.length === 0) return null;
+            return elv3NormalizePdfJsFieldValue(raw[0]);
+        }
+        var str = String(raw).trim();
+        if (!str || str === 'Off' || str === 'off') return null;
+        // Adobe often stores checked boxes as "1", "On", "Yes", or export values.
+        if (/^(1|on|yes|true|checked)$/i.test(str)) return true;
+        return str;
+    }
+
     /**
      * Read form field data using pdf.js (handles encrypted PDFs that pdf-lib cannot).
      * Returns { formData: {name: value}, fieldNames: [name] } or null on failure.
@@ -31754,12 +32287,30 @@
         if (!loaded) { console.error('Could not load pdf.js library'); return null; }
 
         try {
-            var task = pdfjsLib.getDocument({
-                data: new Uint8Array(arrayBuffer),
-                password: '',
-                isEvalSupported: false
-            });
-            var pdfDoc = await task.promise;
+            // Copy first: pdf.js may detach the ArrayBuffer, and XFA extraction needs it.
+            var pdfBytes = new Uint8Array(arrayBuffer);
+            var xfaSourceBytes = pdfBytes.slice(0);
+            var xfaResult = extractELV3XfaDatasetFormData(xfaSourceBytes.buffer);
+
+            var pdfDoc = null;
+            try {
+                pdfDoc = await pdfjsLib.getDocument({
+                    data: pdfBytes,
+                    password: '',
+                    isEvalSupported: false
+                }).promise;
+            } catch (docErr) {
+                // Worker load can fail on some local/file hosts; FakeWorker still reads forms.
+                console.error('pdf.js getDocument failed, retrying with FakeWorker:', docErr);
+                var retryBytes = pdfBytes.slice(0);
+                var fakeWorker = pdfjsLib.PDFWorker ? new pdfjsLib.PDFWorker({ name: 'elv3-form-reader' }) : null;
+                pdfDoc = await pdfjsLib.getDocument({
+                    data: retryBytes,
+                    password: '',
+                    isEvalSupported: false,
+                    worker: fakeWorker || undefined
+                }).promise;
+            }
             var formData = {};
             var fieldNames = [];
             var fieldMeta = {};
@@ -31768,10 +32319,47 @@
             function rememberField(name, value, meta) {
                 if (!name) return;
                 if (!seen[name]) { seen[name] = true; fieldNames.push(name); }
-                if (value !== null && value !== undefined && value !== '') {
+                // Keep checked boxes and non-empty text. Skip unchecked false so blank
+                // official ELV3 templates are not treated as "filled with values".
+                if (value !== null && value !== undefined && value !== '' && value !== false) {
                     formData[name] = value;
                 }
                 if (meta) fieldMeta[name] = meta;
+            }
+
+            // getFieldObjects() is the most reliable source for Adobe-saved AcroForm-only
+            // ELV3 PDFs (XFA removed on save). Use it before page annotations.
+            try {
+                var fieldObjects = await pdfDoc.getFieldObjects();
+                if (fieldObjects) {
+                    var objectNames = Object.keys(fieldObjects);
+                    for (var oi = 0; oi < objectNames.length; oi++) {
+                        var objectName = objectNames[oi];
+                        var entries = fieldObjects[objectName] || [];
+                        var objectValue = null;
+                        var objectMeta = null;
+                        for (var ej = 0; ej < entries.length; ej++) {
+                            var entry = entries[ej] || {};
+                            var normalized = elv3NormalizePdfJsFieldValue(entry.value);
+                            if (normalized !== null && objectValue === null) objectValue = normalized;
+                            if (!objectMeta && (entry.rect || entry.page !== undefined)) {
+                                objectMeta = {
+                                    page: (typeof entry.page === 'number' ? entry.page + 1 : null),
+                                    rect: Array.isArray(entry.rect) ? entry.rect.slice() : null,
+                                    fieldType: entry.type || null
+                                };
+                            }
+                        }
+                        rememberField(objectName, objectValue, objectMeta);
+                        var shortName = objectName.split('.').pop();
+                        if (shortName && shortName !== objectName) {
+                            rememberField(shortName, objectValue, objectMeta);
+                        }
+                    }
+                    elv3DebugLog('pdf.js getFieldObjects: ' + objectNames.length + ' fields');
+                }
+            } catch (fieldObjErr) {
+                console.error('pdf.js getFieldObjects failed:', fieldObjErr);
             }
 
             for (var pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
@@ -31785,13 +32373,12 @@
                     var value = null;
 
                     if (a.fieldType === 'Tx' || a.fieldType === 'Ch') {
-                        value = a.fieldValue || '';
+                        value = elv3NormalizePdfJsFieldValue(a.fieldValue);
                     } else if (a.fieldType === 'Btn') {
                         if (a.checkBox) {
-                            var cv = String(a.fieldValue || '');
-                            value = (cv !== '' && cv !== 'Off' && cv !== 'off') ? true : false;
+                            value = elv3NormalizePdfJsFieldValue(a.fieldValue);
                         } else if (a.radioButton) {
-                            value = a.fieldValue || null;
+                            value = elv3NormalizePdfJsFieldValue(a.fieldValue);
                         }
                     }
 
@@ -31810,8 +32397,16 @@
                 }
             }
 
-            elv3DebugLog('pdf.js extracted ' + fieldNames.length + ' fields (' + Object.keys(formData).length + ' with values)');
-            return { formData: formData, fieldNames: fieldNames, fieldMeta: fieldMeta };
+            // Official DOB ELV3 is an XFA+AcroForm hybrid. Prefer non-empty XFA dataset
+            // values when AcroForm widgets are blank (common after Adobe fills).
+            var merged = mergeELV3FormExtraction(
+                { formData: formData, fieldNames: fieldNames, fieldMeta: fieldMeta },
+                xfaResult,
+                false
+            );
+
+            elv3DebugLog('pdf.js extracted ' + merged.fieldNames.length + ' fields (' + Object.keys(merged.formData).length + ' with values)');
+            return merged;
         } catch (e) {
             console.error('pdf.js extraction failed:', e);
             return null;
@@ -31845,8 +32440,11 @@
             
             const { PDFDocument } = PDFLib;
             elv3DebugLog('Loading PDF, buffer size:', arrayBuffer.byteLength);
-            
-            const pdfDoc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+
+            // Preserve a copy up front. pdf-lib/pdf.js may detach the original buffer,
+            // and encrypted DOB ELV3 trailers (with /Encrypt) often sit near EOF.
+            var sourceBytes = new Uint8Array(arrayBuffer);
+            var pdfDoc = await PDFDocument.load(sourceBytes.slice().buffer, { ignoreEncryption: true });
             elv3DebugLog('PDF loaded successfully, pages:', pdfDoc.getPageCount());
             
             const form = pdfDoc.getForm();
@@ -31897,11 +32495,10 @@
                     elv3DebugLog(`Could not get value for field "${name}" (methods: ${fieldMethods.join(', ')}):`, e.message);
                 }
                 
-                // Store all values including empty ones for debugging
-                if (value !== null && value !== undefined) {
-                    if (value !== '') {
-                        formData[name] = value;
-                    }
+                // Keep real filled values only. Unchecked boxes (false) and empty
+                // strings from encrypted/garbled pdf-lib reads must not count as data.
+                if (value !== null && value !== undefined && value !== '' && value !== false) {
+                    formData[name] = value;
                     elv3DebugLog(`Field "${name}" [${fieldMethods.join(', ')}] = "${value}"`);
                 } else {
                     elv3DebugLog(`Field "${name}" [${fieldMethods.join(', ')}] = (no value)`);
@@ -31912,37 +32509,75 @@
             elv3DebugLog('All field names:', allFieldNames);
             elv3DebugLog('All form data:', formData);
             
-            // Detect encrypted PDFs where pdf-lib returns garbled field names
-            if (allFieldNames.length > 0 && areFieldNamesGarbled(allFieldNames)) {
-                elv3DebugLog('=== Field names are garbled (encrypted PDF). Loading pdf.js fallback... ===');
-                var pdfjsResult = await extractFormDataWithPdfJs(arrayBuffer);
-                if (pdfjsResult && pdfjsResult.fieldNames.length > 0) {
-                    // Replace garbled data with properly decrypted pdf.js results
-                    for (var gk in formData) { if (formData.hasOwnProperty(gk)) delete formData[gk]; }
+            // Official DOB ELV3 PDFs are often encrypted (and may drop XFA after Adobe
+            // save). pdf-lib ignoreEncryption returns garbled names, so decrypt natively
+            // first, then fall back to pdf.js / XFA.
+            var usePdfJsPrimary = pdfBufferLooksEncrypted(sourceBytes) || areFieldNamesGarbled(allFieldNames);
+            if (usePdfJsPrimary) {
+                var replacedEncrypted = false;
+                elv3DebugLog('=== Decrypting encrypted ELV3 AcroForm fields (empty-password RC4)... ===');
+                var acroDecrypt = extractELV3EncryptedAcroFormData(sourceBytes.slice().buffer);
+                if (acroDecrypt && acroDecrypt.fieldNames.length > 0) {
+                    for (var agk in formData) { if (formData.hasOwnProperty(agk)) delete formData[agk]; }
                     allFieldNames.length = 0;
-                    var pdfjsFD = pdfjsResult.formData;
-                    for (var pk in pdfjsFD) { if (pdfjsFD.hasOwnProperty(pk)) formData[pk] = pdfjsFD[pk]; }
-                    for (var pmk in fieldMeta) { if (fieldMeta.hasOwnProperty(pmk)) delete fieldMeta[pmk]; }
-                    if (pdfjsResult.fieldMeta) {
-                        for (var pmeta in pdfjsResult.fieldMeta) {
-                            if (pdfjsResult.fieldMeta.hasOwnProperty(pmeta)) fieldMeta[pmeta] = pdfjsResult.fieldMeta[pmeta];
+                    for (var ameta in fieldMeta) { if (fieldMeta.hasOwnProperty(ameta)) delete fieldMeta[ameta]; }
+                    mergeELV3FormExtraction(
+                        { formData: formData, fieldNames: allFieldNames, fieldMeta: fieldMeta },
+                        acroDecrypt,
+                        true
+                    );
+                    replacedEncrypted = true;
+                    elv3DebugLog('Replaced with decrypted AcroForm data: ' + allFieldNames.length + ' fields, ' + Object.keys(formData).length + ' with values');
+                }
+
+                if (!replacedEncrypted) {
+                    elv3DebugLog('=== Using pdf.js + XFA extraction for encrypted/hybrid ELV3 PDF... ===');
+                    var pdfjsResult = await extractFormDataWithPdfJs(sourceBytes.slice().buffer);
+                    if (pdfjsResult && pdfjsResult.fieldNames.length > 0) {
+                        for (var gk in formData) { if (formData.hasOwnProperty(gk)) delete formData[gk]; }
+                        allFieldNames.length = 0;
+                        var pdfjsFD = pdfjsResult.formData;
+                        for (var pk in pdfjsFD) { if (pdfjsFD.hasOwnProperty(pk)) formData[pk] = pdfjsFD[pk]; }
+                        for (var pmk in fieldMeta) { if (fieldMeta.hasOwnProperty(pmk)) delete fieldMeta[pmk]; }
+                        if (pdfjsResult.fieldMeta) {
+                            for (var pmeta in pdfjsResult.fieldMeta) {
+                                if (pdfjsResult.fieldMeta.hasOwnProperty(pmeta)) fieldMeta[pmeta] = pdfjsResult.fieldMeta[pmeta];
+                            }
                         }
+                        for (var fi = 0; fi < pdfjsResult.fieldNames.length; fi++) {
+                            allFieldNames.push(pdfjsResult.fieldNames[fi]);
+                        }
+                        replacedEncrypted = true;
+                        elv3DebugLog('Replaced with pdf.js/XFA data: ' + allFieldNames.length + ' fields, ' + Object.keys(formData).length + ' with values');
                     }
-                    for (var fi = 0; fi < pdfjsResult.fieldNames.length; fi++) {
-                        allFieldNames.push(pdfjsResult.fieldNames[fi]);
+                }
+
+                if (!replacedEncrypted) {
+                    elv3DebugLog('pdf.js extraction failed; trying XFA fallback without discarding all names yet');
+                    var xfaOnly = extractELV3XfaDatasetFormData(sourceBytes.slice().buffer);
+                    if (xfaOnly && (xfaOnly.fieldNames.length > 0 || Object.keys(xfaOnly.formData).length > 0)) {
+                        for (var cgk in formData) { if (formData.hasOwnProperty(cgk)) delete formData[cgk]; }
+                        allFieldNames.length = 0;
+                        for (var cmeta in fieldMeta) { if (fieldMeta.hasOwnProperty(cmeta)) delete fieldMeta[cmeta]; }
+                        mergeELV3FormExtraction(
+                            { formData: formData, fieldNames: allFieldNames, fieldMeta: fieldMeta },
+                            xfaOnly,
+                            true
+                        );
+                        replacedEncrypted = true;
+                    } else if (areFieldNamesGarbled(allFieldNames)) {
+                        for (var ggk in formData) { if (formData.hasOwnProperty(ggk)) delete formData[ggk]; }
+                        allFieldNames.length = 0;
+                        for (var gmeta in fieldMeta) { if (fieldMeta.hasOwnProperty(gmeta)) delete fieldMeta[gmeta]; }
+                        result.errorMessage = 'Could not read this encrypted ELV3 PDF in the browser. Hard-refresh the page and try again. If it still fails, re-save the PDF from Preview/Acrobat and upload the new file.';
                     }
-                    elv3DebugLog('Replaced with pdf.js data: ' + allFieldNames.length + ' fields, ' + Object.keys(formData).length + ' with values');
-                    elv3DebugLog('pdf.js field names:', allFieldNames);
-                    elv3DebugLog('pdf.js form data:', formData);
-                } else {
-                    elv3DebugLog('pdf.js fallback failed or returned no fields');
                 }
             }
 
             // pdf-lib exposes logical AcroForm fields, which can collapse repeated
             // widgets on ELV3A continuation pages. pdf.js reads page annotations, so
             // always merge page-scoped annotation values for multi-page PDFs.
-            if (!areFieldNamesGarbled(allFieldNames) && pdfDoc.getPageCount && pdfDoc.getPageCount() > 1) {
+            if (!usePdfJsPrimary && !areFieldNamesGarbled(allFieldNames) && pdfDoc.getPageCount && pdfDoc.getPageCount() > 1) {
                 elv3DebugLog('=== Supplementing pdf-lib fields with page-scoped pdf.js annotations... ===');
                 var pdfjsSupplement = await extractFormDataWithPdfJs(arrayBuffer);
                 if (pdfjsSupplement && pdfjsSupplement.fieldNames.length > 0) {
@@ -31965,6 +32600,17 @@
                     }
                     elv3DebugLog('After pdf.js supplement: ' + allFieldNames.length + ' fields, ' + Object.keys(formData).length + ' with values');
                 }
+            }
+
+            // Final XFA fill-gap pass for hybrid templates that still embed datasets.
+            var xfaDirect = extractELV3XfaDatasetFormData(sourceBytes.slice().buffer);
+            if (xfaDirect && Object.keys(xfaDirect.formData).length > 0) {
+                mergeELV3FormExtraction(
+                    { formData: formData, fieldNames: allFieldNames, fieldMeta: fieldMeta },
+                    xfaDirect,
+                    false
+                );
+                elv3DebugLog('After direct XFA merge: ' + allFieldNames.length + ' fields, ' + Object.keys(formData).length + ' with values');
             }
             
             // Parse the form data using primary parser
@@ -32004,17 +32650,23 @@
                 elv3DebugLog('Fields with values:', Object.keys(formData).length);
                 elv3DebugLog('All field names:', allFieldNames);
                 
-                if (allFieldNames.length === 0) {
-                    result.errorMessage = 'PDF has no form fields. This may not be a fillable ELV3 form.';
-                } else if (Object.keys(formData).length === 0) {
-                    result.errorMessage = 'PDF form fields are empty. The form may not be filled out.';
-                } else {
-                    // Check if the form has Device fields but no valid device numbers
-                    var hasDeviceFields = allFieldNames.some(function(n) { return /_\d+_Device/i.test(n); });
-                    if (hasDeviceFields) {
-                        result.errorMessage = 'No valid device numbers found. Device numbers must follow the format: 1 digit + 1 letter + 3-8 digits (e.g., 1P49414). This form may contain placeholder or incomplete device numbers.';
+                // Keep a more specific message set earlier (e.g. encrypted-read failure).
+                if (!result.errorMessage) {
+                    if (allFieldNames.length === 0) {
+                        result.errorMessage = 'PDF has no form fields. This may not be a fillable ELV3 form.';
+                    } else if (Object.keys(formData).length === 0) {
+                        result.errorMessage = 'PDF form fields are empty. The form may not be filled out.';
                     } else {
-                        result.errorMessage = 'Could not recognize this ELV3 form variant. This form uses different field names than expected. Use the "Copy Field Names" button below to share field info for support.';
+                        // Check if the form has Device fields but no valid device numbers
+                        var hasDeviceFields = allFieldNames.some(function(n) { return /_\d+_Device/i.test(n); });
+                        var shortDeviceLike = Object.keys(formData).some(function(n) {
+                            return /device|TextField1_3[3-7]_/i.test(n) && /^\d[A-Z]\d?$/i.test(String(formData[n] || '').trim());
+                        });
+                        if (hasDeviceFields || shortDeviceLike) {
+                            result.errorMessage = 'No valid device numbers found. Device numbers must follow the format: 1 digit + 1 letter + 1-8 digits (e.g., 1P49414 or 3F123456). Placeholder values like "1P" are not enough.';
+                        } else {
+                            result.errorMessage = 'Could not recognize this ELV3 form variant. This form uses different field names than expected. Use the "Copy Field Names" button below to share field info for support.';
+                        }
                     }
                 }
             }
@@ -34200,8 +34852,8 @@
     function extractELV3DeviceNumber(value) {
         if (!value) return null;
         const str = value.toString().trim().toUpperCase();
-        // Pattern: 1 digit, 1 letter, 2-8 digits (e.g., 1P12, 1P49414, 1P0989351)
-        const match = str.match(/(\d[A-Z]\d{2,8})/);
+        // Pattern: 1 digit, 1 letter, 1-8 digits (e.g., 1P1, 1P12, 1P49414, 1P0989351)
+        const match = str.match(/(\d[A-Z]\d{1,8})/);
         return match ? match[1] : null;
     }
     
@@ -34780,7 +35432,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.1</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.1.1</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
