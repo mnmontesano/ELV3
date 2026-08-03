@@ -19955,6 +19955,8 @@
             if (existingDeviceModal) existingDeviceModal.remove();
             const existingBulkModal = document.getElementById('mapBulkEditOverlay');
             if (existingBulkModal) existingBulkModal.remove();
+            const existingConflictModal = document.getElementById('mapBulkDateConflictOverlay');
+            if (existingConflictModal) existingConflictModal.remove();
             syncMapSelectModeUi();
         }
 
@@ -19966,6 +19968,8 @@
                 if (existingBulkModal) existingBulkModal.remove();
                 const existingDeviceModal = document.getElementById('mapSelectDevicesOverlay');
                 if (existingDeviceModal) existingDeviceModal.remove();
+                const existingConflictModal = document.getElementById('mapBulkDateConflictOverlay');
+                if (existingConflictModal) existingConflictModal.remove();
             } else if (buildingMap && buildingMap.closePopup) {
                 buildingMap.closePopup();
             }
@@ -20184,6 +20188,103 @@
             if (inputEl) setTimeout(() => inputEl.focus(), 0);
         }
 
+        function formatMapScheduleDatesForDisplay(dates) {
+            return (Array.isArray(dates) ? dates : [])
+                .map(date => {
+                    try {
+                        return formatMapTestDateRange(date);
+                    } catch (error) {
+                        return String(date || '');
+                    }
+                })
+                .filter(Boolean)
+                .join('; ');
+        }
+
+        function clearMapScheduledDatesForBinType(bin, type, options) {
+            const opts = options || {};
+            if (!mapTestDates[bin]) return [];
+            const scheduleType = normalizeMapScheduleType(type);
+            const record = normalizeMapScheduleRecord(mapTestDates[bin]);
+            const removed = record[scheduleType].slice();
+            if (!removed.length) return [];
+            record[scheduleType] = [];
+            if (getMapScheduleDates(record).length > 0) mapTestDates[bin] = record;
+            else delete mapTestDates[bin];
+            if (!opts.quiet) {
+                addMapActivity('Removed scheduled date', {
+                    type: 'Schedule',
+                    bin,
+                    address: opts.address || '',
+                    details: `${scheduleType === 'pvi' ? 'PVI' : scheduleType === 'category' ? 'Category' : 'Unspecified'} · replaced via bulk select · cleared ${removed.length}`
+                });
+            }
+            scheduleMapLiveTableRefresh();
+            return removed;
+        }
+
+        function showMapBulkDateConflictDialog(options) {
+            const opts = options || {};
+            const existing = document.getElementById('mapBulkDateConflictOverlay');
+            if (existing) existing.remove();
+
+            const label = opts.label || 'test';
+            const conflicts = Array.isArray(opts.conflicts) ? opts.conflicts : [];
+            const newDateDisplay = opts.dateStr ? formatMapScheduleDatesForDisplay([opts.dateStr]) : '';
+            const preview = conflicts.slice(0, 6).map(item => {
+                const datesText = formatMapScheduleDatesForDisplay(item.existingDates || item.otherDates || []);
+                return `<div style="padding:7px 8px; border:1px solid var(--input-border,#444); border-radius:7px; margin-bottom:6px; background:var(--input-bg,#2a2a3e);">
+                    <div style="font-size:12px; font-weight:700; color:var(--text-color,#fff); word-break:break-word;">${escapeMapSuggestionHtml(item.address || ('BIN ' + item.bin))}</div>
+                    <div style="font-size:11px; opacity:0.78; margin-top:3px; color:var(--text-color,#ccc);">Current: ${escapeMapSuggestionHtml(datesText || 'None')}</div>
+                </div>`;
+            }).join('');
+            const moreCount = Math.max(0, conflicts.length - 6);
+
+            const overlay = document.createElement('div');
+            overlay.id = 'mapBulkDateConflictOverlay';
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.6); z-index: 10030;
+                display: flex; align-items: center; justify-content: center;
+            `;
+            overlay.innerHTML = `
+                <div style="background:var(--card-bg,#1e1e2e); border:1px solid var(--input-border,#444); border-radius:14px; padding:22px; max-width:560px; width:calc(100% - 32px); max-height:calc(100vh - 40px); overflow-y:auto; box-sizing:border-box; box-shadow:0 18px 55px rgba(0,0,0,0.5);">
+                    <h3 style="margin:0 0 6px; color:var(--text-color,#fff); font-size:17px;">Existing ${escapeMapSuggestionHtml(label)} dates found</h3>
+                    <p style="margin:0 0 12px; font-size:12px; line-height:1.45; opacity:0.78; color:var(--text-color,#ccc);">
+                        ${conflicts.length} selected building${conflicts.length === 1 ? '' : 's'} already ${conflicts.length === 1 ? 'has' : 'have'} a scheduled ${escapeMapSuggestionHtml(label)} date.
+                        Choose whether to keep those dates and add <strong style="color:var(--text-color,#fff);">${escapeMapSuggestionHtml(newDateDisplay)}</strong>, or replace them with the new date.
+                    </p>
+                    <div style="margin-bottom:12px; max-height:220px; overflow-y:auto;">
+                        ${preview || '<div style="font-size:12px; opacity:0.65;">No buildings listed.</div>'}
+                        ${moreCount ? `<div style="font-size:11px; opacity:0.7; padding-top:2px;">+${moreCount} more building${moreCount === 1 ? '' : 's'}</div>` : ''}
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:8px;">
+                        <button type="button" id="mapBulkDateConflictKeepBtn" style="margin:0; padding:11px 12px; border-radius:7px; border:none; background:#1a73e8; color:white; cursor:pointer; font-size:13px; font-weight:700; text-align:left;">
+                            Keep existing dates
+                            <span style="display:block; font-size:11px; font-weight:600; opacity:0.9; margin-top:3px;">Add the new date without removing dates already scheduled</span>
+                        </button>
+                        <button type="button" id="mapBulkDateConflictReplaceBtn" style="margin:0; padding:11px 12px; border-radius:7px; border:none; background:#c77700; color:white; cursor:pointer; font-size:13px; font-weight:700; text-align:left;">
+                            Replace existing dates
+                            <span style="display:block; font-size:11px; font-weight:600; opacity:0.9; margin-top:3px;">Remove the previous ${escapeMapSuggestionHtml(label)} date(s) on those buildings, then set the new date</span>
+                        </button>
+                        <button type="button" id="mapBulkDateConflictCancelBtn" style="margin:0; padding:10px 12px; border-radius:7px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); cursor:pointer; font-size:13px; font-weight:700;">Cancel</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+
+            function finish(choice) {
+                overlay.remove();
+                if (choice === 'keep' && typeof opts.onKeep === 'function') opts.onKeep();
+                else if (choice === 'replace' && typeof opts.onReplace === 'function') opts.onReplace();
+                else if (choice === 'cancel' && typeof opts.onCancel === 'function') opts.onCancel();
+            }
+
+            document.getElementById('mapBulkDateConflictKeepBtn').addEventListener('click', () => finish('keep'));
+            document.getElementById('mapBulkDateConflictReplaceBtn').addEventListener('click', () => finish('replace'));
+            document.getElementById('mapBulkDateConflictCancelBtn').addEventListener('click', () => finish('cancel'));
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) finish('cancel'); });
+        }
+
         function openMapBulkEditModal() {
             pruneMapBuildingSelection();
             const selected = getMapSelectedBuildingSummaries();
@@ -20236,7 +20337,7 @@
                     <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:12px;">
                         <section style="padding:14px; border:1px solid rgba(155,89,182,0.38); border-radius:11px; background:rgba(155,89,182,0.07);">
                             <div style="font-size:13px; font-weight:800; color:#9b59b6; margin-bottom:3px;">CATEGORY TESTING</div>
-                            <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:10px;">Add the same Category testing date to every selected building.</div>
+                            <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:10px;">Add the same Category testing date to every selected building. If a building already has a date, you can keep it or replace it.</div>
                             <div style="display:flex; gap:7px;">
                                 <input type="date" id="mapBulkCategoryDate" value="${today}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;">
                                 <button type="button" id="mapBulkAddCategory" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#8e44ad; color:white; font-size:12px; font-weight:700;">+ Add</button>
@@ -20244,7 +20345,7 @@
                         </section>
                         <section style="padding:14px; border:1px solid rgba(26,115,232,0.34); border-radius:11px; background:rgba(26,115,232,0.07);">
                             <div style="font-size:13px; font-weight:800; color:#1a73e8; margin-bottom:3px;">PVI TESTING</div>
-                            <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:10px;">Add the same PVI testing date to every selected building.</div>
+                            <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:10px;">Add the same PVI testing date to every selected building. If a building already has a date, you can keep it or replace it.</div>
                             <div style="display:flex; gap:7px;">
                                 <input type="date" id="mapBulkPviDate" value="${today}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;">
                                 <button type="button" id="mapBulkAddPvi" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#1a73e8; color:white; font-size:12px; font-weight:700;">+ Add</button>
@@ -20343,13 +20444,14 @@
                 refreshSelectedListInModal();
             }
 
-            function applyBulkTestDate(type) {
+            function applyBulkTestDate(type, conflictMode) {
                 const current = getMapSelectedBuildingSummaries();
                 const error = document.getElementById('mapBulkScheduleError');
                 const input = document.getElementById(type === 'pvi' ? 'mapBulkPviDate' : 'mapBulkCategoryDate');
                 const bypassInput = document.getElementById('mapBulkBypassEligibility');
                 const dateStr = input ? input.value : '';
                 const bypassEligibility = !!(bypassInput && bypassInput.checked);
+                const label = type === 'pvi' ? 'PVI' : 'Category';
                 if (error) error.style.display = 'none';
                 if (!current.length) {
                     showMapNotification('Select at least one building first', '#ff9800');
@@ -20364,7 +20466,31 @@
                     return;
                 }
 
+                const conflicts = current.map(item => {
+                    const existingDates = getTestDatesForBin(item.bin, type);
+                    const otherDates = existingDates.filter(date => date !== dateStr);
+                    if (!otherDates.length) return null;
+                    return {
+                        bin: item.bin,
+                        address: item.address,
+                        existingDates,
+                        otherDates
+                    };
+                }).filter(Boolean);
+
+                if (conflicts.length && conflictMode !== 'keep' && conflictMode !== 'replace') {
+                    showMapBulkDateConflictDialog({
+                        label,
+                        dateStr,
+                        conflicts,
+                        onKeep: () => applyBulkTestDate(type, 'keep'),
+                        onReplace: () => applyBulkTestDate(type, 'replace')
+                    });
+                    return;
+                }
+
                 let added = 0;
+                let replaced = 0;
                 let alreadyScheduled = 0;
                 let skippedDob = 0;
                 const failures = [];
@@ -20372,6 +20498,22 @@
                     if (mapDobHasCompletedTestDate(item.bin, type, dateStr)) {
                         skippedDob += 1;
                         return;
+                    }
+                    const existingDates = getTestDatesForBin(item.bin, type);
+                    const otherDates = existingDates.filter(date => date !== dateStr);
+                    if (conflictMode === 'replace' && otherDates.length) {
+                        clearMapScheduledDatesForBinType(item.bin, type, {
+                            quiet: true,
+                            address: item.address
+                        });
+                        replaced += 1;
+                        addMapActivity('Replaced scheduled dates', {
+                            type: 'Schedule',
+                            bin: item.bin,
+                            address: item.address,
+                            date: dateStr,
+                            details: `${label} · bulk select replace · cleared ${otherDates.join(', ')}`
+                        });
                     }
                     const validation = validateMapScheduledTestDate(item.bin, type, dateStr, { bypassEligibility });
                     if (!validation.valid) {
@@ -20389,7 +20531,9 @@
                         address: item.address,
                         bypassEligibility,
                         quiet: true,
-                        source: bypassUsed ? 'Bulk select · recent-test restriction override' : 'Bulk select'
+                        source: bypassUsed
+                            ? (conflictMode === 'replace' ? 'Bulk select replace · recent-test restriction override' : 'Bulk select · recent-test restriction override')
+                            : (conflictMode === 'replace' ? 'Bulk select replace' : 'Bulk select')
                     })) {
                         added += 1;
                     } else {
@@ -20399,21 +20543,21 @@
 
                 refreshMapAfterBulkChange();
 
-                const label = type === 'pvi' ? 'PVI' : 'Category';
                 const summaryParts = [];
-                if (added) summaryParts.push(`added to ${added}`);
+                if (added) summaryParts.push(`${conflictMode === 'replace' ? 'set on' : 'added to'} ${added}`);
+                if (replaced) summaryParts.push(`replaced on ${replaced}`);
                 if (alreadyScheduled) summaryParts.push(`already on ${alreadyScheduled}`);
                 if (skippedDob) summaryParts.push(`already filed on DOB for ${skippedDob}`);
                 if (failures.length) summaryParts.push(`blocked on ${failures.length}`);
                 const message = summaryParts.length
-                    ? `${label} date ${summaryParts.join(', ')} building${(added + alreadyScheduled + skippedDob + failures.length) === 1 ? '' : 's'}`
+                    ? `${label} date ${summaryParts.join(', ')} building${(added + replaced + alreadyScheduled + skippedDob + failures.length) === 1 ? '' : 's'}`
                     : `No ${label} dates changed`;
                 if (error && failures.length) {
                     error.textContent = failures.slice(0, 4).join(' · ') + (failures.length > 4 ? ` · +${failures.length - 4} more` : '');
                     error.style.color = '#ff9800';
                     error.style.display = 'block';
                 }
-                showMapNotification(message, added ? (type === 'pvi' ? '#1a73e8' : '#9b59b6') : '#ff9800');
+                showMapNotification(message, added || replaced ? (type === 'pvi' ? '#1a73e8' : '#9b59b6') : '#ff9800');
             }
 
             function applyBulkMonth() {
@@ -22720,6 +22864,11 @@
             // Add event listener to close modal on ESC key
             const handleEscKey = (e) => {
                 if (e.key !== 'Escape' || modal.style.display !== 'flex') return;
+                const conflictOverlay = document.getElementById('mapBulkDateConflictOverlay');
+                if (conflictOverlay) {
+                    conflictOverlay.remove();
+                    return;
+                }
                 const bulkOverlay = document.getElementById('mapBulkEditOverlay');
                 if (bulkOverlay) {
                     bulkOverlay.remove();
