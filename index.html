@@ -1045,6 +1045,9 @@
                                 <button id="mapTableViewButton" onclick="openMapTableView()" title="View, filter, and edit the data loaded into this map" style="background: #198754; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
                                     <span>▦</span> <span>Table View</span>
                                 </button>
+                                <button id="mapSelectButton" onclick="toggleMapSelectMode()" aria-pressed="false" title="Select multiple buildings on the map to edit them at once" style="background: #c77700; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
+                                    <span>✓</span> <span>Select</span>
+                                </button>
                                 <button id="mapLiveTableButton" hidden onclick="toggleMapLiveTable()" aria-pressed="false" title="Open a floating table containing only the currently displayed locations" style="background: #0f766e; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
                                     <span>▤</span> <span>Live Table</span>
                                 </button>
@@ -1098,7 +1101,19 @@
                     </div>
                 </div>
                 <div style="display: flex; flex: 1; min-height: 0; overflow: hidden;">
-                    <div id="buildingMap" title="Right-click the map to add a pin at that location" style="flex: 1; min-height: 400px;"></div>
+                    <div style="flex: 1; min-width: 0; min-height: 400px; position: relative;">
+                        <div id="buildingMap" title="Right-click the map to add a pin at that location" style="width: 100%; height: 100%; min-height: 400px;"></div>
+                        <div id="mapSelectToolbar" role="region" aria-label="Multi-building selection tools">
+                            <span class="map-select-title">Select mode</span>
+                            <span id="mapSelectCount" class="map-select-count">0 buildings selected</span>
+                            <div class="map-select-actions">
+                                <button type="button" onclick="openMapSelectByDevicesModal()" style="background:#0d6efd;" title="Select buildings by entering device numbers">By Device #s</button>
+                                <button type="button" id="mapSelectEditButton" onclick="openMapBulkEditModal()" style="background:#1a73e8;" disabled title="Edit information for selected buildings">Edit Selected</button>
+                                <button type="button" id="mapSelectClearButton" onclick="clearMapBuildingSelection()" style="background:#6c757d;" disabled title="Clear current selection">Clear</button>
+                                <button type="button" onclick="toggleMapSelectMode(false)" style="background:#c77700;" title="Exit select mode">Done</button>
+                            </div>
+                        </div>
+                    </div>
                     <!-- Map Controls Panel -->
                     <div id="mapControlsPanel" style="display: none; width: 280px; min-width: 280px; background: var(--panel-bg); border-left: 1px solid var(--input-border); flex-shrink: 0; flex-direction: column; overflow: hidden; position: relative; font-size: 12.5px;">
                         <div id="mapControlsDockResizeHandle" class="mcp-dock-resize" title="Drag to resize — wider panel shows larger text" onmousedown="event.stopPropagation(); _startDockedMapControlsResize(event);" ontouchstart="event.stopPropagation(); _startDockedMapControlsResize(event);"></div>
@@ -1678,6 +1693,51 @@
                         </div>
                     </div>
                 </div>
+                <style>
+                    #mapSelectToolbar {
+                        display: none;
+                        position: absolute;
+                        left: 12px;
+                        right: 12px;
+                        top: 12px;
+                        z-index: 1700;
+                        align-items: center;
+                        gap: 8px;
+                        flex-wrap: wrap;
+                        padding: 8px 10px;
+                        border-radius: 10px;
+                        border: 1px solid rgba(199, 119, 0, 0.45);
+                        border-left: 4px solid #c77700;
+                        background: color-mix(in srgb, var(--card-bg) 92%, #c77700 8%);
+                        color: var(--text-color);
+                        box-shadow: 0 8px 24px rgba(0,0,0,0.28);
+                        box-sizing: border-box;
+                        pointer-events: auto;
+                    }
+                    #mapSelectToolbar.map-select-visible { display: flex; }
+                    #mapSelectToolbar .map-select-title { font-size: 12px; font-weight: 800; color: #c77700; white-space: nowrap; }
+                    #mapSelectToolbar .map-select-count { font-size: 11px; font-weight: 700; opacity: 0.85; white-space: nowrap; }
+                    #mapSelectToolbar .map-select-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+                    #mapSelectToolbar button {
+                        border: none;
+                        border-radius: 5px;
+                        padding: 5px 9px;
+                        cursor: pointer;
+                        color: white;
+                        font-size: 11px;
+                        font-weight: 700;
+                        white-space: nowrap;
+                    }
+                    #mapSelectToolbar button:disabled { opacity: 0.45; cursor: not-allowed; }
+                    #buildingMap.map-select-mode-active,
+                    #buildingMap.map-select-mode-active .leaflet-container,
+                    #buildingMap.map-select-mode-active .leaflet-marker-icon { cursor: pointer !important; }
+                    .custom-map-marker.map-marker-selected svg { filter: drop-shadow(0 0 4px rgba(255,152,0,0.95)) drop-shadow(0 2px 3px rgba(0,0,0,0.4)); }
+                    @media (max-width: 700px) {
+                        #mapSelectToolbar { left: 8px; right: 8px; top: 8px; padding: 7px 8px; }
+                        #mapSelectToolbar .map-select-actions { margin-left: 0; width: 100%; }
+                    }
+                </style>
                 <!-- Resize handles (only shown in windowed mode) -->
                 <style>
                     .map-resize-handle { display: none; position: absolute; z-index: 20; }
@@ -10006,6 +10066,8 @@
         // Map functionality for bulk device lookup
         let buildingMap = null;
         let mapMarkers = [];
+        let mapSelectMode = false;
+        let mapSelectedBins = new Set();
 
         // Safari-safe compatibility helpers (avoid relying on newer APIs at runtime)
         function mapFlat(list, mapper) {
@@ -19868,6 +19930,584 @@
             overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
         }
 
+        function attachMapMarkerSelectHandler(marker, bin) {
+            if (!marker || !bin) return;
+            const binKey = String(bin);
+            marker.on('click', function(e) {
+                if (!mapSelectMode) return;
+                if (window.L && L.DomEvent) {
+                    L.DomEvent.stopPropagation(e);
+                    if (e.originalEvent) L.DomEvent.preventDefault(e.originalEvent);
+                }
+                setTimeout(function() {
+                    if (mapSelectMode && marker.isPopupOpen && marker.isPopupOpen()) {
+                        marker.closePopup();
+                    }
+                }, 0);
+                toggleMapBuildingSelection(binKey);
+            });
+        }
+
+        function resetMapSelectMode(clearSelection) {
+            mapSelectMode = false;
+            if (clearSelection) mapSelectedBins = new Set();
+            const existingDeviceModal = document.getElementById('mapSelectDevicesOverlay');
+            if (existingDeviceModal) existingDeviceModal.remove();
+            const existingBulkModal = document.getElementById('mapBulkEditOverlay');
+            if (existingBulkModal) existingBulkModal.remove();
+            syncMapSelectModeUi();
+        }
+
+        function toggleMapSelectMode(forceState) {
+            const nextState = typeof forceState === 'boolean' ? forceState : !mapSelectMode;
+            mapSelectMode = nextState;
+            if (!mapSelectMode) {
+                const existingBulkModal = document.getElementById('mapBulkEditOverlay');
+                if (existingBulkModal) existingBulkModal.remove();
+                const existingDeviceModal = document.getElementById('mapSelectDevicesOverlay');
+                if (existingDeviceModal) existingDeviceModal.remove();
+            } else if (buildingMap && buildingMap.closePopup) {
+                buildingMap.closePopup();
+            }
+            refreshMapSelectionMarkerIcons();
+            syncMapSelectModeUi();
+            if (mapSelectMode) {
+                showMapNotification('Click buildings to select them, or use By Device #s', '#c77700');
+            }
+        }
+
+        function syncMapSelectModeUi() {
+            const toolbar = document.getElementById('mapSelectToolbar');
+            const selectBtn = document.getElementById('mapSelectButton');
+            const mapEl = document.getElementById('buildingMap');
+            const countEl = document.getElementById('mapSelectCount');
+            const editBtn = document.getElementById('mapSelectEditButton');
+            const clearBtn = document.getElementById('mapSelectClearButton');
+            const selectedCount = mapSelectedBins ? mapSelectedBins.size : 0;
+
+            if (toolbar) {
+                if (mapSelectMode) toolbar.classList.add('map-select-visible');
+                else toolbar.classList.remove('map-select-visible');
+            }
+            if (selectBtn) {
+                selectBtn.setAttribute('aria-pressed', mapSelectMode ? 'true' : 'false');
+                selectBtn.style.background = mapSelectMode ? '#a35f00' : '#c77700';
+                selectBtn.style.boxShadow = mapSelectMode ? 'inset 0 0 0 2px rgba(255,255,255,0.35)' : '';
+            }
+            if (mapEl) {
+                if (mapSelectMode) mapEl.classList.add('map-select-mode-active');
+                else mapEl.classList.remove('map-select-mode-active');
+            }
+            if (countEl) {
+                countEl.textContent = selectedCount === 1
+                    ? '1 building selected'
+                    : `${selectedCount} buildings selected`;
+            }
+            if (editBtn) editBtn.disabled = selectedCount === 0;
+            if (clearBtn) clearBtn.disabled = selectedCount === 0;
+        }
+
+        function pruneMapBuildingSelection() {
+            if (!mapSelectedBins || mapSelectedBins.size === 0) return;
+            const available = new Set();
+            if (Array.isArray(mapBuildingsData)) {
+                mapBuildingsData.forEach(building => {
+                    if (building && building.bin != null) available.add(String(building.bin));
+                });
+            }
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                Object.keys(window.lastBulkSearchResults.binGroups).forEach(bin => available.add(String(bin)));
+            }
+            const next = new Set();
+            mapSelectedBins.forEach(bin => {
+                if (available.has(String(bin))) next.add(String(bin));
+            });
+            mapSelectedBins = next;
+        }
+
+        function refreshMapSelectionMarkerIcons() {
+            if (!Array.isArray(mapBuildingsData) || !Array.isArray(mapMarkers)) return;
+            mapBuildingsData.forEach((building, index) => {
+                if (!building || !mapMarkers[index] || !mapMarkers[index].setIcon) return;
+                mapMarkers[index].setIcon(createBuildingMarkerIcon(building));
+            });
+        }
+
+        function toggleMapBuildingSelection(bin) {
+            if (!bin) return;
+            const binKey = String(bin);
+            if (!mapSelectedBins) mapSelectedBins = new Set();
+            if (mapSelectedBins.has(binKey)) mapSelectedBins.delete(binKey);
+            else mapSelectedBins.add(binKey);
+            refreshMapSelectionMarkerIcons();
+            syncMapSelectModeUi();
+        }
+
+        function clearMapBuildingSelection() {
+            mapSelectedBins = new Set();
+            refreshMapSelectionMarkerIcons();
+            syncMapSelectModeUi();
+        }
+
+        function getMapSelectedBuildingSummaries() {
+            const binGroups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            const summaries = [];
+            (mapSelectedBins || new Set()).forEach(bin => {
+                const group = binGroups[bin];
+                const building = Array.isArray(mapBuildingsData)
+                    ? mapBuildingsData.find(item => item && String(item.bin) === String(bin))
+                    : null;
+                const devices = (group && group.devices) || [];
+                const deviceNumbers = devices
+                    .map(device => String(device && device.device_number || '').trim().toUpperCase())
+                    .filter(Boolean);
+                summaries.push({
+                    bin: String(bin),
+                    address: (group && group.address) || (building && building.address) || getMapBuildingAddressForBin(bin) || ('BIN ' + bin),
+                    deviceCount: building && building.deviceCount != null
+                        ? building.deviceCount
+                        : countMapJobDevices(devices),
+                    deviceNumbers
+                });
+            });
+            summaries.sort((a, b) => String(a.address).localeCompare(String(b.address)));
+            return summaries;
+        }
+
+        function parseMapMultiDeviceEntries(rawText) {
+            return String(rawText || '')
+                .split(/[\s,;|]+/)
+                .map(entry => entry.trim().toUpperCase())
+                .filter(Boolean);
+        }
+
+        function findMapBinsForDeviceEntries(entries) {
+            const binGroups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            const matchedBins = new Set();
+            const matchedEntries = [];
+            const unmatchedEntries = [];
+
+            entries.forEach(entry => {
+                let found = false;
+                if (binGroups[entry]) {
+                    matchedBins.add(String(entry));
+                    found = true;
+                }
+                Object.entries(binGroups).forEach(([bin, group]) => {
+                    const devices = (group && group.devices) || [];
+                    if (devices.some(device => String(device && device.device_number || '').trim().toUpperCase() === entry)) {
+                        matchedBins.add(String(bin));
+                        found = true;
+                    }
+                });
+                if (found) matchedEntries.push(entry);
+                else unmatchedEntries.push(entry);
+            });
+
+            return { matchedBins, matchedEntries, unmatchedEntries };
+        }
+
+        function openMapSelectByDevicesModal() {
+            if (!mapSelectMode) toggleMapSelectMode(true);
+            const existing = document.getElementById('mapSelectDevicesOverlay');
+            if (existing) existing.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = 'mapSelectDevicesOverlay';
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.55); z-index: 10025;
+                display: flex; align-items: center; justify-content: center;
+            `;
+            overlay.innerHTML = `
+                <div style="background:var(--card-bg,#1e1e2e); border:1px solid var(--input-border,#444); border-radius:14px; padding:20px; max-width:520px; width:calc(100% - 32px); max-height:calc(100vh - 40px); overflow-y:auto; box-sizing:border-box; box-shadow:0 18px 55px rgba(0,0,0,0.5);">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:14px;">
+                        <div>
+                            <h3 style="margin:0 0 4px; color:var(--text-color,#fff); font-size:17px;">Select by device numbers</h3>
+                            <p style="margin:0; font-size:12px; opacity:0.7; color:var(--text-color,#ccc);">Paste one or more device numbers (or 7-digit BINs). Matching buildings already on this map will be selected.</p>
+                        </div>
+                        <button type="button" id="mapSelectDevicesCloseBtn" aria-label="Close" style="margin:0; background:none; border:none; color:var(--text-color,#ccc); font-size:22px; cursor:pointer; line-height:1; padding:2px;">×</button>
+                    </div>
+                    <textarea id="mapSelectDevicesInput" rows="8" placeholder="1P12345&#10;1P67890&#10;1234567" style="width:100%; box-sizing:border-box; padding:10px; border-radius:8px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); font-size:13px; line-height:1.4; resize:vertical;"></textarea>
+                    <div id="mapSelectDevicesFeedback" style="display:none; margin-top:10px; font-size:12px; line-height:1.4;"></div>
+                    <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+                        <button type="button" id="mapSelectDevicesApplyBtn" style="flex:1; min-width:140px; margin:0; padding:10px; border-radius:7px; border:none; background:#0d6efd; color:white; cursor:pointer; font-size:13px; font-weight:700;">Select Matches</button>
+                        <button type="button" id="mapSelectDevicesReplaceBtn" style="flex:1; min-width:140px; margin:0; padding:10px; border-radius:7px; border:none; background:#c77700; color:white; cursor:pointer; font-size:13px; font-weight:700;">Replace Selection</button>
+                        <button type="button" id="mapSelectDevicesCancelBtn" style="margin:0; padding:10px 14px; border-radius:7px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); cursor:pointer; font-size:13px; font-weight:700;">Cancel</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+
+            function applyDeviceSelection(replace) {
+                const input = document.getElementById('mapSelectDevicesInput');
+                const feedback = document.getElementById('mapSelectDevicesFeedback');
+                const entries = parseMapMultiDeviceEntries(input ? input.value : '');
+                if (!entries.length) {
+                    if (feedback) {
+                        feedback.style.display = 'block';
+                        feedback.style.color = '#ff6b6b';
+                        feedback.textContent = 'Enter at least one device number or BIN.';
+                    }
+                    return;
+                }
+                const result = findMapBinsForDeviceEntries(entries);
+                if (replace) mapSelectedBins = new Set();
+                result.matchedBins.forEach(bin => mapSelectedBins.add(String(bin)));
+                refreshMapSelectionMarkerIcons();
+                syncMapSelectModeUi();
+
+                const parts = [];
+                parts.push(`Selected ${result.matchedBins.size} building${result.matchedBins.size === 1 ? '' : 's'} from ${result.matchedEntries.length} match${result.matchedEntries.length === 1 ? '' : 'es'}.`);
+                if (result.unmatchedEntries.length) {
+                    parts.push(`Not found on this map: ${result.unmatchedEntries.join(', ')}`);
+                }
+                if (feedback) {
+                    feedback.style.display = 'block';
+                    feedback.style.color = result.matchedBins.size ? '#27ae60' : '#ff6b6b';
+                    feedback.textContent = parts.join(' ');
+                }
+                if (result.matchedBins.size) {
+                    showMapNotification(
+                        `Selected ${result.matchedBins.size} building${result.matchedBins.size === 1 ? '' : 's'}`,
+                        '#c77700'
+                    );
+                    if (!result.unmatchedEntries.length) overlay.remove();
+                }
+            }
+
+            document.getElementById('mapSelectDevicesApplyBtn').addEventListener('click', () => applyDeviceSelection(false));
+            document.getElementById('mapSelectDevicesReplaceBtn').addEventListener('click', () => applyDeviceSelection(true));
+            document.getElementById('mapSelectDevicesCancelBtn').addEventListener('click', () => overlay.remove());
+            document.getElementById('mapSelectDevicesCloseBtn').addEventListener('click', () => overlay.remove());
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+            const inputEl = document.getElementById('mapSelectDevicesInput');
+            if (inputEl) setTimeout(() => inputEl.focus(), 0);
+        }
+
+        function openMapBulkEditModal() {
+            pruneMapBuildingSelection();
+            const selected = getMapSelectedBuildingSummaries();
+            if (!selected.length) {
+                showMapNotification('Select at least one building first', '#ff9800');
+                syncMapSelectModeUi();
+                return;
+            }
+
+            const existing = document.getElementById('mapBulkEditOverlay');
+            if (existing) existing.remove();
+
+            const today = formatLocalDateInputValue(new Date());
+            const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December', 'REVIEW'];
+            const monthOptions = ['<option value="">Select month...</option>']
+                .concat(months.map(month => `<option value="${month}">${month}</option>`))
+                .concat(['<option value="__CLEAR__">Clear month label</option>'])
+                .join('');
+
+            const listHtml = selected.map(item => {
+                const devicePreview = item.deviceNumbers.slice(0, 4).join(', ');
+                const moreDevices = item.deviceNumbers.length > 4 ? ` +${item.deviceNumbers.length - 4} more` : '';
+                return `<div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start; padding:7px 8px; border:1px solid var(--input-border,#444); border-radius:7px; margin-bottom:6px; background:var(--input-bg,#2a2a3e);">
+                    <div style="min-width:0;">
+                        <div style="font-size:12px; font-weight:700; color:var(--text-color,#fff); word-break:break-word;">${escapeMapSuggestionHtml(item.address)}</div>
+                        <div style="font-size:10px; opacity:0.72; margin-top:2px; color:var(--text-color,#ccc);">BIN ${escapeMapSuggestionHtml(item.bin)} · ${item.deviceCount} device${item.deviceCount === 1 ? '' : 's'}${devicePreview ? ' · ' + escapeMapSuggestionHtml(devicePreview + moreDevices) : ''}</div>
+                    </div>
+                    <button type="button" data-deselect-bin="${escapeMapSuggestionHtml(item.bin)}" style="margin:0; flex:0 0 auto; padding:4px 8px; border-radius:5px; border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.12); color:#ff6b6b; cursor:pointer; font-size:11px; font-weight:700;">Remove</button>
+                </div>`;
+            }).join('');
+
+            const overlay = document.createElement('div');
+            overlay.id = 'mapBulkEditOverlay';
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.55); z-index: 10025;
+                display: flex; align-items: center; justify-content: center;
+            `;
+            overlay.innerHTML = `
+                <div style="background:var(--card-bg,#1e1e2e); border:1px solid var(--input-border,#444); border-radius:16px; padding:22px; max-width:720px; width:calc(100% - 32px); max-height:calc(100vh - 40px); overflow-y:auto; box-sizing:border-box; box-shadow:0 18px 55px rgba(0,0,0,0.5);">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:16px;">
+                        <div>
+                            <h3 style="margin:0 0 4px; color:var(--text-color,#fff); font-size:18px;">Edit selected buildings</h3>
+                            <p id="mapBulkEditSubtitle" style="margin:0; font-size:12px; opacity:0.7; color:var(--text-color,#ccc);">${selected.length} building${selected.length === 1 ? '' : 's'} selected — changes apply to all of them</p>
+                        </div>
+                        <button type="button" id="mapBulkEditCloseBtn" aria-label="Close" style="margin:0; background:none; border:none; color:var(--text-color,#ccc); font-size:22px; cursor:pointer; line-height:1; padding:2px;">×</button>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:12px;">
+                        <section style="padding:14px; border:1px solid rgba(155,89,182,0.38); border-radius:11px; background:rgba(155,89,182,0.07);">
+                            <div style="font-size:13px; font-weight:800; color:#9b59b6; margin-bottom:3px;">CATEGORY TESTING</div>
+                            <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:10px;">Add the same Category testing date to every selected building.</div>
+                            <div style="display:flex; gap:7px;">
+                                <input type="date" id="mapBulkCategoryDate" value="${today}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;">
+                                <button type="button" id="mapBulkAddCategory" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#8e44ad; color:white; font-size:12px; font-weight:700;">+ Add</button>
+                            </div>
+                        </section>
+                        <section style="padding:14px; border:1px solid rgba(26,115,232,0.34); border-radius:11px; background:rgba(26,115,232,0.07);">
+                            <div style="font-size:13px; font-weight:800; color:#1a73e8; margin-bottom:3px;">PVI TESTING</div>
+                            <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:10px;">Add the same PVI testing date to every selected building.</div>
+                            <div style="display:flex; gap:7px;">
+                                <input type="date" id="mapBulkPviDate" value="${today}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;">
+                                <button type="button" id="mapBulkAddPvi" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#1a73e8; color:white; font-size:12px; font-weight:700;">+ Add</button>
+                            </div>
+                        </section>
+                    </div>
+
+                    <details style="margin-top:12px; padding:10px 11px; border:1px solid rgba(199,119,0,0.28); border-radius:9px; background:rgba(199,119,0,0.08);">
+                        <summary style="cursor:pointer; color:#c77700; font-size:12px; line-height:1.4; font-weight:800; user-select:none;">Advanced scheduling options</summary>
+                        <label style="display:flex; align-items:flex-start; gap:9px; margin-top:10px; color:var(--text-color,#eee); font-size:12px; line-height:1.45; cursor:pointer;">
+                            <input type="checkbox" id="mapBulkBypassEligibility" style="margin:3px 0 0; width:16px; height:16px; flex:0 0 auto;">
+                            <span><strong style="font-size:12.5px;">Override recent-test restriction</strong><br><span style="opacity:0.9;">Schedule even when recent DOB testing would normally block the date for some buildings.</span></span>
+                        </label>
+                    </details>
+                    <div id="mapBulkScheduleError" role="alert" style="display:none; margin-top:8px; color:#ff6b6b; font-size:11px; line-height:1.35;"></div>
+
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:12px; margin-top:12px;">
+                        <section style="padding:14px; border:1px solid rgba(23,162,184,0.34); border-radius:11px; background:rgba(23,162,184,0.07);">
+                            <div style="font-size:13px; font-weight:800; color:#17a2b8; margin-bottom:8px;">MONTH LABEL</div>
+                            <div style="display:flex; gap:7px;">
+                                <select id="mapBulkMonthLabel" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff);">${monthOptions}</select>
+                                <button type="button" id="mapBulkApplyMonth" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#17a2b8; color:white; font-size:12px; font-weight:700;">Apply</button>
+                            </div>
+                        </section>
+                        <section style="padding:14px; border:1px solid rgba(255,193,7,0.34); border-radius:11px; background:rgba(255,193,7,0.07);">
+                            <div style="font-size:13px; font-weight:800; color:#ffc107; margin-bottom:8px;">BUILDING NOTE</div>
+                            <textarea id="mapBulkNoteInput" rows="3" placeholder="Add the same note to every selected building..." style="width:100%; box-sizing:border-box; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); font-size:12px; resize:vertical;"></textarea>
+                            <div style="display:flex; gap:7px; margin-top:8px; flex-wrap:wrap;">
+                                <button type="button" id="mapBulkApplyNote" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#e0a800; color:#1a1a1a; font-size:12px; font-weight:700;">Set Note</button>
+                                <button type="button" id="mapBulkAppendNote" style="margin:0; padding:8px 11px; border-radius:6px; border:1px solid rgba(224,168,0,0.55); background:rgba(224,168,0,0.12); color:#ffc107; font-size:12px; font-weight:700;">Append Note</button>
+                                <button type="button" id="mapBulkClearNotes" style="margin:0; padding:8px 11px; border-radius:6px; border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.12); color:#ff6b6b; font-size:12px; font-weight:700;">Clear Notes</button>
+                            </div>
+                        </section>
+                    </div>
+
+                    <details style="margin-top:14px;" open>
+                        <summary style="cursor:pointer; font-size:12px; font-weight:800; color:var(--text-color,#fff); user-select:none;">Selected buildings</summary>
+                        <div id="mapBulkSelectedList" style="margin-top:8px; max-height:180px; overflow-y:auto;">${listHtml}</div>
+                    </details>
+
+                    <button type="button" id="mapBulkEditDoneBtn" style="width:100%; margin:16px 0 0; padding:10px; border-radius:7px; border:none; background:#27ae60; color:white; cursor:pointer; font-size:13px; font-weight:700;">Done</button>
+                </div>`;
+            document.body.appendChild(overlay);
+
+            function refreshSelectedListInModal() {
+                const current = getMapSelectedBuildingSummaries();
+                const list = document.getElementById('mapBulkSelectedList');
+                const subtitle = document.getElementById('mapBulkEditSubtitle');
+                if (subtitle) {
+                    subtitle.textContent = current.length
+                        ? `${current.length} building${current.length === 1 ? '' : 's'} selected — changes apply to all of them`
+                        : 'No buildings selected';
+                }
+                if (!list) return;
+                if (!current.length) {
+                    list.innerHTML = '<div style="font-size:12px; opacity:0.65; padding:8px 0;">No buildings selected.</div>';
+                    return;
+                }
+                list.innerHTML = current.map(item => {
+                    const devicePreview = item.deviceNumbers.slice(0, 4).join(', ');
+                    const moreDevices = item.deviceNumbers.length > 4 ? ` +${item.deviceNumbers.length - 4} more` : '';
+                    return `<div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start; padding:7px 8px; border:1px solid var(--input-border,#444); border-radius:7px; margin-bottom:6px; background:var(--input-bg,#2a2a3e);">
+                        <div style="min-width:0;">
+                            <div style="font-size:12px; font-weight:700; color:var(--text-color,#fff); word-break:break-word;">${escapeMapSuggestionHtml(item.address)}</div>
+                            <div style="font-size:10px; opacity:0.72; margin-top:2px; color:var(--text-color,#ccc);">BIN ${escapeMapSuggestionHtml(item.bin)} · ${item.deviceCount} device${item.deviceCount === 1 ? '' : 's'}${devicePreview ? ' · ' + escapeMapSuggestionHtml(devicePreview + moreDevices) : ''}</div>
+                        </div>
+                        <button type="button" data-deselect-bin="${escapeMapSuggestionHtml(item.bin)}" style="margin:0; flex:0 0 auto; padding:4px 8px; border-radius:5px; border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.12); color:#ff6b6b; cursor:pointer; font-size:11px; font-weight:700;">Remove</button>
+                    </div>`;
+                }).join('');
+                bindDeselectButtons();
+            }
+
+            function bindDeselectButtons() {
+                const list = document.getElementById('mapBulkSelectedList');
+                if (!list) return;
+                list.querySelectorAll('button[data-deselect-bin]').forEach(btn => {
+                    btn.onclick = () => {
+                        mapSelectedBins.delete(String(btn.getAttribute('data-deselect-bin')));
+                        refreshMapSelectionMarkerIcons();
+                        syncMapSelectModeUi();
+                        refreshSelectedListInModal();
+                    };
+                });
+            }
+
+            function refreshMapAfterBulkChange() {
+                updateTestDatesPanel();
+                updateMonthLabelCounts();
+                updateMapControlsPanel();
+                if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                    initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+                } else {
+                    refreshMapSelectionMarkerIcons();
+                }
+                syncMapSelectModeUi();
+                refreshSelectedListInModal();
+            }
+
+            function applyBulkTestDate(type) {
+                const current = getMapSelectedBuildingSummaries();
+                const error = document.getElementById('mapBulkScheduleError');
+                const input = document.getElementById(type === 'pvi' ? 'mapBulkPviDate' : 'mapBulkCategoryDate');
+                const bypassInput = document.getElementById('mapBulkBypassEligibility');
+                const dateStr = input ? input.value : '';
+                const bypassEligibility = !!(bypassInput && bypassInput.checked);
+                if (error) error.style.display = 'none';
+                if (!current.length) {
+                    showMapNotification('Select at least one building first', '#ff9800');
+                    return;
+                }
+                if (!dateStr) {
+                    if (error) {
+                        error.textContent = 'Please select a date';
+                        error.style.display = 'block';
+                    }
+                    showMapNotification('Please select a date', '#ff6b6b');
+                    return;
+                }
+
+                let added = 0;
+                let alreadyScheduled = 0;
+                let skippedDob = 0;
+                const failures = [];
+                current.forEach(item => {
+                    if (mapDobHasCompletedTestDate(item.bin, type, dateStr)) {
+                        skippedDob += 1;
+                        return;
+                    }
+                    const validation = validateMapScheduledTestDate(item.bin, type, dateStr, { bypassEligibility });
+                    if (!validation.valid) {
+                        failures.push(`${item.address}: ${validation.message}`);
+                        return;
+                    }
+                    const readinessWarning = getMapScheduledReadinessWarning(item.bin, type, dateStr);
+                    if (readinessWarning && !bypassEligibility) {
+                        failures.push(`${item.address}: ${readinessWarning.message}`);
+                        return;
+                    }
+                    const bypassUsed = !!(bypassEligibility && (readinessWarning || validation.bypassed));
+                    if (addTestDateForBin(item.bin, dateStr, {
+                        type,
+                        address: item.address,
+                        bypassEligibility,
+                        quiet: true,
+                        source: bypassUsed ? 'Bulk select · recent-test restriction override' : 'Bulk select'
+                    })) {
+                        added += 1;
+                    } else {
+                        alreadyScheduled += 1;
+                    }
+                });
+
+                refreshMapAfterBulkChange();
+
+                const label = type === 'pvi' ? 'PVI' : 'Category';
+                const summaryParts = [];
+                if (added) summaryParts.push(`added to ${added}`);
+                if (alreadyScheduled) summaryParts.push(`already on ${alreadyScheduled}`);
+                if (skippedDob) summaryParts.push(`already filed on DOB for ${skippedDob}`);
+                if (failures.length) summaryParts.push(`blocked on ${failures.length}`);
+                const message = summaryParts.length
+                    ? `${label} date ${summaryParts.join(', ')} building${(added + alreadyScheduled + skippedDob + failures.length) === 1 ? '' : 's'}`
+                    : `No ${label} dates changed`;
+                if (error && failures.length) {
+                    error.textContent = failures.slice(0, 4).join(' · ') + (failures.length > 4 ? ` · +${failures.length - 4} more` : '');
+                    error.style.color = '#ff9800';
+                    error.style.display = 'block';
+                }
+                showMapNotification(message, added ? (type === 'pvi' ? '#1a73e8' : '#9b59b6') : '#ff9800');
+            }
+
+            function applyBulkMonth() {
+                const current = getMapSelectedBuildingSummaries();
+                const select = document.getElementById('mapBulkMonthLabel');
+                const value = select ? select.value : '';
+                if (!current.length) {
+                    showMapNotification('Select at least one building first', '#ff9800');
+                    return;
+                }
+                if (!value) {
+                    showMapNotification('Choose a month label first', '#ff9800');
+                    return;
+                }
+                const clear = value === '__CLEAR__';
+                let changed = 0;
+                current.forEach(item => {
+                    const previous = mapMonthLabels[item.bin] || '';
+                    const next = clear ? '' : value;
+                    if (previous === next) return;
+                    if (clear) delete mapMonthLabels[item.bin];
+                    else mapMonthLabels[item.bin] = value;
+                    changed += 1;
+                    addMapActivity(clear ? 'Cleared month label' : 'Assigned month label', {
+                        type: 'Schedule',
+                        bin: item.bin,
+                        address: item.address,
+                        date: next,
+                        details: 'Bulk select' + (previous && next ? ` · Was ${previous}` : (previous ? ` · Removed ${previous}` : ''))
+                    });
+                });
+                refreshMapAfterBulkChange();
+                showMapNotification(
+                    clear
+                        ? `Cleared month on ${changed} building${changed === 1 ? '' : 's'}`
+                        : `Set ${value} on ${changed} building${changed === 1 ? '' : 's'}`,
+                    '#17a2b8'
+                );
+            }
+
+            function applyBulkNote(mode) {
+                const current = getMapSelectedBuildingSummaries();
+                const input = document.getElementById('mapBulkNoteInput');
+                const raw = input ? String(input.value || '') : '';
+                if (!current.length) {
+                    showMapNotification('Select at least one building first', '#ff9800');
+                    return;
+                }
+                if (mode !== 'clear' && !raw.trim()) {
+                    showMapNotification('Enter a note first', '#ff9800');
+                    return;
+                }
+                let changed = 0;
+                current.forEach(item => {
+                    const previous = mapNotes[item.bin] || '';
+                    let next = '';
+                    if (mode === 'clear') next = '';
+                    else if (mode === 'append') next = previous ? (previous.replace(/\s+$/, '') + '\n' + raw.trim()) : raw.trim();
+                    else next = raw.trim();
+                    if (previous === next) return;
+                    if (next) mapNotes[item.bin] = next;
+                    else delete mapNotes[item.bin];
+                    changed += 1;
+                    addMapActivity(
+                        mode === 'clear' ? 'Cleared building note' : (previous ? 'Updated building note' : 'Added building note'),
+                        {
+                            type: 'Note',
+                            bin: item.bin,
+                            address: item.address,
+                            details: (mode === 'append' ? 'Bulk select append · ' : 'Bulk select · ') + (next ? (next.length > 120 ? next.substring(0, 120) + '...' : next) : 'cleared')
+                        }
+                    );
+                });
+                refreshMapAfterBulkChange();
+                showMapNotification(
+                    mode === 'clear'
+                        ? `Cleared notes on ${changed} building${changed === 1 ? '' : 's'}`
+                        : `Updated notes on ${changed} building${changed === 1 ? '' : 's'}`,
+                    '#ffc107'
+                );
+            }
+
+            bindDeselectButtons();
+            document.getElementById('mapBulkAddCategory').addEventListener('click', () => applyBulkTestDate('category'));
+            document.getElementById('mapBulkAddPvi').addEventListener('click', () => applyBulkTestDate('pvi'));
+            document.getElementById('mapBulkApplyMonth').addEventListener('click', applyBulkMonth);
+            document.getElementById('mapBulkApplyNote').addEventListener('click', () => applyBulkNote('set'));
+            document.getElementById('mapBulkAppendNote').addEventListener('click', () => applyBulkNote('append'));
+            document.getElementById('mapBulkClearNotes').addEventListener('click', () => applyBulkNote('clear'));
+            document.getElementById('mapBulkEditDoneBtn').addEventListener('click', () => overlay.remove());
+            document.getElementById('mapBulkEditCloseBtn').addEventListener('click', () => overlay.remove());
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        }
+
         function clearAllTestDates() {
             if (confirm('Clear all scheduled test dates from all buildings?')) {
                 const count = Object.values(getMapTestDates() || {}).reduce((sum, dates) => sum + getMapScheduleDates(dates).length, 0);
@@ -22079,9 +22719,22 @@
 
             // Add event listener to close modal on ESC key
             const handleEscKey = (e) => {
-                if (e.key === 'Escape' && modal.style.display === 'flex') {
-                    closeBuildingMap();
+                if (e.key !== 'Escape' || modal.style.display !== 'flex') return;
+                const bulkOverlay = document.getElementById('mapBulkEditOverlay');
+                if (bulkOverlay) {
+                    bulkOverlay.remove();
+                    return;
                 }
+                const devicesOverlay = document.getElementById('mapSelectDevicesOverlay');
+                if (devicesOverlay) {
+                    devicesOverlay.remove();
+                    return;
+                }
+                if (mapSelectMode) {
+                    toggleMapSelectMode(false);
+                    return;
+                }
+                closeBuildingMap();
             };
             document.addEventListener('keydown', handleEscKey);
             modal._escKeyHandler = handleEscKey;
@@ -22135,7 +22788,7 @@
             mapMarkers = [];
             additionalLocationMarkers = [];
             mapBuildingsData = [];
-            
+            resetMapSelectMode(true);
             // Clear search
             const searchInput = document.getElementById('mapSearchInput');
             const resultCount = document.getElementById('mapSearchResultCount');
@@ -22811,6 +23464,7 @@
             const isInProcess = building.isInProcess;
             const isHold = building.isHold;
             const hasBuildingNote = !!getMapNote(building.bin).trim();
+            const isSelected = !!(mapSelectMode && mapSelectedBins && mapSelectedBins.has(String(building.bin)));
 
             let markerColor;
             if (isCompleted) {
@@ -22851,9 +23505,14 @@
                 markerShape = '<circle cx="15" cy="15" r="13.5" />';
             }
 
+            const selectionRing = isSelected
+                ? '<circle cx="15" cy="15" r="14.8" fill="none" stroke="#ff9800" stroke-width="4.5" opacity="0.95"></circle><circle cx="15" cy="15" r="14.8" fill="none" stroke="#fff3e0" stroke-width="1.5" opacity="0.9"></circle>'
+                : '';
+
             return L.divIcon({
-                className: 'custom-map-marker',
+                className: 'custom-map-marker' + (isSelected ? ' map-marker-selected' : ''),
                 html: `<svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true" style="display:block; overflow:visible; filter:drop-shadow(0 2px 3px rgba(0,0,0,0.4));">
+                    ${selectionRing}
                     <g fill="${markerColor}" stroke="white" stroke-width="3" stroke-linejoin="round">${markerShape}</g>
                     <text x="15" y="${markerTextY}" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="${markerFontSize}" font-weight="700">${markerLabel}</text>
                 </svg>`,
@@ -23516,6 +24175,7 @@
                 `;
 
                 marker.bindPopup(popupContent, { maxWidth: 480, minWidth: 380 });
+                attachMapMarkerSelectHandler(marker, building.bin);
                 mapMarkers.push(marker);
                 if (hiddenByCurrentSettings) {
                     buildingMap.removeLayer(marker);
@@ -24031,6 +24691,8 @@
             };
             legend.addTo(buildingMap);
             scheduleMapLiveTableRefresh();
+            pruneMapBuildingSelection();
+            syncMapSelectModeUi();
         }
         
         // Toggle map legend visibility
