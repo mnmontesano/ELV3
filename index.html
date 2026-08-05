@@ -10701,7 +10701,11 @@
                 ? window.lastBulkSearchResults.binGroups
                 : {};
             if (binGroups[bin]) return binGroups[bin];
-            return binTarget && Array.isArray(binTarget.groups) ? binTarget.groups[0] : null;
+            if (binTarget && Array.isArray(binTarget.groups) && binTarget.groups[0]) {
+                return binTarget.groups[0];
+            }
+            const resolved = resolveMapDeviceReportGroup(bin);
+            return resolved && resolved.group ? resolved.group : null;
         }
 
         function getSavedDeviceNumbersForBinTarget(binTarget) {
@@ -11530,8 +11534,8 @@
                 return;
             }
 
-            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
-            const group = binGroups && binGroups[normalizedBin];
+            const resolved = resolveMapDeviceReportGroup(normalizedBin);
+            const group = resolved && resolved.group;
             if (!group) {
                 showMapNotification('No device data available for this building', '#ff6b6b');
                 return;
@@ -15939,6 +15943,14 @@
                                    ⬆ Move to Buildings &amp; Fetch Device Data
                                </button>`
                             : `<div style="margin-top:5px; font-size:0.8em; opacity:0.5; font-style:italic;">No BIN — cannot move to main buildings</div>`;
+                        const hasDevices = Array.isArray(loc.devices) && loc.devices.length > 0;
+                        const deviceReportBtn = (hasDevices || hasBin)
+                            ? `<button onclick="showAdditionalLocationDeviceReport(${loc.latitude}, ${loc.longitude})"
+                                       title="View the full device report for this location"
+                                       style="width:100%; margin-top:6px; padding:5px 8px; background:rgba(26,115,232,0.1); color:#1a73e8; border:1px solid rgba(26,115,232,0.35); border-radius:4px; cursor:pointer; font-size:0.88em; font-weight:600; display:flex; align-items:center; justify-content:center; gap:5px;">
+                                   📋 Full Device Report${hasDevices ? ` (${loc.devices.length})` : ''}
+                               </button>`
+                            : '';
                         return `
                         <div id="addLocCard-${index}" data-mcp-add-loc="1" data-house="${loc.isHouse ? '1' : ''}" data-bin="${loc.bin || ''}" data-address="${addrEsc}" data-custom="${customEsc}" data-coords="${coordsEsc}" style="background: var(--input-bg); padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid var(--input-border);">
                             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px;">
@@ -15951,6 +15963,7 @@
                                         title="Remove location"
                                         style="flex-shrink:0; background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.4); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 0.88em;">✕</button>
                             </div>
+                            ${deviceReportBtn}
                             ${promoteBtn}
                         </div>`;
                     }).join('');
@@ -19122,22 +19135,143 @@
             if (existed) scheduleMapLiveTableRefresh();
         }
 
-        function showDeviceDetailModal(bin) {
-            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
-            const group = binGroups && binGroups[bin];
-            if (!group) {
+        function resolveMapDeviceReportGroup(bin, options) {
+            const opts = options || {};
+            const normalizedBin = String(bin || '').trim();
+
+            if (opts.group && typeof opts.group === 'object') {
+                return {
+                    bin: normalizedBin || String(opts.group.bin || '').trim(),
+                    group: opts.group,
+                    source: opts.source || 'provided'
+                };
+            }
+
+            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups
+                ? window.lastBulkSearchResults.binGroups
+                : {};
+            if (normalizedBin && binGroups[normalizedBin]) {
+                return {
+                    bin: normalizedBin,
+                    group: binGroups[normalizedBin],
+                    source: 'buildings'
+                };
+            }
+
+            const locations = getAdditionalLocations();
+            const lat = opts.latitude != null ? Number(opts.latitude) : null;
+            const lng = opts.longitude != null ? Number(opts.longitude) : null;
+            let location = null;
+            if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                location = locations.find(loc =>
+                    loc && Number(loc.latitude) === lat && Number(loc.longitude) === lng
+                ) || null;
+            }
+            if (!location && normalizedBin) {
+                location = locations.find(loc =>
+                    loc && String(loc.bin || '').trim() === normalizedBin
+                ) || null;
+            }
+            if (!location) return null;
+
+            return {
+                bin: String(location.bin || normalizedBin || '').trim(),
+                group: {
+                    address: location.customName || location.label || (location.bin ? ('BIN ' + location.bin) : 'Custom location'),
+                    devices: Array.isArray(location.devices) ? location.devices : [],
+                    latitude: location.latitude,
+                    longitude: location.longitude,
+                    bin: location.bin || ''
+                },
+                source: 'additional',
+                location
+            };
+        }
+
+        async function showAdditionalLocationDeviceReport(lat, lng) {
+            const latitude = Number(lat);
+            const longitude = Number(lng);
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+                showMapNotification('Location not found', '#ff6b6b');
+                return;
+            }
+
+            const locations = getAdditionalLocations();
+            const index = locations.findIndex(loc =>
+                loc && Number(loc.latitude) === latitude && Number(loc.longitude) === longitude
+            );
+            if (index === -1) {
+                showMapNotification('Location not found', '#ff6b6b');
+                return;
+            }
+
+            const location = locations[index];
+            const hasDevices = Array.isArray(location.devices) && location.devices.length > 0;
+            if (!hasDevices && location.bin) {
+                showMapNotification(`Loading devices for BIN ${location.bin}…`, '#00bcd4');
+                try {
+                    const fullData = await lookupLocationByBin(location.bin);
+                    if (fullData && Array.isArray(fullData.devices) && fullData.devices.length > 0) {
+                        location.devices = fullData.devices;
+                        if (!location.label && fullData.label) location.label = fullData.label;
+                        if (!location.latitude && fullData.latitude) location.latitude = fullData.latitude;
+                        if (!location.longitude && fullData.longitude) location.longitude = fullData.longitude;
+                        setAdditionalLocations(locations);
+                        updateAdditionalLocationsPanel();
+                        if (buildingMap && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                            initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Could not load devices for additional location:', error);
+                }
+            }
+
+            if (!Array.isArray(location.devices) || location.devices.length === 0) {
+                showMapNotification(
+                    location.bin
+                        ? `No device data found for BIN ${location.bin}`
+                        : 'No device data available for this location',
+                    '#ff6b6b'
+                );
+                return;
+            }
+
+            showDeviceDetailModal(location.bin || '', {
+                latitude: location.latitude,
+                longitude: location.longitude,
+                source: 'additional',
+                group: {
+                    address: location.customName || location.label || (location.bin ? ('BIN ' + location.bin) : 'Custom location'),
+                    devices: location.devices,
+                    latitude: location.latitude,
+                    longitude: location.longitude,
+                    bin: location.bin || ''
+                }
+            });
+        }
+
+        function showDeviceDetailModal(bin, options) {
+            const resolved = resolveMapDeviceReportGroup(bin, options);
+            if (!resolved || !resolved.group) {
                 showMapNotification('No device data available for this building', '#ff6b6b');
                 return;
             }
 
-            const address = group.address || bin;
+            const group = resolved.group;
+            const reportBin = String(resolved.bin || bin || '').trim();
+            // Keep `bin` as the report key so existing modal markup/IDs continue to work.
+            bin = reportBin;
+            const address = group.address || group.label || reportBin || 'Custom location';
             const devices = group.devices || [];
             const activeDeviceCount = countMapJobDevices(devices);
             const currentYear = new Date().getFullYear();
             const today = new Date(); today.setHours(0,0,0,0);
+            const binLabel = reportBin ? (`BIN ${reportBin}`) : 'Additional location';
+            const binForJs = String(reportBin || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
             const getDeviceReportTestInfo = function(device) {
-                return getMapDeviceReportTestInfo(device, currentYear, bin);
+                return getMapDeviceReportTestInfo(device, currentYear, reportBin);
             };
 
             const getDeviceReportPendingTests = function(testInfo) {
@@ -19602,15 +19736,15 @@
                     <div id="deviceReportPanelHeader" style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:2px solid var(--input-border);background:var(--panel-bg);flex-shrink:0;cursor:grab;user-select:none;touch-action:none;">
                         <div>
                             <div style="font-weight:700;font-size:17px;color:var(--header-color);">📋 Device Report</div>
-                            <div style="font-size:14px;opacity:0.65;margin-top:2px;">${address} &nbsp;·&nbsp; BIN ${bin} &nbsp;·&nbsp; ${activeDeviceCount} device${activeDeviceCount !== 1 ? 's' : ''}</div>
+                            <div style="font-size:14px;opacity:0.65;margin-top:2px;">${escapeMapSuggestionHtml(address)} &nbsp;·&nbsp; ${escapeMapSuggestionHtml(binLabel)} &nbsp;·&nbsp; ${activeDeviceCount} device${activeDeviceCount !== 1 ? 's' : ''}</div>
                         </div>
                         <div style="display:flex;align-items:center;gap:10px;margin-left:auto;">
-                            <button id="deviceReportCheckNewDevicesBtn"
-                                    onclick="checkMapBuildingBinForNewDevices('${String(bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"
+                            ${reportBin ? `<button id="deviceReportCheckNewDevicesBtn"
+                                    onclick="checkMapBuildingBinForNewDevices('${binForJs}')"
                                     title="Search DOB for new devices under this BIN"
                                     style="background:#17a2b8;border:none;border-radius:6px;padding:7px 14px;cursor:pointer;color:white;font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px;white-space:nowrap;">
                                 Check New Devices
-                            </button>
+                            </button>` : ''}
                             <button onclick="window.open('https://a810-dobnow.nyc.gov/publish/Index.html#!/', '_blank', 'noopener,noreferrer,width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes,location=yes')"
                                     style="background:#27ae60;border:none;border-radius:6px;padding:7px 14px;cursor:pointer;color:white;font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px;white-space:nowrap;">
                                 DOB Now
@@ -24843,6 +24977,15 @@
                             ${removedDeletedList}
                             ${removedDeletedDevices.length > 3 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 6px;">+${removedDeletedDevices.length - 3} more...</div>` : ''}
                         </div>` : ''}
+                        ` : ''}
+
+                        ${(deviceCount > 0 || location.bin) ? `
+                        <button onclick="showAdditionalLocationDeviceReport(${location.latitude}, ${location.longitude})"
+                                style="width: 100%; margin-top: 10px; padding: 8px; background: rgba(26,115,232,0.1); border: 1px solid rgba(26,115,232,0.4); border-radius: 6px; cursor: pointer; color: #1a73e8; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.2s;"
+                                onmouseover="this.style.background='rgba(26,115,232,0.2)'"
+                                onmouseout="this.style.background='rgba(26,115,232,0.1)'">
+                            📋 Full Device Report
+                        </button>
                         ` : ''}
                     </div>
                 `;
@@ -36365,7 +36508,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.1.2</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.1.3</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
