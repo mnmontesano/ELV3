@@ -10069,6 +10069,8 @@
         let mapMarkers = [];
         let mapSelectMode = false;
         let mapSelectedBins = new Set();
+        let mapContainerResizeObserver = null;
+        let initBuildingMapInProgress = false;
 
         // Safari-safe compatibility helpers (avoid relying on newer APIs at runtime)
         function mapFlat(list, mapper) {
@@ -11983,6 +11985,31 @@
             }
         }
 
+        function teardownBuildingMapInstance() {
+            if (mapContainerResizeObserver) {
+                try { mapContainerResizeObserver.disconnect(); } catch (error) { /* ignore */ }
+                mapContainerResizeObserver = null;
+            }
+            if (buildingMap) {
+                try { buildingMap.remove(); } catch (error) {
+                    console.warn('Failed to remove existing map instance:', error);
+                }
+                buildingMap = null;
+            }
+            const mapContainer = document.getElementById('buildingMap');
+            if (mapContainer) {
+                // Leaflet can leave the container marked as initialized if remove() fails mid-way.
+                if (mapContainer._leaflet_id) {
+                    try { delete mapContainer._leaflet_id; } catch (error) {
+                        mapContainer._leaflet_id = null;
+                    }
+                }
+                mapContainer.innerHTML = '';
+            }
+            mapMarkers = [];
+            additionalLocationMarkers = [];
+        }
+
         function renderMapNewDevicesResultsSectionHtml(discovered, modalRootId) {
             const devices = Array.isArray(discovered) ? discovered : [];
             if (devices.length === 0) return '';
@@ -12315,82 +12342,100 @@
                 '#0d6efd'
             );
 
-            const freshByDevice = {};
-            const failed = [];
-            for (let i = 0; i < uniqueDeviceNumbers.length; i++) {
-                const deviceNumber = uniqueDeviceNumbers[i];
-                try {
-                    freshByDevice[deviceNumber] = await fetchCurrentDobDeviceRecord(deviceNumber);
-                } catch (error) {
-                    console.warn('DOB info update failed for device:', deviceNumber, error);
-                    failed.push(deviceNumber);
+            try {
+                const freshByDevice = {};
+                const failed = [];
+                for (let i = 0; i < uniqueDeviceNumbers.length; i++) {
+                    const deviceNumber = uniqueDeviceNumbers[i];
+                    try {
+                        freshByDevice[deviceNumber] = await fetchCurrentDobDeviceRecord(deviceNumber);
+                    } catch (error) {
+                        console.warn('DOB info update failed for device:', deviceNumber, error);
+                        failed.push(deviceNumber);
+                    }
+                    completedSteps++;
+                    reportProgress('Updating');
                 }
-                completedSteps++;
-                reportProgress('Updating');
-            }
 
-            let dateUpdates = 0;
-            const changeRows = [];
-            const touchedBins = new Set();
-            refs.forEach(ref => {
-                const fresh = freshByDevice[ref.deviceNumber];
-                if (!fresh) return;
-                const changedDates = mergeDobDeviceRecord(ref.device, fresh);
-                if (changedDates.length > 0) {
-                    dateUpdates += changedDates.length;
-                    if (ref.bin) touchedBins.add(String(ref.bin));
-                    changedDates.forEach(change => {
-                        changeRows.push({
-                            deviceNumber: ref.deviceNumber,
-                            bin: ref.bin,
-                            address: ref.group && (ref.group.address || ref.group.label) ? (ref.group.address || ref.group.label) : '',
-                            ...change
+                let dateUpdates = 0;
+                const changeRows = [];
+                const touchedBins = new Set();
+                refs.forEach(ref => {
+                    const fresh = freshByDevice[ref.deviceNumber];
+                    if (!fresh) return;
+                    const changedDates = mergeDobDeviceRecord(ref.device, fresh);
+                    if (changedDates.length > 0) {
+                        dateUpdates += changedDates.length;
+                        if (ref.bin) touchedBins.add(String(ref.bin));
+                        changedDates.forEach(change => {
+                            changeRows.push({
+                                deviceNumber: ref.deviceNumber,
+                                bin: ref.bin,
+                                address: ref.group && (ref.group.address || ref.group.label) ? (ref.group.address || ref.group.label) : '',
+                                ...change
+                            });
                         });
+                    }
+                });
+
+                let monitoredNewDevices = [];
+                if (monitoredTargets.length > 0) {
+                    reportProgress('Radar check');
+                    window.pendingDobNewDeviceCandidates = window.pendingDobNewDeviceCandidates || {};
+                    const discovery = await discoverNewDobDevicesForMapBins(monitoredTargets, (done) => {
+                        completedSteps = uniqueDeviceNumbers.length + done;
+                        reportProgress('Radar check');
+                    });
+                    monitoredNewDevices = discovery.candidates || [];
+                    (discovery.failedBins || []).forEach(bin => {
+                        if (!failed.includes(`BIN ${bin}`)) failed.push(`BIN ${bin}`);
                     });
                 }
-            });
 
-            let monitoredNewDevices = [];
-            if (monitoredTargets.length > 0) {
-                reportProgress('Radar check');
-                window.pendingDobNewDeviceCandidates = window.pendingDobNewDeviceCandidates || {};
-                const discovery = await discoverNewDobDevicesForMapBins(monitoredTargets, (done) => {
-                    completedSteps = uniqueDeviceNumbers.length + done;
-                    reportProgress('Radar check');
-                });
-                monitoredNewDevices = discovery.candidates || [];
-                (discovery.failedBins || []).forEach(bin => {
-                    if (!failed.includes(`BIN ${bin}`)) failed.push(`BIN ${bin}`);
-                });
+                const dobDetectedAt = Date.now();
+                const confirmationRows = recordMapDobCompletionConfirmations(touchedBins, changeRows, dobDetectedAt);
+                const autoCompletedRows = autoCompleteMapBuildingsFromDobUpdate(touchedBins);
+
+                setMapDobInfoUpdatedAt(Date.now());
+                updateDobInfoButtonState(true, 'Refreshing map...', 100);
+                // Yield so the button label can paint before the synchronous map rebuild.
+                await new Promise(resolve => setTimeout(resolve, 0));
+
+                let refreshFailed = false;
+                try {
+                    updateMapControlsPanel();
+                    refreshMapViewAfterDobInfoUpdate();
+                } catch (error) {
+                    refreshFailed = true;
+                    console.error('Map refresh failed after DOB Info Update:', error);
+                    showMapNotification('DOB data updated, but the map refresh failed. Try closing and reopening the map.', '#ff6b6b');
+                }
+
+                if (!refreshFailed) {
+                    const saveHint = currentMapViewFileHandle
+                        ? ' Click Save to overwrite the linked file.'
+                        : ' Save the map view to keep these updates in your file.';
+                    const autoCompleteText = autoCompletedRows.length > 0
+                        ? ` ${autoCompletedRows.length} building${autoCompletedRows.length !== 1 ? 's' : ''} auto-marked completed.`
+                        : '';
+                    const confirmationText = confirmationRows.length > 0
+                        ? ` DOB posting delay recorded for ${confirmationRows.length} building${confirmationRows.length !== 1 ? 's' : ''}.`
+                        : '';
+                    const monitorText = monitoredNewDevices.length > 0
+                        ? ` 📡 ${monitoredNewDevices.length} new device${monitoredNewDevices.length !== 1 ? 's' : ''} on monitored buildings.`
+                        : (monitoredTargets.length > 0 ? ' No new devices on monitored buildings.' : '');
+                    showMapNotification(
+                        `DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${monitorText}${autoCompleteText}${confirmationText}${saveHint}`,
+                        dateUpdates > 0 || monitoredNewDevices.length > 0 || autoCompletedRows.length > 0 || confirmationRows.length > 0 ? '#27ae60' : '#17a2b8'
+                    );
+                }
+                setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows, monitoredNewDevices, confirmationRows), 150);
+            } catch (error) {
+                console.error('DOB Info Update failed:', error);
+                showMapNotification('DOB Info Update failed. Please try again.', '#ff6b6b');
+            } finally {
+                updateDobInfoButtonState(false);
             }
-
-            const dobDetectedAt = Date.now();
-            const confirmationRows = recordMapDobCompletionConfirmations(touchedBins, changeRows, dobDetectedAt);
-            const autoCompletedRows = autoCompleteMapBuildingsFromDobUpdate(touchedBins);
-
-            setMapDobInfoUpdatedAt(Date.now());
-            updateDobInfoButtonState(true, 'Refreshing map...', 100);
-            updateMapControlsPanel();
-            refreshMapViewAfterDobInfoUpdate();
-
-            updateDobInfoButtonState(false);
-            const saveHint = currentMapViewFileHandle
-                ? ' Click Save to overwrite the linked file.'
-                : ' Save the map view to keep these updates in your file.';
-            const autoCompleteText = autoCompletedRows.length > 0
-                ? ` ${autoCompletedRows.length} building${autoCompletedRows.length !== 1 ? 's' : ''} auto-marked completed.`
-                : '';
-            const confirmationText = confirmationRows.length > 0
-                ? ` DOB posting delay recorded for ${confirmationRows.length} building${confirmationRows.length !== 1 ? 's' : ''}.`
-                : '';
-            const monitorText = monitoredNewDevices.length > 0
-                ? ` 📡 ${monitoredNewDevices.length} new device${monitoredNewDevices.length !== 1 ? 's' : ''} on monitored buildings.`
-                : (monitoredTargets.length > 0 ? ' No new devices on monitored buildings.' : '');
-            showMapNotification(
-                `DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${monitorText}${autoCompleteText}${confirmationText}${saveHint}`,
-                dateUpdates > 0 || monitoredNewDevices.length > 0 || autoCompletedRows.length > 0 || confirmationRows.length > 0 ? '#27ae60' : '#17a2b8'
-            );
-            setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows, monitoredNewDevices, confirmationRows), 150);
         }
 
         const MAP_EXCEL_CELL_LIMIT = 32767;
@@ -22997,10 +23042,7 @@
             }
             
             // Clean up map
-            if (buildingMap) {
-                buildingMap.remove();
-                buildingMap = null;
-            }
+            teardownBuildingMapInstance();
             mapMarkers = [];
             additionalLocationMarkers = [];
             mapBuildingsData = [];
@@ -23745,7 +23787,17 @@
         }
 
         function initBuildingMap(binGroups, preserveView) {
+            if (initBuildingMapInProgress) {
+                console.warn('initBuildingMap skipped because a rebuild is already in progress');
+                return;
+            }
+            initBuildingMapInProgress = true;
+            try {
             const mapContainer = document.getElementById('buildingMap');
+            if (!mapContainer) {
+                console.warn('Map container #buildingMap was not found');
+                return;
+            }
             const loadedState = pendingLoadedMapViewState;
             pendingLoadedMapViewState = null;
             
@@ -23753,15 +23805,16 @@
             let savedCenter = null;
             let savedZoom = null;
             if (preserveView && buildingMap) {
-                savedCenter = buildingMap.getCenter();
-                savedZoom = buildingMap.getZoom();
+                try {
+                    savedCenter = buildingMap.getCenter();
+                    savedZoom = buildingMap.getZoom();
+                } catch (error) {
+                    console.warn('Could not preserve current map view:', error);
+                }
             }
             
-            // Clear any existing map
-            if (buildingMap) {
-                buildingMap.remove();
-                buildingMap = null;
-            }
+            // Clear any existing map (and leaked ResizeObservers / Leaflet container state)
+            teardownBuildingMapInstance();
             mapMarkers = [];
             additionalLocationMarkers = [];
 
@@ -23914,7 +23967,7 @@
                         
                         buildingsWithCoords.push({
                             bin,
-                            address: group.address,
+                            address: group.address || '',
                             latitude: lat,
                             longitude: lng,
                             deviceCount: activeDeviceCount,
@@ -23943,7 +23996,9 @@
             const visibleBuildingsWithCoords = buildingsWithCoords.filter(building => !isBuildingHiddenByMapSettings(building));
             const visibleDevices = visibleBuildingsWithCoords.reduce((sum, building) => sum + building.deviceCount, 0);
             const hiddenText = hiddenCount > 0 ? ` (${hiddenCount} hidden)` : '';
-            countDisplay.textContent = `${visibleBuildingsWithCoords.length} buildings with ${visibleDevices} devices${hiddenText}`;
+            if (countDisplay) {
+                countDisplay.textContent = `${visibleBuildingsWithCoords.length} buildings with ${visibleDevices} devices${hiddenText}`;
+            }
 
             if (buildingsWithCoords.length === 0) {
                 mapContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-color);"><p>No buildings with location data found. The API may not have coordinates for these addresses.</p></div>';
@@ -23970,13 +24025,17 @@
             // Set up ResizeObserver to handle map container resizing
             const modalContainer = document.getElementById('mapModalContainer');
             if (modalContainer && window.ResizeObserver) {
-                const resizeObserver = new ResizeObserver(() => {
+                if (mapContainerResizeObserver) {
+                    try { mapContainerResizeObserver.disconnect(); } catch (error) { /* ignore */ }
+                    mapContainerResizeObserver = null;
+                }
+                mapContainerResizeObserver = new ResizeObserver(() => {
                     if (buildingMap) {
                         buildingMap.invalidateSize();
                     }
                     positionMapLiveTableWithinContainer();
                 });
-                resizeObserver.observe(modalContainer);
+                mapContainerResizeObserver.observe(modalContainer);
             }
 
             // Add OpenStreetMap tiles
@@ -24087,16 +24146,19 @@
                 }).join('');
                 
                 // Escape address for use in onclick attributes
-                const escapedAddress = building.address.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const escapedAddress = String(building.address || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 
                 // Get current month label for this building
                 const currentMonthLabel = getMonthLabel(building.bin);
                 const rawBuildingNote = getMapNote(building.bin);
                 const currentBuildingNote = escapeMapSuggestionHtml(rawBuildingNote);
                 const hasBuildingNote = !!rawBuildingNote.trim();
-                const scheduledDatesForBuilding = getMapBuildingTestDateRows(building.bin);
-                const hasScheduledTestDates = scheduledDatesForBuilding.length > 0;
-                const scheduledTestDayCount = scheduledDatesForBuilding.reduce((sum, row) =>
+                // Use local schedule only here — full DOB date rows are hydrated when the popup opens.
+                // Computing DOB completion rows for every building during map refresh is very expensive
+                // and was freezing the UI on "Refreshing map..." after DOB Info Update.
+                const localScheduleRows = getMapTypedScheduleRows(building.bin);
+                const hasScheduledTestDates = localScheduleRows.length > 0;
+                const scheduledTestDayCount = localScheduleRows.reduce((sum, row) =>
                     sum + (Array.isArray(row.dates) && row.dates.length ? row.dates.length : 1), 0
                 );
                 const completedData = getMapCompleted()[building.bin] || {};
@@ -24283,10 +24345,8 @@
                                             style="background: #1a73e8; border: none; border-radius: 4px; padding: 3px 10px; cursor: pointer; color: white; font-size: 11px; font-weight: 600;">+ Add / Edit</button>
                                 </div>
                                 <div id="mapCategoryCompletionStatus_${building.bin}">
-                                    ${renderMapCategoryCompletionStatusHtml(building.bin)}
                                 </div>
                                 <div id="mapScheduleDateList_${building.bin}">
-                                    ${renderMapScheduleDateRows(building.bin)}
                                 </div>
                             </div>
                         </div>
@@ -24481,7 +24541,7 @@
                             status: device.device_status || 'N/A',
                             hasPVI,
                             hasCat1,
-                            nextRequiredTest: getMapNextRequiredTestLabel(device, currentYear, bin),
+                            nextRequiredTest: getMapNextRequiredTestLabel(device, currentYear, location.bin),
                             eligibleDate,
                             daysUntil,
                             mostRecentTest
@@ -24607,7 +24667,7 @@
                 }).join('');
                 
                 const totalViolations = violationDetails.length;
-                const escapedAddress = location.label.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const escapedAddress = String(location.label || location.customName || location.bin || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 const currentMonthLabel = location.bin ? getMonthLabel(location.bin) : null;
                 const headerAccent = isHouse ? '#8d6e63' : (isTransportation ? MAP_TRANSPORTATION_COLOR : (hasCustomName ? '#e64a19' : '#00bcd4'));
                 
@@ -24615,7 +24675,7 @@
                 const additionalPopupContent = `
                     <div class="map-popup-content" style="min-width: 380px; max-width: 460px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${headerAccent};">
-                            <div style="font-weight: bold; font-size: 14px; flex: 1; line-height: 1.35; white-space: normal; word-break: break-word;">${(location.customName || location.label).toUpperCase()}</div>
+                            <div style="font-weight: bold; font-size: 14px; flex: 1; line-height: 1.35; white-space: normal; word-break: break-word;">${String(location.customName || location.label || ('BIN ' + (location.bin || ''))).toUpperCase()}</div>
                             <div style="display: flex; gap: 4px; margin-left: 8px; flex-wrap: wrap; justify-content: flex-end;">
                                 ${location.bin ? `
                                 <button onclick="promoteAdditionalLocationByCoords(${location.latitude}, ${location.longitude})"
@@ -24901,6 +24961,9 @@
             scheduleMapLiveTableRefresh();
             pruneMapBuildingSelection();
             syncMapSelectModeUi();
+            } finally {
+                initBuildingMapInProgress = false;
+            }
         }
         
         // Toggle map legend visibility
@@ -36302,7 +36365,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.1.1</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.1.2</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
