@@ -15264,7 +15264,18 @@
                 renderLoadedMapViewSummary(view);
             }
 
-            pendingLoadedMapViewState = view.mapState || null;
+            pendingLoadedMapViewState = view.mapState ? { ...view.mapState } : {};
+            // Always show Settings when loading a MAP file so filters and controls
+            // are visible. (Older saves often recorded closed because load used to
+            // force-hide the panel on narrow layouts.)
+            pendingLoadedMapViewState.controlsPanelVisible = true;
+            // Clear leftover session filters before applying the file's saved mapState.
+            activeMonthFilters.clear();
+            pendingMapHideScheduledMonthPrompt = false;
+            mapHideScheduledMonthSelectionReady = false;
+            const viewFilterSelect = document.getElementById('mapViewFilterSelect');
+            if (viewFilterSelect) viewFilterSelect.value = 'all';
+            updateMonthFilterButtons();
 
             const modal = document.getElementById('buildingMapModal');
             const isMapOpen = modal && modal.style.display === 'flex';
@@ -23104,7 +23115,15 @@
             if (!_mapFullscreen) toggleMapFullscreen();
 
             // Preserve map space on narrow layouts; users can still open Settings manually.
-            applyMapControlsNarrowDefault(true);
+            // When restoring a loaded MAP file that wants Settings open, skip the force-hide
+            // so the later restore can show the panel.
+            const loadingState = pendingLoadedMapViewState;
+            const restoreSettingsOpen = !!(loadingState && loadingState.controlsPanelVisible);
+            if (!restoreSettingsOpen) {
+                applyMapControlsNarrowDefault(true);
+            } else {
+                _mapControlsLastNarrowState = isMapControlsNarrowLayout();
+            }
 
 
             // Add event listener to close modal on ESC key
@@ -25012,10 +25031,10 @@
                 const controlsPanel = document.getElementById('mapControlsPanel');
                 const searchInput = document.getElementById('mapSearchInput');
 
-                if (controlsPanel && typeof loadedState.controlsPanelVisible === 'boolean') {
-                    // A saved wide-screen preference must not reopen Settings when
-                    // the same map file is loaded on a narrow page.
-                    const restoreControlsPanelVisible = loadedState.controlsPanelVisible && !isMapControlsNarrowLayout();
+                if (controlsPanel) {
+                    // Respect the saved preference. Do not force Settings closed just because
+                    // the layout is currently narrow — users can still collapse it manually.
+                    const restoreControlsPanelVisible = loadedState.controlsPanelVisible !== false;
                     controlsPanel.style.display = restoreControlsPanelVisible ? 'flex' : 'none';
                     if (restoreControlsPanelVisible && !mapControlsPanelIsPopped) {
                         setDockedMapControlsToDefaultWidth(controlsPanel);
@@ -25034,22 +25053,27 @@
                     ? loadedState.monthFilters
                     : (loadedState.monthFilter ? [loadedState.monthFilter] : []);
 
+                activeMonthFilters.clear();
                 if (monthsToRestore.length > 0) {
-                    activeMonthFilters.clear();
                     monthsToRestore.forEach(m => activeMonthFilters.add(m));
-                    updateMonthFilterButtons();
-                    applyMonthFilters({ fitMap: false });
-                } else if (loadedState.searchTerm) {
-                    searchMapBuildings({ fitMap: false, openPopup: false });
                 }
+                updateMonthFilterButtons();
 
-                // Restore the map view dropdown filter (e.g. hide-scheduled)
-                if (typeof loadedState.viewFilter === 'string') {
-                    const viewFilterSelect = document.getElementById('mapViewFilterSelect');
-                    if (viewFilterSelect) viewFilterSelect.value = loadedState.viewFilter;
-                    // Skip the month-selection prompt on restore; the saved month
-                    // filters (restored above) already scope the filter.
-                    mapHideScheduledMonthSelectionReady = loadedState.viewFilter === 'hide-scheduled';
+                // Restore the map view dropdown filter (e.g. hide-scheduled / cat5:YYYY)
+                const viewFilterSelect = document.getElementById('mapViewFilterSelect');
+                const savedViewFilter = (typeof loadedState.viewFilter === 'string' && loadedState.viewFilter)
+                    ? loadedState.viewFilter
+                    : 'all';
+                if (savedViewFilter.indexOf('cat5:') === 0) {
+                    const year = parseInt(savedViewFilter.replace('cat5:', ''), 10);
+                    if (year) ensureMapCategory5FilterOption(year);
+                }
+                if (viewFilterSelect) viewFilterSelect.value = savedViewFilter;
+                mapHideScheduledMonthSelectionReady = savedViewFilter === 'hide-scheduled' || activeMonthFilters.size > 0;
+                pendingMapHideScheduledMonthPrompt = false;
+
+                if (loadedState.searchTerm && savedViewFilter === 'all' && activeMonthFilters.size === 0) {
+                    searchMapBuildings({ fitMap: false, openPopup: false });
                 }
             }
 
@@ -36508,7 +36532,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.1.3</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.1.4</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
