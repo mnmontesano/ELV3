@@ -4544,11 +4544,12 @@
                 return rows;
             }).join('') || '<tr><td colspan="11" style="padding: 20px; text-align: center; opacity: 0.7;">No devices found</td></tr>';
             
-            // Calculate summary stats
-            const totalDevices = buildingData.deviceCount || 0;
+            // Calculate summary stats — exclude Removed/Deleted from device totals
+            const activeBuildingDevices = (buildingData.devices || []).filter(d => !isRemovedFromMapJob(d));
+            const totalDevices = activeBuildingDevices.length;
             const totalViolations = buildingData.violationCount || 0;
-            const readyDevices = buildingData.devices?.filter(d => d.isReady === 'Yes' || d.isReady === '✓').length || 0;
-            const notReadyDevices = totalDevices - readyDevices;
+            const readyDevices = activeBuildingDevices.filter(d => d.isReady === 'Yes' || d.isReady === '✓').length;
+            const notReadyDevices = activeBuildingDevices.filter(d => d.isReady === 'No').length;
             
             // Create and show the full-screen modal
             const modalHTML = `
@@ -8773,7 +8774,7 @@
                 const allBuildingsList = Object.entries(binGroups).map(([bin, group]) => ({
                     bin,
                     address: group.address,
-                    deviceCount: group.devices.length,
+                    deviceCount: countMapJobDevices(group.devices),
                     violationCount: group.devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0),
                     devices: group.devices.map(d => {
                         const pviDate = d.periodic_latest_inspection ? new Date(d.periodic_latest_inspection) : null;
@@ -9037,7 +9038,7 @@
                         return {
                             bin,
                             address: group.address,
-                            deviceCount: group.devices.length,
+                            deviceCount: countMapJobDevices(group.devices),
                             violationCount: group.devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0),
                             devicesWithViolations: group.devices.filter(d => d.violations && d.violations.length > 0).length,
                             devices: group.devices.filter(d => d.violations && d.violations.length > 0).map(calculateDeviceInfo),
@@ -9071,7 +9072,7 @@
                         return {
                             bin,
                             address: group.address,
-                            deviceCount: group.devices.length,
+                            deviceCount: countMapJobDevices(group.devices),
                             violationCount: group.devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0),
                             devicesWithViolations: group.devices.filter(d => d.violations && d.violations.length > 0).length,
                             devices: group.devices.map(calculateDeviceInfo),
@@ -9542,7 +9543,7 @@
                                             ${buildingBreakdownData.map(item => `
                                                 <tr class="summary-row" data-bin="${item.bin}" data-address="${item.group.address}" data-devices="${item.deviceNumbers}" style="border-bottom: 1px solid var(--input-border);">
                                                     <td style="padding: 8px 10px; color: var(--text-color);">${item.group.address}</td>
-                                                    <td style="padding: 8px 10px; text-align: center; color: var(--text-color); font-weight: 500;">${item.group.devices.length}</td>
+                                                    <td style="padding: 8px 10px; text-align: center; color: var(--text-color); font-weight: 500;">${countMapJobDevices(item.group.devices)}</td>
                                                     <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: ${item.readyCount > 0 ? '#4CAF50' : 'var(--text-color)'};">${item.readyCount}</td>
                                                     <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: ${item.notReadyCount > 0 ? '#ff6b6b' : 'var(--text-color)'};">${item.notReadyCount}</td>
                                                     <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: ${item.violations > 0 ? '#ff6b6b' : '#4CAF50'};">${item.violations}</td>
@@ -9591,7 +9592,7 @@
                                         <div style="display: flex; gap: 20px; flex-wrap: wrap;">
                                             <div>
                                                 <strong style="color: var(--header-color);">Devices:</strong> 
-                                                <span style="color: var(--text-color); font-weight: 600;">${group.devices.length}</span>
+                                                <span style="color: var(--text-color); font-weight: 600;">${countMapJobDevices(group.devices)}</span>
                                             </div>
                                             <div>
                                                 <strong style="color: var(--header-color);">Ready:</strong> 
@@ -13021,7 +13022,7 @@
                         readOnlyColumn('context:address', 'Building Address', row => getMapTablePlanningAddress(row.bin, row.group)),
                         readOnlyColumn('context:bin', 'BIN', row => row.bin, { defaultHidden: true }),
                         readOnlyColumn('context:source', 'Source', row => row.sourceLabel, { defaultHidden: true }),
-                        readOnlyColumn('context:device_count', 'Device Count', row => Array.isArray(row.group.devices) ? row.group.devices.length : 0),
+                        readOnlyColumn('context:device_count', 'Device Count', row => countMapJobDevices(row.group && row.group.devices)),
                         ...groupKeys.map(key => fieldColumn('building', key, 'group', { defaultHidden: isHiddenTableField(key) }))
                     ]
                 },
@@ -24026,7 +24027,6 @@
                     const lat = parseFloat(group.latitude);
                     const lng = parseFloat(group.longitude);
                     if (!isNaN(lat) && !isNaN(lng)) {
-                        const activeDeviceCount = countMapJobDevices(group.devices);
                         // Calculate completion stats and testing eligibility for this building
                         const currentYear = new Date().getFullYear();
                         const allRequiredTestsCompletedForYear = mapDobGroupHasCurrentYearCompletion(group, currentYear, bin);
@@ -24042,7 +24042,7 @@
                         group.devices.forEach(device => {
                             const deviceStatus = (device.device_status || '').toUpperCase();
                             const deviceType = (device.device_type || '').toUpperCase();
-                            const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
+                            const isRemoved = isRemovedFromMapJob(device);
                             const isDismantled = deviceStatus.includes('DISMANTLED');
                             
                             // Track only removed/deleted devices - dismantled devices still need PVI tests
@@ -24056,7 +24056,7 @@
                                 });
                             }
                             
-                            // Skip removed devices from testing calculations
+                            // Skip removed devices from testing calculations and the Devices count
                             if (isRemoved) return;
                             
                             const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
@@ -24129,6 +24129,9 @@
                                 });
                             }
                         });
+
+                        // Devices count = active job devices only (excludes Removed/Deleted).
+                        const activeDeviceCount = readyDevices.length + notReadyDevices.length + completedDevices.length;
                         
                         buildingsWithCoords.push({
                             bin,
@@ -24669,7 +24672,6 @@
                 let calendarYear = new Date().getFullYear();
                 
                 if (location.devices && location.devices.length > 0) {
-                    deviceCount = location.devices.length;
                     const currentYear = new Date().getFullYear();
                     calendarYear = currentYear;
                     const today = new Date();
@@ -24677,7 +24679,7 @@
                     
                     location.devices.forEach(device => {
                         const deviceStatus = (device.device_status || '').toUpperCase();
-                        const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
+                        const isRemoved = isRemovedFromMapJob(device);
                         const isDismantled = deviceStatus.includes('DISMANTLED');
                         
                         // Track removed/deleted devices
@@ -24691,7 +24693,7 @@
                             });
                         }
                         
-                        // Skip removed devices from testing calculations
+                        // Skip removed devices from testing calculations and the Devices count
                         if (isRemoved) return;
                         
                         const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
@@ -24762,6 +24764,8 @@
                     const activeDeviceCountForYear = location.devices.filter(mapDobDeviceIsActiveForCompletion).length;
                     allRequiredTestsCompletedForYear = activeDeviceCountForYear > 0
                         && completedDevices.length === activeDeviceCountForYear;
+                    // Devices count = active job devices only (excludes Removed/Deleted).
+                    deviceCount = readyDevices.length + notReadyDevices.length + completedDevices.length;
                 }
                 
                 const hasCustomName = !!(location.customName && String(location.customName).trim());
