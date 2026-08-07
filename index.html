@@ -9223,7 +9223,8 @@
                         
                         // Ready/Not Ready are only for devices that still need testing this year.
                         // Year-complete devices stay out of both lists (they are Completed).
-                        if (!allTestsCompleted) {
+                        // Untested WIP devices stay out until they have inspection history.
+                        if (!allTestsCompleted && !isUntestedWorkInProgressDevice(device)) {
                             if (isReadyToTest) {
                                 devicesReadyToTest++;
                                 bulkDevicesReadyToTestList.push(testingEligibilityInfo);
@@ -9376,6 +9377,9 @@
 
                         // Year-complete devices are Completed, not Ready/Not Ready.
                         if (mapDobDeviceHasRequiredCurrentYearCompletion(device, currentYear, bin)) return;
+
+                        // Untested WIP devices stay out of Ready/Not Ready until first tested.
+                        if (isUntestedWorkInProgressDevice(device)) return;
                         
                         const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
                         const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
@@ -10147,6 +10151,21 @@
         function isRemovedFromMapJob(device) {
             const status = (device && device.device_status ? device.device_status : '').toUpperCase();
             return status.includes('REMOVED') || status.includes('DELETED');
+        }
+
+        function isWorkInProgressDevice(device) {
+            const status = (device && device.device_status ? device.device_status : '').toUpperCase();
+            return status.includes('WORK IN PROGRESS');
+        }
+
+        // WIP devices are not part of Ready/Not Ready until they have any inspection history.
+        function mapDeviceHasBeenTested(device) {
+            if (!device) return false;
+            return !!(device.periodic_latest_inspection || device.cat1_latest_report_filed || device.cat5_latest_report_filed);
+        }
+
+        function isUntestedWorkInProgressDevice(device) {
+            return isWorkInProgressDevice(device) && !mapDeviceHasBeenTested(device);
         }
 
         function countMapJobDevices(devices) {
@@ -24105,12 +24124,15 @@
                             
                             // Year-complete devices belong in Completed, not Ready/Not Ready.
                             // "Not Ready" only means the 91-day wait blocks remaining required tests.
+                            // Untested WIP devices stay out of Ready/Not Ready until first tested.
                             if (isCompleteForYear) {
                                 completedDevices.push(deviceInfo);
-                            } else if (isReady) {
-                                readyDevices.push(deviceInfo);
-                            } else {
-                                notReadyDevices.push(deviceInfo);
+                            } else if (!isUntestedWorkInProgressDevice(device)) {
+                                if (isReady) {
+                                    readyDevices.push(deviceInfo);
+                                } else {
+                                    notReadyDevices.push(deviceInfo);
+                                }
                             }
                         });
                         
@@ -24131,7 +24153,8 @@
                         });
 
                         // Devices count = active job devices only (excludes Removed/Deleted).
-                        const activeDeviceCount = readyDevices.length + notReadyDevices.length + completedDevices.length;
+                        // Includes untested WIP devices even though they are omitted from Ready/Not Ready.
+                        const activeDeviceCount = countMapJobDevices(group.devices);
                         
                         buildingsWithCoords.push({
                             bin,
@@ -24740,12 +24763,15 @@
                             mostRecentTest
                         };
                         
+                        // Untested WIP devices stay out of Ready/Not Ready until first tested.
                         if (isCompleteForYear) {
                             completedDevices.push(deviceInfo);
-                        } else if (isReady) {
-                            readyDevices.push(deviceInfo);
-                        } else {
-                            notReadyDevices.push(deviceInfo);
+                        } else if (!isUntestedWorkInProgressDevice(device)) {
+                            if (isReady) {
+                                readyDevices.push(deviceInfo);
+                            } else {
+                                notReadyDevices.push(deviceInfo);
+                            }
                         }
                         
                         // Collect violation details
@@ -24765,7 +24791,8 @@
                     allRequiredTestsCompletedForYear = activeDeviceCountForYear > 0
                         && completedDevices.length === activeDeviceCountForYear;
                     // Devices count = active job devices only (excludes Removed/Deleted).
-                    deviceCount = readyDevices.length + notReadyDevices.length + completedDevices.length;
+                    // Includes untested WIP devices even though they are omitted from Ready/Not Ready.
+                    deviceCount = countMapJobDevices(location.devices);
                 }
                 
                 const hasCustomName = !!(location.customName && String(location.customName).trim());
