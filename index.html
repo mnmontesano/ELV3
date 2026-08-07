@@ -9171,28 +9171,6 @@
                             isReadyToTest = daysUntilEligible <= 0;
                         }
                         
-                        const testingEligibilityInfo = {
-                            device_number: device.device_number,
-                            device_type: device.device_type || 'Unknown',
-                            address: `${device.house_number} ${device.street_name}`,
-                            bin: device.bin,
-                            buildingAddress: group.address,
-                            mostRecentInspection: mostRecentInspection,
-                            eligibleTestDate: eligibleTestDate,
-                            daysUntilEligible: daysUntilEligible,
-                            isReadyToTest: isReadyToTest,
-                            isDismantled: isDismantled
-                        };
-                        
-                        // Add all devices to testing eligibility lists (including dismantled - they need PVI)
-                        if (isReadyToTest) {
-                            devicesReadyToTest++;
-                            bulkDevicesReadyToTestList.push(testingEligibilityInfo);
-                        } else {
-                            devicesNotReadyToTest++;
-                            bulkDevicesNotReadyToTestList.push(testingEligibilityInfo);
-                        }
-                        
                         // CAT 5 is only required every 5 years (Dumbwaiters, Conveyors, Wheelchair Lifts, Hydraulic elevators, and Escalators don't need CAT 5)
                         let requiresCat5 = false;
                         let yearsSinceCat5 = null;
@@ -9228,6 +9206,31 @@
                         const conveyorCompleted = isConveyor && hasCat1ThisYear;
                         const bothTestsCompleted = allTestsCompleted;
                         const dismantledCompleted = isDismantled && hasPVIThisYear;
+
+                        const testingEligibilityInfo = {
+                            device_number: device.device_number,
+                            device_type: device.device_type || 'Unknown',
+                            address: `${device.house_number} ${device.street_name}`,
+                            bin: device.bin,
+                            buildingAddress: group.address,
+                            mostRecentInspection: mostRecentInspection,
+                            eligibleTestDate: eligibleTestDate,
+                            daysUntilEligible: daysUntilEligible,
+                            isReadyToTest: isReadyToTest,
+                            isDismantled: isDismantled
+                        };
+                        
+                        // Ready/Not Ready are only for devices that still need testing this year.
+                        // Year-complete devices stay out of both lists (they are Completed).
+                        if (!allTestsCompleted) {
+                            if (isReadyToTest) {
+                                devicesReadyToTest++;
+                                bulkDevicesReadyToTestList.push(testingEligibilityInfo);
+                            } else {
+                                devicesNotReadyToTest++;
+                                bulkDevicesNotReadyToTestList.push(testingEligibilityInfo);
+                            }
+                        }
                         
                         // Check if all dates are the same (potential acceptance test indicator)
                         // For CAT 5-exempt devices, only compare CAT 1 and PVI.
@@ -9369,6 +9372,9 @@
                         const isRemoved = deviceStatus.includes('REMOVED') || deviceStatus.includes('DELETED');
                         
                         if (isRemoved) return;
+
+                        // Year-complete devices are Completed, not Ready/Not Ready.
+                        if (mapDobDeviceHasRequiredCurrentYearCompletion(device, currentYear, bin)) return;
                         
                         const pviDate = device.periodic_latest_inspection ? new Date(device.periodic_latest_inspection) : null;
                         const cat1Date = device.cat1_latest_report_filed ? new Date(device.cat1_latest_report_filed) : null;
@@ -11757,13 +11763,10 @@
 
         function getMapNextRequiredTestLabel(device, year, binHint) {
             if (!device || !mapDobDeviceIsActiveForCompletion(device)) return '';
-            const missingTests = [];
-            if (!mapDobDateIsInYear(device.periodic_latest_inspection, year)) missingTests.push('PVI');
-            if (!mapDobDateIsInYear(device.cat1_latest_report_filed, year)) missingTests.push('CAT 1');
-            if (mapDobDeviceRequiresCat5ThisYear(device, year, binHint) && !mapDobDateIsInYear(device.cat5_latest_report_filed, year)) {
-                missingTests.push('CAT 5');
-            }
-            return missingTests.length > 0 ? missingTests.join(' + ') : 'All required tests filed';
+            // Use the same device-type rules as completion checks (conveyors skip PVI,
+            // dismantled skip CAT 1, CAT5-exempt types skip CAT 5, etc.).
+            const pending = getMapDeviceReportPendingTests(getMapDeviceReportTestInfo(device, year, binHint));
+            return pending.length > 0 ? pending.join(' + ') : 'All required tests filed';
         }
 
         function mapDobGroupHasCurrentYearCompletion(group, year, binHint) {
@@ -23886,8 +23889,10 @@
                 markerColor = '#607d8b'; // Blue-gray - on hold
             } else if (isFavorited) {
                 markerColor = '#9b59b6'; // Purple - favorited building
+            } else if (building.allRequiredTestsCompletedForYear) {
+                markerColor = '#4CAF50'; // Green - all required tests filed for the year
             } else if (building.notReadyDevices.length === 0 && building.readyDevices.length > 0) {
-                markerColor = '#4CAF50'; // Green - all devices ready to test
+                markerColor = '#4CAF50'; // Green - all remaining devices ready to test
             } else if (building.readyDevices.length > 0 && building.notReadyDevices.length > 0) {
                 markerColor = '#ffc107'; // Yellow - some devices ready to test
             } else {
@@ -24031,6 +24036,7 @@
                         let complete = 0, incomplete = 0;
                         const readyDevices = [];
                         const notReadyDevices = [];
+                        const completedDevices = []; // Year-complete devices (not Ready/Not Ready)
                         const removedDeletedDevices = []; // Track removed/deleted devices (not dismantled - they still need PVI)
                         
                         group.devices.forEach(device => {
@@ -24058,8 +24064,9 @@
                             const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
                             const hasPVI = pviDate && pviDate.getFullYear() === currentYear;
                             const hasCat1 = cat1Date && cat1Date.getFullYear() === currentYear;
+                            const isCompleteForYear = mapDobDeviceHasRequiredCurrentYearCompletion(device, currentYear, bin);
                             
-                            if (hasPVI && hasCat1) complete++;
+                            if (isCompleteForYear) complete++;
                             else incomplete++;
                             
                             // Calculate 91-day testing eligibility
@@ -24089,13 +24096,18 @@
                                 status: device.device_status || 'N/A',
                                 hasPVI,
                                 hasCat1,
+                                isCompleteForYear,
                                 nextRequiredTest: getMapNextRequiredTestLabel(device, currentYear, bin),
                                 eligibleDate,
                                 daysUntil,
                                 mostRecentTest
                             };
                             
-                            if (isReady) {
+                            // Year-complete devices belong in Completed, not Ready/Not Ready.
+                            // "Not Ready" only means the 91-day wait blocks remaining required tests.
+                            if (isCompleteForYear) {
+                                completedDevices.push(deviceInfo);
+                            } else if (isReady) {
                                 readyDevices.push(deviceInfo);
                             } else {
                                 notReadyDevices.push(deviceInfo);
@@ -24130,6 +24142,7 @@
                             violationDetails,
                             readyDevices,
                             notReadyDevices,
+                            completedDevices,
                             removedDeletedDevices,
                             allRequiredTestsCompletedForYear,
                             calendarYear: currentYear,
@@ -24274,6 +24287,13 @@
                         </span>
                     </div>`;
                     }).join('');
+
+                const completedList = (building.completedDevices || []).slice(0, 3).map(d =>
+                    `<div style="font-size: 11px; padding: 2px 0; display: flex; justify-content: space-between; gap: 8px;">
+                        <span style="font-weight: 600;">${d.number}</span>
+                        <span style="font-size: 10px; color: #27ae60; font-weight: 700;">Completed</span>
+                    </div>`
+                ).join('');
                 
                 // Generate list for removed/deleted devices (not dismantled - they still need PVI tests)
                 const removedDeletedList = building.removedDeletedDevices.slice(0, 3).map(d =>
@@ -24576,7 +24596,19 @@
                                     ${building.notReadyDevices.length > 3 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${building.notReadyDevices.length - 3} more...</div>` : ''}
                                 </div>
                             </div>
-                        </div>`}
+                        </div>
+                        ${(building.completedDevices && building.completedDevices.length > 0) ? `
+                        <div style="margin-top: 10px; background: rgba(39,174,96,0.08); padding: 8px; border-radius: 6px; border: 1px solid rgba(39,174,96,0.3);">
+                            <div onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.querySelector('.completed-devices-arrow').textContent = this.nextElementSibling.style.display === 'none' ? '▼' : '▲';"
+                                 style="font-size: 11px; font-weight: 600; color: #27ae60; margin-bottom: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+                                <span>✓ Completed for ${building.calendarYear} (${building.completedDevices.length})</span>
+                                <span class="completed-devices-arrow" style="font-size: 10px; font-weight: 700;">▲</span>
+                            </div>
+                            <div>
+                                ${completedList}
+                                ${building.completedDevices.length > 3 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${building.completedDevices.length - 3} more...</div>` : ''}
+                            </div>
+                        </div>` : ''}`}
                         
                         ${building.removedDeletedDevices.length > 0 ? `
                         <div style="margin-top: 10px; background: rgba(128,128,128,0.1); padding: 10px; border-radius: 6px; border: 1px solid rgba(128,128,128,0.3);">
@@ -24630,12 +24662,16 @@
                 let incomplete = 0;
                 const readyDevices = [];
                 const notReadyDevices = [];
+                const completedDevices = [];
                 const removedDeletedDevices = [];
                 const violationDetails = [];
+                let allRequiredTestsCompletedForYear = false;
+                let calendarYear = new Date().getFullYear();
                 
                 if (location.devices && location.devices.length > 0) {
                     deviceCount = location.devices.length;
                     const currentYear = new Date().getFullYear();
+                    calendarYear = currentYear;
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
                     
@@ -24663,8 +24699,9 @@
                         const cat5Date = device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
                         const hasPVI = pviDate && pviDate.getFullYear() === currentYear;
                         const hasCat1 = cat1Date && cat1Date.getFullYear() === currentYear;
+                        const isCompleteForYear = mapDobDeviceHasRequiredCurrentYearCompletion(device, currentYear, location.bin);
                         
-                        if (hasPVI && hasCat1) complete++;
+                        if (isCompleteForYear) complete++;
                         else incomplete++;
                         
                         // Calculate 91-day testing eligibility
@@ -24694,13 +24731,16 @@
                             status: device.device_status || 'N/A',
                             hasPVI,
                             hasCat1,
+                            isCompleteForYear,
                             nextRequiredTest: getMapNextRequiredTestLabel(device, currentYear, location.bin),
                             eligibleDate,
                             daysUntil,
                             mostRecentTest
                         };
                         
-                        if (isReady) {
+                        if (isCompleteForYear) {
+                            completedDevices.push(deviceInfo);
+                        } else if (isReady) {
                             readyDevices.push(deviceInfo);
                         } else {
                             notReadyDevices.push(deviceInfo);
@@ -24719,6 +24759,9 @@
                             });
                         }
                     });
+                    const activeDeviceCountForYear = location.devices.filter(mapDobDeviceIsActiveForCompletion).length;
+                    allRequiredTestsCompletedForYear = activeDeviceCountForYear > 0
+                        && completedDevices.length === activeDeviceCountForYear;
                 }
                 
                 const hasCustomName = !!(location.customName && String(location.customName).trim());
@@ -24797,6 +24840,13 @@
                         </span>
                     </div>`;
                     }).join('');
+
+                const completedList = completedDevices.slice(0, 3).map(d =>
+                    `<div style="font-size: 11px; padding: 2px 0; display: flex; justify-content: space-between; gap: 8px;">
+                        <span style="font-weight: 600;">${d.number}</span>
+                        <span style="font-size: 10px; color: #27ae60; font-weight: 700;">Completed</span>
+                    </div>`
+                ).join('');
                 
                 const removedDeletedList = removedDeletedDevices.slice(0, 3).map(d =>
                     `<div style="font-size: 11px; padding: 3px 0; display: flex; justify-content: space-between; border-bottom: 1px solid rgba(128,128,128,0.2);">
@@ -24960,6 +25010,10 @@
                             </div>
                         </div>` : ''}
                         
+                        ${allRequiredTestsCompletedForYear ? `
+                        <div style="margin-bottom: 10px; padding: 10px 12px; background: rgba(39,174,96,0.12); border: 1px solid rgba(39,174,96,0.4); border-radius: 6px; color: #27ae60; font-size: 12px; font-weight: 700; text-align: center;">
+                            All tests completed for ${calendarYear}
+                        </div>` : `
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                             <div style="background: rgba(76,175,80,0.1); padding: 8px; border-radius: 6px; border: 1px solid rgba(76,175,80,0.3);">
                                 <div onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.querySelector('.ready-devices-arrow').textContent = this.nextElementSibling.style.display === 'none' ? '▼' : '▲';"
@@ -24984,6 +25038,18 @@
                                 </div>
                             </div>
                         </div>
+                        ${completedDevices.length > 0 ? `
+                        <div style="margin-top: 10px; background: rgba(39,174,96,0.08); padding: 8px; border-radius: 6px; border: 1px solid rgba(39,174,96,0.3);">
+                            <div onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.querySelector('.completed-devices-arrow').textContent = this.nextElementSibling.style.display === 'none' ? '▼' : '▲';"
+                                 style="font-size: 11px; font-weight: 600; color: #27ae60; margin-bottom: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+                                <span>✓ Completed for ${calendarYear} (${completedDevices.length})</span>
+                                <span class="completed-devices-arrow" style="font-size: 10px; font-weight: 700;">▲</span>
+                            </div>
+                            <div>
+                                ${completedList}
+                                ${completedDevices.length > 3 ? `<div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">+${completedDevices.length - 3} more...</div>` : ''}
+                            </div>
+                        </div>` : ''}`}
                         
                         ${removedDeletedDevices.length > 0 ? `
                         <div style="margin-top: 10px; background: rgba(128,128,128,0.1); padding: 10px; border-radius: 6px; border: 1px solid rgba(128,128,128,0.3);">
@@ -25249,6 +25315,7 @@
                 const deviceNumbers = [
                     ...(building.readyDevices || []),
                     ...(building.notReadyDevices || []),
+                    ...(building.completedDevices || []),
                     ...(building.removedDeletedDevices || [])
                 ]
                     .map(device => device && device.number)
@@ -25363,6 +25430,7 @@
                 const binMatch = building.bin.toString().includes(searchTerm);
                 const deviceMatch = building.readyDevices.some(d => d.number.toUpperCase().includes(searchTerm)) ||
                                    building.notReadyDevices.some(d => d.number.toUpperCase().includes(searchTerm)) ||
+                                   ((building.completedDevices || []).some(d => d.number.toUpperCase().includes(searchTerm))) ||
                                    (building.removedDeletedDevices && building.removedDeletedDevices.some(d => d.number.toUpperCase().includes(searchTerm)));
                 return addressMatch || binMatch || deviceMatch;
             }) : [];
