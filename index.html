@@ -33478,6 +33478,17 @@
     }
 
     /**
+     * Own a PDF byte copy. pdf.js/pdf-lib may transfer/detach ArrayBuffers they receive,
+     * so callers must never reuse a buffer that was passed into those libraries.
+     */
+    function cloneElv3PdfBytes(arrayBufferOrView) {
+        var src = arrayBufferOrView instanceof Uint8Array
+            ? arrayBufferOrView
+            : new Uint8Array(arrayBufferOrView);
+        return src.slice();
+    }
+
+    /**
      * Read form field data using pdf.js (handles encrypted PDFs that pdf-lib cannot).
      * Returns { formData: {name: value}, fieldNames: [name] } or null on failure.
      */
@@ -33486,9 +33497,11 @@
         if (!loaded) { console.error('Could not load pdf.js library'); return null; }
 
         try {
-            // Copy first: pdf.js may detach the ArrayBuffer, and XFA extraction needs it.
-            var pdfBytes = new Uint8Array(arrayBuffer);
-            var xfaSourceBytes = pdfBytes.slice(0);
+            // pdf.js transfers/detaches the ArrayBuffer given as `data`. Keep separate
+            // owned copies for XFA, the first getDocument attempt, and FakeWorker retry.
+            var xfaSourceBytes = cloneElv3PdfBytes(arrayBuffer);
+            var pdfBytes = cloneElv3PdfBytes(arrayBuffer);
+            var retryBytes = cloneElv3PdfBytes(arrayBuffer);
             var xfaResult = extractELV3XfaDatasetFormData(xfaSourceBytes.buffer);
 
             var pdfDoc = null;
@@ -33501,7 +33514,6 @@
             } catch (docErr) {
                 // Worker load can fail on some local/file hosts; FakeWorker still reads forms.
                 console.error('pdf.js getDocument failed, retrying with FakeWorker:', docErr);
-                var retryBytes = pdfBytes.slice(0);
                 var fakeWorker = pdfjsLib.PDFWorker ? new pdfjsLib.PDFWorker({ name: 'elv3-form-reader' }) : null;
                 pdfDoc = await pdfjsLib.getDocument({
                     data: retryBytes,
@@ -33640,10 +33652,10 @@
             const { PDFDocument } = PDFLib;
             elv3DebugLog('Loading PDF, buffer size:', arrayBuffer.byteLength);
 
-            // Preserve a copy up front. pdf-lib/pdf.js may detach the original buffer,
-            // and encrypted DOB ELV3 trailers (with /Encrypt) often sit near EOF.
-            var sourceBytes = new Uint8Array(arrayBuffer);
-            var pdfDoc = await PDFDocument.load(sourceBytes.slice().buffer, { ignoreEncryption: true });
+            // Own durable PDF bytes up front. pdf-lib and pdf.js may transfer/detach
+            // any ArrayBuffer they receive; later XFA/AcroForm passes need intact bytes.
+            var sourceBytes = cloneElv3PdfBytes(arrayBuffer);
+            var pdfDoc = await PDFDocument.load(cloneElv3PdfBytes(sourceBytes).buffer, { ignoreEncryption: true });
             elv3DebugLog('PDF loaded successfully, pages:', pdfDoc.getPageCount());
             
             const form = pdfDoc.getForm();
@@ -33715,7 +33727,7 @@
             if (usePdfJsPrimary) {
                 var replacedEncrypted = false;
                 elv3DebugLog('=== Decrypting encrypted ELV3 AcroForm fields (empty-password RC4)... ===');
-                var acroDecrypt = extractELV3EncryptedAcroFormData(sourceBytes.slice().buffer);
+                var acroDecrypt = extractELV3EncryptedAcroFormData(cloneElv3PdfBytes(sourceBytes).buffer);
                 if (acroDecrypt && acroDecrypt.fieldNames.length > 0) {
                     for (var agk in formData) { if (formData.hasOwnProperty(agk)) delete formData[agk]; }
                     allFieldNames.length = 0;
@@ -33731,7 +33743,7 @@
 
                 if (!replacedEncrypted) {
                     elv3DebugLog('=== Using pdf.js + XFA extraction for encrypted/hybrid ELV3 PDF... ===');
-                    var pdfjsResult = await extractFormDataWithPdfJs(sourceBytes.slice().buffer);
+                    var pdfjsResult = await extractFormDataWithPdfJs(cloneElv3PdfBytes(sourceBytes).buffer);
                     if (pdfjsResult && pdfjsResult.fieldNames.length > 0) {
                         for (var gk in formData) { if (formData.hasOwnProperty(gk)) delete formData[gk]; }
                         allFieldNames.length = 0;
@@ -33753,7 +33765,7 @@
 
                 if (!replacedEncrypted) {
                     elv3DebugLog('pdf.js extraction failed; trying XFA fallback without discarding all names yet');
-                    var xfaOnly = extractELV3XfaDatasetFormData(sourceBytes.slice().buffer);
+                    var xfaOnly = extractELV3XfaDatasetFormData(cloneElv3PdfBytes(sourceBytes).buffer);
                     if (xfaOnly && (xfaOnly.fieldNames.length > 0 || Object.keys(xfaOnly.formData).length > 0)) {
                         for (var cgk in formData) { if (formData.hasOwnProperty(cgk)) delete formData[cgk]; }
                         allFieldNames.length = 0;
@@ -33778,7 +33790,7 @@
             // always merge page-scoped annotation values for multi-page PDFs.
             if (!usePdfJsPrimary && !areFieldNamesGarbled(allFieldNames) && pdfDoc.getPageCount && pdfDoc.getPageCount() > 1) {
                 elv3DebugLog('=== Supplementing pdf-lib fields with page-scoped pdf.js annotations... ===');
-                var pdfjsSupplement = await extractFormDataWithPdfJs(arrayBuffer);
+                var pdfjsSupplement = await extractFormDataWithPdfJs(cloneElv3PdfBytes(sourceBytes).buffer);
                 if (pdfjsSupplement && pdfjsSupplement.fieldNames.length > 0) {
                     for (var sk in pdfjsSupplement.formData) {
                         if (!pdfjsSupplement.formData.hasOwnProperty(sk)) continue;
@@ -33802,7 +33814,7 @@
             }
 
             // Final XFA fill-gap pass for hybrid templates that still embed datasets.
-            var xfaDirect = extractELV3XfaDatasetFormData(sourceBytes.slice().buffer);
+            var xfaDirect = extractELV3XfaDatasetFormData(cloneElv3PdfBytes(sourceBytes).buffer);
             if (xfaDirect && Object.keys(xfaDirect.formData).length > 0) {
                 mergeELV3FormExtraction(
                     { formData: formData, fieldNames: allFieldNames, fieldMeta: fieldMeta },
@@ -36631,7 +36643,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.1.5</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.1.6</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
