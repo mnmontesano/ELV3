@@ -17760,6 +17760,33 @@
             if (scheduleDateList) scheduleDateList.innerHTML = renderMapScheduleDateRows(bin);
         }
 
+        // Popup HTML is bound as a static string with empty schedule/note bodies that are
+        // filled on open. Leaflet's marker.openPopup() while already open re-runs
+        // _prepareOpen → update(), which resets innerHTML to that original string and does
+        // NOT fire popupopen again — wiping Scheduled Test Dates and related sections.
+        function hydrateOpenMapPopup(popup) {
+            if (!popup || typeof popup.getElement !== 'function') return;
+            const popupRoot = popup.getElement();
+            if (!popupRoot) return;
+            hydrateMapBuildingPopupState(popupRoot);
+            const untrackedContainer = popupRoot.querySelector
+                ? popupRoot.querySelector('[id^="mapUntrackedDevices_"]')
+                : null;
+            if (untrackedContainer && untrackedContainer.id) {
+                const bin = untrackedContainer.id.replace(/^mapUntrackedDevices_/, '');
+                if (bin) hydrateMapBuildingUntrackedDevices(bin);
+            }
+        }
+
+        function openMapMarkerPopup(marker) {
+            if (!marker || typeof marker.openPopup !== 'function') return;
+            if (typeof marker.isPopupOpen === 'function' && marker.isPopupOpen()) {
+                hydrateOpenMapPopup(typeof marker.getPopup === 'function' ? marker.getPopup() : null);
+                return;
+            }
+            marker.openPopup();
+        }
+
         function toggleMapNoteEditor(bin) {
             const editor = document.getElementById(`mapNoteEditor_${bin}`);
             const arrow = document.getElementById(`mapNoteArrow_${bin}`);
@@ -23014,7 +23041,7 @@
             if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
             const latLng = marker.getLatLng();
             buildingMap.setView([latLng.lat, latLng.lng], 17);
-            marker.openPopup();
+            openMapMarkerPopup(marker);
             if (hidden[bin] && opts.temporarilyShowHidden) {
                 showMapNotification('Temporarily showing hidden on-hold building', '#607d8b');
             }
@@ -23048,7 +23075,7 @@
 
                 const latLng = marker.getLatLng();
                 buildingMap.setView([latLng.lat, latLng.lng], 17);
-                marker.openPopup();
+                openMapMarkerPopup(marker);
 
                 const selectedFilter = getSelectedMapViewFilter();
                 if (selectedFilter && selectedFilter !== 'all') {
@@ -23091,7 +23118,7 @@
                 if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                 const latLng = marker.getLatLng();
                 buildingMap.setView([latLng.lat, latLng.lng], 17);
-                marker.openPopup();
+                openMapMarkerPopup(marker);
             };
             if (!buildingMap || !modal || modal.style.display !== 'flex') {
                 showBuildingMap();
@@ -24258,15 +24285,7 @@
             });
 
             buildingMap.on('popupopen', function (e) {
-                const popupRoot = e.popup && e.popup.getElement ? e.popup.getElement() : document;
-                hydrateMapBuildingPopupState(popupRoot);
-                const untrackedContainer = popupRoot.querySelector
-                    ? popupRoot.querySelector('[id^="mapUntrackedDevices_"]')
-                    : document.querySelector('[id^="mapUntrackedDevices_"]');
-                if (untrackedContainer && untrackedContainer.id) {
-                    const bin = untrackedContainer.id.replace(/^mapUntrackedDevices_/, '');
-                    if (bin) hydrateMapBuildingUntrackedDevices(bin);
-                }
+                hydrateOpenMapPopup(e.popup);
             });
 
             // Safari can calculate hidden/flex modal dimensions late; reflow map sizing safely.
@@ -25570,7 +25589,7 @@
                 
                 if (marker && buildingMap && shouldFitMap) {
                     buildingMap.setView([match.latitude, match.longitude], 17);
-                    if (shouldOpenPopup) marker.openPopup();
+                    if (shouldOpenPopup) openMapMarkerPopup(marker);
                 }
             } else {
                 // Multiple matches - fit bounds to show all
