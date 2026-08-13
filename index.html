@@ -17032,6 +17032,155 @@
             initBuildingMap(window.lastBulkSearchResults.binGroups, true);
         }
 
+        function getDeviceDetailModalReportContext() {
+            const modal = document.getElementById('deviceDetailModal');
+            if (!modal) {
+                return { bin: '', source: '', latitude: NaN, longitude: NaN };
+            }
+            return {
+                bin: String(modal.dataset.reportBin || '').trim(),
+                source: String(modal.dataset.reportSource || '').trim(),
+                latitude: modal.dataset.reportLat != null && modal.dataset.reportLat !== ''
+                    ? Number(modal.dataset.reportLat)
+                    : NaN,
+                longitude: modal.dataset.reportLng != null && modal.dataset.reportLng !== ''
+                    ? Number(modal.dataset.reportLng)
+                    : NaN
+            };
+        }
+
+        function reopenDeviceDetailModalFromContext(context) {
+            const ctx = context || getDeviceDetailModalReportContext();
+            const bin = String(ctx.bin || '').trim();
+            const lat = Number(ctx.latitude);
+            const lng = Number(ctx.longitude);
+            if (ctx.source === 'additional' && Number.isFinite(lat) && Number.isFinite(lng)) {
+                showDeviceDetailModal(bin, {
+                    latitude: lat,
+                    longitude: lng,
+                    source: 'additional'
+                });
+                return;
+            }
+            if (bin) {
+                showDeviceDetailModal(bin);
+                return;
+            }
+            const modal = document.getElementById('deviceDetailModal');
+            if (modal) modal.remove();
+        }
+
+        function removeMapDeviceFromReport(bin, deviceNumber) {
+            const ctx = getDeviceDetailModalReportContext();
+            const normalizedDevice = String(deviceNumber || '').trim().toUpperCase();
+            const normalizedBin = String(bin || ctx.bin || '').trim();
+            if (!normalizedDevice) {
+                showMapNotification('No device selected to remove', '#ff6b6b');
+                return;
+            }
+
+            let devicesArray = null;
+            let address = '';
+            let activityBin = normalizedBin;
+            let removedFromAdditional = false;
+
+            const preferAdditional = ctx.source === 'additional'
+                || (!normalizedBin && Number.isFinite(ctx.latitude) && Number.isFinite(ctx.longitude));
+
+            if (preferAdditional) {
+                const locations = getAdditionalLocations();
+                let location = null;
+                if (Number.isFinite(ctx.latitude) && Number.isFinite(ctx.longitude)) {
+                    location = locations.find(loc =>
+                        loc
+                        && Number(loc.latitude) === ctx.latitude
+                        && Number(loc.longitude) === ctx.longitude
+                    ) || null;
+                }
+                if (!location && normalizedBin) {
+                    location = locations.find(loc =>
+                        loc && String(loc.bin || '').trim() === normalizedBin
+                    ) || null;
+                }
+                if (location && Array.isArray(location.devices)) {
+                    devicesArray = location.devices;
+                    address = getAdditionalLocationActivityLabel(location);
+                    activityBin = String(location.bin || normalizedBin || '').trim();
+                    removedFromAdditional = true;
+                }
+            }
+
+            if (!devicesArray && normalizedBin
+                && window.lastBulkSearchResults
+                && window.lastBulkSearchResults.binGroups
+                && window.lastBulkSearchResults.binGroups[normalizedBin]) {
+                const group = window.lastBulkSearchResults.binGroups[normalizedBin];
+                if (Array.isArray(group.devices)) {
+                    devicesArray = group.devices;
+                    address = group.address || _addressOrBin(normalizedBin);
+                    activityBin = normalizedBin;
+                }
+            }
+
+            if (!devicesArray) {
+                showMapNotification('Could not find that device in the current map view', '#ff6b6b');
+                return;
+            }
+
+            const deviceIndex = devicesArray.findIndex(device =>
+                String(device && device.device_number || '').trim().toUpperCase() === normalizedDevice
+            );
+            if (deviceIndex < 0) {
+                showMapNotification(`Device ${normalizedDevice} not found in this report`, '#ff6b6b');
+                return;
+            }
+
+            const confirmLabel = address
+                ? `${normalizedDevice} at ${address}`
+                : (activityBin ? `${normalizedDevice} (BIN ${activityBin})` : normalizedDevice);
+            if (!confirm(`Remove device ${confirmLabel} from this map view?\n\nIt will no longer appear in the Device Report or building counts. Save the map file to keep this change. You can re-add it later with Check New Devices.`)) {
+                return;
+            }
+
+            devicesArray.splice(deviceIndex, 1);
+
+            if (removedFromAdditional) {
+                setAdditionalLocations(getAdditionalLocations());
+                if (typeof updateAdditionalLocationsPanel === 'function') {
+                    updateAdditionalLocationsPanel();
+                }
+            }
+
+            if (activityBin) {
+                clearMapDeviceCat5Bypass(activityBin, normalizedDevice);
+            }
+
+            addMapActivity('Removed device from map', {
+                type: 'Device',
+                bin: activityBin,
+                address: address || '',
+                details: normalizedDevice
+            });
+            showMapNotification(`Removed device ${normalizedDevice} from map view`, '#ff6b6b');
+
+            if (typeof updateMapCategory5Panel === 'function') updateMapCategory5Panel();
+            if (typeof updateMapControlsPanel === 'function') updateMapControlsPanel();
+            refreshMapViewAfterDobInfoUpdate();
+
+            if (devicesArray.length > 0) {
+                reopenDeviceDetailModalFromContext({
+                    bin: activityBin || normalizedBin,
+                    source: removedFromAdditional ? 'additional' : (ctx.source || 'buildings'),
+                    latitude: ctx.latitude,
+                    longitude: ctx.longitude
+                });
+            } else {
+                const modal = document.getElementById('deviceDetailModal');
+                if (modal) modal.remove();
+                showMapNotification('No devices left in this report', '#ff9800');
+            }
+        }
+
         function getMapCompleted() {
             return mapCompleted;
         }
@@ -19720,6 +19869,12 @@
                             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                                 <span style="font-size:13px;padding:2px 8px;border-radius:10px;background:rgba(128,128,128,0.15);">${status}</span>
                                 ${violHtml !== '<span style="opacity:0.45;">—</span>' ? `<span style="font-size:13px;">${violHtml} violation${violCount !== 1 ? 's' : ''}</span>` : ''}
+                                <button type="button"
+                                        onclick="event.stopPropagation(); removeMapDeviceFromReport('${binJs}', '${numJs}')"
+                                        title="Remove this device from the map view"
+                                        style="padding:4px 10px;border-radius:6px;border:1px solid #ff6b6b;background:rgba(255,107,107,0.1);color:#ff6b6b;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
+                                    🗑️ Remove
+                                </button>
                             </div>
                         </div>
                         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:13px;margin-bottom:8px;">
@@ -19798,6 +19953,14 @@
 
             const modal = document.createElement('div');
             modal.id = 'deviceDetailModal';
+            modal.dataset.reportBin = reportBin;
+            modal.dataset.reportSource = String(resolved.source || '');
+            if (group.latitude != null && group.latitude !== '') {
+                modal.dataset.reportLat = String(group.latitude);
+            }
+            if (group.longitude != null && group.longitude !== '') {
+                modal.dataset.reportLng = String(group.longitude);
+            }
             modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.65);z-index:20000;display:flex;align-items:center;justify-content:center;';
             modal.innerHTML = `
                 <div id="deviceDetailShell" style="width:90%;height:min(760px,88vh);max-width:760px;max-height:calc(100vh - 40px);min-width:420px;min-height:420px;display:flex;gap:12px;align-items:stretch;justify-content:center;resize:both;overflow:hidden;">
