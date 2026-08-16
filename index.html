@@ -20668,6 +20668,17 @@
                 .join('; ');
         }
 
+        function getMapBulkSchedulePreviewText(bin) {
+            const cat = getTestDatesForBin(bin, 'category');
+            const pvi = getTestDatesForBin(bin, 'pvi');
+            const general = getTestDatesForBin(bin, 'general');
+            const parts = [];
+            if (cat.length) parts.push('CAT ' + formatMapScheduleDatesForDisplay(cat));
+            if (pvi.length) parts.push('PVI ' + formatMapScheduleDatesForDisplay(pvi));
+            if (general.length) parts.push('Unspecified ' + formatMapScheduleDatesForDisplay(general));
+            return parts.join(' · ');
+        }
+
         function clearMapScheduledDatesForBinType(bin, type, options) {
             const opts = options || {};
             if (!mapTestDates[bin]) return [];
@@ -20679,15 +20690,41 @@
             if (getMapScheduleDates(record).length > 0) mapTestDates[bin] = record;
             else delete mapTestDates[bin];
             if (!opts.quiet) {
-                addMapActivity('Removed scheduled date', {
+                const typeLabel = scheduleType === 'pvi' ? 'PVI' : scheduleType === 'category' ? 'Category' : 'Unspecified';
+                addMapActivity('Cleared scheduled dates', {
                     type: 'Schedule',
                     bin,
                     address: opts.address || '',
-                    details: `${scheduleType === 'pvi' ? 'PVI' : scheduleType === 'category' ? 'Category' : 'Unspecified'} · replaced via bulk select · cleared ${removed.length}`
+                    details: `${typeLabel} · ${opts.source || 'cleared'} · ${removed.join(', ')}`
                 });
             }
             scheduleMapLiveTableRefresh();
             return removed;
+        }
+
+        function clearMapScheduledDatesForBin(bin, options) {
+            const opts = options || {};
+            const types = (opts.types && opts.types.length)
+                ? opts.types.map(normalizeMapScheduleType)
+                : ['pvi', 'category', 'general'];
+            const removedByType = {};
+            types.forEach(scheduleType => {
+                const removed = clearMapScheduledDatesForBinType(bin, scheduleType, Object.assign({}, opts, { quiet: true }));
+                if (removed.length) removedByType[scheduleType] = removed;
+            });
+            if (!opts.quiet && Object.keys(removedByType).length) {
+                const parts = Object.entries(removedByType).map(([scheduleType, dates]) => {
+                    const typeLabel = scheduleType === 'pvi' ? 'PVI' : scheduleType === 'category' ? 'Category' : 'Unspecified';
+                    return `${typeLabel} ${dates.join(', ')}`;
+                });
+                addMapActivity('Cleared scheduled dates', {
+                    type: 'Schedule',
+                    bin,
+                    address: opts.address || '',
+                    details: (opts.source ? `${opts.source} · ` : '') + parts.join(' · ')
+                });
+            }
+            return removedByType;
         }
 
         function showMapBulkDateConflictDialog(options) {
@@ -20772,17 +20809,21 @@
                 .concat(['<option value="__CLEAR__">Clear month label</option>'])
                 .join('');
 
-            const listHtml = selected.map(item => {
+            function renderMapBulkSelectedBuildingRow(item) {
                 const devicePreview = item.deviceNumbers.slice(0, 4).join(', ');
                 const moreDevices = item.deviceNumbers.length > 4 ? ` +${item.deviceNumbers.length - 4} more` : '';
+                const schedulePreview = getMapBulkSchedulePreviewText(item.bin);
                 return `<div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start; padding:7px 8px; border:1px solid var(--input-border,#444); border-radius:7px; margin-bottom:6px; background:var(--input-bg,#2a2a3e);">
                     <div style="min-width:0;">
                         <div style="font-size:12px; font-weight:700; color:var(--text-color,#fff); word-break:break-word;">${escapeMapSuggestionHtml(item.address)}</div>
                         <div style="font-size:10px; opacity:0.72; margin-top:2px; color:var(--text-color,#ccc);">BIN ${escapeMapSuggestionHtml(item.bin)} · ${item.deviceCount} device${item.deviceCount === 1 ? '' : 's'}${devicePreview ? ' · ' + escapeMapSuggestionHtml(devicePreview + moreDevices) : ''}</div>
+                        <div style="font-size:10px; margin-top:3px; font-weight:700; ${schedulePreview ? 'color:#17a2b8;' : 'opacity:0.5; color:var(--text-color,#ccc);'}">${escapeMapSuggestionHtml(schedulePreview || 'No scheduled dates')}</div>
                     </div>
                     <button type="button" data-deselect-bin="${escapeMapSuggestionHtml(item.bin)}" style="margin:0; flex:0 0 auto; padding:4px 8px; border-radius:5px; border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.12); color:#ff6b6b; cursor:pointer; font-size:11px; font-weight:700;">Remove</button>
                 </div>`;
-            }).join('');
+            }
+
+            const listHtml = selected.map(renderMapBulkSelectedBuildingRow).join('');
 
             const overlay = document.createElement('div');
             overlay.id = 'mapBulkEditOverlay';
@@ -20804,21 +20845,24 @@
                     <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:12px;">
                         <section style="padding:14px; border:1px solid rgba(155,89,182,0.38); border-radius:11px; background:rgba(155,89,182,0.07);">
                             <div style="font-size:13px; font-weight:800; color:#9b59b6; margin-bottom:3px;">CATEGORY TESTING</div>
-                            <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:10px;">Add the same Category testing date to every selected building. If a building already has an upcoming date, you can keep it or replace it.</div>
-                            <div style="display:flex; gap:7px;">
+                            <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:10px;">Add the same Category testing date to every selected building, or clear scheduled Category dates. If a building already has an upcoming date, you can keep it or replace it.</div>
+                            <div style="display:flex; gap:7px; flex-wrap:wrap;">
                                 <input type="date" id="mapBulkCategoryDate" value="${today}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;">
                                 <button type="button" id="mapBulkAddCategory" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#8e44ad; color:white; font-size:12px; font-weight:700;">+ Add</button>
+                                <button type="button" id="mapBulkClearCategory" style="margin:0; padding:8px 11px; border-radius:6px; border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.12); color:#ff6b6b; font-size:12px; font-weight:700;">Clear Dates</button>
                             </div>
                         </section>
                         <section style="padding:14px; border:1px solid rgba(26,115,232,0.34); border-radius:11px; background:rgba(26,115,232,0.07);">
                             <div style="font-size:13px; font-weight:800; color:#1a73e8; margin-bottom:3px;">PVI TESTING</div>
-                            <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:10px;">Add the same PVI testing date to every selected building. If a building already has an upcoming date, you can keep it or replace it.</div>
-                            <div style="display:flex; gap:7px;">
+                            <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:10px;">Add the same PVI testing date to every selected building, or clear scheduled PVI dates. If a building already has an upcoming date, you can keep it or replace it.</div>
+                            <div style="display:flex; gap:7px; flex-wrap:wrap;">
                                 <input type="date" id="mapBulkPviDate" value="${today}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;">
                                 <button type="button" id="mapBulkAddPvi" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#1a73e8; color:white; font-size:12px; font-weight:700;">+ Add</button>
+                                <button type="button" id="mapBulkClearPvi" style="margin:0; padding:8px 11px; border-radius:6px; border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.12); color:#ff6b6b; font-size:12px; font-weight:700;">Clear Dates</button>
                             </div>
                         </section>
                     </div>
+                    <button type="button" id="mapBulkClearAllDates" style="width:100%; margin:10px 0 0; padding:8px 11px; border-radius:6px; border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.08); color:#ff6b6b; font-size:12px; font-weight:700;">Clear all scheduled dates on selected buildings</button>
 
                     <details style="margin-top:12px; padding:10px 11px; border:1px solid rgba(199,119,0,0.28); border-radius:9px; background:rgba(199,119,0,0.08);">
                         <summary style="cursor:pointer; color:#c77700; font-size:12px; line-height:1.4; font-weight:800; user-select:none;">Advanced scheduling options</summary>
@@ -20871,17 +20915,7 @@
                     list.innerHTML = '<div style="font-size:12px; opacity:0.65; padding:8px 0;">No buildings selected.</div>';
                     return;
                 }
-                list.innerHTML = current.map(item => {
-                    const devicePreview = item.deviceNumbers.slice(0, 4).join(', ');
-                    const moreDevices = item.deviceNumbers.length > 4 ? ` +${item.deviceNumbers.length - 4} more` : '';
-                    return `<div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start; padding:7px 8px; border:1px solid var(--input-border,#444); border-radius:7px; margin-bottom:6px; background:var(--input-bg,#2a2a3e);">
-                        <div style="min-width:0;">
-                            <div style="font-size:12px; font-weight:700; color:var(--text-color,#fff); word-break:break-word;">${escapeMapSuggestionHtml(item.address)}</div>
-                            <div style="font-size:10px; opacity:0.72; margin-top:2px; color:var(--text-color,#ccc);">BIN ${escapeMapSuggestionHtml(item.bin)} · ${item.deviceCount} device${item.deviceCount === 1 ? '' : 's'}${devicePreview ? ' · ' + escapeMapSuggestionHtml(devicePreview + moreDevices) : ''}</div>
-                        </div>
-                        <button type="button" data-deselect-bin="${escapeMapSuggestionHtml(item.bin)}" style="margin:0; flex:0 0 auto; padding:4px 8px; border-radius:5px; border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.12); color:#ff6b6b; cursor:pointer; font-size:11px; font-weight:700;">Remove</button>
-                    </div>`;
-                }).join('');
+                list.innerHTML = current.map(renderMapBulkSelectedBuildingRow).join('');
                 bindDeselectButtons();
             }
 
@@ -21038,6 +21072,65 @@
                 }
             }
 
+            function applyBulkClearDates(type) {
+                const types = type ? [normalizeMapScheduleType(type)] : ['pvi', 'category', 'general'];
+                const label = type === 'pvi' ? 'PVI' : type === 'category' ? 'Category' : 'scheduled';
+                const current = getMapSelectedBuildingSummaries();
+                if (!current.length) {
+                    showMapNotification('Select at least one building first', '#ff9800');
+                    return;
+                }
+
+                let buildingsWithDates = 0;
+                let dateCount = 0;
+                current.forEach(item => {
+                    let buildingDates = 0;
+                    types.forEach(scheduleType => {
+                        buildingDates += getTestDatesForBin(item.bin, scheduleType).length;
+                    });
+                    if (buildingDates) {
+                        buildingsWithDates += 1;
+                        dateCount += buildingDates;
+                    }
+                });
+                if (!buildingsWithDates) {
+                    showMapNotification(`No ${label} dates to clear on the selected buildings`, '#ff9800');
+                    return;
+                }
+
+                const confirmMsg = type
+                    ? `Clear ${label} scheduled dates from ${buildingsWithDates} selected building${buildingsWithDates === 1 ? '' : 's'} (${dateCount} date${dateCount === 1 ? '' : 's'})?\n\nFiled DOB dates will not be changed.`
+                    : `Clear all scheduled dates from ${buildingsWithDates} selected building${buildingsWithDates === 1 ? '' : 's'} (${dateCount} date${dateCount === 1 ? '' : 's'})?\n\nThis removes Category, PVI, and unspecified dates. Filed DOB dates will not be changed.`;
+                if (!confirm(confirmMsg)) return;
+
+                let changed = 0;
+                current.forEach(item => {
+                    const removedByType = clearMapScheduledDatesForBin(item.bin, {
+                        types,
+                        quiet: true,
+                        address: item.address
+                    });
+                    if (!Object.keys(removedByType).length) return;
+                    changed += 1;
+                    const parts = Object.entries(removedByType).map(([scheduleType, dates]) => {
+                        const typeLabel = scheduleType === 'pvi' ? 'PVI' : scheduleType === 'category' ? 'Category' : 'Unspecified';
+                        return `${typeLabel} ${dates.join(', ')}`;
+                    });
+                    addMapActivity('Cleared scheduled dates', {
+                        type: 'Schedule',
+                        bin: item.bin,
+                        address: item.address,
+                        details: (type ? `bulk select clear ${label}` : 'bulk select clear all') + ' · ' + parts.join(' · ')
+                    });
+                });
+
+                refreshMapAfterBulkChange();
+                showMapNotification(
+                    `Cleared ${label} dates on ${changed} building${changed === 1 ? '' : 's'}`,
+                    '#ff6b6b'
+                );
+            }
+
             function applyBulkMonth() {
                 const current = getMapSelectedBuildingSummaries();
                 const select = document.getElementById('mapBulkMonthLabel');
@@ -21121,6 +21214,9 @@
             bindDeselectButtons();
             document.getElementById('mapBulkAddCategory').addEventListener('click', () => applyBulkTestDate('category'));
             document.getElementById('mapBulkAddPvi').addEventListener('click', () => applyBulkTestDate('pvi'));
+            document.getElementById('mapBulkClearCategory').addEventListener('click', () => applyBulkClearDates('category'));
+            document.getElementById('mapBulkClearPvi').addEventListener('click', () => applyBulkClearDates('pvi'));
+            document.getElementById('mapBulkClearAllDates').addEventListener('click', () => applyBulkClearDates());
             document.getElementById('mapBulkApplyMonth').addEventListener('click', applyBulkMonth);
             document.getElementById('mapBulkApplyNote').addEventListener('click', () => applyBulkNote('set'));
             document.getElementById('mapBulkAppendNote').addEventListener('click', () => applyBulkNote('append'));
