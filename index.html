@@ -1367,7 +1367,14 @@
                                 <div id="noTestByJuneList" style="max-height: 280px; overflow-y: auto; margin-bottom: 8px;">
                                     <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No buildings missing a test</div>
                                 </div>
-                                <button id="mapNoTestByJuneShowOnMapBtn" onclick="showNoTestByJuneOnMap()" class="mcp-btn" style="color:#8B0000; font-weight:700;">Show on MAP</button>
+                                <div style="margin-top:6px; padding:8px; border-radius:6px; border:1px solid rgba(139,0,0,0.22); background:rgba(139,0,0,0.06);">
+                                    <div style="font-size:0.88em; font-weight:700; color:var(--text-color); margin-bottom:6px;">Map filter</div>
+                                    <p class="mcp-desc" style="margin:0 0 8px 0;">Show only buildings that still need a test this year, or restore the map filter you had before.</p>
+                                    <div style="display:flex; gap:6px;">
+                                        <button type="button" id="mapNoTestByJuneShowUntestedBtn" onclick="toggleNoTestByJuneShowOnMap(true)" class="mcp-btn" style="margin:0; flex:1; color:#8B0000; font-weight:700;">Show Untested</button>
+                                        <button type="button" id="mapNoTestByJuneRestoreFilterBtn" onclick="toggleNoTestByJuneShowOnMap(false)" class="mcp-btn" style="margin:0; flex:1; color:#17a2b8; font-weight:700;">Previous Filter</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -1623,6 +1630,7 @@
                                     <li>Fully completed = PVI and Category both have a date (manual entry or DOB Info Update)</li>
                                     <li>Map view filter is a menu: completion and scheduled rows use Show / Hide toggles</li>
                                     <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
+                                    <li>No Test by June has Show Untested and Previous Filter toggles for the map view</li>
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
@@ -14300,6 +14308,7 @@
             const opts = options || {};
             const value = filterValue || 'all';
             const select = document.getElementById('mapViewFilterSelect');
+            const previousValue = select ? (select.value || 'all') : 'all';
             if (select) {
                 if (value.indexOf('cat5:') === 0) {
                     const year = parseInt(value.replace('cat5:', ''), 10);
@@ -14313,7 +14322,16 @@
                 }
                 select.value = value;
             }
+            if (value === 'no-test-by-june' && previousValue !== 'no-test-by-june') {
+                mapNoTestByJunePreviousFilter = previousValue;
+            } else if (previousValue === 'no-test-by-june' && value !== 'no-test-by-june') {
+                // Left the No Test by June filter through another control.
+                if (mapNoTestByJunePreviousFilter === value) mapNoTestByJunePreviousFilter = null;
+            }
             renderMapViewFilterMenu();
+            if (typeof updateNoTestByJuneMapFilterButtons === 'function') {
+                updateNoTestByJuneMapFilterButtons();
+            }
             if (opts.apply !== false) {
                 applyMapViewDropdownFilter(opts.applyOptions || {});
             }
@@ -22321,22 +22339,95 @@
             if (searchInput && searchInput.value.trim()) {
                 filterMcpBinRowList('noTestByJuneList', searchInput.value);
             }
+            updateNoTestByJuneMapFilterButtons();
+        }
+
+        let mapNoTestByJunePreviousFilter = null;
+
+        function isNoTestByJuneShowOnMapActive() {
+            return getSelectedMapViewFilter() === 'no-test-by-june';
+        }
+
+        function updateNoTestByJuneMapFilterButtons() {
+            const showBtn = document.getElementById('mapNoTestByJuneShowUntestedBtn');
+            const restoreBtn = document.getElementById('mapNoTestByJuneRestoreFilterBtn');
+            const showActive = isNoTestByJuneShowOnMapActive();
+            const hasPrevious = mapNoTestByJunePreviousFilter !== null
+                && mapNoTestByJunePreviousFilter !== 'no-test-by-june';
+
+            if (showBtn) {
+                showBtn.textContent = showActive ? 'Showing Untested' : 'Show Untested';
+                showBtn.style.background = showActive ? '#8B0000' : 'var(--input-bg)';
+                showBtn.style.color = showActive ? 'white' : '#8B0000';
+                showBtn.style.borderColor = showActive ? '#8B0000' : 'var(--input-border)';
+                showBtn.setAttribute('aria-pressed', showActive ? 'true' : 'false');
+            }
+            if (restoreBtn) {
+                const restoreActive = !showActive && hasPrevious;
+                restoreBtn.disabled = showActive ? false : !hasPrevious;
+                restoreBtn.title = hasPrevious
+                    ? `Restore: ${getMapViewFilterLabel(mapNoTestByJunePreviousFilter)}`
+                    : (showActive
+                        ? 'Restore the map filter that was active before Show Untested'
+                        : 'No previous map filter saved yet');
+                restoreBtn.style.opacity = restoreBtn.disabled ? '0.55' : '1';
+                restoreBtn.style.cursor = restoreBtn.disabled ? 'not-allowed' : 'pointer';
+                restoreBtn.style.background = restoreActive ? '#17a2b8' : 'var(--input-bg)';
+                restoreBtn.style.color = restoreActive ? 'white' : '#17a2b8';
+                restoreBtn.style.borderColor = restoreActive ? '#17a2b8' : 'var(--input-border)';
+                restoreBtn.setAttribute('aria-pressed', restoreActive ? 'true' : 'false');
+            }
         }
 
         function showNoTestByJuneOnMap() {
+            toggleNoTestByJuneShowOnMap(true);
+        }
+
+        function toggleNoTestByJuneShowOnMap(forceShow) {
+            const shouldShow = typeof forceShow === 'boolean'
+                ? forceShow
+                : !isNoTestByJuneShowOnMapActive();
+
+            if (!shouldShow) {
+                const previous = mapNoTestByJunePreviousFilter !== null
+                    ? mapNoTestByJunePreviousFilter
+                    : 'all';
+                mapNoTestByJunePreviousFilter = null;
+                if (!buildingMap || !Array.isArray(mapMarkers)) {
+                    setSelectedMapViewFilter(previous, { apply: false });
+                    updateNoTestByJuneMapFilterButtons();
+                    showMapNotification(
+                        `Restored previous filter: ${getMapViewFilterLabel(previous)}`,
+                        '#17a2b8'
+                    );
+                    return;
+                }
+                setSelectedMapViewFilter(previous, { applyOptions: { fitMap: false, quiet: true } });
+                updateNoTestByJuneMapFilterButtons();
+                showMapNotification(
+                    `Restored previous filter: ${getMapViewFilterLabel(previous)}`,
+                    '#17a2b8'
+                );
+                return;
+            }
+
             const buildings = getMapNoTestByJuneBuildings();
             if (buildings.length === 0) {
                 showMapNotification('No buildings are missing a test this year', '#27ae60');
+                updateNoTestByJuneMapFilterButtons();
                 return;
             }
             if (!buildingMap || !Array.isArray(mapMarkers)) {
-                showMapNotification('Open the map first, then try Show on MAP', '#ff6b6b');
+                showMapNotification('Open the map first, then try Show Untested', '#ff6b6b');
                 return;
             }
-            const select = document.getElementById('mapViewFilterSelect');
-            if (select) select.value = 'no-test-by-june';
-            renderMapViewFilterMenu();
-            applyMapViewDropdownFilter({ fitMap: true });
+
+            const current = getSelectedMapViewFilter() || 'all';
+            if (current !== 'no-test-by-june') {
+                mapNoTestByJunePreviousFilter = current;
+            }
+            setSelectedMapViewFilter('no-test-by-june', { applyOptions: { fitMap: true } });
+            updateNoTestByJuneMapFilterButtons();
             const highlightActive = mapIsNoTestByJuneHighlightActive();
             showMapNotification(
                 `${buildings.length} building${buildings.length !== 1 ? 's' : ''} with no test by June${highlightActive ? '' : ' (highlight starts June 1)'}`,
@@ -37443,7 +37534,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.3</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.4</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
