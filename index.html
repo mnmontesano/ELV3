@@ -1621,7 +1621,7 @@
                                     <li>Past-due test dates appear in Settings to confirm</li>
                                     <li>Completion markers: green = Full, blue = PVI only, purple = Category only</li>
                                     <li>Fully completed = PVI and Category both have a date (manual entry or DOB Info Update)</li>
-                                    <li>Map view filter: Hide Partially Completed also hides fully completed jobs; Hide Fully Completed keeps partials visible</li>
+                                    <li>Map view filter is a menu: completion and scheduled rows use Show / Hide toggles</li>
                                     <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
@@ -1633,17 +1633,21 @@
 
                         <div class="mcp-menu-footer">
                             <div style="margin-top: 10px; padding: 8px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px;">
-                                <label for="mapViewFilterSelect" style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:5px;">Map view filter</label>
-                                <select id="mapViewFilterSelect" onchange="applyMapViewDropdownFilter()" style="width:100%; padding:6px 8px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:0.95em;">
+                                <div style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:6px;">Map view filter</div>
+                                <div id="mapViewFilterMenu" style="display:flex; flex-direction:column; gap:4px; max-height:280px; overflow-y:auto;"></div>
+                                <!-- Hidden select kept in sync for saved views / existing filter plumbing -->
+                                <select id="mapViewFilterSelect" hidden aria-hidden="true" tabindex="-1">
                                     <option value="all">Current map view</option>
                                     <option value="visible">Visible with current settings</option>
                                     <option value="active-month-filters">Current active month filter</option>
                                     <option value="favorites">Favorites</option>
                                     <option value="hidden">Hidden</option>
                                     <option value="completed">Completed</option>
+                                    <option value="partially-completed">Partially Completed Jobs</option>
+                                    <option value="fully-completed">Fully Completed Jobs</option>
                                     <option value="hide-partially-completed">Hide Partially Completed Jobs</option>
                                     <option value="hide-fully-completed">Hide Fully Completed Jobs</option>
-                                    <option value="hide-completed" hidden>Hide Completed Jobs</option>
+                                    <option value="hide-completed">Hide Completed Jobs</option>
                                     <option value="in-process">In Process</option>
                                     <option value="hold">On Hold</option>
                                     <option value="immediate-attention" disabled hidden>Immediate Attention</option>
@@ -2627,6 +2631,7 @@
                 var el = document.getElementById(id);
                 if (el) document.body.appendChild(el);
             });
+            if (typeof renderMapViewFilterMenu === 'function') renderMapViewFilterMenu();
         });
 
         // Global variables for storing address suggestions state
@@ -14291,6 +14296,159 @@
             return select ? select.value : 'all';
         }
 
+        function setSelectedMapViewFilter(filterValue, options) {
+            const opts = options || {};
+            const value = filterValue || 'all';
+            const select = document.getElementById('mapViewFilterSelect');
+            if (select) {
+                if (value.indexOf('cat5:') === 0) {
+                    const year = parseInt(value.replace('cat5:', ''), 10);
+                    if (year) ensureMapCategory5FilterOption(year);
+                }
+                if (![...select.options].some(opt => opt.value === value)) {
+                    const option = document.createElement('option');
+                    option.value = value;
+                    option.textContent = getMapViewFilterLabel(value);
+                    select.appendChild(option);
+                }
+                select.value = value;
+            }
+            renderMapViewFilterMenu();
+            if (opts.apply !== false) {
+                applyMapViewDropdownFilter(opts.applyOptions || {});
+            }
+        }
+
+        const MAP_VIEW_FILTER_TOGGLE_ITEMS = [
+            {
+                id: 'completed-jobs',
+                label: 'Completed Jobs',
+                showValue: 'completed',
+                hideValue: 'hide-completed'
+            },
+            {
+                id: 'partially-completed-jobs',
+                label: 'Partially Completed Jobs',
+                showValue: 'partially-completed',
+                hideValue: 'hide-partially-completed'
+            },
+            {
+                id: 'fully-completed-jobs',
+                label: 'Fully Completed Jobs',
+                showValue: 'fully-completed',
+                hideValue: 'hide-fully-completed'
+            },
+            {
+                id: 'scheduled-jobs',
+                label: 'Scheduled Test Dates',
+                showValue: 'scheduled',
+                hideValue: 'hide-scheduled'
+            }
+        ];
+
+        const MAP_VIEW_FILTER_SIMPLE_ITEMS = [
+            { value: 'all', label: 'Current map view' },
+            { value: 'visible', label: 'Visible with current settings' },
+            { value: 'active-month-filters', label: 'Current active month filter' },
+            { value: 'favorites', label: 'Favorites' },
+            { value: 'hidden', label: 'Hidden' },
+            { value: 'in-process', label: 'In Process' },
+            { value: 'hold', label: 'On Hold' },
+            { value: 'no-test-by-june', label: 'No Test by June' },
+            { value: 'scheduled-cat', label: 'CAT Scheduled Jobs' },
+            { value: 'scheduled-pvi', label: 'PVI Scheduled Jobs' },
+            { value: 'notes', label: 'Buildings with Notes' },
+            { value: 'month-labeled', label: 'Month-labeled' },
+            { value: 'no-month', label: 'No month label' },
+            { value: 'month:January', label: 'January' },
+            { value: 'month:February', label: 'February' },
+            { value: 'month:March', label: 'March' },
+            { value: 'month:April', label: 'April' },
+            { value: 'month:May', label: 'May' },
+            { value: 'month:June', label: 'June' },
+            { value: 'month:July', label: 'July' },
+            { value: 'month:August', label: 'August' },
+            { value: 'month:September', label: 'September' },
+            { value: 'month:October', label: 'October' },
+            { value: 'month:November', label: 'November' },
+            { value: 'month:December', label: 'December' },
+            { value: 'month:REVIEW', label: 'REVIEW' }
+        ];
+
+        function getMapViewFilterToggleMode(filterValue) {
+            const value = filterValue || getSelectedMapViewFilter();
+            for (let i = 0; i < MAP_VIEW_FILTER_TOGGLE_ITEMS.length; i++) {
+                const item = MAP_VIEW_FILTER_TOGGLE_ITEMS[i];
+                if (value === item.showValue) return { item, mode: 'show' };
+                if (value === item.hideValue) return { item, mode: 'hide' };
+            }
+            return null;
+        }
+
+        function selectMapViewFilterMenuItem(filterValue) {
+            setSelectedMapViewFilter(filterValue);
+        }
+
+        function selectMapViewFilterToggle(toggleId, mode) {
+            const item = MAP_VIEW_FILTER_TOGGLE_ITEMS.find(entry => entry.id === toggleId);
+            if (!item) return;
+            const nextValue = mode === 'hide' ? item.hideValue : item.showValue;
+            setSelectedMapViewFilter(nextValue);
+        }
+
+        function renderMapViewFilterMenu() {
+            const menu = document.getElementById('mapViewFilterMenu');
+            if (!menu) return;
+            const selected = getSelectedMapViewFilter() || 'all';
+            const toggleActive = getMapViewFilterToggleMode(selected);
+
+            function rowStyle(active) {
+                return `display:flex; align-items:center; justify-content:space-between; gap:6px; width:100%; box-sizing:border-box; padding:7px 8px; border-radius:6px; border:1px solid ${active ? '#17a2b8' : 'var(--input-border)'}; background:${active ? 'rgba(23,162,184,0.14)' : 'var(--panel-bg)'}; color:var(--text-color); cursor:pointer; text-align:left; font-size:0.92em;`;
+            }
+
+            function toggleBtnStyle(active, kind) {
+                const activeBg = kind === 'hide' ? '#c62828' : '#17a2b8';
+                return `flex:1; padding:5px 6px; border-radius:5px; border:1px solid ${active ? activeBg : 'var(--input-border)'}; background:${active ? activeBg : 'var(--input-bg)'}; color:${active ? 'white' : 'var(--text-color)'}; cursor:pointer; font-size:0.82em; font-weight:${active ? 700 : 600};`;
+            }
+
+            function simpleButton(item) {
+                const active = selected === item.value;
+                return `<button type="button" class="map-view-filter-menu-item" data-filter-value="${item.value}" onclick="selectMapViewFilterMenuItem('${item.value}')" style="${rowStyle(active)}">
+                    <span style="font-weight:${active ? 700 : 500};">${item.label}</span>
+                    ${active ? '<span style="color:#17a2b8; font-weight:800;">✓</span>' : ''}
+                </button>`;
+            }
+
+            const topItems = MAP_VIEW_FILTER_SIMPLE_ITEMS.slice(0, 5);
+            const moreItems = MAP_VIEW_FILTER_SIMPLE_ITEMS.slice(5);
+
+            const toggleHtml = MAP_VIEW_FILTER_TOGGLE_ITEMS.map(item => {
+                const isActive = !!(toggleActive && toggleActive.item.id === item.id);
+                const mode = isActive ? toggleActive.mode : '';
+                return `<div class="map-view-filter-toggle-row" data-toggle-id="${item.id}" style="padding:7px 8px; border-radius:6px; border:1px solid ${isActive ? '#17a2b8' : 'var(--input-border)'}; background:${isActive ? 'rgba(23,162,184,0.14)' : 'var(--panel-bg)'};">
+                    <div style="font-size:0.92em; font-weight:${isActive ? 700 : 600}; color:var(--text-color); margin-bottom:6px;">${item.label}</div>
+                    <div style="display:flex; gap:6px;">
+                        <button type="button" onclick="selectMapViewFilterToggle('${item.id}', 'show')" style="${toggleBtnStyle(mode === 'show', 'show')}">Show</button>
+                        <button type="button" onclick="selectMapViewFilterToggle('${item.id}', 'hide')" style="${toggleBtnStyle(mode === 'hide', 'hide')}">Hide</button>
+                    </div>
+                </div>`;
+            }).join('');
+
+            let dynamicHtml = '';
+            if (selected.indexOf('cat5:') === 0 || selected === 'immediate-attention') {
+                dynamicHtml = simpleButton({ value: selected, label: getMapViewFilterLabel(selected) });
+            }
+
+            menu.innerHTML = `
+                ${topItems.map(simpleButton).join('')}
+                <div style="font-size:0.78em; opacity:0.7; margin:4px 2px 2px; font-weight:700; letter-spacing:0.02em;">SHOW / HIDE</div>
+                ${toggleHtml}
+                <div style="font-size:0.78em; opacity:0.7; margin:6px 2px 2px; font-weight:700; letter-spacing:0.02em;">MORE FILTERS</div>
+                ${moreItems.map(simpleButton).join('')}
+                ${dynamicHtml}
+            `;
+        }
+
         function getMapViewFilterLabel(filterValue) {
             if (!filterValue || filterValue === 'all') return 'Current map view';
             if (filterValue.indexOf('month:') === 0) return filterValue.replace('month:', 'Month: ');
@@ -14303,18 +14461,20 @@
                 'active-month-filters': 'Current active month filter',
                 favorites: 'Favorites',
                 hidden: 'Hidden',
-                completed: 'Completed',
-                'hide-partially-completed': 'Hide Partially Completed Jobs',
-                'hide-fully-completed': 'Hide Fully Completed Jobs',
-                'hide-completed': 'Hide Completed Jobs',
+                completed: 'Completed Jobs (Show)',
+                'partially-completed': 'Partially Completed Jobs (Show)',
+                'fully-completed': 'Fully Completed Jobs (Show)',
+                'hide-partially-completed': 'Partially Completed Jobs (Hide)',
+                'hide-fully-completed': 'Fully Completed Jobs (Hide)',
+                'hide-completed': 'Completed Jobs (Hide)',
                 'in-process': 'In Process',
                 hold: 'On Hold',
                 'immediate-attention': 'Immediate Attention',
                 'no-test-by-june': 'No Test by June',
-                scheduled: 'Scheduled Test Dates',
+                scheduled: 'Scheduled Test Dates (Show)',
                 'scheduled-cat': 'CAT Scheduled Jobs',
                 'scheduled-pvi': 'PVI Scheduled Jobs',
-                'hide-scheduled': 'Hide Scheduled Test Dates & Completed Jobs',
+                'hide-scheduled': 'Scheduled Test Dates (Hide)',
                 notes: 'Buildings with Notes',
                 'month-labeled': 'Month-labeled',
                 'no-month': 'No month label'
@@ -14522,6 +14682,12 @@
             if (filterValue === 'favorites') return new Set(Object.keys(view.favorites || {}).map(String));
             if (filterValue === 'hidden') return new Set(Object.keys(view.hidden || {}).map(String));
             if (filterValue === 'completed') return new Set(Object.keys(view.completed || {}).map(String));
+            if (filterValue === 'partially-completed') {
+                return new Set(allBins.filter(bin => mapViewIsPartiallyCompleted(view, bin)));
+            }
+            if (filterValue === 'fully-completed') {
+                return new Set(allBins.filter(bin => mapViewIsFullyCompleted(view, bin)));
+            }
             if (filterValue === 'hide-partially-completed') {
                 // Hide partial completions and fully completed jobs — keep incomplete work visible.
                 return new Set(allBins.filter(bin =>
@@ -14581,6 +14747,10 @@
             let matchesFilter;
             if (filterValue === 'hide-scheduled') {
                 matchesFilter = mapViewPassesHideScheduledCompletedFilter(activeView, building.bin, building);
+            } else if (filterValue === 'partially-completed') {
+                matchesFilter = mapViewIsPartiallyCompleted(activeView, building.bin, building);
+            } else if (filterValue === 'fully-completed') {
+                matchesFilter = mapViewIsFullyCompleted(activeView, building.bin, building);
             } else if (filterValue === 'hide-partially-completed') {
                 matchesFilter = !mapViewIsPartiallyCompleted(activeView, building.bin, building)
                     && !mapViewIsFullyCompleted(activeView, building.bin, building);
@@ -14636,9 +14806,7 @@
             mapHideScheduledMonthSelectionReady = false;
             const modal = document.getElementById('mapHideScheduledMonthModal');
             if (modal) modal.remove();
-            const select = document.getElementById('mapViewFilterSelect');
-            if (select) select.value = 'all';
-            applyMapViewDropdownFilter();
+            setSelectedMapViewFilter('all');
         }
 
         function applyMapHideScheduledMonthSelection() {
@@ -14720,6 +14888,7 @@
                     updateMonthFilterStatus();
                 }
                 updateMapCategory5ShowOnMapButton();
+                renderMapViewFilterMenu();
                 if (!quiet) showMapNotification('Showing current map view', '#17a2b8');
                 return;
             }
@@ -14733,7 +14902,7 @@
             let shown = 0;
 
             // When viewing an intentional set (completed/hold/etc.), don't also apply hide toggles
-            const explicitSetFilters = new Set(['completed', 'in-process', 'hold', 'hidden']);
+            const explicitSetFilters = new Set(['completed', 'partially-completed', 'fully-completed', 'in-process', 'hold', 'hidden']);
             const respectHideSettings = !explicitSetFilters.has(filterValue);
 
             mapMarkers.forEach((marker, index) => {
@@ -14771,6 +14940,7 @@
             }
             updateMonthFilterStatus();
             updateMapCategory5ShowOnMapButton();
+            renderMapViewFilterMenu();
             // Only re-zoom when none of the filtered buildings are already on screen,
             // so changing filters doesn't reset the user's zoom/position.
             if (shouldFitMap && bounds.isValid() && !shownInViewport) buildingMap.fitBounds(bounds, { padding: [50, 50] });
@@ -15471,6 +15641,7 @@
             mapHideScheduledMonthSelectionReady = false;
             const viewFilterSelect = document.getElementById('mapViewFilterSelect');
             if (viewFilterSelect) viewFilterSelect.value = 'all';
+            renderMapViewFilterMenu();
             updateMonthFilterButtons();
 
             const modal = document.getElementById('buildingMapModal');
@@ -16704,8 +16875,7 @@
         }
 
         function clearAllMapFilters() {
-            const select = document.getElementById('mapViewFilterSelect');
-            if (select) select.value = 'all';
+            setSelectedMapViewFilter('all', { apply: false });
 
             pendingMapHideScheduledMonthPrompt = false;
             mapHideScheduledMonthSelectionReady = false;
@@ -21999,6 +22169,7 @@
             }
             const select = document.getElementById('mapViewFilterSelect');
             if (select) select.value = 'immediate-attention';
+            renderMapViewFilterMenu();
             applyMapViewDropdownFilter({ fitMap: true });
             showMapNotification(`${items.length} building${items.length !== 1 ? 's' : ''} need immediate attention`, '#dc3545');
         }
@@ -22133,6 +22304,7 @@
             }
             const select = document.getElementById('mapViewFilterSelect');
             if (select) select.value = 'no-test-by-june';
+            renderMapViewFilterMenu();
             applyMapViewDropdownFilter({ fitMap: true });
             const highlightActive = mapIsNoTestByJuneHighlightActive();
             showMapNotification(
@@ -22912,6 +23084,7 @@
                     select.removeChild(opt);
                 }
             });
+            renderMapViewFilterMenu();
         }
 
         function isMapCategory5ShowOnMapActive() {
@@ -23189,10 +23362,9 @@
             updateMapCategory5Panel();
             if (wasCat5FilterActive) {
                 // Keep map filter in sync when looking ahead while Show on MAP is active
-                ensureMapCategory5FilterOption(getSelectedMapCategory5Year());
-                const select = document.getElementById('mapViewFilterSelect');
-                if (select) select.value = 'cat5:' + getSelectedMapCategory5Year();
-                applyMapViewDropdownFilter({ fitMap: true });
+                setSelectedMapViewFilter('cat5:' + getSelectedMapCategory5Year(), {
+                    applyOptions: { fitMap: true }
+                });
                 updateMapCategory5ShowOnMapButton();
             }
         }
@@ -23208,10 +23380,8 @@
             }
 
             const year = getSelectedMapCategory5Year();
-            const select = document.getElementById('mapViewFilterSelect');
             if (isMapCategory5ShowOnMapActive()) {
-                if (select) select.value = 'all';
-                applyMapViewDropdownFilter({ fitMap: false, quiet: true });
+                setSelectedMapViewFilter('all', { applyOptions: { fitMap: false, quiet: true } });
                 updateMapCategory5ShowOnMapButton();
                 showMapNotification('Cleared Category 5 map filter', '#17a2b8');
                 return;
@@ -23224,9 +23394,7 @@
                 return;
             }
 
-            ensureMapCategory5FilterOption(year);
-            if (select) select.value = 'cat5:' + year;
-            applyMapViewDropdownFilter({ fitMap: true });
+            setSelectedMapViewFilter('cat5:' + year, { applyOptions: { fitMap: true } });
             updateMapCategory5ShowOnMapButton();
             showMapNotification(bins.length + ' building' + (bins.length !== 1 ? 's' : '') + ' with CAT 5 due in ' + year, '#ff9800');
         }
@@ -23554,6 +23722,7 @@
             updateTestDatesPanel();
             updateImmediateAttentionPanel();
             updateNoTestByJunePanel();
+            renderMapViewFilterMenu();
 
             function reapplyBinSidebarSearch(inputId, listId) {
                 var inp = document.getElementById(inputId);
@@ -25759,6 +25928,7 @@
                     if (year) ensureMapCategory5FilterOption(year);
                 }
                 if (viewFilterSelect) viewFilterSelect.value = savedViewFilter;
+                renderMapViewFilterMenu();
                 mapHideScheduledMonthSelectionReady = savedViewFilter === 'hide-scheduled' || activeMonthFilters.size > 0;
                 pendingMapHideScheduledMonthPrompt = false;
 
@@ -37237,7 +37407,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.2.3</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
