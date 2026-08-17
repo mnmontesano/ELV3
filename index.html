@@ -1621,7 +1621,7 @@
                                     <li>Past-due test dates appear in Settings to confirm</li>
                                     <li>Completion markers: green = Full, blue = PVI only, purple = Category only</li>
                                     <li>Fully completed = PVI and Category both have a date (manual entry or DOB Info Update)</li>
-                                    <li>Map view filter can hide fully completed jobs while keeping PVI-only / Category-only jobs visible</li>
+                                    <li>Map view filter: Hide Partially Completed also hides fully completed jobs; Hide Fully Completed keeps partials visible</li>
                                     <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
@@ -14523,7 +14523,10 @@
             if (filterValue === 'hidden') return new Set(Object.keys(view.hidden || {}).map(String));
             if (filterValue === 'completed') return new Set(Object.keys(view.completed || {}).map(String));
             if (filterValue === 'hide-partially-completed') {
-                return new Set(allBins.filter(bin => !mapViewIsPartiallyCompleted(view, bin)));
+                // Hide partial completions and fully completed jobs — keep incomplete work visible.
+                return new Set(allBins.filter(bin =>
+                    !mapViewIsPartiallyCompleted(view, bin) && !mapViewIsFullyCompleted(view, bin)
+                ));
             }
             if (filterValue === 'hide-fully-completed') {
                 return new Set(allBins.filter(bin => !mapViewIsFullyCompleted(view, bin)));
@@ -14579,7 +14582,8 @@
             if (filterValue === 'hide-scheduled') {
                 matchesFilter = mapViewPassesHideScheduledCompletedFilter(activeView, building.bin, building);
             } else if (filterValue === 'hide-partially-completed') {
-                matchesFilter = !mapViewIsPartiallyCompleted(activeView, building.bin, building);
+                matchesFilter = !mapViewIsPartiallyCompleted(activeView, building.bin, building)
+                    && !mapViewIsFullyCompleted(activeView, building.bin, building);
             } else if (filterValue === 'hide-fully-completed') {
                 matchesFilter = !mapViewIsFullyCompleted(activeView, building.bin, building);
             } else {
@@ -37233,7 +37237,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.2.2</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.2.3</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
