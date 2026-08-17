@@ -1619,7 +1619,7 @@
                                     <li>Use 🗓️ in popup to schedule test dates</li>
                                     <li>Scheduled markers: octagon = CAT, square = PVI, diamond = both</li>
                                     <li>Past-due test dates appear in Settings to confirm</li>
-                                    <li>Completion markers: green = Full, blue = PVI only, purple = Category only</li>
+                                    <li>Completion markers: green check = fully completed; PVI-only / Category-only use normal ready/not-ready colors and device counts</li>
                                     <li>Fully completed = PVI and Category both have a date (manual entry or DOB Info Update)</li>
                                     <li>Map view filter is a menu: completion and scheduled rows use Show / Hide toggles</li>
                                     <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
@@ -24693,13 +24693,16 @@
             const favorites = getMapFavorites();
             const isFavorited = !!favorites[building.bin];
             const isCompleted = building.isCompleted;
+            const completionType = normalizeMapCompletedTestType(building.completionType);
+            // PVI-only / Category-only stay on ready/not-ready colors — only Full/Legacy use completion styling.
+            const useCompletionMarkerStyle = isCompleted && completionType !== 'PVI' && completionType !== 'Category';
             const isInProcess = building.isInProcess;
             const isHold = building.isHold;
             const hasBuildingNote = !!getMapNote(building.bin).trim();
             const isSelected = !!(mapSelectMode && mapSelectedBins && mapSelectedBins.has(String(building.bin)));
 
             let markerColor;
-            if (isCompleted) {
+            if (useCompletionMarkerStyle) {
                 markerColor = getMapCompletionColor(building.completionType);
             } else if (isInProcess) {
                 markerColor = '#e67e22'; // Orange - in process
@@ -24725,7 +24728,9 @@
             const showNoteStar = hasBuildingNote && !isHold;
             const markerLabel = showNoteStar
                 ? '★'
-                : (isCompleted ? (building.completionType === 'PVI' ? 'P' : building.completionType === 'Category' ? 'C' : '✓') : isInProcess ? '⟳' : isHold ? '⏸' : building.deviceCount);
+                : (useCompletionMarkerStyle
+                    ? (completionType === 'Full' ? '✓' : '✓')
+                    : isInProcess ? '⟳' : isHold ? '⏸' : building.deviceCount);
             const markerFontSize = showNoteStar ? 15 : 11;
             let markerShape;
             let markerTextY = 19;
@@ -37438,7 +37443,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.1</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.2</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
