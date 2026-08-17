@@ -1183,6 +1183,7 @@
                             #mapControlsPanelBody.mcp-detail-mode #category5BuildingsList,
                             #mapControlsPanelBody.mcp-detail-mode #category5BypassedList,
                             #mapControlsPanelBody.mcp-detail-mode #immediateAttentionList,
+                            #mapControlsPanelBody.mcp-detail-mode #noTestByJuneList,
                             #mapControlsPanelBody.mcp-detail-mode #testDatesPanelList { max-height: min(68vh, 620px) !important; }
                             #favoritesBuildingsList,
                             #monitoredBuildingsList,
@@ -1197,6 +1198,7 @@
                             #notesBuildingsList,
                             #mapActivityLogList,
                             #immediateAttentionList,
+                            #noTestByJuneList,
                             #testDatesPanelList { max-height: min(52vh, 460px) !important; }
                             /* Popped-out panel: lift list height caps so content fills available space */
                             #mapControlsPanel.mcp-popped-out #favoritesBuildingsList,
@@ -1212,6 +1214,7 @@
                             #mapControlsPanel.mcp-popped-out #notesBuildingsList,
                             #mapControlsPanel.mcp-popped-out #mapActivityLogList,
                             #mapControlsPanel.mcp-popped-out #immediateAttentionList,
+                            #mapControlsPanel.mcp-popped-out #noTestByJuneList,
                             #mapControlsPanel.mcp-popped-out #testDatesPanelList { max-height: none !important; }
                             /* Custom resize handles (floating mode only) */
                             .mcp-rh { display: none; position: absolute; z-index: 10; }
@@ -1345,6 +1348,26 @@
                                     <div style="font-size:1em; opacity:0.6; text-align:center; padding:8px;">No devices need immediate attention</div>
                                 </div>
                                 <button onclick="showImmediateAttentionOnMap()" class="mcp-btn" style="color:#dc3545; font-weight:700;">Show on MAP</button>
+                            </div>
+                        </div>
+
+                        <!-- No Test by June -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpNoTestByJune'); updateNoTestByJunePanel();">
+                                <span class="mcp-title"><span style="color:#8B0000;">⛔</span> No Test by June - <span id="mapNoTestByJuneCount">0</span></span>
+                                <span class="mcp-arrow" id="mcpNoTestByJuneArrow">›</span>
+                            </div>
+                            <div class="mcp-body" id="mcpNoTestByJune">
+                                <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">
+                                    Buildings with no PVI or Category test performed yet this calendar year. Starting June 1, these markers turn deep red on the map.
+                                </p>
+                                <div id="noTestByJuneStatus" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(139,0,0,0.28); background:rgba(139,0,0,0.08); color:var(--text-color); font-size:0.9em; line-height:1.4;"></div>
+                                <input type="text" id="noTestByJuneSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
+                                       oninput="filterMcpBinRowList('noTestByJuneList', this.value)">
+                                <div id="noTestByJuneList" style="max-height: 280px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No buildings missing a test</div>
+                                </div>
+                                <button id="mapNoTestByJuneShowOnMapBtn" onclick="showNoTestByJuneOnMap()" class="mcp-btn" style="color:#8B0000; font-weight:700;">Show on MAP</button>
                             </div>
                         </div>
 
@@ -1599,6 +1622,7 @@
                                     <li>Completion markers: green = Full, blue = PVI only, purple = Category only</li>
                                     <li>Fully completed = PVI and Category both have a date (manual entry or DOB Info Update)</li>
                                     <li>Map view filter can hide fully completed jobs while keeping PVI-only / Category-only jobs visible</li>
+                                    <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
@@ -1623,6 +1647,7 @@
                                     <option value="in-process">In Process</option>
                                     <option value="hold">On Hold</option>
                                     <option value="immediate-attention" disabled hidden>Immediate Attention</option>
+                                    <option value="no-test-by-june">No Test by June</option>
                                     <option value="scheduled">Scheduled Test Dates</option>
                                     <option value="scheduled-cat">CAT Scheduled Jobs</option>
                                     <option value="scheduled-pvi">PVI Scheduled Jobs</option>
@@ -14285,6 +14310,7 @@
                 'in-process': 'In Process',
                 hold: 'On Hold',
                 'immediate-attention': 'Immediate Attention',
+                'no-test-by-june': 'No Test by June',
                 scheduled: 'Scheduled Test Dates',
                 'scheduled-cat': 'CAT Scheduled Jobs',
                 'scheduled-pvi': 'PVI Scheduled Jobs',
@@ -14510,6 +14536,9 @@
                 return new Set(getMapImmediateAttentionItems(new Date(), view)
                     .filter(item => !item.viewLevel)
                     .map(item => String(item.bin)));
+            }
+            if (filterValue === 'no-test-by-june') {
+                return new Set(getMapNoTestByJuneBuildings(new Date(), view).map(item => String(item.bin)));
             }
             if (filterValue === 'scheduled') return new Set(allBins.filter(bin => mapViewHasScheduledDates(view, bin)));
             if (filterValue === 'scheduled-cat') return new Set(allBins.filter(bin => mapViewHasScheduledType(view, bin, 'category')));
@@ -21970,6 +21999,144 @@
             showMapNotification(`${items.length} building${items.length !== 1 ? 's' : ''} need immediate attention`, '#dc3545');
         }
 
+        const MAP_NO_TEST_BY_JUNE_COLOR = '#8B0000';
+
+        function getMapJuneDeadlineDate(year) {
+            const targetYear = Number(year) || new Date().getFullYear();
+            return new Date(targetYear, 5, 1); // June 1
+        }
+
+        function mapIsNoTestByJuneHighlightActive(referenceDate) {
+            const today = referenceDate instanceof Date ? new Date(referenceDate.getTime()) : new Date();
+            today.setHours(0, 0, 0, 0);
+            return today.getTime() >= getMapJuneDeadlineDate(today.getFullYear()).getTime();
+        }
+
+        function mapBuildingHasAnyPerformedTestThisYear(bin, year, group) {
+            const key = String(bin || '').trim();
+            const targetYear = Number(year) || new Date().getFullYear();
+            const binGroup = group || getMapGroupForBin(key);
+            const devices = binGroup && Array.isArray(binGroup.devices) ? binGroup.devices : [];
+            const hasDobTest = devices.some(device => {
+                const info = getMapDeviceReportTestInfo(device || {}, targetYear, key);
+                if (info.isRemoved) return false;
+                return !!(info.hasPVI || info.hasCat1 || info.hasCat5);
+            });
+            if (hasDobTest) return true;
+            if (mapBuildingHasDatedTestCompletion(null, key, 'PVI', null, targetYear)) return true;
+            if (mapBuildingHasDatedTestCompletion(null, key, 'Category', null, targetYear)) return true;
+            return false;
+        }
+
+        function mapBuildingHasActiveJobDevices(bin, group) {
+            const key = String(bin || '').trim();
+            const binGroup = group || getMapGroupForBin(key);
+            const devices = binGroup && Array.isArray(binGroup.devices) ? binGroup.devices : [];
+            return devices.some(device => mapDobDeviceIsActiveForCompletion(device));
+        }
+
+        function mapBuildingMissedJuneTestDeadline(bin, referenceDate, group) {
+            const today = referenceDate instanceof Date ? new Date(referenceDate.getTime()) : new Date();
+            today.setHours(0, 0, 0, 0);
+            const year = today.getFullYear();
+            const key = String(bin || '').trim();
+            if (!key) return false;
+            const binGroup = group || getMapGroupForBin(key);
+            if (!mapBuildingHasActiveJobDevices(key, binGroup)) return false;
+            return !mapBuildingHasAnyPerformedTestThisYear(key, year, binGroup);
+        }
+
+        function getMapNoTestByJuneBuildings(referenceDate, sourceView) {
+            const today = referenceDate instanceof Date ? new Date(referenceDate.getTime()) : new Date();
+            today.setHours(0, 0, 0, 0);
+            const year = today.getFullYear();
+            const view = sourceView || null;
+            const binGroups = (view && view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups)
+                || (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups)
+                || {};
+            const completed = view ? (view.completed || {}) : getMapCompleted();
+            return Object.entries(binGroups)
+                .filter(([bin, group]) => mapBuildingMissedJuneTestDeadline(bin, today, group))
+                .map(([bin, group]) => ({
+                    bin: String(bin),
+                    address: (group && group.address) || (completed[bin] && completed[bin].address) || '',
+                    deviceCount: countMapJobDevices(group && group.devices)
+                }))
+                .sort((a, b) => (a.address || a.bin).localeCompare(b.address || b.bin));
+        }
+
+        function updateNoTestByJunePanel() {
+            const listEl = document.getElementById('noTestByJuneList');
+            const countEl = document.getElementById('mapNoTestByJuneCount');
+            const statusEl = document.getElementById('noTestByJuneStatus');
+            if (!listEl) return;
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const year = today.getFullYear();
+            const highlightActive = mapIsNoTestByJuneHighlightActive(today);
+            const juneDeadline = getMapJuneDeadlineDate(year);
+            const buildings = getMapNoTestByJuneBuildings(today);
+            if (countEl) countEl.textContent = String(buildings.length);
+
+            if (statusEl) {
+                if (highlightActive) {
+                    statusEl.innerHTML = `<strong style="color:${MAP_NO_TEST_BY_JUNE_COLOR};">${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} with no ${year} test yet — map markers are deep red as of June 1.`;
+                } else {
+                    const juneLabel = juneDeadline.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+                    statusEl.innerHTML = `<strong>${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} still have no ${year} test. Deep-red map highlighting starts <strong>${juneLabel}</strong>.`;
+                }
+            }
+
+            if (buildings.length === 0) {
+                listEl.innerHTML = `<div style="font-size:1em; opacity:0.6; text-align:center; padding:8px;">All active buildings have a ${year} test</div>`;
+                return;
+            }
+
+            listEl.innerHTML = buildings.map(item => {
+                const bin = item.bin;
+                const addrEsc = String(item.address || '').replace(/"/g, '&quot;');
+                const addressHtml = item.address
+                    ? `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; text-decoration:underline dotted;">${escapeMapSuggestionHtml(item.address)}</span>`
+                    : `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; opacity:0.6; text-decoration:underline dotted;">BIN ${escapeMapSuggestionHtml(bin)}</span>`;
+                return `
+                <div data-bin="${bin}" data-address="${addrEsc}" style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--input-bg); border-radius:4px; margin-bottom:4px; font-size:1em; border-left:3px solid ${MAP_NO_TEST_BY_JUNE_COLOR};">
+                    <span style="flex:1; overflow:hidden; min-width:0; cursor:pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
+                        <span style="display:flex; align-items:center; gap:4px; overflow:hidden;">
+                            <span style="color:${MAP_NO_TEST_BY_JUNE_COLOR}; font-weight:700; flex-shrink:0;">⛔</span>
+                            ${addressHtml}
+                        </span>
+                        <span style="font-size:0.8em; opacity:0.55; padding-left:22px;">BIN ${escapeMapSuggestionHtml(bin)}${item.deviceCount ? ' · ' + item.deviceCount + ' device' + (item.deviceCount !== 1 ? 's' : '') : ''} · no ${year} test</span>
+                    </span>
+                </div>`;
+            }).join('');
+
+            const searchInput = document.getElementById('noTestByJuneSearchInput');
+            if (searchInput && searchInput.value.trim()) {
+                filterMcpBinRowList('noTestByJuneList', searchInput.value);
+            }
+        }
+
+        function showNoTestByJuneOnMap() {
+            const buildings = getMapNoTestByJuneBuildings();
+            if (buildings.length === 0) {
+                showMapNotification('No buildings are missing a test this year', '#27ae60');
+                return;
+            }
+            if (!buildingMap || !Array.isArray(mapMarkers)) {
+                showMapNotification('Open the map first, then try Show on MAP', '#ff6b6b');
+                return;
+            }
+            const select = document.getElementById('mapViewFilterSelect');
+            if (select) select.value = 'no-test-by-june';
+            applyMapViewDropdownFilter({ fitMap: true });
+            const highlightActive = mapIsNoTestByJuneHighlightActive();
+            showMapNotification(
+                `${buildings.length} building${buildings.length !== 1 ? 's' : ''} with no test by June${highlightActive ? '' : ' (highlight starts June 1)'}`,
+                MAP_NO_TEST_BY_JUNE_COLOR
+            );
+        }
+
         function isHideInProcessActive() {
             return mapHideInProcess;
         }
@@ -23382,6 +23549,7 @@
             // Update scheduled test dates panel
             updateTestDatesPanel();
             updateImmediateAttentionPanel();
+            updateNoTestByJunePanel();
 
             function reapplyBinSidebarSearch(inputId, listId) {
                 var inp = document.getElementById(inputId);
@@ -24333,6 +24501,8 @@
                 markerColor = '#e67e22'; // Orange - in process
             } else if (isHold) {
                 markerColor = '#607d8b'; // Blue-gray - on hold
+            } else if (building.missedJuneTestDeadline && mapIsNoTestByJuneHighlightActive()) {
+                markerColor = MAP_NO_TEST_BY_JUNE_COLOR; // Deep red - no test by June
             } else if (isFavorited) {
                 markerColor = '#9b59b6'; // Purple - favorited building
             } else if (building.allRequiredTestsCompletedForYear) {
@@ -24598,6 +24768,7 @@
                             removedDeletedDevices,
                             allRequiredTestsCompletedForYear,
                             calendarYear: currentYear,
+                            missedJuneTestDeadline: mapBuildingMissedJuneTestDeadline(bin, new Date(), group),
                             isHidden: !!hidden[bin],
                             isCompleted: !!completed[bin],
                             completionType: completed[bin] ? normalizeMapCompletedTestType(completed[bin].completionType || completed[bin].testType) : '',
@@ -25619,6 +25790,7 @@
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #4CAF50; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">All Devices Ready</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ffc107; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">Some Devices Ready</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ff6b6b; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">No Devices Ready</span></div>
+                        <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #8B0000; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">No Test by June</span></div>
                         <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;"><span style="display:inline-block; width:14px; height:14px; background:#9b59b6; clip-path:polygon(30% 0,70% 0,100% 30%,100% 70%,70% 100%,30% 100%,0 70%,0 30%); flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">CAT Scheduled</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display:inline-block; width:14px; height:14px; border-radius:2px; background:#1a73e8; flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">PVI Scheduled</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display:inline-block; width:11px; height:11px; transform:rotate(45deg); background:#607d8b; margin:1px 2px; flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">CAT + PVI Scheduled</span></div>
@@ -37061,7 +37233,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.2.1</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.2.2</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
