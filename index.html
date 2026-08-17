@@ -1184,7 +1184,8 @@
                             #mapControlsPanelBody.mcp-detail-mode #category5BypassedList,
                             #mapControlsPanelBody.mcp-detail-mode #immediateAttentionList,
                             #mapControlsPanelBody.mcp-detail-mode #noTestByJuneList,
-                            #mapControlsPanelBody.mcp-detail-mode #testDatesPanelList { max-height: min(68vh, 620px) !important; }
+                            #mapControlsPanelBody.mcp-detail-mode #testDatesPanelList,
+                            #mapControlsPanelBody.mcp-detail-mode #mapViewFilterMenu { max-height: min(68vh, 620px) !important; }
                             #favoritesBuildingsList,
                             #monitoredBuildingsList,
                             #inProcessBuildingsList,
@@ -1199,7 +1200,8 @@
                             #mapActivityLogList,
                             #immediateAttentionList,
                             #noTestByJuneList,
-                            #testDatesPanelList { max-height: min(52vh, 460px) !important; }
+                            #testDatesPanelList,
+                            #mapViewFilterMenu { max-height: min(52vh, 460px) !important; }
                             /* Popped-out panel: lift list height caps so content fills available space */
                             #mapControlsPanel.mcp-popped-out #favoritesBuildingsList,
                             #mapControlsPanel.mcp-popped-out #monitoredBuildingsList,
@@ -1215,7 +1217,8 @@
                             #mapControlsPanel.mcp-popped-out #mapActivityLogList,
                             #mapControlsPanel.mcp-popped-out #immediateAttentionList,
                             #mapControlsPanel.mcp-popped-out #noTestByJuneList,
-                            #mapControlsPanel.mcp-popped-out #testDatesPanelList { max-height: none !important; }
+                            #mapControlsPanel.mcp-popped-out #testDatesPanelList,
+                            #mapControlsPanel.mcp-popped-out #mapViewFilterMenu { max-height: none !important; }
                             /* Custom resize handles (floating mode only) */
                             .mcp-rh { display: none; position: absolute; z-index: 10; }
                             #mapControlsPanel.mcp-popped-out .mcp-rh { display: block; }
@@ -1600,40 +1603,15 @@
                             </div>
                         </div>
 
-                        <!-- Tips -->
+                        <!-- Map View Filter -->
                         <div class="mcp-section">
-                            <div class="mcp-header" onclick="toggleMcpSection('mcpTips')">
-                                <span class="mcp-title">💡 Tips</span>
-                                <span class="mcp-arrow" id="mcpTipsArrow">›</span>
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpMapViewFilter'); renderMapViewFilterMenu();">
+                                <span class="mcp-title"><span style="color:#17a2b8;">🗺️</span> Map View Filter<span id="mapViewFilterHeaderSuffix" style="font-weight:500; opacity:0.75;"></span></span>
+                                <span class="mcp-arrow" id="mcpMapViewFilterArrow">›</span>
                             </div>
-                            <div class="mcp-body" id="mcpTips">
-                                <input type="text" id="mcpTipsSearchInput" class="mcp-search-input" placeholder="🔍 Search tips..."
-                                       oninput="filterMcpTipsList(this.value)">
-                                <ul id="mcpTipsList" style="font-size: 0.9em; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.7;">
-                                    <li>Click a marker to see building details</li>
-                                    <li>Use ✓ in popup to mark a building complete</li>
-                                    <li>Use 🔄 in popup to mark a building in process</li>
-                                    <li>Use ⭐ in popup to favorite a building</li>
-                                    <li>Use 👁️ in popup to hide a building</li>
-                                    <li>Use 📅 dropdown to assign a month</li>
-                                    <li>Use 🗓️ in popup to schedule test dates</li>
-                                    <li>Scheduled markers: octagon = CAT, square = PVI, diamond = both</li>
-                                    <li>Past-due test dates appear in Settings to confirm</li>
-                                    <li>Completion markers: green check = fully completed; PVI-only / Category-only use normal ready/not-ready colors and device counts</li>
-                                    <li>Fully completed = PVI and Category both have a date (manual entry or DOB Info Update)</li>
-                                    <li>Map view filter is a menu: completion and scheduled rows use Show / Hide toggles</li>
-                                    <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
-                                    <li>In-process buildings turn orange</li>
-                                    <li>Favorited buildings turn purple</li>
-                                    <li>Add custom locations with the ➕ button</li>
-                                    <li><strong>Save your work</strong> — data is not kept between sessions</li>
-                                </ul>
-                            </div>
-                        </div>
-
-                        <div class="mcp-menu-footer">
-                            <div style="margin-top: 10px; padding: 8px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px;">
-                                <div style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:6px;">Map view filter</div>
+                            <div class="mcp-body" id="mcpMapViewFilter">
+                                <p class="mcp-desc">Choose what buildings are shown on the map. Completion and scheduled rows use Show / Hide toggles. Export still uses all saved MAP data.</p>
+                                <div id="mapViewFilterActiveStatus" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(23,162,184,0.28); background:rgba(23,162,184,0.08); color:var(--text-color); font-size:0.9em; line-height:1.4;"></div>
                                 <div id="mapViewFilterMenu" style="display:flex; flex-direction:column; gap:4px; max-height:280px; overflow-y:auto;"></div>
                                 <!-- Hidden select kept in sync for saved views / existing filter plumbing -->
                                 <select id="mapViewFilterSelect" hidden aria-hidden="true" tabindex="-1">
@@ -1673,7 +1651,42 @@
                                     <option value="month:December">December</option>
                                     <option value="month:REVIEW">REVIEW</option>
                                 </select>
+                                <button type="button" onclick="setSelectedMapViewFilter('all')" class="mcp-btn" style="color:#17a2b8;">Reset to Current Map View</button>
                             </div>
+                        </div>
+
+                        <!-- Tips -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpTips')">
+                                <span class="mcp-title">💡 Tips</span>
+                                <span class="mcp-arrow" id="mcpTipsArrow">›</span>
+                            </div>
+                            <div class="mcp-body" id="mcpTips">
+                                <input type="text" id="mcpTipsSearchInput" class="mcp-search-input" placeholder="🔍 Search tips..."
+                                       oninput="filterMcpTipsList(this.value)">
+                                <ul id="mcpTipsList" style="font-size: 0.9em; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.7;">
+                                    <li>Click a marker to see building details</li>
+                                    <li>Use ✓ in popup to mark a building complete</li>
+                                    <li>Use 🔄 in popup to mark a building in process</li>
+                                    <li>Use ⭐ in popup to favorite a building</li>
+                                    <li>Use 👁️ in popup to hide a building</li>
+                                    <li>Use 📅 dropdown to assign a month</li>
+                                    <li>Use 🗓️ in popup to schedule test dates</li>
+                                    <li>Scheduled markers: octagon = CAT, square = PVI, diamond = both</li>
+                                    <li>Past-due test dates appear in Settings to confirm</li>
+                                    <li>Completion markers: green check = fully completed; PVI-only / Category-only use normal ready/not-ready colors and device counts</li>
+                                    <li>Fully completed = PVI and Category both have a date (manual entry or DOB Info Update)</li>
+                                    <li>Map View Filter is a Settings section: open it like Favorites or Month Labels; completion and scheduled rows use Show / Hide toggles</li>
+                                    <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
+                                    <li>In-process buildings turn orange</li>
+                                    <li>Favorited buildings turn purple</li>
+                                    <li>Add custom locations with the ➕ button</li>
+                                    <li><strong>Save your work</strong> — data is not kept between sessions</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="mcp-menu-footer">
                             <button id="mapExportExcelButton" onclick="showMapExportModal()" class="mcp-btn" style="background: #28a745; color: white; border-color: #28a745; font-weight: 600; margin-top: 10px;">
                                 Export
                             </button>
@@ -14396,11 +14409,32 @@
             setSelectedMapViewFilter(nextValue);
         }
 
+        function updateMapViewFilterSectionChrome(filterValue) {
+            const selected = filterValue || getSelectedMapViewFilter() || 'all';
+            const label = getMapViewFilterLabel(selected);
+            const displayLabel = typeof getMapViewFilterDisplayLabel === 'function'
+                ? getMapViewFilterDisplayLabel(selected)
+                : label;
+            const suffixEl = document.getElementById('mapViewFilterHeaderSuffix');
+            if (suffixEl) {
+                suffixEl.textContent = selected === 'all' ? '' : ` — ${label}`;
+            }
+            const statusEl = document.getElementById('mapViewFilterActiveStatus');
+            if (statusEl) {
+                if (selected === 'all') {
+                    statusEl.innerHTML = `Showing the <strong>current map view</strong> (no extra view filter).`;
+                } else {
+                    statusEl.innerHTML = `Active filter: <strong style="color:#17a2b8;">${escapeMapSuggestionHtml(displayLabel)}</strong>`;
+                }
+            }
+        }
+
         function renderMapViewFilterMenu() {
             const menu = document.getElementById('mapViewFilterMenu');
             if (!menu) return;
             const selected = getSelectedMapViewFilter() || 'all';
             const toggleActive = getMapViewFilterToggleMode(selected);
+            updateMapViewFilterSectionChrome(selected);
 
             function rowStyle(active) {
                 return `display:flex; align-items:center; justify-content:space-between; gap:6px; width:100%; box-sizing:border-box; padding:7px 8px; border-radius:6px; border:1px solid ${active ? '#17a2b8' : 'var(--input-border)'}; background:${active ? 'rgba(23,162,184,0.14)' : 'var(--panel-bg)'}; color:var(--text-color); cursor:pointer; text-align:left; font-size:0.92em;`;
@@ -22703,6 +22737,9 @@
             }
             if (id === 'mcpDateCalculator' && typeof refreshMapDateCalculatorSummary === 'function') {
                 refreshMapDateCalculatorSummary();
+            }
+            if (id === 'mcpMapViewFilter' && typeof renderMapViewFilterMenu === 'function') {
+                renderMapViewFilterMenu();
             }
 
             panelBody.scrollTop = 0;
@@ -37443,7 +37480,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.3</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.4</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
