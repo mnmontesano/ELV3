@@ -1597,6 +1597,7 @@
                                     <li>Scheduled markers: octagon = CAT, square = PVI, diamond = both</li>
                                     <li>Past-due test dates appear in Settings to confirm</li>
                                     <li>Completion markers: green = Full, blue = PVI only, purple = Category only</li>
+                                    <li>Map view filter can hide fully completed jobs while keeping PVI-only / Category-only jobs visible</li>
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
@@ -1615,7 +1616,9 @@
                                     <option value="favorites">Favorites</option>
                                     <option value="hidden">Hidden</option>
                                     <option value="completed">Completed</option>
-                                    <option value="hide-completed">Hide Completed Jobs</option>
+                                    <option value="hide-partially-completed">Hide Partially Completed Jobs</option>
+                                    <option value="hide-fully-completed">Hide Fully Completed Jobs</option>
+                                    <option value="hide-completed" hidden>Hide Completed Jobs</option>
                                     <option value="in-process">In Process</option>
                                     <option value="hold">On Hold</option>
                                     <option value="immediate-attention" disabled hidden>Immediate Attention</option>
@@ -14275,6 +14278,8 @@
                 favorites: 'Favorites',
                 hidden: 'Hidden',
                 completed: 'Completed',
+                'hide-partially-completed': 'Hide Partially Completed Jobs',
+                'hide-fully-completed': 'Hide Fully Completed Jobs',
                 'hide-completed': 'Hide Completed Jobs',
                 'in-process': 'In Process',
                 hold: 'On Hold',
@@ -14340,6 +14345,30 @@
             return !!((view.completed && view.completed[key]) || (building && building.isCompleted));
         }
 
+        function mapViewGetCompletionType(view, bin, building) {
+            const key = String(bin);
+            const entry = view && view.completed ? view.completed[key] : null;
+            if (entry) {
+                return normalizeMapCompletedTestType(entry.completionType || entry.testType) || 'Legacy';
+            }
+            if (building && building.isCompleted) {
+                return normalizeMapCompletedTestType(building.completionType) || 'Legacy';
+            }
+            return '';
+        }
+
+        // Partial = PVI-only or Category-only (still missing the other required test).
+        function mapViewIsPartiallyCompleted(view, bin, building) {
+            const type = mapViewGetCompletionType(view, bin, building);
+            return type === 'PVI' || type === 'Category';
+        }
+
+        // Full = both tests done. Legacy completions are treated as fully completed.
+        function mapViewIsFullyCompleted(view, bin, building) {
+            const type = mapViewGetCompletionType(view, bin, building);
+            return type === 'Full' || type === 'Legacy';
+        }
+
         function mapViewPassesHideScheduledCompletedFilter(view, bin, building) {
             const key = String(bin);
             const monthLabels = view.monthLabels || {};
@@ -14378,6 +14407,13 @@
             if (filterValue === 'favorites') return new Set(Object.keys(view.favorites || {}).map(String));
             if (filterValue === 'hidden') return new Set(Object.keys(view.hidden || {}).map(String));
             if (filterValue === 'completed') return new Set(Object.keys(view.completed || {}).map(String));
+            if (filterValue === 'hide-partially-completed') {
+                return new Set(allBins.filter(bin => !mapViewIsPartiallyCompleted(view, bin)));
+            }
+            if (filterValue === 'hide-fully-completed') {
+                return new Set(allBins.filter(bin => !mapViewIsFullyCompleted(view, bin)));
+            }
+            // Legacy saved filter: hide every completed marker (partial + full).
             if (filterValue === 'hide-completed') return new Set(allBins.filter(bin => !(view.completed && view.completed[bin])));
             if (filterValue === 'in-process') return new Set(Object.keys(view.inProcess || {}).map(String));
             if (filterValue === 'hold') return new Set(Object.keys(view.hold || {}).map(String));
@@ -14421,10 +14457,17 @@
             if (!filterValue || filterValue === 'all') return isBuildingVisibleInCurrentMapFilters(building);
 
             const activeView = view || {};
-            const filterBins = bins || getMapViewFilterBins(activeView, filterValue) || new Set();
-            const matchesFilter = filterValue === 'hide-scheduled'
-                ? mapViewPassesHideScheduledCompletedFilter(activeView, building.bin, building)
-                : filterBins.has(String(building.bin));
+            let matchesFilter;
+            if (filterValue === 'hide-scheduled') {
+                matchesFilter = mapViewPassesHideScheduledCompletedFilter(activeView, building.bin, building);
+            } else if (filterValue === 'hide-partially-completed') {
+                matchesFilter = !mapViewIsPartiallyCompleted(activeView, building.bin, building);
+            } else if (filterValue === 'hide-fully-completed') {
+                matchesFilter = !mapViewIsFullyCompleted(activeView, building.bin, building);
+            } else {
+                const filterBins = bins || getMapViewFilterBins(activeView, filterValue) || new Set();
+                matchesFilter = filterBins.has(String(building.bin));
+            }
 
             return matchesFilter && mapBuildingMatchesActiveMonthScope(building, monthLabels || activeView.monthLabels);
         }
