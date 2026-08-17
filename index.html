@@ -22230,14 +22230,33 @@
                 || (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups)
                 || {};
             const completed = view ? (view.completed || {}) : getMapCompleted();
+            const schedules = view ? (view.testDates || {}) : (typeof mapTestDates === 'object' && mapTestDates ? mapTestDates : {});
             return Object.entries(binGroups)
                 .filter(([bin, group]) => mapBuildingMissedJuneTestDeadline(bin, today, group))
-                .map(([bin, group]) => ({
-                    bin: String(bin),
-                    address: (group && group.address) || (completed[bin] && completed[bin].address) || '',
-                    deviceCount: countMapJobDevices(group && group.devices)
-                }))
-                .sort((a, b) => (a.address || a.bin).localeCompare(b.address || b.bin));
+                .map(([bin, group]) => {
+                    const key = String(bin);
+                    const scheduleDates = view
+                        ? getMapScheduleDates(schedules[key])
+                        : getTestDatesForBin(key);
+                    return {
+                        bin: key,
+                        address: (group && group.address) || (completed[bin] && completed[bin].address) || '',
+                        deviceCount: countMapJobDevices(group && group.devices),
+                        hasScheduledTestDate: scheduleDates.length > 0,
+                        scheduledDateCount: scheduleDates.length,
+                        earliestScheduledDate: scheduleDates.slice().sort()[0] || ''
+                    };
+                })
+                .sort((a, b) => {
+                    // Buildings with no scheduled test date first, then those with dates.
+                    if (a.hasScheduledTestDate !== b.hasScheduledTestDate) {
+                        return a.hasScheduledTestDate ? 1 : -1;
+                    }
+                    if (a.hasScheduledTestDate && a.earliestScheduledDate !== b.earliestScheduledDate) {
+                        return a.earliestScheduledDate.localeCompare(b.earliestScheduledDate);
+                    }
+                    return (a.address || a.bin).localeCompare(b.address || b.bin);
+                });
         }
 
         function updateNoTestByJunePanel() {
@@ -22252,14 +22271,19 @@
             const highlightActive = mapIsNoTestByJuneHighlightActive(today);
             const juneDeadline = getMapJuneDeadlineDate(year);
             const buildings = getMapNoTestByJuneBuildings(today);
+            const unscheduledCount = buildings.filter(item => !item.hasScheduledTestDate).length;
+            const scheduledCount = buildings.length - unscheduledCount;
             if (countEl) countEl.textContent = String(buildings.length);
 
             if (statusEl) {
+                const splitNote = buildings.length
+                    ? ` Sorted with no schedule first (${unscheduledCount}), then scheduled (${scheduledCount}).`
+                    : '';
                 if (highlightActive) {
-                    statusEl.innerHTML = `<strong style="color:${MAP_NO_TEST_BY_JUNE_COLOR};">${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} with no ${year} test yet — map markers are deep red as of June 1.`;
+                    statusEl.innerHTML = `<strong style="color:${MAP_NO_TEST_BY_JUNE_COLOR};">${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} with no ${year} test yet — map markers are deep red as of June 1.${splitNote}`;
                 } else {
                     const juneLabel = juneDeadline.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                    statusEl.innerHTML = `<strong>${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} still have no ${year} test. Deep-red map highlighting starts <strong>${juneLabel}</strong>.`;
+                    statusEl.innerHTML = `<strong>${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} still have no ${year} test. Deep-red map highlighting starts <strong>${juneLabel}</strong>.${splitNote}`;
                 }
             }
 
@@ -22274,15 +22298,22 @@
                 const addressHtml = item.address
                     ? `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; text-decoration:underline dotted;">${escapeMapSuggestionHtml(item.address)}</span>`
                     : `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; opacity:0.6; text-decoration:underline dotted;">BIN ${escapeMapSuggestionHtml(bin)}</span>`;
+                const scheduleBadge = item.hasScheduledTestDate
+                    ? `<span style="flex-shrink:0; font-size:0.72em; font-weight:700; padding:2px 6px; border-radius:999px; background:rgba(26,115,232,0.12); color:#1a73e8; border:1px solid rgba(26,115,232,0.28);">Scheduled</span>`
+                    : `<span style="flex-shrink:0; font-size:0.72em; font-weight:700; padding:2px 6px; border-radius:999px; background:rgba(139,0,0,0.12); color:${MAP_NO_TEST_BY_JUNE_COLOR}; border:1px solid rgba(139,0,0,0.28);">No schedule</span>`;
+                const scheduleDetail = item.hasScheduledTestDate
+                    ? ` · ${item.scheduledDateCount} scheduled date${item.scheduledDateCount !== 1 ? 's' : ''}`
+                    : ' · no scheduled date';
                 return `
-                <div data-bin="${bin}" data-address="${addrEsc}" style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--input-bg); border-radius:4px; margin-bottom:4px; font-size:1em; border-left:3px solid ${MAP_NO_TEST_BY_JUNE_COLOR};">
+                <div data-bin="${bin}" data-address="${addrEsc}" data-has-schedule="${item.hasScheduledTestDate ? '1' : '0'}" style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 8px; background:var(--input-bg); border-radius:4px; margin-bottom:4px; font-size:1em; border-left:3px solid ${item.hasScheduledTestDate ? '#1a73e8' : MAP_NO_TEST_BY_JUNE_COLOR};">
                     <span style="flex:1; overflow:hidden; min-width:0; cursor:pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                         <span style="display:flex; align-items:center; gap:4px; overflow:hidden;">
-                            <span style="color:${MAP_NO_TEST_BY_JUNE_COLOR}; font-weight:700; flex-shrink:0;">⛔</span>
+                            <span style="color:${item.hasScheduledTestDate ? '#1a73e8' : MAP_NO_TEST_BY_JUNE_COLOR}; font-weight:700; flex-shrink:0;">${item.hasScheduledTestDate ? '🗓️' : '⛔'}</span>
                             ${addressHtml}
                         </span>
-                        <span style="font-size:0.8em; opacity:0.55; padding-left:22px;">BIN ${escapeMapSuggestionHtml(bin)}${item.deviceCount ? ' · ' + item.deviceCount + ' device' + (item.deviceCount !== 1 ? 's' : '') : ''} · no ${year} test</span>
+                        <span style="font-size:0.8em; opacity:0.55; padding-left:22px;">BIN ${escapeMapSuggestionHtml(bin)}${item.deviceCount ? ' · ' + item.deviceCount + ' device' + (item.deviceCount !== 1 ? 's' : '') : ''} · no ${year} test${scheduleDetail}</span>
                     </span>
+                    ${scheduleBadge}
                 </div>`;
             }).join('');
 
@@ -37407,7 +37438,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.1</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
