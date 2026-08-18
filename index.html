@@ -1622,7 +1622,7 @@
                                     <li>Past-due test dates appear in Settings to confirm</li>
                                     <li>Completion markers: green check = fully completed; PVI-only / Category-only use normal ready/not-ready colors and device counts</li>
                                     <li>Fully completed = PVI and Category both have a date (manual entry or DOB Info Update)</li>
-                                    <li>Map view filter: Hide Partially Completed also hides fully completed jobs; Hide Fully Completed keeps partials visible</li>
+                                    <li>Map view filter: Hide Category Completed leaves PVI-only jobs visible; Hide PVI Completed leaves Category-only jobs visible. Fully completed jobs are hidden by both.</li>
                                     <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
@@ -1646,6 +1646,8 @@
                                     <option value="fully-completed">Fully Completed Jobs</option>
                                     <option value="hide-partially-completed">Hide Partially Completed Jobs</option>
                                     <option value="hide-fully-completed">Hide Fully Completed Jobs</option>
+                                    <option value="hide-category-completed">Hide Category Completed</option>
+                                    <option value="hide-pvi-completed">Hide PVI Completed</option>
                                     <option value="hide-completed">Hide Completed Jobs</option>
                                     <option value="in-process">In Process</option>
                                     <option value="hold">On Hold</option>
@@ -14333,6 +14335,8 @@
                 'fully-completed': 'Fully Completed Jobs',
                 'hide-partially-completed': 'Hide Partially Completed Jobs',
                 'hide-fully-completed': 'Hide Fully Completed Jobs',
+                'hide-category-completed': 'Hide Category Completed',
+                'hide-pvi-completed': 'Hide PVI Completed',
                 'hide-completed': 'Hide Completed Jobs',
                 'in-process': 'In Process',
                 hold: 'On Hold',
@@ -14511,6 +14515,15 @@
                 && mapBuildingHasDatedTestCompletion(view, bin, 'Category', building, year);
         }
 
+        function mapViewHasCompletedTest(view, bin, building, testType) {
+            const year = new Date().getFullYear();
+            const normalizedType = normalizeMapCompletedTestType(testType);
+            if (normalizedType !== 'PVI' && normalizedType !== 'Category') return false;
+            if (mapBuildingHasDatedTestCompletion(view, bin, normalizedType, building, year)) return true;
+            const type = mapViewGetCompletionType(view, bin, building);
+            return type === normalizedType || type === 'Full';
+        }
+
         function mapViewPassesHideScheduledCompletedFilter(view, bin, building) {
             const key = String(bin);
             const monthLabels = view.monthLabels || {};
@@ -14563,6 +14576,12 @@
             }
             if (filterValue === 'hide-fully-completed') {
                 return new Set(allBins.filter(bin => !mapViewIsFullyCompleted(view, bin)));
+            }
+            if (filterValue === 'hide-category-completed') {
+                return new Set(allBins.filter(bin => !mapViewHasCompletedTest(view, bin, null, 'Category')));
+            }
+            if (filterValue === 'hide-pvi-completed') {
+                return new Set(allBins.filter(bin => !mapViewHasCompletedTest(view, bin, null, 'PVI')));
             }
             // Legacy saved filter: hide every completed marker (partial + full).
             if (filterValue === 'hide-completed') return new Set(allBins.filter(bin => !(view.completed && view.completed[bin])));
@@ -14623,6 +14642,10 @@
                     && !mapViewIsFullyCompleted(activeView, building.bin, building);
             } else if (filterValue === 'hide-fully-completed') {
                 matchesFilter = !mapViewIsFullyCompleted(activeView, building.bin, building);
+            } else if (filterValue === 'hide-category-completed') {
+                matchesFilter = !mapViewHasCompletedTest(activeView, building.bin, building, 'Category');
+            } else if (filterValue === 'hide-pvi-completed') {
+                matchesFilter = !mapViewHasCompletedTest(activeView, building.bin, building, 'PVI');
             } else {
                 const filterBins = bins || getMapViewFilterBins(activeView, filterValue) || new Set();
                 matchesFilter = filterBins.has(String(building.bin));
@@ -25485,7 +25508,7 @@
                 } else if (isTransportation) {
                     markerBg = MAP_TRANSPORTATION_COLOR;
                 } else {
-                    markerBg = '#000000';
+                    markerBg = '#d32f2f';
                 }
                 const markerFg = '#ffffff';
 
@@ -25873,7 +25896,7 @@
                         <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;"><span style="display:inline-block; width:14px; height:14px; background:#9b59b6; clip-path:polygon(30% 0,70% 0,100% 30%,100% 70%,70% 100%,30% 100%,0 70%,0 30%); flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">CAT Scheduled</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display:inline-block; width:14px; height:14px; border-radius:2px; background:#1a73e8; flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">PVI Scheduled</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display:inline-block; width:11px; height:11px; transform:rotate(45deg); background:#607d8b; margin:1px 2px; flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">CAT + PVI Scheduled</span></div>
-                        <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #000000; border: 2px solid #ffffff; box-sizing: border-box; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">📍 Custom Location</span></div>
+                        <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #d32f2f; border: 2px solid #ffffff; box-sizing: border-box; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">📍 Custom Location</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #8d6e63; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">🏠 House (custom)</span></div>
                         <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--input-border, #444); font-size: 10px; color: var(--text-color, #fff); opacity: 0.8;">
                             Ready = 91+ days since last test<br>
