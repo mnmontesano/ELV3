@@ -1099,9 +1099,10 @@
                             #mapMonthFilterStatus[open] > summary .map-filter-status-arrow { transform: rotate(180deg); }
                         </style>
                         <details id="mapMonthFilterStatus" style="display: none; width: 100%; margin-top: 2px; border-radius: 6px; background: #1e7a46; border: 1px solid #2ea35d; border-left: 3px solid #6ee7a0; color: #fff; font-size: 0.8em; line-height: 1.25; font-weight: 700; box-shadow: 0 1px 5px rgba(0,0,0,0.14);">
-                            <summary style="cursor: pointer; padding: 4px 8px; user-select: none; display: flex; align-items: center; gap: 6px;">
+                            <summary style="cursor: pointer; padding: 4px 8px; user-select: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                                 <span class="map-filter-status-arrow" aria-hidden="true" style="font-size: 0.75em; opacity: 0.9;">▼</span>
                                 <span>Filters Active</span>
+                                <span id="mapMonthFilterStatusSummary" style="font-weight: 600; opacity: 0.95;"></span>
                             </summary>
                             <div id="mapMonthFilterStatusDetails" style="padding: 2px 8px 6px 22px; font-weight: 600; opacity: 0.95;"></div>
                         </details>
@@ -1359,7 +1360,7 @@
                             </div>
                             <div class="mcp-body" id="mcpNoTestByJune">
                                 <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">
-                                    Buildings with no PVI or Category test performed yet this calendar year. Starting June 1, these markers turn deep red on the map. List is sorted with no scheduled date first, then buildings that already have a test date attached.
+                                    Buildings with no PVI or Category test performed yet this calendar year. Starting June 1, these markers turn deep red on the map. List is sorted with no scheduled date first, then buildings that already have a test date attached. Jobs on hold are labeled and listed after active jobs in each group.
                                 </p>
                                 <div id="noTestByJuneStatus" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(139,0,0,0.28); background:rgba(139,0,0,0.08); color:var(--text-color); font-size:0.9em; line-height:1.4;"></div>
                                 <input type="text" id="noTestByJuneSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
@@ -1621,7 +1622,7 @@
                                     <li>Past-due test dates appear in Settings to confirm</li>
                                     <li>Completion markers: green check = fully completed; PVI-only / Category-only use normal ready/not-ready colors and device counts</li>
                                     <li>Fully completed = PVI and Category both have a date (manual entry or DOB Info Update)</li>
-                                    <li>Map view filter is a menu: completion and scheduled rows use Show / Hide toggles</li>
+                                    <li>Map view filter: Hide Partially Completed also hides fully completed jobs; Hide Fully Completed keeps partials visible</li>
                                     <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
@@ -1633,10 +1634,8 @@
 
                         <div class="mcp-menu-footer">
                             <div style="margin-top: 10px; padding: 8px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px;">
-                                <div style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:6px;">Map view filter</div>
-                                <div id="mapViewFilterMenu" style="display:flex; flex-direction:column; gap:4px; max-height:280px; overflow-y:auto;"></div>
-                                <!-- Hidden select kept in sync for saved views / existing filter plumbing -->
-                                <select id="mapViewFilterSelect" hidden aria-hidden="true" tabindex="-1">
+                                <label for="mapViewFilterSelect" style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:5px;">Map view filter</label>
+                                <select id="mapViewFilterSelect" onchange="applyMapViewDropdownFilter()" style="width:100%; padding:6px 8px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:0.95em;">
                                     <option value="all">Current map view</option>
                                     <option value="visible">Visible with current settings</option>
                                     <option value="active-month-filters">Current active month filter</option>
@@ -2631,7 +2630,6 @@
                 var el = document.getElementById(id);
                 if (el) document.body.appendChild(el);
             });
-            if (typeof renderMapViewFilterMenu === 'function') renderMapViewFilterMenu();
         });
 
         // Global variables for storing address suggestions state
@@ -14313,140 +14311,9 @@
                 }
                 select.value = value;
             }
-            renderMapViewFilterMenu();
             if (opts.apply !== false) {
                 applyMapViewDropdownFilter(opts.applyOptions || {});
             }
-        }
-
-        const MAP_VIEW_FILTER_TOGGLE_ITEMS = [
-            {
-                id: 'completed-jobs',
-                label: 'Completed Jobs',
-                showValue: 'completed',
-                hideValue: 'hide-completed'
-            },
-            {
-                id: 'partially-completed-jobs',
-                label: 'Partially Completed Jobs',
-                showValue: 'partially-completed',
-                hideValue: 'hide-partially-completed'
-            },
-            {
-                id: 'fully-completed-jobs',
-                label: 'Fully Completed Jobs',
-                showValue: 'fully-completed',
-                hideValue: 'hide-fully-completed'
-            },
-            {
-                id: 'scheduled-jobs',
-                label: 'Scheduled Test Dates',
-                showValue: 'scheduled',
-                hideValue: 'hide-scheduled'
-            }
-        ];
-
-        const MAP_VIEW_FILTER_SIMPLE_ITEMS = [
-            { value: 'all', label: 'Current map view' },
-            { value: 'visible', label: 'Visible with current settings' },
-            { value: 'active-month-filters', label: 'Current active month filter' },
-            { value: 'favorites', label: 'Favorites' },
-            { value: 'hidden', label: 'Hidden' },
-            { value: 'in-process', label: 'In Process' },
-            { value: 'hold', label: 'On Hold' },
-            { value: 'no-test-by-june', label: 'No Test by June' },
-            { value: 'scheduled-cat', label: 'CAT Scheduled Jobs' },
-            { value: 'scheduled-pvi', label: 'PVI Scheduled Jobs' },
-            { value: 'notes', label: 'Buildings with Notes' },
-            { value: 'month-labeled', label: 'Month-labeled' },
-            { value: 'no-month', label: 'No month label' },
-            { value: 'month:January', label: 'January' },
-            { value: 'month:February', label: 'February' },
-            { value: 'month:March', label: 'March' },
-            { value: 'month:April', label: 'April' },
-            { value: 'month:May', label: 'May' },
-            { value: 'month:June', label: 'June' },
-            { value: 'month:July', label: 'July' },
-            { value: 'month:August', label: 'August' },
-            { value: 'month:September', label: 'September' },
-            { value: 'month:October', label: 'October' },
-            { value: 'month:November', label: 'November' },
-            { value: 'month:December', label: 'December' },
-            { value: 'month:REVIEW', label: 'REVIEW' }
-        ];
-
-        function getMapViewFilterToggleMode(filterValue) {
-            const value = filterValue || getSelectedMapViewFilter();
-            for (let i = 0; i < MAP_VIEW_FILTER_TOGGLE_ITEMS.length; i++) {
-                const item = MAP_VIEW_FILTER_TOGGLE_ITEMS[i];
-                if (value === item.showValue) return { item, mode: 'show' };
-                if (value === item.hideValue) return { item, mode: 'hide' };
-            }
-            return null;
-        }
-
-        function selectMapViewFilterMenuItem(filterValue) {
-            setSelectedMapViewFilter(filterValue);
-        }
-
-        function selectMapViewFilterToggle(toggleId, mode) {
-            const item = MAP_VIEW_FILTER_TOGGLE_ITEMS.find(entry => entry.id === toggleId);
-            if (!item) return;
-            const nextValue = mode === 'hide' ? item.hideValue : item.showValue;
-            setSelectedMapViewFilter(nextValue);
-        }
-
-        function renderMapViewFilterMenu() {
-            const menu = document.getElementById('mapViewFilterMenu');
-            if (!menu) return;
-            const selected = getSelectedMapViewFilter() || 'all';
-            const toggleActive = getMapViewFilterToggleMode(selected);
-
-            function rowStyle(active) {
-                return `display:flex; align-items:center; justify-content:space-between; gap:6px; width:100%; box-sizing:border-box; padding:7px 8px; border-radius:6px; border:1px solid ${active ? '#17a2b8' : 'var(--input-border)'}; background:${active ? 'rgba(23,162,184,0.14)' : 'var(--panel-bg)'}; color:var(--text-color); cursor:pointer; text-align:left; font-size:0.92em;`;
-            }
-
-            function toggleBtnStyle(active, kind) {
-                const activeBg = kind === 'hide' ? '#c62828' : '#17a2b8';
-                return `flex:1; padding:5px 6px; border-radius:5px; border:1px solid ${active ? activeBg : 'var(--input-border)'}; background:${active ? activeBg : 'var(--input-bg)'}; color:${active ? 'white' : 'var(--text-color)'}; cursor:pointer; font-size:0.82em; font-weight:${active ? 700 : 600};`;
-            }
-
-            function simpleButton(item) {
-                const active = selected === item.value;
-                return `<button type="button" class="map-view-filter-menu-item" data-filter-value="${item.value}" onclick="selectMapViewFilterMenuItem('${item.value}')" style="${rowStyle(active)}">
-                    <span style="font-weight:${active ? 700 : 500};">${item.label}</span>
-                    ${active ? '<span style="color:#17a2b8; font-weight:800;">✓</span>' : ''}
-                </button>`;
-            }
-
-            const topItems = MAP_VIEW_FILTER_SIMPLE_ITEMS.slice(0, 5);
-            const moreItems = MAP_VIEW_FILTER_SIMPLE_ITEMS.slice(5);
-
-            const toggleHtml = MAP_VIEW_FILTER_TOGGLE_ITEMS.map(item => {
-                const isActive = !!(toggleActive && toggleActive.item.id === item.id);
-                const mode = isActive ? toggleActive.mode : '';
-                return `<div class="map-view-filter-toggle-row" data-toggle-id="${item.id}" style="padding:7px 8px; border-radius:6px; border:1px solid ${isActive ? '#17a2b8' : 'var(--input-border)'}; background:${isActive ? 'rgba(23,162,184,0.14)' : 'var(--panel-bg)'};">
-                    <div style="font-size:0.92em; font-weight:${isActive ? 700 : 600}; color:var(--text-color); margin-bottom:6px;">${item.label}</div>
-                    <div style="display:flex; gap:6px;">
-                        <button type="button" onclick="selectMapViewFilterToggle('${item.id}', 'show')" style="${toggleBtnStyle(mode === 'show', 'show')}">Show</button>
-                        <button type="button" onclick="selectMapViewFilterToggle('${item.id}', 'hide')" style="${toggleBtnStyle(mode === 'hide', 'hide')}">Hide</button>
-                    </div>
-                </div>`;
-            }).join('');
-
-            let dynamicHtml = '';
-            if (selected.indexOf('cat5:') === 0 || selected === 'immediate-attention') {
-                dynamicHtml = simpleButton({ value: selected, label: getMapViewFilterLabel(selected) });
-            }
-
-            menu.innerHTML = `
-                ${topItems.map(simpleButton).join('')}
-                <div style="font-size:0.78em; opacity:0.7; margin:4px 2px 2px; font-weight:700; letter-spacing:0.02em;">SHOW / HIDE</div>
-                ${toggleHtml}
-                <div style="font-size:0.78em; opacity:0.7; margin:6px 2px 2px; font-weight:700; letter-spacing:0.02em;">MORE FILTERS</div>
-                ${moreItems.map(simpleButton).join('')}
-                ${dynamicHtml}
-            `;
         }
 
         function getMapViewFilterLabel(filterValue) {
@@ -14461,20 +14328,20 @@
                 'active-month-filters': 'Current active month filter',
                 favorites: 'Favorites',
                 hidden: 'Hidden',
-                completed: 'Completed Jobs (Show)',
-                'partially-completed': 'Partially Completed Jobs (Show)',
-                'fully-completed': 'Fully Completed Jobs (Show)',
-                'hide-partially-completed': 'Partially Completed Jobs (Hide)',
-                'hide-fully-completed': 'Fully Completed Jobs (Hide)',
-                'hide-completed': 'Completed Jobs (Hide)',
+                completed: 'Completed',
+                'partially-completed': 'Partially Completed Jobs',
+                'fully-completed': 'Fully Completed Jobs',
+                'hide-partially-completed': 'Hide Partially Completed Jobs',
+                'hide-fully-completed': 'Hide Fully Completed Jobs',
+                'hide-completed': 'Hide Completed Jobs',
                 'in-process': 'In Process',
                 hold: 'On Hold',
                 'immediate-attention': 'Immediate Attention',
                 'no-test-by-june': 'No Test by June',
-                scheduled: 'Scheduled Test Dates (Show)',
+                scheduled: 'Scheduled Test Dates',
                 'scheduled-cat': 'CAT Scheduled Jobs',
                 'scheduled-pvi': 'PVI Scheduled Jobs',
-                'hide-scheduled': 'Scheduled Test Dates (Hide)',
+                'hide-scheduled': 'Hide Scheduled Test Dates & Completed Jobs',
                 notes: 'Buildings with Notes',
                 'month-labeled': 'Month-labeled',
                 'no-month': 'No month label'
@@ -14888,7 +14755,6 @@
                     updateMonthFilterStatus();
                 }
                 updateMapCategory5ShowOnMapButton();
-                renderMapViewFilterMenu();
                 if (!quiet) showMapNotification('Showing current map view', '#17a2b8');
                 return;
             }
@@ -14932,15 +14798,8 @@
                 }
             });
 
-            const resultCount = document.getElementById('mapSearchResultCount');
-            if (resultCount) {
-                resultCount.textContent = `${shown} building${shown !== 1 ? 's' : ''} — ${getMapViewFilterDisplayLabel(filterValue)}`;
-                resultCount.style.display = 'inline';
-                resultCount.style.color = shown > 0 ? '#17a2b8' : '#ff6b6b';
-            }
             updateMonthFilterStatus();
             updateMapCategory5ShowOnMapButton();
-            renderMapViewFilterMenu();
             // Only re-zoom when none of the filtered buildings are already on screen,
             // so changing filters doesn't reset the user's zoom/position.
             if (shouldFitMap && bounds.isValid() && !shownInViewport) buildingMap.fitBounds(bounds, { padding: [50, 50] });
@@ -15641,7 +15500,6 @@
             mapHideScheduledMonthSelectionReady = false;
             const viewFilterSelect = document.getElementById('mapViewFilterSelect');
             if (viewFilterSelect) viewFilterSelect.value = 'all';
-            renderMapViewFilterMenu();
             updateMonthFilterButtons();
 
             const modal = document.getElementById('buildingMapModal');
@@ -17001,6 +16859,7 @@
         function updateMonthFilterStatus() {
             const statusEl = document.getElementById('mapMonthFilterStatus');
             const detailsEl = document.getElementById('mapMonthFilterStatusDetails');
+            const summaryEl = document.getElementById('mapMonthFilterStatusSummary');
             if (!statusEl || !detailsEl) return;
 
             const hideMonthLabeled = isHideMonthLabeledActive();
@@ -17013,6 +16872,7 @@
                 statusEl.style.display = 'none';
                 statusEl.open = false;
                 detailsEl.textContent = '';
+                if (summaryEl) summaryEl.textContent = '';
                 return;
             }
 
@@ -17025,6 +16885,7 @@
             const favoritedCount = visibleFilterBuildings.filter(b => favorites[b.bin] && !activeMonthFilters.has(labels[b.bin])).length;
             const filterDevices = matches.reduce((sum, b) => sum + getFilterDeviceCountForBuilding(b, labels[b.bin]), 0);
             const notices = [];
+            const compactParts = [];
             const countStateInCurrentView = state => Object.keys(state || {}).filter(bin => !binGroups || Object.keys(binGroups).length === 0 || binGroups[bin]).length;
 
             if (hasMapViewFilter) {
@@ -17047,7 +16908,9 @@
                         : bins.has(String(building.bin));
                     return matchesFilter && mapBuildingMatchesActiveMonthScope(building, labels);
                 }).length;
-                notices.push(`Map view filter active: ${getMapViewFilterDisplayLabel(mapViewFilter)} — showing ${scopedMapViewCount} building${scopedMapViewCount !== 1 ? 's' : ''}`);
+                const mapViewLabel = getMapViewFilterDisplayLabel(mapViewFilter);
+                notices.push(`Map view filter active: ${mapViewLabel} — showing ${scopedMapViewCount} building${scopedMapViewCount !== 1 ? 's' : ''}`);
+                compactParts.push(`${scopedMapViewCount} building${scopedMapViewCount !== 1 ? 's' : ''} — ${mapViewLabel}`);
             }
 
             if (activeMonthFilters.size > 0) {
@@ -17057,6 +16920,14 @@
                 const deviceText = `${filterDevices} ${deviceLabel}${filterDevices !== 1 ? 's' : ''}`;
                 const favoriteText = favoritedCount > 0 ? `, plus ${favoritedCount} favorite${favoritedCount !== 1 ? 's' : ''}` : '';
                 notices.push(`Month filter active: ${monthText} — showing ${buildingText} / ${deviceText}${favoriteText}`);
+                if (!hasMapViewFilter) {
+                    if (matches.length === 0 && favoritedCount === 0) {
+                        compactParts.push(`No buildings labeled: ${monthText}`);
+                    } else {
+                        const favSuffix = favoritedCount > 0 ? ` + ${favoritedCount} ⭐` : '';
+                        compactParts.push(`${buildingText} · ${deviceText} — ${monthText}${favSuffix}`);
+                    }
+                }
             }
 
             if (hideMonthLabeled) {
@@ -17086,6 +16957,9 @@
                 row.textContent = notice;
                 return row;
             }));
+            if (summaryEl) {
+                summaryEl.textContent = compactParts.length ? ` — ${compactParts.join(' · ')}` : '';
+            }
             statusEl.style.display = 'block';
         }
 
@@ -17135,7 +17009,6 @@
             const shouldFitMap = !options || options.fitMap !== false;
             const labels = getMapMonthLabels();
             const favorites = getMapFavorites();
-            const resultCount = document.getElementById('mapSearchResultCount');
             const mapViewFilter = getSelectedMapViewFilter();
             if (mapViewFilter && mapViewFilter !== 'all') {
                 applyMapViewDropdownFilter(options);
@@ -17143,7 +17016,6 @@
             }
 
             if (activeMonthFilters.size === 0) {
-                if (resultCount) resultCount.style.display = 'none';
                 if (buildingMap && mapMarkers.length > 0) {
                     const bounds = L.latLngBounds();
                     const viewport = buildingMap.getBounds();
@@ -17162,34 +17034,20 @@
                     // Keep the user's zoom/position if any visible building is already on screen
                     if (shouldFitMap && bounds.isValid() && !shownInViewport) buildingMap.fitBounds(bounds, { padding: [30, 30] });
                 }
+                updateMonthFilterStatus();
                 return;
             }
 
             const visibleFilterBuildings = mapBuildingsData.filter(b => !isBuildingHiddenByMapSettings(b));
             const matches = visibleFilterBuildings.filter(b => activeMonthFilters.has(labels[b.bin]));
             const favoritedCount = visibleFilterBuildings.filter(b => favorites[b.bin] && !activeMonthFilters.has(labels[b.bin])).length;
-            const monthList = [...activeMonthFilters].join(', ');
 
             if (matches.length === 0 && favoritedCount === 0) {
-                if (resultCount) {
-                    resultCount.textContent = `No buildings labeled: ${monthList}`;
-                    resultCount.style.display = 'inline';
-                    resultCount.style.color = '#ff6b6b';
-                }
                 mapMarkers.forEach(marker => {
                     if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
                 });
+                updateMonthFilterStatus();
                 return;
-            }
-
-            const filterDevices = matches.reduce((sum, b) => sum + getFilterDeviceCountForBuilding(b, labels[b.bin]), 0);
-            const favSuffix = favoritedCount > 0 ? ` + ${favoritedCount} ⭐` : '';
-            const deviceLabel = getActiveFilterDeviceLabel(activeMonthFilters);
-
-            if (resultCount) {
-                resultCount.textContent = `${matches.length} building${matches.length !== 1 ? 's' : ''} · ${filterDevices} ${deviceLabel}${filterDevices !== 1 ? 's' : ''} — ${monthList}${favSuffix}`;
-                resultCount.style.display = 'inline';
-                resultCount.style.color = '#17a2b8';
             }
 
             const bounds = L.latLngBounds();
@@ -17213,6 +17071,7 @@
             if (shouldFitMap && bounds.isValid() && buildingMap && !monthShownInViewport) {
                 buildingMap.fitBounds(bounds, { padding: [50, 50] });
             }
+            updateMonthFilterStatus();
         }
 
         function filterByMonth(month) {
@@ -22169,7 +22028,6 @@
             }
             const select = document.getElementById('mapViewFilterSelect');
             if (select) select.value = 'immediate-attention';
-            renderMapViewFilterMenu();
             applyMapViewDropdownFilter({ fitMap: true });
             showMapNotification(`${items.length} building${items.length !== 1 ? 's' : ''} need immediate attention`, '#dc3545');
         }
@@ -22231,6 +22089,7 @@
                 || {};
             const completed = view ? (view.completed || {}) : getMapCompleted();
             const schedules = view ? (view.testDates || {}) : (typeof mapTestDates === 'object' && mapTestDates ? mapTestDates : {});
+            const hold = view ? (view.hold || {}) : getMapHold();
             return Object.entries(binGroups)
                 .filter(([bin, group]) => mapBuildingMissedJuneTestDeadline(bin, today, group))
                 .map(([bin, group]) => {
@@ -22244,13 +22103,18 @@
                         deviceCount: countMapJobDevices(group && group.devices),
                         hasScheduledTestDate: scheduleDates.length > 0,
                         scheduledDateCount: scheduleDates.length,
-                        earliestScheduledDate: scheduleDates.slice().sort()[0] || ''
+                        earliestScheduledDate: scheduleDates.slice().sort()[0] || '',
+                        isHold: !!(hold && hold[key])
                     };
                 })
                 .sort((a, b) => {
                     // Buildings with no scheduled test date first, then those with dates.
+                    // Within each group, active jobs first and On Hold jobs after.
                     if (a.hasScheduledTestDate !== b.hasScheduledTestDate) {
                         return a.hasScheduledTestDate ? 1 : -1;
+                    }
+                    if (a.isHold !== b.isHold) {
+                        return a.isHold ? 1 : -1;
                     }
                     if (a.hasScheduledTestDate && a.earliestScheduledDate !== b.earliestScheduledDate) {
                         return a.earliestScheduledDate.localeCompare(b.earliestScheduledDate);
@@ -22273,17 +22137,21 @@
             const buildings = getMapNoTestByJuneBuildings(today);
             const unscheduledCount = buildings.filter(item => !item.hasScheduledTestDate).length;
             const scheduledCount = buildings.length - unscheduledCount;
+            const holdCount = buildings.filter(item => item.isHold).length;
             if (countEl) countEl.textContent = String(buildings.length);
 
             if (statusEl) {
                 const splitNote = buildings.length
                     ? ` Sorted with no schedule first (${unscheduledCount}), then scheduled (${scheduledCount}).`
                     : '';
+                const holdNote = holdCount
+                    ? ` ${holdCount} on hold.`
+                    : '';
                 if (highlightActive) {
-                    statusEl.innerHTML = `<strong style="color:${MAP_NO_TEST_BY_JUNE_COLOR};">${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} with no ${year} test yet — map markers are deep red as of June 1.${splitNote}`;
+                    statusEl.innerHTML = `<strong style="color:${MAP_NO_TEST_BY_JUNE_COLOR};">${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} with no ${year} test yet — map markers are deep red as of June 1.${splitNote}${holdNote}`;
                 } else {
                     const juneLabel = juneDeadline.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                    statusEl.innerHTML = `<strong>${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} still have no ${year} test. Deep-red map highlighting starts <strong>${juneLabel}</strong>.${splitNote}`;
+                    statusEl.innerHTML = `<strong>${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} still have no ${year} test. Deep-red map highlighting starts <strong>${juneLabel}</strong>.${splitNote}${holdNote}`;
                 }
             }
 
@@ -22301,19 +22169,26 @@
                 const scheduleBadge = item.hasScheduledTestDate
                     ? `<span style="flex-shrink:0; font-size:0.72em; font-weight:700; padding:2px 6px; border-radius:999px; background:rgba(26,115,232,0.12); color:#1a73e8; border:1px solid rgba(26,115,232,0.28);">Scheduled</span>`
                     : `<span style="flex-shrink:0; font-size:0.72em; font-weight:700; padding:2px 6px; border-radius:999px; background:rgba(139,0,0,0.12); color:${MAP_NO_TEST_BY_JUNE_COLOR}; border:1px solid rgba(139,0,0,0.28);">No schedule</span>`;
+                const holdBadge = item.isHold
+                    ? `<span style="flex-shrink:0; font-size:0.72em; font-weight:700; padding:2px 6px; border-radius:999px; background:rgba(96,125,139,0.16); color:#607d8b; border:1px solid rgba(96,125,139,0.35);">On Hold</span>`
+                    : '';
                 const scheduleDetail = item.hasScheduledTestDate
                     ? ` · ${item.scheduledDateCount} scheduled date${item.scheduledDateCount !== 1 ? 's' : ''}`
                     : ' · no scheduled date';
+                const holdDetail = item.isHold ? ' · On Hold' : '';
+                const accent = item.isHold ? '#607d8b' : (item.hasScheduledTestDate ? '#1a73e8' : MAP_NO_TEST_BY_JUNE_COLOR);
+                const icon = item.isHold ? '⏸' : (item.hasScheduledTestDate ? '🗓️' : '⛔');
+                const filterTextEsc = escapeMapSuggestionHtml((item.isHold ? 'on hold hold' : '') + (item.hasScheduledTestDate ? ' scheduled' : ' no schedule'));
                 return `
-                <div data-bin="${bin}" data-address="${addrEsc}" data-has-schedule="${item.hasScheduledTestDate ? '1' : '0'}" style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 8px; background:var(--input-bg); border-radius:4px; margin-bottom:4px; font-size:1em; border-left:3px solid ${item.hasScheduledTestDate ? '#1a73e8' : MAP_NO_TEST_BY_JUNE_COLOR};">
+                <div data-bin="${bin}" data-address="${addrEsc}" data-has-schedule="${item.hasScheduledTestDate ? '1' : '0'}" data-on-hold="${item.isHold ? '1' : '0'}" data-filter-text="${filterTextEsc}" style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 8px; background:var(--input-bg); border-radius:4px; margin-bottom:4px; font-size:1em; border-left:3px solid ${accent};">
                     <span style="flex:1; overflow:hidden; min-width:0; cursor:pointer;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                         <span style="display:flex; align-items:center; gap:4px; overflow:hidden;">
-                            <span style="color:${item.hasScheduledTestDate ? '#1a73e8' : MAP_NO_TEST_BY_JUNE_COLOR}; font-weight:700; flex-shrink:0;">${item.hasScheduledTestDate ? '🗓️' : '⛔'}</span>
+                            <span style="color:${accent}; font-weight:700; flex-shrink:0;">${icon}</span>
                             ${addressHtml}
                         </span>
-                        <span style="font-size:0.8em; opacity:0.55; padding-left:22px;">BIN ${escapeMapSuggestionHtml(bin)}${item.deviceCount ? ' · ' + item.deviceCount + ' device' + (item.deviceCount !== 1 ? 's' : '') : ''} · no ${year} test${scheduleDetail}</span>
+                        <span style="font-size:0.8em; opacity:0.55; padding-left:22px;">BIN ${escapeMapSuggestionHtml(bin)}${item.deviceCount ? ' · ' + item.deviceCount + ' device' + (item.deviceCount !== 1 ? 's' : '') : ''} · no ${year} test${scheduleDetail}${holdDetail}</span>
                     </span>
-                    ${scheduleBadge}
+                    <span style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">${holdBadge}${scheduleBadge}</span>
                 </div>`;
             }).join('');
 
@@ -22335,7 +22210,6 @@
             }
             const select = document.getElementById('mapViewFilterSelect');
             if (select) select.value = 'no-test-by-june';
-            renderMapViewFilterMenu();
             applyMapViewDropdownFilter({ fitMap: true });
             const highlightActive = mapIsNoTestByJuneHighlightActive();
             showMapNotification(
@@ -23115,7 +22989,6 @@
                     select.removeChild(opt);
                 }
             });
-            renderMapViewFilterMenu();
         }
 
         function isMapCategory5ShowOnMapActive() {
@@ -23753,7 +23626,6 @@
             updateTestDatesPanel();
             updateImmediateAttentionPanel();
             updateNoTestByJunePanel();
-            renderMapViewFilterMenu();
 
             function reapplyBinSidebarSearch(inputId, listId) {
                 var inp = document.getElementById(inputId);
@@ -25613,11 +25485,9 @@
                 } else if (isTransportation) {
                     markerBg = MAP_TRANSPORTATION_COLOR;
                 } else {
-                    // Custom / pinned locations: white circle behind the pin (or device count).
-                    markerBg = '#ffffff';
+                    markerBg = '#000000';
                 }
-                const markerFg = (markerBg === '#ffffff') ? '#333333' : '#ffffff';
-                const markerBorder = (markerBg === '#ffffff') ? '#bdbdbd' : '#ffffff';
+                const markerFg = '#ffffff';
 
                 const additionalIcon = L.divIcon({
                     className: 'custom-map-marker-additional',
@@ -25626,7 +25496,7 @@
                         width: 24px;
                         height: 24px;
                         border-radius: 50%;
-                        border: 3px solid ${markerBorder};
+                        border: 3px solid white;
                         box-shadow: 0 2px 6px rgba(0,0,0,0.4);
                         display: flex;
                         align-items: center;
@@ -25964,7 +25834,6 @@
                     if (year) ensureMapCategory5FilterOption(year);
                 }
                 if (viewFilterSelect) viewFilterSelect.value = savedViewFilter;
-                renderMapViewFilterMenu();
                 mapHideScheduledMonthSelectionReady = savedViewFilter === 'hide-scheduled' || activeMonthFilters.size > 0;
                 pendingMapHideScheduledMonthPrompt = false;
 
@@ -26004,7 +25873,7 @@
                         <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;"><span style="display:inline-block; width:14px; height:14px; background:#9b59b6; clip-path:polygon(30% 0,70% 0,100% 30%,100% 70%,70% 100%,30% 100%,0 70%,0 30%); flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">CAT Scheduled</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display:inline-block; width:14px; height:14px; border-radius:2px; background:#1a73e8; flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">PVI Scheduled</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display:inline-block; width:11px; height:11px; transform:rotate(45deg); background:#607d8b; margin:1px 2px; flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">CAT + PVI Scheduled</span></div>
-                        <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #ffffff; border: 2px solid #bdbdbd; box-sizing: border-box; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">📍 Custom Location</span></div>
+                        <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #000000; border: 2px solid #ffffff; box-sizing: border-box; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">📍 Custom Location</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #8d6e63; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">🏠 House (custom)</span></div>
                         <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--input-border, #444); font-size: 10px; color: var(--text-color, #fff); opacity: 0.8;">
                             Ready = 91+ days since last test<br>
