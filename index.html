@@ -1180,6 +1180,7 @@
                             #mapControlsPanelBody.mcp-detail-mode #completedBuildingsList,
                             #mapControlsPanelBody.mcp-detail-mode #monthLabelsList,
                             #mapControlsPanelBody.mcp-detail-mode #notesBuildingsList,
+                            #mapControlsPanelBody.mcp-detail-mode #deadlinesBuildingsList,
                             #mapControlsPanelBody.mcp-detail-mode #mapActivityLogList,
                             #mapControlsPanelBody.mcp-detail-mode #category5BuildingsList,
                             #mapControlsPanelBody.mcp-detail-mode #category5BypassedList,
@@ -1197,6 +1198,7 @@
                             #completedBuildingsList,
                             #monthLabelsList,
                             #notesBuildingsList,
+                            #deadlinesBuildingsList,
                             #mapActivityLogList,
                             #immediateAttentionList,
                             #noTestByJuneList,
@@ -1213,6 +1215,7 @@
                             #mapControlsPanel.mcp-popped-out #completedBuildingsList,
                             #mapControlsPanel.mcp-popped-out #monthLabelsList,
                             #mapControlsPanel.mcp-popped-out #notesBuildingsList,
+                            #mapControlsPanel.mcp-popped-out #deadlinesBuildingsList,
                             #mapControlsPanel.mcp-popped-out #mapActivityLogList,
                             #mapControlsPanel.mcp-popped-out #immediateAttentionList,
                             #mapControlsPanel.mcp-popped-out #noTestByJuneList,
@@ -1322,6 +1325,29 @@
                             </div>
                         </div>
 
+                        <!-- Testing Deadlines -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpDeadlines')">
+                                <span class="mcp-title"><span style="color:#e67e22;">⏰</span> Testing Deadlines - <span id="mapDeadlinesCount">0</span></span>
+                                <span class="mcp-arrow" id="mcpDeadlinesArrow">›</span>
+                            </div>
+                            <div class="mcp-body" id="mcpDeadlines">
+                                <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">Dates testing needs to be completed by. These are reminders only and do not schedule a test. Missed deadlines are flagged in red. Click an address to view the building on the map.</p>
+                                <label for="deadlinesTypeFilter" style="display:block; font-size:0.92em; font-weight:700; color:var(--text-color); margin-bottom:5px;">Testing type</label>
+                                <select id="deadlinesTypeFilter" onchange="updateMapDeadlinesPanel()" style="width:100%; padding:7px 9px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:1em; font-weight:600; box-sizing:border-box; margin-bottom:8px;">
+                                    <option value="all">Both — CAT &amp; PVI</option>
+                                    <option value="category">CAT testing</option>
+                                    <option value="pvi">PVI testing</option>
+                                </select>
+                                <input type="text" id="deadlinesSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or date..."
+                                       oninput="filterMcpBinRowList('deadlinesBuildingsList', this.value)">
+                                <div id="deadlinesBuildingsList" style="max-height: 260px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No testing deadlines</div>
+                                </div>
+                                <button onclick="clearAllMapDeadlines()" class="mcp-btn" style="color:#ff6b6b;">Clear All Deadlines</button>
+                            </div>
+                        </div>
+
                         <!-- Immediate Attention -->
                         <div class="mcp-section" id="mcpImmediateAttentionSection" hidden>
                             <div class="mcp-header" onclick="toggleMcpSection('mcpImmediateAttention'); updateImmediateAttentionPanel();">
@@ -1338,6 +1364,7 @@
                                     <option value="all">All immediate attention</option>
                                     <option value="no-current-year-test">No test or schedule by midyear</option>
                                     <option value="overdue-schedule">Due / past-due schedules</option>
+                                    <option value="overdue-deadline">Due / past-due deadlines</option>
                                     <option value="cat5-due">CAT 5 due / overdue</option>
                                     <option value="active-violation">Active violations</option>
                                     <option value="ready-unscheduled">Ready but unscheduled</option>
@@ -1658,6 +1685,7 @@
                                     <option value="scheduled-pvi">PVI Scheduled Jobs</option>
                                     <option value="hide-scheduled">Hide Scheduled Test Dates &amp; Completed Jobs</option>
                                     <option value="notes">Buildings with Notes</option>
+                                    <option value="deadlines">Buildings with Deadlines</option>
                                     <option value="month-labeled">Month-labeled</option>
                                     <option value="no-month">No month label</option>
                                     <option value="month:January">January</option>
@@ -10168,6 +10196,7 @@
         let mapInProcess = {};
         let mapHold = {};
         let mapTestDates = {};
+        let mapDeadlines = {};
         let mapNotes = {};
         let mapCat5Bypasses = {}; // key: "BIN::DEVICE_NUMBER" → { bypassed, note, timestamp }
         let mapActivityLog = [];
@@ -10470,6 +10499,7 @@
                 hold: getMapHold(),
                 deviceMonitors: getMapDeviceMonitors(),
                 testDates: getMapTestDates(),
+                deadlines: getMapDeadlines(),
                 notes: getMapNotes(),
                 cat5Bypasses: getMapCat5Bypasses(),
                 activityLog: getMapActivityLog(),
@@ -12776,6 +12806,12 @@
             if (values.note) mapNotes[bin] = values.note;
             else delete mapNotes[bin];
 
+            const deadlineRecord = {};
+            if (values.deadlineCategoryDate) deadlineRecord.category = values.deadlineCategoryDate;
+            if (values.deadlinePviDate) deadlineRecord.pvi = values.deadlinePviDate;
+            if (deadlineRecord.category || deadlineRecord.pvi) mapDeadlines[bin] = deadlineRecord;
+            else delete mapDeadlines[bin];
+
             const schedule = {
                 pvi: values.scheduledPviDates.slice(),
                 category: values.scheduledCategoryDates.slice(),
@@ -12924,7 +12960,7 @@
                 if (!groupRowByBin.has(row.bin) || row.sourceLabel === 'Building') groupRowByBin.set(row.bin, row);
             });
             const planningBins = new Set(groupRowByBin.keys());
-            [mapMonthLabels, mapTestDates, mapNotes, mapFavorites, mapHidden, mapInProcess, mapHold, mapDeviceMonitors, mapCompleted]
+            [mapMonthLabels, mapTestDates, mapDeadlines, mapNotes, mapFavorites, mapHidden, mapInProcess, mapHold, mapDeviceMonitors, mapCompleted]
                 .forEach(store => Object.keys(store || {}).forEach(bin => planningBins.add(String(bin))));
             const planningRows = Array.from(planningBins).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(bin => {
                 const groupRow = groupRowByBin.get(bin);
@@ -12943,6 +12979,8 @@
                         scheduledPviDates: schedule.pvi.slice(),
                         scheduledCategoryDates: schedule.category.slice(),
                         scheduledGeneralDates: schedule.general.slice(),
+                        deadlineCategoryDate: getMapDeadlineForBin(bin, 'category'),
+                        deadlinePviDate: getMapDeadlineForBin(bin, 'pvi'),
                         completedPviDates: completedSchedule.pvi.slice(),
                         completedCategoryDates: completedSchedule.category.slice(),
                         completedGeneralDates: completedSchedule.general.slice(),
@@ -13108,6 +13146,8 @@
                         planningDateListColumn('scheduled_category_dates', 'Scheduled Category Dates', 'scheduledCategoryDates', 'category'),
                         planningDateListColumn('scheduled_pvi_dates', 'Scheduled PVI Dates', 'scheduledPviDates', 'pvi'),
                         planningDateListColumn('scheduled_unspecified_dates', 'Scheduled Unspecified Dates', 'scheduledGeneralDates', ''),
+                        planningColumn('deadline_cat_date', 'Deadline CAT Date', 'deadlineCategoryDate', { parse: parseMapTableSingleDateInput }),
+                        planningColumn('deadline_pvi_date', 'Deadline PVI Date', 'deadlinePviDate', { parse: parseMapTableSingleDateInput }),
                         planningColumn('building_note', 'Building Note', 'note', { multiline: true }),
                         planningColumn('favorite', 'Favorite', 'favorite', { inputType: 'boolean' }),
                         planningColumn('hidden', 'Hidden', 'hidden', { inputType: 'boolean' }),
@@ -14347,6 +14387,7 @@
                 'scheduled-pvi': 'PVI Scheduled Jobs',
                 'hide-scheduled': 'Hide Scheduled Test Dates & Completed Jobs',
                 notes: 'Buildings with Notes',
+                deadlines: 'Buildings with Deadlines',
                 'month-labeled': 'Month-labeled',
                 'no-month': 'No month label'
             };
@@ -14600,6 +14641,10 @@
             if (filterValue === 'scheduled-pvi') return new Set(allBins.filter(bin => mapViewHasScheduledType(view, bin, 'pvi')));
             if (filterValue === 'hide-scheduled') return new Set(allBins.filter(bin => mapViewPassesHideScheduledCompletedFilter(view, bin)));
             if (filterValue === 'notes') return new Set(Object.keys(view.notes || {}).map(String));
+            if (filterValue === 'deadlines') {
+                const liveDeadlines = typeof getMapDeadlines === 'function' ? getMapDeadlines() : {};
+                return new Set(Object.keys(view.deadlines || liveDeadlines || {}).map(String));
+            }
             if (filterValue === 'month-labeled') {
                 return new Set(Object.keys(monthLabels).filter(bin => monthLabels[bin]).map(String));
             }
@@ -14956,6 +15001,7 @@
                     ['In Process', Object.keys(view.inProcess || {}).length],
                     ['On Hold', Object.keys(view.hold || {}).length],
                     ['Scheduled Date Buildings', Object.keys(view.testDates || {}).length],
+                    ['Deadline Buildings', Object.keys(view.deadlines || {}).length],
                     ['Note Buildings', Object.keys(view.notes || {}).length],
                     ['Activity Entries', Array.isArray(view.activityLog) ? view.activityLog.length : 0],
                     ['Month Assignments', Array.isArray(view.monthAssignments) ? view.monthAssignments.length : Object.keys(view.monthLabels || {}).length],
@@ -14973,7 +15019,8 @@
                 const buildingHeaders = [
                     'BIN', 'Address', 'Latitude', 'Longitude', 'Device Count', 'Active Map Job Device Count',
                     'Violation Count', 'Favorite', 'Hidden', 'Completed', 'Completion Scope', 'Completed Date', 'In Process',
-                    'In Process Date', 'On Hold', 'Scheduled PVI Dates', 'Scheduled Category Dates', 'Scheduled Unspecified Dates',
+                    'In Process Date', 'On Hold',                     'Scheduled PVI Dates', 'Scheduled Category Dates', 'Scheduled Unspecified Dates',
+                    'Deadline CAT Date', 'Deadline PVI Date',
                     'Completed Saved PVI Dates', 'Completed Saved Category Dates',
                     'Note', 'Month Label', ...groupKeys.map(key => `Group: ${key}`)
                 ];
@@ -15000,6 +15047,8 @@
                         getMapScheduleDates(view.testDates && view.testDates[bin], 'pvi').join('; '),
                         getMapScheduleDates(view.testDates && view.testDates[bin], 'category').join('; '),
                         getMapScheduleDates(view.testDates && view.testDates[bin], 'general').join('; '),
+                        getMapDeadlineForBinFromRecord(view.deadlines && view.deadlines[bin], 'category'),
+                        getMapDeadlineForBinFromRecord(view.deadlines && view.deadlines[bin], 'pvi'),
                         getMapScheduleDates(completedData && completedData.scheduledDates, 'pvi').join('; '),
                         getMapScheduleDates(completedData && completedData.scheduledDates, 'category').join('; '),
                         view.notes && view.notes[bin] ? view.notes[bin] : '',
@@ -15069,6 +15118,17 @@
                         dateRows.push([type === 'pvi' ? 'Scheduled PVI' : type === 'category' ? 'Scheduled Category' : 'Scheduled Unspecified', bin, getMapExcelBuildingAddress(bin, binGroups[bin], view), date, mapExcelDate(date)]);
                     }));
                 });
+                Object.entries(view.deadlines || {}).forEach(([bin, deadline]) => {
+                    getMapDeadlineEntries(deadline).forEach(entry => {
+                        dateRows.push([
+                            entry.type === 'pvi' ? 'Deadline PVI' : 'Deadline CAT',
+                            bin,
+                            getMapExcelBuildingAddress(bin, binGroups[bin], view),
+                            entry.date,
+                            mapExcelDate(entry.date)
+                        ]);
+                    });
+                });
                 Object.entries(view.completed || {}).forEach(([bin, data]) => {
                     if (data && data.scheduledDates) {
                         const record = normalizeMapScheduleRecord(data.scheduledDates);
@@ -15123,6 +15183,7 @@
                     ...splitMapExcelSectionRows('inProcess', view.inProcess || {}),
                     ...splitMapExcelSectionRows('hold', view.hold || {}),
                     ...splitMapExcelSectionRows('testDates', view.testDates || {}),
+                    ...splitMapExcelSectionRows('deadlines', view.deadlines || {}),
                     ...splitMapExcelSectionRows('notes', view.notes || {}),
                     ...splitMapExcelSectionRows('activityLog', view.activityLog || []),
                     ...splitMapExcelSectionRows('monthLabels', view.monthLabels || {}),
@@ -15198,6 +15259,7 @@
                     hold: view.hold || {},
                     deviceMonitors: view.deviceMonitors || {},
                     testDates: view.testDates || {},
+                    deadlines: view.deadlines || {},
                     notes: view.notes || {},
                     cat5Bypasses: view.cat5Bypasses || {},
                     activityLog: Array.isArray(view.activityLog) ? view.activityLog : [],
@@ -15336,7 +15398,7 @@
                 throw new Error('Map view contains an invalid or excessive BIN list.');
             }
             ['scheduledDates', 'favorites', 'hidden', 'completed', 'inProcess', 'hold', 'deviceMonitors',
-                'testDates', 'notes', 'monthLabels'].forEach(field => {
+                'testDates', 'deadlines', 'notes', 'monthLabels'].forEach(field => {
                 const store = source[field];
                 if (store === undefined || store === null) return;
                 if (typeof store !== 'object' || Array.isArray(store) ||
@@ -15465,6 +15527,7 @@
                 hold: source.hold || {},
                 deviceMonitors: source.deviceMonitors || {},
                 testDates: testDates,
+                deadlines: source.deadlines || {},
                 notes: source.notes || {},
                 cat5Bypasses: normalizedCat5Bypasses,
                 activityLog: Array.isArray(source.activityLog) ? source.activityLog : [],
@@ -15485,6 +15548,7 @@
             setMapHold(view.hold || {});
             setMapDeviceMonitors(view.deviceMonitors || {});
             setMapTestDates(view.testDates || {});
+            setMapDeadlines(view.deadlines || {});
             setMapNotes(view.notes || {});
             setMapCat5Bypasses(view.cat5Bypasses || {});
             setMapActivityLog(view.activityLog || []);
@@ -16920,6 +16984,7 @@
                     inProcess: getMapInProcess(),
                     hold: getMapHold(),
                     testDates: getMapTestDates(),
+                    deadlines: getMapDeadlines(),
                     notes: getMapNotes(),
                     monthLabels: labels
                 };
@@ -17237,6 +17302,7 @@
             delete mapHold[bin];
             delete mapDeviceMonitors[bin];
             delete mapTestDates[bin];
+            delete mapDeadlines[bin];
             delete mapNotes[bin];
 
             const searchInput = document.getElementById('mapSearchInput');
@@ -17846,6 +17912,213 @@
             return mapNotes[bin] || '';
         }
 
+        function getMapDeadlines() {
+            return mapDeadlines;
+        }
+
+        function normalizeMapDeadlineType(value) {
+            return normalizeMapScheduleType(value) === 'pvi' ? 'pvi' : 'category';
+        }
+
+        function getMapDeadlineTypeLabel(type) {
+            return normalizeMapDeadlineType(type) === 'pvi' ? 'PVI' : 'CAT';
+        }
+
+        function normalizeMapDeadlineRecord(value) {
+            const record = {};
+            if (value == null) return record;
+            if (typeof value === 'string' || Array.isArray(value)) {
+                const date = normalizeMapDateList(value)[0];
+                if (date) record.category = date;
+                return record;
+            }
+            if (typeof value !== 'object') return record;
+            if (value.date && value.category == null && value.pvi == null && value.cat == null) {
+                const date = normalizeMapDateList(value.date)[0];
+                if (date) {
+                    if (normalizeMapDeadlineType(value.type) === 'pvi') record.pvi = date;
+                    else record.category = date;
+                }
+                return record;
+            }
+            const category = normalizeMapDateList(value.category || value.cat)[0];
+            const pvi = normalizeMapDateList(value.pvi)[0];
+            if (category) record.category = category;
+            if (pvi) record.pvi = pvi;
+            return record;
+        }
+
+        function getMapDeadlineEntries(value) {
+            const record = normalizeMapDeadlineRecord(value);
+            const entries = [];
+            if (record.category) entries.push({ type: 'category', date: record.category });
+            if (record.pvi) entries.push({ type: 'pvi', date: record.pvi });
+            return entries;
+        }
+
+        function getMapDeadlineForBinFromRecord(value, type) {
+            const record = normalizeMapDeadlineRecord(value);
+            return record[normalizeMapDeadlineType(type)] || '';
+        }
+
+        function setMapDeadlines(deadlines) {
+            mapDeadlines = {};
+            if (!deadlines || typeof deadlines !== 'object' || Array.isArray(deadlines)) return;
+            Object.entries(deadlines).forEach(([bin, value]) => {
+                const record = normalizeMapDeadlineRecord(value);
+                if (getMapDeadlineEntries(record).length) mapDeadlines[bin] = record;
+            });
+        }
+
+        function getMapDeadlinesForBin(bin) {
+            return getMapDeadlineEntries(mapDeadlines[bin]);
+        }
+
+        function getMapDeadlineForBin(bin, type) {
+            return getMapDeadlineForBinFromRecord(mapDeadlines[bin], type);
+        }
+
+        function hasMapDeadline(bin) {
+            return getMapDeadlinesForBin(bin).length > 0;
+        }
+
+        function persistMapDeadlineRecord(bin, record) {
+            const next = normalizeMapDeadlineRecord(record);
+            if (next.category || next.pvi) mapDeadlines[bin] = next;
+            else delete mapDeadlines[bin];
+        }
+
+        function getMapDeadlineDueState(dateStr) {
+            const date = String(dateStr || '');
+            const todayKey = formatLocalDateInputValue(new Date());
+            const isToday = date === todayKey;
+            const isMissed = !!(date && date < todayKey);
+            const isPast = isToday || isMissed;
+            return {
+                date,
+                isToday,
+                isMissed,
+                isPast,
+                badge: isToday ? 'TODAY' : (isMissed ? 'PAST DUE' : ''),
+                color: isToday ? '#e67e22' : (isMissed ? '#ff6b6b' : 'var(--text-color)')
+            };
+        }
+
+        function formatMapDeadlineDateDisplay(dateStr) {
+            const parsed = parseMapInspectionDate(dateStr);
+            if (!parsed) return dateStr || '';
+            return parsed.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function setMapDeadlineForBin(bin, dateStr, type, options) {
+            const opts = options || {};
+            const date = normalizeMapDateList(dateStr)[0];
+            if (!bin || !date) return false;
+            const key = normalizeMapDeadlineType(type);
+            const record = normalizeMapDeadlineRecord(mapDeadlines[bin]);
+            const previous = record[key] || '';
+            if (previous === date) return false;
+            record[key] = date;
+            persistMapDeadlineRecord(bin, record);
+            if (!opts.quiet) {
+                addMapActivity(previous ? 'Updated testing deadline' : 'Added testing deadline', {
+                    type: 'Deadline',
+                    bin,
+                    address: opts.address || '',
+                    date,
+                    details: getMapDeadlineTypeLabel(key) + (opts.source ? ` · ${opts.source}` : '')
+                });
+            }
+            scheduleMapLiveTableRefresh();
+            return true;
+        }
+
+        function clearMapDeadlineForBin(bin, type, options) {
+            const opts = options || {};
+            if (!mapDeadlines[bin]) return false;
+            const record = normalizeMapDeadlineRecord(mapDeadlines[bin]);
+            const removed = type
+                ? getMapDeadlineEntries({ [normalizeMapDeadlineType(type)]: record[normalizeMapDeadlineType(type)] })
+                : getMapDeadlineEntries(record);
+            if (!removed.length) return false;
+            if (type) delete record[normalizeMapDeadlineType(type)];
+            persistMapDeadlineRecord(bin, type ? record : {});
+            if (!opts.quiet) {
+                addMapActivity('Cleared testing deadline', {
+                    type: 'Deadline',
+                    bin,
+                    address: opts.address || '',
+                    details: removed.map(entry => `${getMapDeadlineTypeLabel(entry.type)} ${entry.date}`).join(' · ')
+                });
+            }
+            scheduleMapLiveTableRefresh();
+            return true;
+        }
+
+        function changeMapDeadlineTypeForBin(bin, fromType, toType, options) {
+            const opts = options || {};
+            const from = normalizeMapDeadlineType(fromType);
+            const to = normalizeMapDeadlineType(toType);
+            if (from === to) return false;
+            const record = normalizeMapDeadlineRecord(mapDeadlines[bin]);
+            const date = record[from];
+            if (!date) return false;
+            delete record[from];
+            record[to] = date;
+            persistMapDeadlineRecord(bin, record);
+            if (!opts.quiet) {
+                addMapActivity('Updated testing deadline type', {
+                    type: 'Deadline',
+                    bin,
+                    address: opts.address || '',
+                    date,
+                    details: `${getMapDeadlineTypeLabel(from)} → ${getMapDeadlineTypeLabel(to)}`
+                });
+            }
+            scheduleMapLiveTableRefresh();
+            if (!opts.skipRefresh) refreshMapAfterDeadlineChange();
+            return true;
+        }
+
+        function refreshMapAfterDeadlineChange() {
+            if (typeof hydrateMapBuildingPopupState === 'function') hydrateMapBuildingPopupState(document);
+            if (typeof updateMapDeadlinesPanel === 'function') updateMapDeadlinesPanel();
+            if (typeof updateImmediateAttentionPanel === 'function') updateImmediateAttentionPanel();
+            if (typeof reapplyCurrentMapViewFilters === 'function') reapplyCurrentMapViewFilters({ fitMap: false, quiet: true });
+            scheduleMapLiveTableRefresh();
+        }
+
+        function renderMapDeadlineNoteHtml(bin) {
+            const entries = getMapDeadlinesForBin(bin);
+            if (!entries.length) return '';
+            const rows = entries.map(entry => {
+                const due = getMapDeadlineDueState(entry.date);
+                const display = formatMapDeadlineDateDisplay(entry.date);
+                const badge = due.badge
+                    ? `<span style="font-size:9px;background:${due.isToday ? '#e67e22' : '#ff6b6b'};color:white;border-radius:3px;padding:1px 5px;font-weight:800;">${due.badge}</span>`
+                    : '';
+                return `<div style="display:flex; flex-direction:column; gap:5px; padding:7px 8px; margin-top:6px; border-radius:6px; border:1px solid ${due.isPast ? 'rgba(255,107,107,0.28)' : 'rgba(230,126,34,0.28)'}; background:${due.isPast ? 'rgba(255,107,107,0.08)' : 'rgba(230,126,34,0.08)'};">
+                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                        <span style="font-size:11px; font-weight:700; color:${due.color};">📅 ${escapeMapSuggestionHtml(display)}</span>
+                        ${badge}
+                    </div>
+                    <label style="display:flex; align-items:center; gap:6px; font-size:10px; font-weight:700; color:var(--text-color);">
+                        <span>Testing type</span>
+                        <select onchange="changeMapDeadlineTypeForBin('${bin}', '${entry.type}', this.value)"
+                            style="flex:1; min-width:0; padding:4px 6px; border-radius:4px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); font-size:11px; font-weight:700;">
+                            <option value="category" ${entry.type === 'category' ? 'selected' : ''}>CAT</option>
+                            <option value="pvi" ${entry.type === 'pvi' ? 'selected' : ''}>PVI</option>
+                        </select>
+                    </label>
+                </div>`;
+            }).join('');
+            return `<div onclick="event.stopPropagation()" style="margin-top:8px; padding-top:8px; border-top:1px solid rgba(230,126,34,0.28);">
+                <div style="font-size:11px; font-weight:800; color:#e67e22;">⏰ Testing deadline</div>
+                <div style="font-size:10px; opacity:0.72; color:var(--text-color); margin-top:2px;">Testing needs to be completed by this date.</div>
+                ${rows}
+            </div>`;
+        }
+
         function getMapCat5Bypasses() {
             return mapCat5Bypasses;
         }
@@ -18124,6 +18397,13 @@
             }
             if (categoryStatus) categoryStatus.innerHTML = renderMapCategoryCompletionStatusHtml(bin);
             if (scheduleDateList) scheduleDateList.innerHTML = renderMapScheduleDateRows(bin);
+
+            const deadlineBox = popupRoot.querySelector(`#mapDeadlineNote_${bin}`);
+            if (deadlineBox) {
+                const deadlineHtml = renderMapDeadlineNoteHtml(bin);
+                deadlineBox.innerHTML = deadlineHtml;
+                deadlineBox.style.display = deadlineHtml ? 'block' : 'none';
+            }
         }
 
         // Popup HTML is bound as a static string with empty schedule/note bodies that are
@@ -20462,6 +20742,19 @@
                     </div>
 
                     <div id="testDatesLegacySection" style="display:none; margin-top:12px; padding:11px 13px; border:1px dashed var(--input-border,#555); border-radius:9px;"><div style="font-size:11px; font-weight:700; opacity:0.7; margin-bottom:7px; color:var(--text-color,#ccc);">LEGACY / UNSPECIFIED DATES</div><div id="testDatesListGeneral"></div></div>
+                    <section style="margin-top:12px; padding:14px; border:1px solid rgba(230,126,34,0.38); border-radius:11px; background:rgba(230,126,34,0.07);">
+                        <div style="font-size:13px; font-weight:800; color:#e67e22; margin-bottom:3px;">TESTING DEADLINE</div>
+                        <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:10px;">A reminder of when testing must be completed. This does not schedule a test date.</div>
+                        <div id="testDeadlineList" style="margin-bottom:10px;"></div>
+                        <div style="display:flex; gap:7px; flex-wrap:wrap; align-items:center;">
+                            <input type="date" id="testDeadlineDateInput" value="${today}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;">
+                            <select id="testDeadlineTypeSelect" style="padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); font-size:12px; font-weight:700;">
+                                <option value="category">CAT</option>
+                                <option value="pvi">PVI</option>
+                            </select>
+                            <button id="testDeadlineSaveBtn" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#e67e22; color:white; font-size:12px; font-weight:700;">Save Deadline</button>
+                        </div>
+                    </section>
                     <button id="testDatesDoneBtn" style="width:100%; margin:16px 0 0; padding:10px; border-radius:7px; border:none; background:#27ae60; color:white; cursor:pointer; font-size:13px; font-weight:700;">Done</button>
                 </div>`;
 
@@ -20509,12 +20802,46 @@
                 }
             }
 
+            function renderDeadlines() {
+                const list = document.getElementById('testDeadlineList');
+                if (!list) return;
+                const entries = getMapDeadlinesForBin(bin);
+                if (!entries.length) {
+                    list.innerHTML = '<div style="font-size:11px; opacity:0.52; padding:5px 0;">No deadline saved.</div>';
+                    return;
+                }
+                list.innerHTML = entries.map(entry => {
+                    const due = getMapDeadlineDueState(entry.date);
+                    const display = formatMapDeadlineDateDisplay(entry.date);
+                    const badge = due.badge
+                        ? `<span style="font-size:9px;background:${due.isToday ? '#e67e22' : '#ff6b6b'};color:white;border-radius:3px;padding:1px 5px;font-weight:800;">${due.badge}</span>`
+                        : '';
+                    const typeColor = entry.type === 'pvi' ? '#1a73e8' : '#9b59b6';
+                    return `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 8px; background:var(--input-bg); border-radius:6px; border:1px solid ${due.isPast ? 'rgba(255,107,107,0.35)' : 'var(--input-border)'}; margin-bottom:5px;">
+                        <span style="font-size:11px; color:${due.color}; font-weight:${due.isPast ? '750' : '600'}; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                            <span style="font-size:9px; font-weight:800; color:${typeColor}; min-width:32px;">${getMapDeadlineTypeLabel(entry.type)}</span>
+                            <span>📅 ${escapeMapSuggestionHtml(display)}</span>
+                            ${badge}
+                        </span>
+                        <button data-deadline-type="${entry.type}" style="margin:0; background:rgba(255,107,107,0.12); border:1px solid rgba(255,107,107,0.35); color:#ff6b6b; border-radius:4px; padding:2px 7px; font-size:11px; font-weight:700;">✕</button>
+                    </div>`;
+                }).join('');
+                list.querySelectorAll('button[data-deadline-type]').forEach(btn => {
+                    btn.onclick = () => {
+                        clearMapDeadlineForBin(bin, btn.dataset.deadlineType, { address });
+                        renderDeadlines();
+                        refreshMapAfterDeadlineChange();
+                    };
+                });
+            }
+
             function renderDates() {
                 renderDateLane('pvi', 'testDatesListPvi');
                 renderDateLane('category', 'testDatesListCategory');
                 renderDateLane('general', 'testDatesListGeneral');
                 const legacySection = document.getElementById('testDatesLegacySection');
                 if (legacySection) legacySection.style.display = getTestDatesForBin(bin, 'general').length ? 'block' : 'none';
+                renderDeadlines();
             }
 
             function refreshMapAfterTestDateChange() {
@@ -20612,6 +20939,25 @@
             document.getElementById('testDatesDoneBtn').addEventListener('click', () => overlay.remove());
             document.getElementById('testDatesCloseBtn').addEventListener('click', () => overlay.remove());
             overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+            document.getElementById('testDeadlineSaveBtn').addEventListener('click', () => {
+                const input = document.getElementById('testDeadlineDateInput');
+                const typeSelect = document.getElementById('testDeadlineTypeSelect');
+                const dateStr = input ? input.value : '';
+                const type = typeSelect ? typeSelect.value : 'category';
+                if (!dateStr) {
+                    showMapNotification('Please select a deadline date', '#ff6b6b');
+                    return;
+                }
+                const previous = getMapDeadlineForBin(bin, type);
+                if (previous === dateStr) {
+                    showMapNotification('That deadline is already saved', '#ff9800');
+                    return;
+                }
+                setMapDeadlineForBin(bin, dateStr, type, { address });
+                renderDeadlines();
+                refreshMapAfterDeadlineChange();
+                showMapNotification(`${getMapDeadlineTypeLabel(type)} deadline saved`, '#e67e22');
+            });
         }
 
         function attachMapMarkerSelectHandler(marker, bin) {
@@ -20893,6 +21239,8 @@
             if (cat.length) parts.push('CAT ' + formatMapScheduleDatesForDisplay(cat));
             if (pvi.length) parts.push('PVI ' + formatMapScheduleDatesForDisplay(pvi));
             if (general.length) parts.push('Unspecified ' + formatMapScheduleDatesForDisplay(general));
+            const deadlines = getMapDeadlinesForBin(bin).map(entry => `${getMapDeadlineTypeLabel(entry.type)} deadline ${formatMapDeadlineDateDisplay(entry.date)}`);
+            if (deadlines.length) parts.push(deadlines.join(' · '));
             return parts.join(' · ');
         }
 
@@ -21081,6 +21429,20 @@
                     </div>
                     <button type="button" id="mapBulkClearAllDates" style="width:100%; margin:10px 0 0; padding:8px 11px; border-radius:6px; border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.08); color:#ff6b6b; font-size:12px; font-weight:700;">Clear all scheduled dates on selected buildings</button>
 
+                    <section style="margin-top:12px; padding:14px; border:1px solid rgba(230,126,34,0.38); border-radius:11px; background:rgba(230,126,34,0.07);">
+                        <div style="font-size:13px; font-weight:800; color:#e67e22; margin-bottom:3px;">TESTING DEADLINE</div>
+                        <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:10px;">Set a reminder of when testing must be completed. This does not schedule a test date and can be saved on its own.</div>
+                        <div style="display:flex; gap:7px; flex-wrap:wrap; align-items:center;">
+                            <input type="date" id="mapBulkDeadlineDate" value="${today}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;">
+                            <select id="mapBulkDeadlineType" style="padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); font-size:12px; font-weight:700;">
+                                <option value="category">CAT</option>
+                                <option value="pvi">PVI</option>
+                            </select>
+                            <button type="button" id="mapBulkApplyDeadline" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#e67e22; color:white; font-size:12px; font-weight:700;">Apply</button>
+                            <button type="button" id="mapBulkClearDeadline" style="margin:0; padding:8px 11px; border-radius:6px; border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.12); color:#ff6b6b; font-size:12px; font-weight:700;">Clear</button>
+                        </div>
+                    </section>
+
                     <details style="margin-top:12px; padding:10px 11px; border:1px solid rgba(199,119,0,0.28); border-radius:9px; background:rgba(199,119,0,0.08);">
                         <summary style="cursor:pointer; color:#c77700; font-size:12px; line-height:1.4; font-weight:800; user-select:none;">Advanced scheduling options</summary>
                         <label style="display:flex; align-items:flex-start; gap:9px; margin-top:10px; color:var(--text-color,#eee); font-size:12px; line-height:1.45; cursor:pointer;">
@@ -21151,6 +21513,7 @@
 
             function refreshMapAfterBulkChange() {
                 updateTestDatesPanel();
+                updateMapDeadlinesPanel();
                 updateMonthLabelCounts();
                 updateMapControlsPanel();
                 updateMonthFilterButtons();
@@ -21428,6 +21791,61 @@
                 );
             }
 
+            function applyBulkDeadline(mode) {
+                const current = getMapSelectedBuildingSummaries();
+                const dateInput = document.getElementById('mapBulkDeadlineDate');
+                const typeSelect = document.getElementById('mapBulkDeadlineType');
+                const dateStr = dateInput ? dateInput.value : '';
+                const type = typeSelect ? typeSelect.value : 'category';
+                const label = getMapDeadlineTypeLabel(type);
+                if (!current.length) {
+                    showMapNotification('Select at least one building first', '#ff9800');
+                    return;
+                }
+                if (mode !== 'clear' && !dateStr) {
+                    showMapNotification('Please select a deadline date', '#ff6b6b');
+                    return;
+                }
+                let changed = 0;
+                current.forEach(item => {
+                    if (mode === 'clear') {
+                        if (clearMapDeadlineForBin(item.bin, type, { quiet: true, address: item.address })) {
+                            changed += 1;
+                            addMapActivity('Cleared testing deadline', {
+                                type: 'Deadline',
+                                bin: item.bin,
+                                address: item.address,
+                                details: `Bulk select · ${label}`
+                            });
+                        }
+                        return;
+                    }
+                    const previous = getMapDeadlineForBin(item.bin, type);
+                    if (previous === dateStr) return;
+                    setMapDeadlineForBin(item.bin, dateStr, type, { quiet: true, address: item.address });
+                    changed += 1;
+                    addMapActivity(previous ? 'Updated testing deadline' : 'Added testing deadline', {
+                        type: 'Deadline',
+                        bin: item.bin,
+                        address: item.address,
+                        date: dateStr,
+                        details: `Bulk select · ${label}`
+                    });
+                });
+                refreshMapAfterBulkChange();
+                if (typeof refreshMapAfterDeadlineChange === 'function') {
+                    hydrateMapBuildingPopupState(document);
+                    updateMapDeadlinesPanel();
+                    updateImmediateAttentionPanel();
+                }
+                showMapNotification(
+                    mode === 'clear'
+                        ? `Cleared ${label} deadlines on ${changed} building${changed === 1 ? '' : 's'}`
+                        : `Saved ${label} deadline on ${changed} building${changed === 1 ? '' : 's'}`,
+                    '#e67e22'
+                );
+            }
+
             bindDeselectButtons();
             document.getElementById('mapBulkAddCategory').addEventListener('click', () => applyBulkTestDate('category'));
             document.getElementById('mapBulkAddPvi').addEventListener('click', () => applyBulkTestDate('pvi'));
@@ -21438,6 +21856,8 @@
             document.getElementById('mapBulkApplyNote').addEventListener('click', () => applyBulkNote('set'));
             document.getElementById('mapBulkAppendNote').addEventListener('click', () => applyBulkNote('append'));
             document.getElementById('mapBulkClearNotes').addEventListener('click', () => applyBulkNote('clear'));
+            document.getElementById('mapBulkApplyDeadline').addEventListener('click', () => applyBulkDeadline('set'));
+            document.getElementById('mapBulkClearDeadline').addEventListener('click', () => applyBulkDeadline('clear'));
             document.getElementById('mapBulkEditDoneBtn').addEventListener('click', () => overlay.remove());
             document.getElementById('mapBulkEditCloseBtn').addEventListener('click', () => overlay.remove());
             overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
@@ -21701,6 +22121,124 @@
             }
         }
 
+        function updateMapDeadlinesPanel() {
+            const countEl = document.getElementById('mapDeadlinesCount');
+            const listEl = document.getElementById('deadlinesBuildingsList');
+            if (!listEl) return;
+
+            const typeFilterEl = document.getElementById('deadlinesTypeFilter');
+            const selectedType = typeFilterEl && (typeFilterEl.value === 'category' || typeFilterEl.value === 'pvi')
+                ? typeFilterEl.value
+                : 'all';
+            const allDeadlines = getMapDeadlines();
+            const bins = Object.keys(allDeadlines).filter(bin => {
+                const entries = getMapDeadlinesForBin(bin);
+                return selectedType === 'all'
+                    ? entries.length > 0
+                    : entries.some(entry => entry.type === selectedType);
+            });
+            const totalDeadlines = bins.reduce((sum, bin) => {
+                const entries = getMapDeadlinesForBin(bin);
+                return sum + (selectedType === 'all' ? entries.length : entries.filter(entry => entry.type === selectedType).length);
+            }, 0);
+            if (countEl) countEl.textContent = totalDeadlines;
+
+            if (bins.length === 0) {
+                const emptyLabel = selectedType === 'category' ? 'CAT deadlines' : selectedType === 'pvi' ? 'PVI deadlines' : 'testing deadlines';
+                listEl.innerHTML = `<div style="font-size:1em; color:var(--text-color); opacity:0.75; text-align:center; padding:14px 8px; line-height:1.45;">No ${emptyLabel}</div>`;
+                return;
+            }
+
+            bins.sort((a, b) => {
+                const aEntries = getMapDeadlinesForBin(a).filter(entry => selectedType === 'all' || entry.type === selectedType);
+                const bEntries = getMapDeadlinesForBin(b).filter(entry => selectedType === 'all' || entry.type === selectedType);
+                const aMin = aEntries.map(entry => entry.date).sort()[0] || '';
+                const bMin = bEntries.map(entry => entry.date).sort()[0] || '';
+                return aMin.localeCompare(bMin);
+            });
+
+            listEl.innerHTML = bins.map(bin => {
+                const address = _addressOrBin(bin);
+                const entries = getMapDeadlinesForBin(bin)
+                    .filter(entry => selectedType === 'all' || entry.type === selectedType)
+                    .sort((a, b) => a.date.localeCompare(b.date));
+                const hasPast = entries.some(entry => getMapDeadlineDueState(entry.date).isPast);
+                const headerBg = hasPast ? 'rgba(255,107,107,0.08)' : 'rgba(230,126,34,0.08)';
+                const headerBorder = hasPast ? 'rgba(255,107,107,0.3)' : 'rgba(230,126,34,0.28)';
+                const headerIconColor = hasPast ? '#ff6b6b' : '#e67e22';
+                const dateRows = entries.map(entry => {
+                    const due = getMapDeadlineDueState(entry.date);
+                    const display = formatMapDeadlineDateDisplay(entry.date);
+                    const typeLabel = getMapDeadlineTypeLabel(entry.type);
+                    const typeColor = entry.type === 'pvi' ? '#1a73e8' : '#9b59b6';
+                    const typeBackground = entry.type === 'pvi' ? 'rgba(26,115,232,0.16)' : 'rgba(155,89,182,0.16)';
+                    const badge = due.badge
+                        ? `<span style="font-size:0.72em;background:${due.isToday ? '#e67e22' : '#ff6b6b'};color:white;border-radius:3px;padding:1px 5px;font-weight:700;">${due.badge}</span>`
+                        : '';
+                    const confirmBtn = due.isPast
+                        ? `<button onclick="confirmDeadlineDone('${bin}', '${entry.type}')"
+                            style="flex-shrink:0; padding:6px 14px; background:#27ae60; color:white; border:none; border-radius:6px; cursor:pointer; font-size:1.04em; font-weight:600;">✓ Done</button>`
+                        : '';
+                    const removeBtn = `<button onclick="clearMapDeadlineForBin('${bin}','${entry.type}'); refreshMapAfterDeadlineChange();"
+                        style="flex-shrink:0; padding:${due.isPast ? '6px 14px' : '1px 6px'}; background:rgba(255,107,107,0.1); color:#ff6b6b; border:1px solid rgba(255,107,107,0.3); border-radius:${due.isPast ? '6px' : '4px'}; cursor:pointer; font-size:${due.isPast ? '1.04em' : '0.8em'}; font-weight:600;">✕</button>`;
+                    return `<div style="display:flex; flex-direction:column; gap:7px; padding:9px 10px; background:${due.isMissed ? 'rgba(255,107,107,0.09)' : due.isToday ? 'rgba(230,126,34,0.09)' : 'rgba(255,255,255,0.025)'}; border:1px solid ${due.isMissed ? 'rgba(255,107,107,0.24)' : 'var(--input-border)'}; border-radius:6px; margin-bottom:6px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="display:inline-flex; align-items:center; justify-content:center; font-size:0.78em; color:${typeColor}; background:${typeBackground}; border:1px solid ${typeColor}66; border-radius:999px; padding:3px 7px; font-weight:900; min-width:52px; letter-spacing:0.02em; box-sizing:border-box;">${typeLabel}</span>
+                            <span style="font-size:0.98em; color:${due.color}; font-weight:${due.isPast ? '750' : '600'}; line-height:1.35; flex:1;">📅 ${escapeMapSuggestionHtml(display)}</span>
+                            ${badge}
+                            ${!due.isPast ? removeBtn : ''}
+                        </div>
+                        ${due.isPast ? `<div style="display:flex; align-items:center; gap:4px;">${confirmBtn}${removeBtn}</div>` : ''}
+                    </div>`;
+                }).join('');
+                const datesForFilter = entries.map(entry => `${entry.date} ${entry.type === 'category' ? 'category cat' : 'pvi'} deadline`).join(' ').replace(/"/g, '&quot;');
+                const addrForData = String(address || '').replace(/"/g, '&quot;');
+                const displayAddress = address && String(address) !== String(bin)
+                    ? escapeMapSuggestionHtml(address)
+                    : `<span style="opacity:0.55">BIN ${escapeMapSuggestionHtml(bin)}</span>`;
+                return `<div data-bin="${bin}" data-address="${addrForData}" data-filter-text="${datesForFilter}" style="margin-bottom:10px; border-radius:7px; border:1px solid ${headerBorder}; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.12);">
+                    <div style="padding:9px 11px; background:${headerBg}; display:flex; align-items:center; gap:7px;">
+                        <span style="font-size:1.05em; color:${headerIconColor}; flex-shrink:0;">📍</span>
+                        <span style="font-size:1.02em; font-weight:750; line-height:1.3; color:var(--text-color); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; text-decoration:underline dotted;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
+                            ${displayAddress}
+                        </span>
+                        <span style="font-size:0.88em; opacity:0.78; font-weight:650; flex-shrink:0;">${entries.length} deadline${entries.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div style="padding:9px; background:var(--input-bg);">
+                        ${dateRows}
+                        <div style="margin-top:4px;">
+                            <button onclick="openTestDatesModal('${bin}')"
+                                    style="width:100%; padding:4px; background:rgba(230,126,34,0.12); color:#e67e22; border:1px solid rgba(230,126,34,0.35); border-radius:4px; cursor:pointer; font-size:0.8em; font-weight:600;">+ Add / Edit Deadline</button>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+            const searchInput = document.getElementById('deadlinesSearchInput');
+            if (searchInput && searchInput.value.trim()) {
+                filterMcpBinRowList('deadlinesBuildingsList', searchInput.value);
+            }
+        }
+
+        function clearAllMapDeadlines() {
+            if (!confirm('Clear all testing deadlines from all buildings?')) return;
+            const count = Object.keys(getMapDeadlines() || {}).reduce((sum, bin) => sum + getMapDeadlinesForBin(bin).length, 0);
+            setMapDeadlines({});
+            if (count > 0) addMapActivity('Cleared all testing deadlines', { type: 'Deadline', details: `${count} deadline${count !== 1 ? 's' : ''} cleared` });
+            refreshMapAfterDeadlineChange();
+            showMapNotification('All testing deadlines cleared', '#ff9800');
+        }
+
+        function confirmDeadlineDone(bin, type) {
+            const label = getMapDeadlineTypeLabel(type);
+            const date = getMapDeadlineForBin(bin, type);
+            const display = date ? formatMapDeadlineDateDisplay(date) : '';
+            const address = _addressOrBin(bin);
+            if (!confirm(`Mark the ${label} deadline${display ? ` (${display})` : ''} for ${address} as done and remove this reminder?`)) return;
+            clearMapDeadlineForBin(bin, type, { address });
+            refreshMapAfterDeadlineChange();
+            showMapNotification(`${label} deadline cleared`, '#27ae60');
+        }
+
         function getMapImmediateAttentionItems(referenceDate, sourceView) {
             const today = referenceDate instanceof Date ? new Date(referenceDate.getTime()) : new Date();
             today.setHours(0, 0, 0, 0);
@@ -21717,6 +22255,7 @@
                 || (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups)
                 || {};
             const schedules = view ? (view.testDates || {}) : getMapTestDates();
+            const deadlines = view ? (view.deadlines || {}) : getMapDeadlines();
             const completed = view ? (view.completed || {}) : getMapCompleted();
             const itemMap = new Map();
 
@@ -21747,6 +22286,19 @@
                             });
                         }
                     });
+                });
+            });
+
+            Object.keys(deadlines).forEach(bin => {
+                getMapDeadlineEntries(deadlines[bin]).forEach(entry => {
+                    if (entry.date && entry.date <= todayKey) {
+                        ensureItem(bin).alerts.push({
+                            kind: 'overdue-deadline',
+                            date: entry.date,
+                            scheduleType: entry.type,
+                            isToday: entry.date === todayKey
+                        });
+                    }
                 });
             });
 
@@ -21855,8 +22407,8 @@
                 .filter(item => item.alerts.length > 0)
                 .sort((a, b) => {
                     if (a.viewLevel !== b.viewLevel) return a.viewLevel ? -1 : 1;
-                    const aOverdue = a.alerts.filter(alert => alert.kind === 'overdue-schedule').map(alert => alert.date).sort()[0] || '9999-12-31';
-                    const bOverdue = b.alerts.filter(alert => alert.kind === 'overdue-schedule').map(alert => alert.date).sort()[0] || '9999-12-31';
+                    const aOverdue = a.alerts.filter(alert => alert.kind === 'overdue-schedule' || alert.kind === 'overdue-deadline').map(alert => alert.date).sort()[0] || '9999-12-31';
+                    const bOverdue = b.alerts.filter(alert => alert.kind === 'overdue-schedule' || alert.kind === 'overdue-deadline').map(alert => alert.date).sort()[0] || '9999-12-31';
                     if (aOverdue !== bOverdue) return aOverdue.localeCompare(bOverdue);
                     return (a.address || a.bin).localeCompare(b.address || b.bin);
                 });
@@ -21876,6 +22428,7 @@
             const allAlerts = allItems.flatMap(item => item.alerts);
             const noTestCount = allAlerts.filter(alert => alert.kind === 'no-current-year-test').length;
             const scheduleCount = allAlerts.filter(alert => alert.kind === 'overdue-schedule').length;
+            const deadlineCount = allAlerts.filter(alert => alert.kind === 'overdue-deadline').length;
             const cat5Count = allAlerts.filter(alert => alert.kind === 'cat5-due').length;
             const violationCount = allAlerts.filter(alert => alert.kind === 'active-violation').length;
             const unscheduledCount = allAlerts.filter(alert => alert.kind === 'ready-unscheduled').length;
@@ -21889,6 +22442,7 @@
                 summaryEl.innerHTML = `
                     <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#dc3545; background:rgba(220,53,69,0.12); border:1px solid rgba(220,53,69,0.3); font-weight:700;">${noTestLabel}</span>
                     <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#e67e22; background:rgba(230,126,34,0.12); border:1px solid rgba(230,126,34,0.3); font-weight:700;">${scheduleCount} due schedules</span>
+                    <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#d35400; background:rgba(211,84,0,0.12); border:1px solid rgba(211,84,0,0.3); font-weight:700;">${deadlineCount} due deadlines</span>
                     <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#ff9800; background:rgba(255,152,0,0.12); border:1px solid rgba(255,152,0,0.3); font-weight:700;">${cat5Count} CAT 5 due</span>
                     <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#c62828; background:rgba(198,40,40,0.1); border:1px solid rgba(198,40,40,0.28); font-weight:700;">${violationCount} violations</span>
                     <span style="font-size:0.78em; padding:3px 7px; border-radius:999px; color:#1a73e8; background:rgba(26,115,232,0.1); border:1px solid rgba(26,115,232,0.28); font-weight:700;">${unscheduledCount} unscheduled</span>
@@ -21920,6 +22474,7 @@
                     if (alert.kind === 'cat5-due') return `${alert.deviceNumber} ${alert.deviceType} CAT 5 ${alert.dueYear}`;
                     if (alert.kind === 'ready-unscheduled') return `${alert.deviceNumber} ${alert.deviceType} ${alert.pending.join(' ')} ${alert.missingSchedules.join(' ')}`;
                     if (alert.kind === 'no-current-year-test') return `${alert.deviceNumber} ${alert.deviceType} ${alert.pending.join(' ')}`;
+                    if (alert.kind === 'overdue-deadline') return `${alert.date} ${alert.scheduleType} deadline`;
                     return `${alert.date} ${alert.scheduleType}`;
                 }).join(' '));
                 const alertsHtml = item.alerts.map(alert => {
@@ -21989,6 +22544,19 @@
                             </div>
                             <div style="font-size:0.82em; opacity:0.78; margin-top:5px;">No relevant ${year} test date is filed or scheduled · Still required: ${pending}</div>
                             ${item.manuallyCompleted ? '<div style="font-size:0.8em; color:#e67e22; margin-top:5px; font-weight:700;">Marked completed manually — verify the DOB filing.</div>' : ''}
+                        </div>`;
+                    }
+                    if (alert.kind === 'overdue-deadline') {
+                        const dateObj = new Date(alert.date + 'T00:00:00');
+                        const displayDate = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+                        const typeLabel = getMapDeadlineTypeLabel(alert.scheduleType);
+                        const badge = alert.isToday ? 'DUE TODAY' : 'PAST DUE';
+                        return `<div data-attention-text="${escapeMapSuggestionHtml(`${typeLabel} deadline ${alert.date} ${displayDate}`)}" style="padding:9px 10px; background:rgba(230,126,34,0.08); border:1px solid rgba(230,126,34,0.28); border-radius:6px; margin-bottom:6px;">
+                            <div style="display:flex; align-items:center; gap:7px; margin-bottom:7px;">
+                                <span style="font-size:0.7em; background:${alert.isToday ? '#e67e22' : '#dc3545'}; color:white; border-radius:3px; padding:2px 5px; font-weight:800;">${badge}</span>
+                                <span style="font-size:0.9em; color:var(--text-color); font-weight:700;">${typeLabel} deadline · ${displayDate}</span>
+                            </div>
+                            <button onclick="confirmDeadlineDone('${binJs}', '${alert.scheduleType}')" style="padding:5px 10px; background:#27ae60; color:white; border:none; border-radius:5px; cursor:pointer; font-size:0.82em; font-weight:700;">✓ Done</button>
                         </div>`;
                     }
                     const dateObj = new Date(alert.date + 'T00:00:00');
@@ -22901,9 +23469,14 @@
             };
 
             const testDatesSection = sectionFor('mcpTestDates');
+            const deadlinesSection = sectionFor('mcpDeadlines');
             const monthsSection = sectionFor('mcpMonths');
-            if (testDatesSection && monthsSection && testDatesSection.nextElementSibling !== monthsSection) {
-                testDatesSection.after(monthsSection);
+            if (testDatesSection && deadlinesSection && testDatesSection.nextElementSibling !== deadlinesSection) {
+                testDatesSection.after(deadlinesSection);
+            }
+            const afterTestDates = deadlinesSection || testDatesSection;
+            if (afterTestDates && monthsSection && afterTestDates.nextElementSibling !== monthsSection) {
+                afterTestDates.after(monthsSection);
             }
 
             const notesSection = sectionFor('mcpNotes');
@@ -23647,6 +24220,7 @@
 
             // Update scheduled test dates panel
             updateTestDatesPanel();
+            updateMapDeadlinesPanel();
             updateImmediateAttentionPanel();
             updateNoTestByJunePanel();
 
@@ -23663,6 +24237,7 @@
             reapplyBinSidebarSearch('holdSearchInput', 'holdBuildingsList');
             reapplyBinSidebarSearch('completedSearchInput', 'completedBuildingsList');
             reapplyBinSidebarSearch('notesSearchInput', 'notesBuildingsList');
+            reapplyBinSidebarSearch('deadlinesSearchInput', 'deadlinesBuildingsList');
             var housesInp = document.getElementById('housesLocationsSearchInput');
             if (housesInp && housesInp.value.trim()) {
                 filterHousesLocationsList(housesInp.value);
@@ -25261,6 +25836,7 @@
                                             style="flex: 1; padding: 6px 8px; background: rgba(255,107,107,0.12); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.35); border-radius: 5px; cursor: pointer; font-size: 11px; font-weight: 700;">Clear</button>
                                 </div>
                             </div>
+                            <div id="mapDeadlineNote_${building.bin}" style="display: none; padding: 0 10px 10px 10px;"></div>
                         </div>
                         
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
