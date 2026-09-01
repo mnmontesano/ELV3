@@ -1332,12 +1332,18 @@
                                 <span class="mcp-arrow" id="mcpDeadlinesArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpDeadlines">
-                                <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">Dates testing needs to be completed by. These are reminders only and do not schedule a test. Missed deadlines are flagged in red. Click an address to view the building on the map.</p>
+                                <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">Dates testing needs to be completed by. These are reminders only and do not schedule a test. Missed deadlines are flagged in red. Click an address to view the building on the map. Filter by whether a Scheduled Test Date is already on the job.</p>
                                 <label for="deadlinesTypeFilter" style="display:block; font-size:0.92em; font-weight:700; color:var(--text-color); margin-bottom:5px;">Testing type</label>
                                 <select id="deadlinesTypeFilter" onchange="updateMapDeadlinesPanel()" style="width:100%; padding:7px 9px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:1em; font-weight:600; box-sizing:border-box; margin-bottom:8px;">
                                     <option value="all">Both — CAT &amp; PVI</option>
                                     <option value="category">CAT testing</option>
                                     <option value="pvi">PVI testing</option>
+                                </select>
+                                <label for="deadlinesScheduleFilter" style="display:block; font-size:0.92em; font-weight:700; color:var(--text-color); margin-bottom:5px;">Scheduled test date</label>
+                                <select id="deadlinesScheduleFilter" onchange="updateMapDeadlinesPanel()" style="width:100%; padding:7px 9px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:1em; font-weight:600; box-sizing:border-box; margin-bottom:8px;">
+                                    <option value="all">All deadlines</option>
+                                    <option value="scheduled">Has Scheduled Test Date</option>
+                                    <option value="unscheduled">No Scheduled Test Date</option>
                                 </select>
                                 <input type="text" id="deadlinesSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or date..."
                                        oninput="filterMcpBinRowList('deadlinesBuildingsList', this.value)">
@@ -22130,12 +22136,21 @@
             const selectedType = typeFilterEl && (typeFilterEl.value === 'category' || typeFilterEl.value === 'pvi')
                 ? typeFilterEl.value
                 : 'all';
+            const scheduleFilterEl = document.getElementById('deadlinesScheduleFilter');
+            const selectedSchedule = scheduleFilterEl && (scheduleFilterEl.value === 'scheduled' || scheduleFilterEl.value === 'unscheduled')
+                ? scheduleFilterEl.value
+                : 'all';
             const allDeadlines = getMapDeadlines();
             const bins = Object.keys(allDeadlines).filter(bin => {
                 const entries = getMapDeadlinesForBin(bin);
-                return selectedType === 'all'
+                const matchesType = selectedType === 'all'
                     ? entries.length > 0
                     : entries.some(entry => entry.type === selectedType);
+                if (!matchesType) return false;
+                const hasScheduledTestDate = getTestDatesForBin(bin).length > 0;
+                if (selectedSchedule === 'scheduled') return hasScheduledTestDate;
+                if (selectedSchedule === 'unscheduled') return !hasScheduledTestDate;
+                return true;
             });
             const totalDeadlines = bins.reduce((sum, bin) => {
                 const entries = getMapDeadlinesForBin(bin);
@@ -22144,12 +22159,23 @@
             if (countEl) countEl.textContent = totalDeadlines;
 
             if (bins.length === 0) {
-                const emptyLabel = selectedType === 'category' ? 'CAT deadlines' : selectedType === 'pvi' ? 'PVI deadlines' : 'testing deadlines';
-                listEl.innerHTML = `<div style="font-size:1em; color:var(--text-color); opacity:0.75; text-align:center; padding:14px 8px; line-height:1.45;">No ${emptyLabel}</div>`;
+                const typeLabel = selectedType === 'category' ? 'CAT deadlines' : selectedType === 'pvi' ? 'PVI deadlines' : 'testing deadlines';
+                const scheduleLabel = selectedSchedule === 'scheduled'
+                    ? `${typeLabel} with a scheduled test date`
+                    : selectedSchedule === 'unscheduled'
+                        ? `${typeLabel} without a scheduled test date`
+                        : typeLabel;
+                listEl.innerHTML = `<div style="font-size:1em; color:var(--text-color); opacity:0.75; text-align:center; padding:14px 8px; line-height:1.45;">No ${scheduleLabel}</div>`;
                 return;
             }
 
             bins.sort((a, b) => {
+                const aHasSchedule = getTestDatesForBin(a).length > 0;
+                const bHasSchedule = getTestDatesForBin(b).length > 0;
+                // When showing all, list unscheduled deadline jobs first so they stand out.
+                if (selectedSchedule === 'all' && aHasSchedule !== bHasSchedule) {
+                    return aHasSchedule ? 1 : -1;
+                }
                 const aEntries = getMapDeadlinesForBin(a).filter(entry => selectedType === 'all' || entry.type === selectedType);
                 const bEntries = getMapDeadlinesForBin(b).filter(entry => selectedType === 'all' || entry.type === selectedType);
                 const aMin = aEntries.map(entry => entry.date).sort()[0] || '';
@@ -22162,10 +22188,15 @@
                 const entries = getMapDeadlinesForBin(bin)
                     .filter(entry => selectedType === 'all' || entry.type === selectedType)
                     .sort((a, b) => a.date.localeCompare(b.date));
+                const scheduleDates = getTestDatesForBin(bin);
+                const hasScheduledTestDate = scheduleDates.length > 0;
                 const hasPast = entries.some(entry => getMapDeadlineDueState(entry.date).isPast);
                 const headerBg = hasPast ? 'rgba(255,107,107,0.08)' : 'rgba(230,126,34,0.08)';
                 const headerBorder = hasPast ? 'rgba(255,107,107,0.3)' : 'rgba(230,126,34,0.28)';
                 const headerIconColor = hasPast ? '#ff6b6b' : '#e67e22';
+                const scheduleBadge = hasScheduledTestDate
+                    ? `<span style="flex-shrink:0; font-size:0.72em; font-weight:700; padding:2px 6px; border-radius:999px; background:rgba(26,115,232,0.12); color:#1a73e8; border:1px solid rgba(26,115,232,0.28);" title="${scheduleDates.length} scheduled test date${scheduleDates.length !== 1 ? 's' : ''}">Scheduled</span>`
+                    : `<span style="flex-shrink:0; font-size:0.72em; font-weight:700; padding:2px 6px; border-radius:999px; background:rgba(230,126,34,0.12); color:#e67e22; border:1px solid rgba(230,126,34,0.28);">No schedule</span>`;
                 const dateRows = entries.map(entry => {
                     const due = getMapDeadlineDueState(entry.date);
                     const display = formatMapDeadlineDateDisplay(entry.date);
@@ -22191,17 +22222,19 @@
                         ${due.isPast ? `<div style="display:flex; align-items:center; gap:4px;">${confirmBtn}${removeBtn}</div>` : ''}
                     </div>`;
                 }).join('');
-                const datesForFilter = entries.map(entry => `${entry.date} ${entry.type === 'category' ? 'category cat' : 'pvi'} deadline`).join(' ').replace(/"/g, '&quot;');
+                const scheduleFilterText = hasScheduledTestDate ? 'scheduled has schedule' : 'unscheduled no schedule';
+                const datesForFilter = `${entries.map(entry => `${entry.date} ${entry.type === 'category' ? 'category cat' : 'pvi'} deadline`).join(' ')} ${scheduleFilterText}`.replace(/"/g, '&quot;');
                 const addrForData = String(address || '').replace(/"/g, '&quot;');
                 const displayAddress = address && String(address) !== String(bin)
                     ? escapeMapSuggestionHtml(address)
                     : `<span style="opacity:0.55">BIN ${escapeMapSuggestionHtml(bin)}</span>`;
-                return `<div data-bin="${bin}" data-address="${addrForData}" data-filter-text="${datesForFilter}" style="margin-bottom:10px; border-radius:7px; border:1px solid ${headerBorder}; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.12);">
+                return `<div data-bin="${bin}" data-address="${addrForData}" data-has-schedule="${hasScheduledTestDate ? '1' : '0'}" data-filter-text="${datesForFilter}" style="margin-bottom:10px; border-radius:7px; border:1px solid ${headerBorder}; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.12);">
                     <div style="padding:9px 11px; background:${headerBg}; display:flex; align-items:center; gap:7px;">
                         <span style="font-size:1.05em; color:${headerIconColor}; flex-shrink:0;">📍</span>
                         <span style="font-size:1.02em; font-weight:750; line-height:1.3; color:var(--text-color); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; text-decoration:underline dotted;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                             ${displayAddress}
                         </span>
+                        ${scheduleBadge}
                         <span style="font-size:0.88em; opacity:0.78; font-weight:650; flex-shrink:0;">${entries.length} deadline${entries.length !== 1 ? 's' : ''}</span>
                     </div>
                     <div style="padding:9px; background:var(--input-bg);">
