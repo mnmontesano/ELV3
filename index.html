@@ -1309,13 +1309,20 @@
                                 <span class="mcp-arrow" id="mcpTestDatesArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpTestDates">
-                                <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">Past due dates are flagged in red. Click <strong>✓ Done</strong> to confirm testing was completed.</p>
+                                <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">Past due dates are flagged in red. Click <strong>✓ Done</strong> to confirm testing was completed. Pick a day to see every schedule for that date.</p>
                                 <label for="testDatesTypeFilter" style="display:block; font-size:0.92em; font-weight:700; color:var(--text-color); margin-bottom:5px;">Testing type</label>
                                 <select id="testDatesTypeFilter" onchange="updateTestDatesPanel()" style="width:100%; padding:7px 9px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:1em; font-weight:600; box-sizing:border-box; margin-bottom:8px;">
                                     <option value="all">Both — Category &amp; PVI</option>
                                     <option value="category">Category testing</option>
                                     <option value="pvi">PVI testing</option>
                                 </select>
+                                <label for="testDatesDayFilter" style="display:block; font-size:0.92em; font-weight:700; color:var(--text-color); margin-bottom:5px;">Show schedules for day</label>
+                                <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px;">
+                                    <input type="date" id="testDatesDayFilter" onchange="updateTestDatesPanel()" style="flex:1; min-width:0; padding:7px 9px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:1em; font-weight:600; box-sizing:border-box;">
+                                    <button type="button" onclick="setTestDatesDayFilterToday()" title="Show today's schedules" class="mcp-btn" style="width:auto; margin:0; padding:7px 10px; color:#1a73e8; font-weight:700; white-space:nowrap;">Today</button>
+                                    <button type="button" onclick="clearTestDatesDayFilter()" title="Show all scheduled dates" class="mcp-btn" style="width:auto; margin:0; padding:7px 10px; color:var(--text-color); font-weight:700; white-space:nowrap;">All</button>
+                                </div>
+                                <div id="testDatesDayFilterStatus" style="display:none; padding:7px 9px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(26,115,232,0.28); background:rgba(26,115,232,0.08); color:var(--text-color); font-size:0.9em; line-height:1.4;"></div>
                                 <input type="text" id="testDatesSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or date..."
                                        oninput="filterMcpBinRowList('testDatesPanelList', this.value)">
                                 <div id="testDatesPanelList" style="max-height: 260px; overflow-y: auto; margin-bottom: 8px;">
@@ -21981,6 +21988,25 @@
             });
         }
 
+        function getSelectedTestDatesDayFilter() {
+            const dayFilterEl = document.getElementById('testDatesDayFilter');
+            const value = dayFilterEl && String(dayFilterEl.value || '').trim();
+            return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+        }
+
+        function setTestDatesDayFilterToday() {
+            const dayFilterEl = document.getElementById('testDatesDayFilter');
+            if (!dayFilterEl) return;
+            dayFilterEl.value = formatLocalDateInputValue(new Date());
+            updateTestDatesPanel();
+        }
+
+        function clearTestDatesDayFilter() {
+            const dayFilterEl = document.getElementById('testDatesDayFilter');
+            if (dayFilterEl) dayFilterEl.value = '';
+            updateTestDatesPanel();
+        }
+
         function updateTestDatesPanel() {
             const countEl = document.getElementById('mapTestDatesCount');
             const listEl = document.getElementById('testDatesPanelList');
@@ -21991,27 +22017,52 @@
             const selectedType = typeFilterEl && (typeFilterEl.value === 'category' || typeFilterEl.value === 'pvi')
                 ? typeFilterEl.value
                 : 'all';
+            const selectedDay = getSelectedTestDatesDayFilter();
+            const dayStatusEl = document.getElementById('testDatesDayFilterStatus');
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
-            // Build list of bins that still have dates, resolve addresses
-            const bins = Object.keys(allTestDates).filter(bin => {
-                const rows = getMapTypedScheduleRows(bin);
-                return selectedType === 'all'
-                    ? rows.length > 0
-                    : rows.some(row => row.type === selectedType);
-            });
+            function rowsForBin(bin) {
+                return getMapTypedScheduleRows(bin).filter(row => {
+                    if (selectedType !== 'all' && row.type !== selectedType) return false;
+                    if (selectedDay && row.date !== selectedDay) return false;
+                    return true;
+                });
+            }
 
-            // Total individual date count in the selected testing type
-            const totalDates = bins.reduce((sum, bin) => {
-                const rows = getMapTypedScheduleRows(bin);
-                return sum + (selectedType === 'all' ? rows.length : rows.filter(row => row.type === selectedType).length);
-            }, 0);
+            // Build list of bins that still have dates matching the active filters
+            const bins = Object.keys(allTestDates).filter(bin => rowsForBin(bin).length > 0);
+
+            // Total individual date count in the selected filters
+            const totalDates = bins.reduce((sum, bin) => sum + rowsForBin(bin).length, 0);
             if (countEl) countEl.textContent = totalDates;
 
+            if (dayStatusEl) {
+                if (selectedDay) {
+                    const dayObj = new Date(selectedDay + 'T00:00:00');
+                    const dayLabel = dayObj.toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric'
+                    });
+                    const buildingNoun = bins.length === 1 ? 'building' : 'buildings';
+                    const scheduleNoun = totalDates === 1 ? 'schedule' : 'schedules';
+                    dayStatusEl.style.display = 'block';
+                    dayStatusEl.innerHTML = `<strong style="color:#1a73e8;">${totalDates}</strong> ${scheduleNoun} on <strong>${escapeMapSuggestionHtml(dayLabel)}</strong> across <strong>${bins.length}</strong> ${buildingNoun}.`;
+                } else {
+                    dayStatusEl.style.display = 'none';
+                    dayStatusEl.textContent = '';
+                }
+            }
+
             if (bins.length === 0) {
-                const emptyLabel = selectedType === 'category' ? 'Category tests' : selectedType === 'pvi' ? 'PVI tests' : 'test dates';
+                const emptyType = selectedType === 'category' ? 'Category tests' : selectedType === 'pvi' ? 'PVI tests' : 'test dates';
+                const emptyLabel = selectedDay
+                    ? `${emptyType} on ${new Date(selectedDay + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}`
+                    : emptyType;
                 listEl.innerHTML = `<div style="font-size:1em; color:var(--text-color); opacity:0.75; text-align:center; padding:14px 8px; line-height:1.45;">No scheduled ${emptyLabel}</div>`;
+                if (typeof refreshMcpDetailBackTitle === 'function') refreshMcpDetailBackTitle();
                 return;
             }
 
@@ -22029,18 +22080,18 @@
 
             // Sort bins by their earliest scheduled date
             bins.sort((a, b) => {
-                const aRows = getMapTypedScheduleRows(a).filter(row => selectedType === 'all' || row.type === selectedType);
-                const bRows = getMapTypedScheduleRows(b).filter(row => selectedType === 'all' || row.type === selectedType);
-                const aMin = aRows.map(row => row.date).sort()[0] || '';
-                const bMin = bRows.map(row => row.date).sort()[0] || '';
-                return aMin.localeCompare(bMin);
+                const aMin = rowsForBin(a).map(row => row.date).sort()[0] || '';
+                const bMin = rowsForBin(b).map(row => row.date).sort()[0] || '';
+                if (aMin !== bMin) return aMin.localeCompare(bMin);
+                return resolveAddress(a).localeCompare(resolveAddress(b));
             });
 
             listEl.innerHTML = bins.map(bin => {
                 const address = resolveAddress(bin);
-                const typedRows = getMapTypedScheduleRows(bin)
-                    .filter(row => selectedType === 'all' || row.type === selectedType)
-                    .sort((a, b) => a.date.localeCompare(b.date));
+                const typedRows = rowsForBin(bin).sort((a, b) => {
+                    if (a.date !== b.date) return a.date.localeCompare(b.date);
+                    return String(a.type || '').localeCompare(String(b.type || ''));
+                });
                 const sortedDates = typedRows.map(row => row.date);
                 const hasPast = typedRows.some(row => new Date(row.date + 'T00:00:00') <= today);
 
@@ -22087,7 +22138,9 @@
                         ${isPast ? `<div style="display:flex; align-items:center; gap:4px;">${confirmBtn}${removeBtnLarge}</div>` : ''}
                     </div>`;
                 });
-                const hiddenDateCount = Math.max(0, renderedDateRows.length - 3);
+                // When filtering to one day, show every matching row; otherwise keep the compact "show more" collapse.
+                const collapseThreshold = selectedDay ? Number.POSITIVE_INFINITY : 3;
+                const hiddenDateCount = Math.max(0, renderedDateRows.length - collapseThreshold);
                 const dateRows = hiddenDateCount === 0
                     ? renderedDateRows.join('')
                     : `${renderedDateRows.slice(0, 3).join('')}
@@ -22098,13 +22151,16 @@
 
                 const datesForFilter = typedRows.map(row => `${row.date} ${row.type === 'category' ? 'category cat' : row.type === 'pvi' ? 'pvi' : 'unspecified'}`).join(' ').replace(/"/g, '&quot;');
                 const addrForData = (address || '').replace(/"/g, '&quot;');
+                const scheduleCountLabel = selectedDay
+                    ? `${typedRows.length} schedule${typedRows.length !== 1 ? 's' : ''}`
+                    : `${sortedDates.length} date${sortedDates.length !== 1 ? 's' : ''}`;
                 return `<div data-bin="${bin}" data-address="${addrForData}" data-filter-text="${datesForFilter}" style="margin-bottom:10px; border-radius:7px; border:1px solid ${headerBorder}; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.12);">
                     <div style="padding:9px 11px; background:${headerBg}; display:flex; align-items:center; gap:7px;">
                         <span style="font-size:1.05em; color:${headerIconColor}; flex-shrink:0;">📍</span>
                         <span style="font-size:1.02em; font-weight:750; line-height:1.3; color:var(--text-color); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; text-decoration:underline dotted;" title="Click to view on map" onclick="flyToMapBuilding('${bin}')">
                             ${address || '<span style="opacity:0.55">BIN ' + bin + '</span>'}
                         </span>
-                        <span style="font-size:0.88em; opacity:0.78; font-weight:650; flex-shrink:0;">${sortedDates.length} date${sortedDates.length !== 1 ? 's' : ''}</span>
+                        <span style="font-size:0.88em; opacity:0.78; font-weight:650; flex-shrink:0;">${scheduleCountLabel}</span>
                     </div>
                     <div style="padding:9px; background:var(--input-bg);">
                         ${dateRows}
@@ -22119,6 +22175,7 @@
             if (tds && tds.value.trim()) {
                 filterMcpBinRowList('testDatesPanelList', tds.value);
             }
+            if (typeof refreshMcpDetailBackTitle === 'function') refreshMcpDetailBackTitle();
         }
 
         function updateMapDeadlinesPanel() {
@@ -23125,6 +23182,18 @@
             await promoteAdditionalLocation(index);
         }
 
+        function refreshMcpDetailBackTitle() {
+            var panelBody = document.getElementById('mapControlsPanelBody');
+            if (!panelBody || !panelBody.classList.contains('mcp-detail-mode')) return;
+            var section = panelBody.querySelector('.mcp-section.mcp-active');
+            var titleEl = section && section.querySelector('.mcp-title');
+            var backTitle = document.getElementById('mcpDetailBackTitle');
+            if (!backTitle) return;
+            backTitle.textContent = titleEl
+                ? (titleEl.textContent || '').replace(/\s+/g, ' ').trim()
+                : '';
+        }
+
         function closeMcpDetailView() {
             var panelBody = document.getElementById('mapControlsPanelBody');
             if (!panelBody) return;
@@ -23153,15 +23222,7 @@
             section.classList.add('mcp-active');
             body.classList.add('open');
 
-            var titleEl = section.querySelector('.mcp-title');
-            var backTitle = document.getElementById('mcpDetailBackTitle');
-            if (backTitle) {
-                if (titleEl) {
-                    backTitle.textContent = (titleEl.textContent || '').replace(/\s+/g, ' ').trim();
-                } else {
-                    backTitle.textContent = '';
-                }
-            }
+            refreshMcpDetailBackTitle();
 
             if (id === 'mcpCategory5' && typeof updateMapCategory5Panel === 'function') {
                 updateMapCategory5Panel();
