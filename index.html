@@ -22166,6 +22166,7 @@
                         ? `${typeLabel} without a scheduled test date`
                         : typeLabel;
                 listEl.innerHTML = `<div style="font-size:1em; color:var(--text-color); opacity:0.75; text-align:center; padding:14px 8px; line-height:1.45;">No ${scheduleLabel}</div>`;
+                if (typeof refreshMcpDetailBackTitle === 'function') refreshMcpDetailBackTitle();
                 return;
             }
 
@@ -22250,6 +22251,7 @@
             if (searchInput && searchInput.value.trim()) {
                 filterMcpBinRowList('deadlinesBuildingsList', searchInput.value);
             }
+            if (typeof refreshMcpDetailBackTitle === 'function') refreshMcpDetailBackTitle();
         }
 
         function clearAllMapDeadlines() {
@@ -23158,6 +23160,18 @@
             await promoteAdditionalLocation(index);
         }
 
+        function refreshMcpDetailBackTitle() {
+            var panelBody = document.getElementById('mapControlsPanelBody');
+            if (!panelBody || !panelBody.classList.contains('mcp-detail-mode')) return;
+            var section = panelBody.querySelector('.mcp-section.mcp-active');
+            var titleEl = section && section.querySelector('.mcp-title');
+            var backTitle = document.getElementById('mcpDetailBackTitle');
+            if (!backTitle) return;
+            backTitle.textContent = titleEl
+                ? (titleEl.textContent || '').replace(/\s+/g, ' ').trim()
+                : '';
+        }
+
         function closeMcpDetailView() {
             var panelBody = document.getElementById('mapControlsPanelBody');
             if (!panelBody) return;
@@ -23186,15 +23200,7 @@
             section.classList.add('mcp-active');
             body.classList.add('open');
 
-            var titleEl = section.querySelector('.mcp-title');
-            var backTitle = document.getElementById('mcpDetailBackTitle');
-            if (backTitle) {
-                if (titleEl) {
-                    backTitle.textContent = (titleEl.textContent || '').replace(/\s+/g, ' ').trim();
-                } else {
-                    backTitle.textContent = '';
-                }
-            }
+            refreshMcpDetailBackTitle();
 
             if (id === 'mcpCategory5' && typeof updateMapCategory5Panel === 'function') {
                 updateMapCategory5Panel();
