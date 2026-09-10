@@ -35168,6 +35168,10 @@
                     var knownFieldNames = new Set(allFieldNames);
                     for (var sfi = 0; sfi < pdfjsSupplement.fieldNames.length; sfi++) {
                         var supplementName = pdfjsSupplement.fieldNames[sfi];
+                        // Unchecked widgets still define the status-column layout.
+                        if (pdfjsSupplement.fieldMeta && pdfjsSupplement.fieldMeta[supplementName]) {
+                            fieldMeta[supplementName] = pdfjsSupplement.fieldMeta[supplementName];
+                        }
                         if (!knownFieldNames.has(supplementName)) {
                             knownFieldNames.add(supplementName);
                             allFieldNames.push(supplementName);
@@ -35414,6 +35418,10 @@
             };
         }
 
+        function isDeviceRowField(name) {
+            return /_\d+_Device/i.test(name) || /(?:^|\.)Device\s+\d+$/i.test(name);
+        }
+
         function violationDeviceIndex(prefixStr, page, style, arrayIndex) {
             const prefix = prefixStr === undefined || prefixStr === null || prefixStr === '' ? 0 : parseInt(prefixStr, 10);
             if (style === 'bracket' && (!page || page === 1)) {
@@ -35571,6 +35579,51 @@
             }
         });
 
+        // Additional-device summary sheets use nonconsecutive checkbox numbers
+        // after device 10. Match rows to the known Category 1 status columns on
+        // each physical page instead of extrapolating those field numbers.
+        (function markSummaryStatusesByPosition() {
+            if (!usesKnownSummaryCheckboxLayout) return;
+            const columnsByPage = {};
+            Object.keys(fieldMeta).forEach(function(name) {
+                const meta = fieldMeta[name];
+                const center = rectCenter(meta);
+                if (!center || !meta.page) return;
+                let status = null;
+                if (/CheckBox1_69_|CheckBox1\[65\]$/.test(name)) status = 'satisfactory';
+                if (/CheckBox1_74_|CheckBox1\[70\]$/.test(name)) status = 'unsatisfactory';
+                if (!status) return;
+                if (!columnsByPage[meta.page]) columnsByPage[meta.page] = {};
+                columnsByPage[meta.page][status] = center;
+            });
+
+            entries.forEach(function(entry) {
+                if (!isTruthy(entry.value) || !/CheckBox1(?:_|\[)/.test(entry.name)) return;
+                const center = rectCenter(entry.meta);
+                // Saved field names can still say Page1 on continuation sheets.
+                const page = entry.meta && entry.meta.page;
+                const columns = columnsByPage[page];
+                if (!center || !columns || !columns.satisfactory || !columns.unsatisfactory) return;
+                if (Math.abs(columns.satisfactory.y - columns.unsatisfactory.y) > 3
+                    || columns.unsatisfactory.x - columns.satisfactory.x < 8) return;
+                let status = null;
+                if (Math.abs(center.x - columns.satisfactory.x) <= 3) status = 'satisfactory';
+                if (Math.abs(center.x - columns.unsatisfactory.x) <= 3) status = 'unsatisfactory';
+                if (!status) return;
+
+                let best = null;
+                entries.forEach(function(row) {
+                    if (!isDeviceRowField(row.name) || !row.meta || row.meta.page !== page) return;
+                    const deviceNumber = extractELV3DeviceNumber(row.value);
+                    const rowCenter = rectCenter(row.meta);
+                    if (!deviceNumber || !rowCenter || rowCenter.x >= columns.satisfactory.x) return;
+                    const dy = Math.abs(rowCenter.y - center.y);
+                    if (dy <= 5 && (!best || dy < best.dy)) best = { deviceNumber: deviceNumber, dy: dy };
+                });
+                if (best) markStatus(deviceIndexByNumber[best.deviceNumber], status, 'summary-position-checkbox', 100);
+            });
+        })();
+
         // Some flattened/combined ELV3 PDFs expose the visible continuation-page
         // status boxes as generic "Check Box24" names. Use pdf.js annotation
         // geometry to attach checked boxes to the device row directly above them.
@@ -35580,16 +35633,17 @@
 
             entries.forEach(function(entry) {
                 const center = rectCenter(entry.meta);
-                if (!center || !entry.page || entry.page < 2) return;
+                const page = (entry.meta && entry.meta.page) || entry.page;
+                if (!center || !page || page < 2) return;
 
                 const deviceNumber = extractELV3DeviceNumber(entry.value);
-                if (deviceNumber && /_\d+_Device/i.test(entry.name)) {
+                if (deviceNumber && isDeviceRowField(entry.name)) {
                     const deviceIndex = deviceIndexByNumber[deviceNumber];
                     if (!deviceIndex) return;
-                    const key = entry.page + '|' + deviceIndex;
+                    const key = page + '|' + deviceIndex;
                     if (!rowMap[key] || /^Page\d+\./i.test(entry.name)) {
                         rowMap[key] = {
-                            page: entry.page,
+                            page: page,
                             deviceIndex: deviceIndex,
                             x: center.x,
                             y: center.y,
@@ -35601,10 +35655,10 @@
 
                 const boxMatch = entry.name.match(/(?:^|\.)(Check Box\d+)$/i);
                 if (!boxMatch) return;
-                const key = entry.page + '|' + boxMatch[1];
+                const key = page + '|' + boxMatch[1];
                 if (!boxMap[key] || /^Page\d+\./i.test(entry.name)) {
                     boxMap[key] = {
-                        page: entry.page,
+                        page: page,
                         name: boxMatch[1],
                         x: center.x,
                         y: center.y,
