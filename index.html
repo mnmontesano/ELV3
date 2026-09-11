@@ -10647,6 +10647,93 @@
             return data && data.length > 0 ? data[0] : null;
         }
 
+        const DOB_DEVICE_BATCH_SIZE = 50;
+        const DOB_DEVICE_BATCH_CONCURRENCY = 3;
+        const DOB_BIN_SCAN_CONCURRENCY = 4;
+
+        async function runWithLimitedConcurrency(items, concurrency, workerFn) {
+            const list = Array.isArray(items) ? items : [];
+            if (list.length === 0) return;
+            let cursor = 0;
+            async function worker() {
+                while (cursor < list.length) {
+                    const index = cursor++;
+                    await workerFn(list[index], index);
+                }
+            }
+            await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), list.length) }, worker));
+        }
+
+        async function fetchDobDeviceRecordsChunk(deviceNumbers) {
+            const chunk = (deviceNumbers || []).map(d => String(d || '').trim().toUpperCase()).filter(Boolean);
+            if (chunk.length === 0) return {};
+            const list = chunk.map(d => `'${d.replace(/'/g, "''")}'`).join(',');
+            const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=${encodeURIComponent(`upper(device_number) in(${list})`)}&$limit=${chunk.length * 3}`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`DOB batch lookup failed (${response.status})`);
+            const data = await response.json();
+            const found = {};
+            (Array.isArray(data) ? data : []).forEach(rec => {
+                const key = String(rec && rec.device_number || '').trim().toUpperCase();
+                if (key && !found[key]) found[key] = rec;
+            });
+            return found;
+        }
+
+        // One HTTP call per device made large map refreshes take minutes. Batch + limited
+        // concurrency cuts that to a handful of SODA queries, with per-device fallback.
+        async function fetchCurrentDobDeviceRecords(deviceNumbers, onProgress) {
+            const numbers = Array.from(new Set(
+                (deviceNumbers || []).map(d => String(d || '').trim().toUpperCase()).filter(Boolean)
+            ));
+            const freshByDevice = {};
+            const failed = [];
+            let completed = 0;
+
+            const report = () => {
+                if (typeof onProgress === 'function') onProgress(completed, numbers.length);
+            };
+            report();
+            if (numbers.length === 0) return { freshByDevice, failed };
+
+            const chunks = [];
+            for (let i = 0; i < numbers.length; i += DOB_DEVICE_BATCH_SIZE) {
+                chunks.push(numbers.slice(i, i + DOB_DEVICE_BATCH_SIZE));
+            }
+
+            await runWithLimitedConcurrency(chunks, DOB_DEVICE_BATCH_CONCURRENCY, async (chunk) => {
+                let found = null;
+                try {
+                    found = await fetchDobDeviceRecordsChunk(chunk);
+                } catch (error) {
+                    console.warn('DOB batch lookup failed, falling back to per-device:', error);
+                }
+
+                if (found) {
+                    chunk.forEach(deviceNumber => {
+                        if (found[deviceNumber]) freshByDevice[deviceNumber] = found[deviceNumber];
+                        else failed.push(deviceNumber);
+                    });
+                } else {
+                    for (const deviceNumber of chunk) {
+                        try {
+                            const rec = await fetchCurrentDobDeviceRecord(deviceNumber);
+                            if (rec) freshByDevice[deviceNumber] = rec;
+                            else failed.push(deviceNumber);
+                        } catch (deviceError) {
+                            console.warn('DOB info update failed for device:', deviceNumber, deviceError);
+                            failed.push(deviceNumber);
+                        }
+                    }
+                }
+
+                completed += chunk.length;
+                report();
+            });
+
+            return { freshByDevice, failed };
+        }
+
         async function fetchDobDevicesForBin(bin) {
             const params = new URLSearchParams();
             params.set('bin', String(bin));
@@ -10854,8 +10941,8 @@
             const list = Array.isArray(binTargets) ? binTargets : [];
             const candidateStore = {};
 
-            for (let i = 0; i < list.length; i++) {
-                const binTarget = list[i];
+            let scannedBins = 0;
+            await runWithLimitedConcurrency(list, DOB_BIN_SCAN_CONCURRENCY, async (binTarget) => {
                 const bin = binTarget.bin;
                 try {
                     const dobDevices = await fetchDobDevicesForBin(bin);
@@ -10898,8 +10985,9 @@
                     console.warn('DOB BIN new-device scan failed:', bin, error);
                     failedBins.push(bin);
                 }
-                if (typeof onProgress === 'function') onProgress(i + 1, list.length);
-            }
+                scannedBins++;
+                if (typeof onProgress === 'function') onProgress(scannedBins, list.length);
+            });
 
             await attachViolationsToDobNewDeviceCandidates(candidates);
             // Keep store in sync after violation attachment
@@ -12455,19 +12543,11 @@
             );
 
             try {
-                const freshByDevice = {};
-                const failed = [];
-                for (let i = 0; i < uniqueDeviceNumbers.length; i++) {
-                    const deviceNumber = uniqueDeviceNumbers[i];
-                    try {
-                        freshByDevice[deviceNumber] = await fetchCurrentDobDeviceRecord(deviceNumber);
-                    } catch (error) {
-                        console.warn('DOB info update failed for device:', deviceNumber, error);
-                        failed.push(deviceNumber);
-                    }
-                    completedSteps++;
+                const { freshByDevice, failed } = await fetchCurrentDobDeviceRecords(uniqueDeviceNumbers, (done) => {
+                    completedSteps = done;
                     reportProgress('Updating');
-                }
+                });
+                completedSteps = uniqueDeviceNumbers.length;
 
                 let dateUpdates = 0;
                 const changeRows = [];
@@ -27898,20 +27978,8 @@
 
         /** Fetch device records for many device numbers in batched SoQL "in" queries. */
         async function fetchDeviceRecordsBatch(deviceNumbers) {
-            const byDevice = {};
-            for (let i = 0; i < deviceNumbers.length; i += 50) {
-                const chunk = deviceNumbers.slice(i, i + 50);
-                const list = chunk.map(d => `'${String(d).toUpperCase().replace(/'/g, "''")}'`).join(',');
-                const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=${encodeURIComponent(`upper(device_number) in(${list})`)}&$limit=${chunk.length * 3}`;
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('Network response was not ok');
-                const data = await response.json();
-                data.forEach(rec => {
-                    const key = (rec.device_number || '').toUpperCase();
-                    if (!byDevice[key]) byDevice[key] = rec;
-                });
-            }
-            return byDevice;
+            const { freshByDevice } = await fetchCurrentDobDeviceRecords(deviceNumbers);
+            return freshByDevice;
         }
 
         /** Open a previously exported bulk file for refresh (File System Access API when available). */
@@ -38061,7 +38129,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.3</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.4</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
