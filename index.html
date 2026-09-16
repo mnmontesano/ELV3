@@ -1818,6 +1818,13 @@
                     #buildingMap.map-select-mode-active .leaflet-container,
                     #buildingMap.map-select-mode-active .leaflet-marker-icon { cursor: pointer !important; }
                     .custom-map-marker.map-marker-selected svg { filter: drop-shadow(0 0 4px rgba(255,152,0,0.95)) drop-shadow(0 2px 3px rgba(0,0,0,0.4)); }
+                    .map-overlap-chooser { min-width: 220px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+                    .map-overlap-chooser-title { font-weight: 700; font-size: 13px; margin: 0 0 8px; color: var(--text-color, #fff); }
+                    .map-overlap-chooser-btn { display: block; width: 100%; text-align: left; margin: 0 0 6px; padding: 8px 10px; border: 1px solid var(--input-border, #555); border-radius: 6px; background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); cursor: pointer; }
+                    .map-overlap-chooser-btn:last-child { margin-bottom: 0; }
+                    .map-overlap-chooser-btn:hover { background: rgba(26,115,232,0.14); border-color: #1a73e8; }
+                    .map-overlap-chooser-btn .map-overlap-chooser-label { font-weight: 600; font-size: 12px; line-height: 1.35; word-break: break-word; }
+                    .map-overlap-chooser-btn .map-overlap-chooser-sub { font-size: 11px; opacity: 0.72; margin-top: 2px; }
                     @media (max-width: 700px) {
                         #mapSelectToolbar { left: 8px; right: 8px; top: 8px; padding: 7px 8px; }
                         #mapSelectToolbar .map-select-actions { margin-left: 0; width: 100%; }
@@ -10162,6 +10169,7 @@
         // Map functionality for bulk device lookup
         let buildingMap = null;
         let mapMarkers = [];
+        let mapOverlapChooserEntries = [];
         let mapSelectMode = false;
         let mapSelectedBins = new Set();
         let mapContainerResizeObserver = null;
@@ -12286,6 +12294,7 @@
             }
             mapMarkers = [];
             additionalLocationMarkers = [];
+            mapOverlapChooserEntries = [];
         }
 
         function renderMapNewDevicesResultsSectionHtml(discovered, modalRootId) {
@@ -18637,6 +18646,167 @@
                 return;
             }
             marker.openPopup();
+        }
+
+        const MAP_MARKER_OVERLAP_PX = 26;
+
+        function collectVisibleMapMarkerEntries() {
+            const entries = [];
+            if (!buildingMap) return entries;
+            (mapMarkers || []).forEach((marker, index) => {
+                if (!marker || !buildingMap.hasLayer(marker)) return;
+                const building = mapBuildingsData && mapBuildingsData[index];
+                const meta = marker._mapMarkerMeta || {};
+                entries.push({
+                    marker,
+                    kind: 'building',
+                    title: meta.title || (building && building.address) || (building && building.bin ? ('BIN ' + building.bin) : 'Building'),
+                    subtitle: meta.subtitle || (building && building.bin ? ('BIN ' + building.bin) : '')
+                });
+            });
+            const additionalLocations = getAdditionalLocations();
+            (additionalLocationMarkers || []).forEach((marker, index) => {
+                if (!marker || !buildingMap.hasLayer(marker)) return;
+                const location = additionalLocations[index];
+                const meta = marker._mapMarkerMeta || {};
+                entries.push({
+                    marker,
+                    kind: 'additional',
+                    title: meta.title || getAdditionalLocationLabel(location) || 'Custom location',
+                    subtitle: meta.subtitle || (location && location.bin ? ('BIN ' + location.bin) : 'Custom pin')
+                });
+            });
+            return entries;
+        }
+
+        function getOverlappingVisibleMapMarkers(targetMarker) {
+            if (!buildingMap || !targetMarker || typeof targetMarker.getLatLng !== 'function') return [];
+            let targetPt;
+            try {
+                targetPt = buildingMap.latLngToContainerPoint(targetMarker.getLatLng());
+            } catch (error) {
+                return [];
+            }
+            return collectVisibleMapMarkerEntries().filter(entry => {
+                try {
+                    const pt = buildingMap.latLngToContainerPoint(entry.marker.getLatLng());
+                    return pt.distanceTo(targetPt) <= MAP_MARKER_OVERLAP_PX;
+                } catch (error) {
+                    return false;
+                }
+            });
+        }
+
+        function mapMarkersStillOverlapAtZoom(entries, zoom) {
+            if (!buildingMap || !entries || entries.length < 2) return false;
+            const pts = [];
+            for (let i = 0; i < entries.length; i++) {
+                try {
+                    pts.push(buildingMap.project(entries[i].marker.getLatLng(), zoom));
+                } catch (error) {
+                    return true;
+                }
+            }
+            for (let i = 0; i < pts.length; i++) {
+                for (let j = i + 1; j < pts.length; j++) {
+                    if (pts[i].distanceTo(pts[j]) <= MAP_MARKER_OVERLAP_PX) return true;
+                }
+            }
+            return false;
+        }
+
+        function chooseOverlappingMapMarker(index) {
+            const entry = mapOverlapChooserEntries[index];
+            if (!entry || !entry.marker) return;
+            mapOverlapChooserEntries = [];
+            if (buildingMap && typeof buildingMap.closePopup === 'function') buildingMap.closePopup();
+            if (typeof entry.marker.setZIndexOffset === 'function') {
+                entry.marker.setZIndexOffset(2500);
+            }
+            if (buildingMap && typeof buildingMap.hasLayer === 'function' && !buildingMap.hasLayer(entry.marker)) {
+                buildingMap.addLayer(entry.marker);
+            }
+            openMapMarkerPopup(entry.marker);
+        }
+
+        function showMapOverlapChooser(entries, latlng) {
+            if (!buildingMap || !entries || entries.length < 2) return;
+            mapOverlapChooserEntries = entries.slice();
+            const buttons = entries.map((entry, index) => {
+                const title = escapeMapSuggestionHtml(entry.title || 'Location');
+                const subtitle = escapeMapSuggestionHtml(entry.subtitle || '');
+                return `<button type="button" class="map-overlap-chooser-btn" data-overlap-index="${index}">
+                    <div class="map-overlap-chooser-label">${title}</div>
+                    ${subtitle ? `<div class="map-overlap-chooser-sub">${subtitle}</div>` : ''}
+                </button>`;
+            }).join('');
+            const html = `<div class="map-overlap-chooser">
+                <div class="map-overlap-chooser-title">${entries.length} locations here — choose one</div>
+                ${buttons}
+            </div>`;
+            const popup = L.popup({
+                maxWidth: 340,
+                minWidth: 240,
+                className: 'map-overlap-chooser-popup',
+                autoPan: true,
+                closeButton: true
+            }).setLatLng(latlng).setContent(html);
+            popup.once('add', function() {
+                const root = popup.getElement();
+                if (!root) return;
+                root.querySelectorAll('[data-overlap-index]').forEach(function(btn) {
+                    btn.addEventListener('click', function(ev) {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        chooseOverlappingMapMarker(Number(btn.getAttribute('data-overlap-index')));
+                    });
+                });
+            });
+            popup.openOn(buildingMap);
+        }
+
+        function handleOverlappingMapMarkerClick(entries, clickedMarker) {
+            if (!buildingMap || !clickedMarker || !entries || entries.length < 2) {
+                openMapMarkerPopup(clickedMarker);
+                return;
+            }
+            const currentZoom = buildingMap.getZoom();
+            const maxZoom = typeof buildingMap.getMaxZoom === 'function' ? buildingMap.getMaxZoom() : 19;
+            const stillOverlapAtMax = mapMarkersStillOverlapAtZoom(entries, maxZoom);
+            if (currentZoom < maxZoom && !stillOverlapAtMax) {
+                const bounds = L.latLngBounds(entries.map(entry => entry.marker.getLatLng()));
+                if (bounds.isValid()) {
+                    buildingMap.once('zoomend', function() {
+                        const stillOverlapping = getOverlappingVisibleMapMarkers(clickedMarker);
+                        if (stillOverlapping.length > 1) {
+                            showMapOverlapChooser(stillOverlapping, clickedMarker.getLatLng());
+                        }
+                    });
+                    buildingMap.fitBounds(bounds, { padding: [48, 48], maxZoom: maxZoom, animate: true });
+                    showMapNotification(entries.length + ' locations here — zoomed in to separate them', '#17a2b8');
+                    return;
+                }
+            }
+            showMapOverlapChooser(entries, clickedMarker.getLatLng());
+        }
+
+        function attachMapMarkerPopupClickHandler(marker) {
+            if (!marker || marker._mapOverlapHandlerAttached) return;
+            marker._mapOverlapHandlerAttached = true;
+            if (typeof marker._openPopup === 'function') {
+                marker.off('click', marker._openPopup);
+            }
+            marker.on('click', function(e) {
+                if (mapSelectMode) return;
+                const overlapping = getOverlappingVisibleMapMarkers(marker);
+                if (overlapping.length > 1) {
+                    if (e && window.L && L.DomEvent) L.DomEvent.stop(e);
+                    if (typeof marker.closePopup === 'function') marker.closePopup();
+                    handleOverlappingMapMarkerClick(overlapping, marker);
+                    return;
+                }
+                openMapMarkerPopup(marker);
+            });
         }
 
         function toggleMapNoteEditor(bin) {
@@ -25859,8 +26029,16 @@
                 // Create custom icon
                 const icon = createBuildingMarkerIcon(building);
 
-                const marker = L.marker([building.latitude, building.longitude], { icon })
-                    .addTo(buildingMap);
+                const marker = L.marker([building.latitude, building.longitude], {
+                    icon,
+                    riseOnHover: true,
+                    riseOffset: 600
+                }).addTo(buildingMap);
+                marker._mapMarkerMeta = {
+                    kind: 'building',
+                    title: building.address || ('BIN ' + building.bin),
+                    subtitle: 'BIN ' + building.bin + (building.deviceCount ? (' · ' + building.deviceCount + ' device' + (building.deviceCount === 1 ? '' : 's')) : '')
+                };
                 const hiddenByCurrentSettings = isBuildingHiddenByMapSettings(building);
 
                 // Create popup content with detailed device testing info
@@ -26239,6 +26417,7 @@
                 `;
 
                 marker.bindPopup(popupContent, { maxWidth: 480, minWidth: 380 });
+                attachMapMarkerPopupClickHandler(marker);
                 attachMapMarkerSelectHandler(marker, building.bin);
                 mapMarkers.push(marker);
                 if (hiddenByCurrentSettings) {
@@ -26428,8 +26607,21 @@
                     iconAnchor: [15, 15]
                 });
 
-                const additionalMarker = L.marker([location.latitude, location.longitude], { icon: additionalIcon })
-                    .addTo(buildingMap);
+                const additionalMarker = L.marker([location.latitude, location.longitude], {
+                    icon: additionalIcon,
+                    riseOnHover: true,
+                    riseOffset: 700
+                }).addTo(buildingMap);
+                additionalMarker._mapMarkerMeta = {
+                    kind: 'additional',
+                    title: location.customName || location.label || (location.bin ? ('BIN ' + location.bin) : 'Custom location'),
+                    subtitle: [
+                        location.isHouse ? 'House' : '',
+                        location.isTransportation ? 'Transportation' : '',
+                        location.bin ? ('BIN ' + location.bin) : '',
+                        (!location.bin && !location.isHouse && !location.isTransportation) ? 'Custom pin' : ''
+                    ].filter(Boolean).join(' · ')
+                };
                 if (shouldHideCompletedAdditionalLocation(location)) {
                     buildingMap.removeLayer(additionalMarker);
                 }
@@ -26730,6 +26922,7 @@
                 `;
 
                 additionalMarker.bindPopup(additionalPopupContent, { maxWidth: 480, minWidth: 380 });
+                attachMapMarkerPopupClickHandler(additionalMarker);
                 additionalLocationMarkers.push(additionalMarker);
                 if (!shouldHideCompletedAdditionalLocation(location)) {
                     bounds.extend([location.latitude, location.longitude]);
@@ -26835,6 +27028,7 @@
                         <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--input-border, #444); font-size: 10px; color: var(--text-color, #fff); opacity: 0.8;">
                             Ready = 91+ days since last test<br>
                             Click marker for favorite/hide options<br>
+                            Overlapping pins zoom in or open a list so you can pick one<br>
                             Use Select to edit multiple buildings<br>
                             Use ➕ button to add custom locations
                         </div>
@@ -38320,7 +38514,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.5</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.6</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
