@@ -1525,7 +1525,7 @@
                                 <span class="mcp-arrow" id="mcpAdditionalArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpAdditional">
-                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> and <strong>Transportation</strong> sections to manage tagged pins. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
+                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> and <strong>Transportation</strong> sections to manage tagged pins. Click ✓ on a pin to mark it completed. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
                                 <input type="text" id="additionalLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
                                        oninput="filterAdditionalLocationsList(this.value)">
                                 <div id="additionalLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
@@ -1667,6 +1667,7 @@
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
+                                    <li>Custom location pins have a ✓ completed button, matching building markers</li>
                                     <li><strong>Save your work</strong> — data is not kept between sessions</li>
                                 </ul>
                             </div>
@@ -10264,6 +10265,61 @@
             mapAdditionalLocations = Array.isArray(locations) ? locations : [];
         }
 
+        function isMapBinStoreKey(key) {
+            return /^\d{6,7}$/.test(String(key || ''));
+        }
+
+        function isMapCustomLocationStoreKey(key) {
+            return /^custom:-?\d{1,3}(?:\.\d{1,8})?,-?\d{1,3}(?:\.\d{1,8})?$/.test(String(key || ''));
+        }
+
+        function isValidMapCompletedStoreKey(key) {
+            return isMapBinStoreKey(key) || isMapCustomLocationStoreKey(key);
+        }
+
+        function getAdditionalLocationCompletionKey(location) {
+            if (!location) return '';
+            if (location.bin && isMapBinStoreKey(location.bin)) return String(location.bin);
+            const lat = Number(location.latitude);
+            const lng = Number(location.longitude);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return '';
+            return 'custom:' + lat.toFixed(6) + ',' + lng.toFixed(6);
+        }
+
+        function getAdditionalLocationLabel(location) {
+            if (!location) return '';
+            return location.customName || location.label || location.address ||
+                (location.bin ? ('BIN ' + location.bin) : '');
+        }
+
+        function findAdditionalLocationIndexByLatLng(lat, lng) {
+            const locations = getAdditionalLocations();
+            return locations.findIndex(loc =>
+                Math.abs(Number(loc.latitude) - Number(lat)) < 0.000001 &&
+                Math.abs(Number(loc.longitude) - Number(lng)) < 0.000001
+            );
+        }
+
+        function findAdditionalLocationByCompletionKey(key) {
+            const keyStr = String(key || '');
+            if (!keyStr) return null;
+            return getAdditionalLocations().find(loc => getAdditionalLocationCompletionKey(loc) === keyStr) || null;
+        }
+
+        function isAdditionalLocationCompleted(location) {
+            const key = getAdditionalLocationCompletionKey(location);
+            return !!(key && getMapCompleted()[key]);
+        }
+
+        function shouldHideCompletedAdditionalLocation(location) {
+            return isHideCompletedActive() && isAdditionalLocationCompleted(location);
+        }
+
+        function getMapCompletionKeyDisplayLabel(key) {
+            if (isMapCustomLocationStoreKey(key)) return 'Custom pin';
+            return 'BIN ' + key;
+        }
+
         function getMapActivityLog() {
             return mapActivityLog;
         }
@@ -14972,6 +15028,10 @@
             const additionalLocations = getAdditionalLocations();
             additionalLocationMarkers.forEach((marker, index) => {
                 const location = additionalLocations[index];
+                if (shouldHideCompletedAdditionalLocation(location)) {
+                    if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
+                    return;
+                }
                 // Tagged custom pins and right-clicked pins stay visible under map view filters
                 if (location && (location.isHouse || location.isTransportation || location.type === 'pinned')) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
@@ -15516,17 +15576,22 @@
                 'testDates', 'deadlines', 'notes', 'monthLabels'].forEach(field => {
                 const store = source[field];
                 if (store === undefined || store === null) return;
-                if (typeof store !== 'object' || Array.isArray(store) ||
-                    Object.keys(store).some(bin => !/^\d{6,7}$/.test(bin))) {
+                if (typeof store !== 'object' || Array.isArray(store)) {
                     throw new Error(`Map view contains invalid BIN keys in ${field}.`);
                 }
+                const invalidKey = Object.keys(store).some(bin => {
+                    if (field === 'completed') return !isValidMapCompletedStoreKey(bin);
+                    return !isMapBinStoreKey(bin);
+                });
+                if (invalidKey) throw new Error(`Map view contains invalid BIN keys in ${field}.`);
             });
             const normalizedCat5Bypasses = normalizeImportedCat5Bypasses(source.cat5Bypasses);
             if (Array.isArray(source.activityLog) && source.activityLog.length > 10000) {
                 throw new Error('Map view contains too many activity entries.');
             }
             (Array.isArray(source.activityLog) ? source.activityLog : []).forEach(entry => {
-                if (!entry || typeof entry !== 'object' || (entry.bin && !/^\d{6,7}$/.test(String(entry.bin)))) {
+                if (!entry || typeof entry !== 'object' ||
+                    (entry.bin && !isValidMapCompletedStoreKey(String(entry.bin)))) {
                     throw new Error('Map view contains an invalid activity entry.');
                 }
             });
@@ -16371,6 +16436,10 @@
                 } else {
                     listEl.innerHTML = regularLocations.map(({ loc, index }) => {
                         const hasBin = loc.bin ? true : false;
+                        const locCompleted = isAdditionalLocationCompleted(loc);
+                        const locCompletionColor = locCompleted
+                            ? getMapCompletionColor((getMapCompleted()[getAdditionalLocationCompletionKey(loc)] || {}).completionType)
+                            : '';
                         const addrEsc = (loc.label || '').replace(/"/g, '&quot;');
                         const customEsc = (loc.customName || '').replace(/"/g, '&quot;');
                         const coordsEsc = (Number(loc.latitude).toFixed(5) + ' ' + Number(loc.longitude).toFixed(5)).replace(/"/g, '&quot;');
@@ -16390,12 +16459,13 @@
                                </button>`
                             : '';
                         return `
-                        <div id="addLocCard-${index}" data-mcp-add-loc="1" data-house="${loc.isHouse ? '1' : ''}" data-bin="${loc.bin || ''}" data-address="${addrEsc}" data-custom="${customEsc}" data-coords="${coordsEsc}" style="background: var(--input-bg); padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid var(--input-border);">
+                        <div id="addLocCard-${index}" data-mcp-add-loc="1" data-house="${loc.isHouse ? '1' : ''}" data-bin="${loc.bin || ''}" data-address="${addrEsc}" data-custom="${customEsc}" data-coords="${coordsEsc}" style="background: var(--input-bg); padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid ${locCompleted ? locCompletionColor : 'var(--input-border)'};">
                             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px;">
                                 <div style="flex: 1; min-width: 0; cursor: pointer; text-decoration: none;" title="Click to view on map" onclick="flyToAdditionalLocation(${loc.latitude}, ${loc.longitude})">
                                     ${loc.customName ? `<div style="font-size: 0.88em; font-weight: 700; color: #e64a19; margin-bottom: 1px; word-break: break-word; text-decoration: underline dotted;">🏷️ ${loc.customName}</div>` : ''}
                                     <div style="font-size: 0.88em; font-weight: 600; color: var(--text-color); margin-bottom: 2px; word-break: break-word; text-decoration: underline dotted;">${loc.label}</div>
                                     <div style="opacity: 0.55; font-size: 0.8em;">${hasBin ? 'BIN ' + loc.bin + ' · ' : ''}${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}</div>
+                                    ${locCompleted ? `<div style="margin-top:4px; font-size:0.78em; font-weight:700; color:${locCompletionColor};">✓ Completed</div>` : ''}
                                 </div>
                                 <button onclick="removeAdditionalLocation(${index})"
                                         title="Remove location"
@@ -17364,6 +17434,12 @@
                 const b = mapBuildingsData.find(x => x.bin === bin);
                 if (b && b.address) return b.address;
             }
+            const location = findAdditionalLocationByCompletionKey(bin);
+            if (location) {
+                const label = getAdditionalLocationLabel(location);
+                if (label) return label;
+            }
+            if (isMapCustomLocationStoreKey(bin)) return 'Custom pin';
             return bin;
         }
 
@@ -17723,13 +17799,28 @@
                 const building = mapBuildingsData.find(b => b.bin === bin);
                 if (building) address = building.address || '';
             }
+            if (!address) {
+                const location = findAdditionalLocationByCompletionKey(bin);
+                if (location) address = getAdditionalLocationLabel(location);
+            }
             return address;
         }
 
         function getMapGroupForBin(bin) {
-            return window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups
+            const fromBulk = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups
                 ? window.lastBulkSearchResults.binGroups[bin]
                 : null;
+            if (fromBulk) return fromBulk;
+            const location = findAdditionalLocationByCompletionKey(bin);
+            if (location && Array.isArray(location.devices) && location.devices.length) {
+                return {
+                    address: getAdditionalLocationLabel(location),
+                    devices: location.devices,
+                    latitude: location.latitude,
+                    longitude: location.longitude
+                };
+            }
+            return null;
         }
 
         function confirmMapCompletionRequirements(bin, completionType) {
@@ -17968,8 +18059,8 @@
 
             overlay.innerHTML = `
                 <div style="background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 24px; width:calc(100% - 32px); max-width:430px; box-sizing:border-box; box-shadow: 0 8px 32px rgba(0,0,0,0.4); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-                    <h3 style="margin: 0 0 6px 0; color: var(--text-color, #fff); font-size: 16px;">✓ Building Completion</h3>
-                    <p style="margin: 0 0 16px 0; font-size: 12px; opacity: 0.7; color: var(--text-color, #ccc);">${address || 'BIN ' + bin}</p>
+                    <h3 style="margin: 0 0 6px 0; color: var(--text-color, #fff); font-size: 16px;">${isMapCustomLocationStoreKey(bin) ? '✓ Location Completion' : '✓ Building Completion'}</h3>
+                    <p style="margin: 0 0 16px 0; font-size: 12px; opacity: 0.7; color: var(--text-color, #ccc);">${address || getMapCompletionKeyDisplayLabel(bin)}</p>
                     <label style="font-size: 13px; color: var(--text-color, #ccc); display: block; margin-bottom: 6px;">What was completed?</label>
                     <select id="completedTestTypeInput" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); font-size: 14px; box-sizing: border-box; margin-bottom: 14px;">
                         ${renderMapCompletedTestOptions(currentTestType)}
@@ -18612,6 +18703,24 @@
                     initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                 }
             }
+        }
+
+        function toggleAdditionalLocationCompleted(lat, lng) {
+            const idx = findAdditionalLocationIndexByLatLng(lat, lng);
+            if (idx === -1) return;
+            const location = getAdditionalLocations()[idx];
+            const key = getAdditionalLocationCompletionKey(location);
+            if (!key) return;
+            toggleMapCompleted(key);
+        }
+
+        function updateAdditionalLocationCompletionStatus(lat, lng, value) {
+            const idx = findAdditionalLocationIndexByLatLng(lat, lng);
+            if (idx === -1) return;
+            const location = getAdditionalLocations()[idx];
+            const key = getAdditionalLocationCompletionKey(location);
+            if (!key) return;
+            updateMapCompletionStatus(key, value);
         }
 
         function toggleMapCompleted(bin) {
@@ -24257,13 +24366,7 @@
                         var bin = entry[0];
                         var data = entry[1];
                         var address = (data && data.address) ? data.address : '';
-                        if (!address && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && window.lastBulkSearchResults.binGroups[bin]) {
-                            address = window.lastBulkSearchResults.binGroups[bin].address || '';
-                        }
-                        if (!address && mapBuildingsData && mapBuildingsData.length) {
-                            var bFound = mapBuildingsData.find(function(x) { return x.bin === bin; });
-                            if (bFound) address = bFound.address || '';
-                        }
+                        if (!address) address = getMapBuildingAddressForBin(bin);
                         var titleAttr = (address || bin).replace(/"/g, '&quot;');
                         var completedOn = (data && data.timestamp)
                             ? new Date(data.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -24297,9 +24400,9 @@
 
                         var addrLine = address
                             ? '<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; text-decoration: underline dotted;">' + address + '</span>'
-                            : '<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6; text-decoration: underline dotted;">BIN ' + bin + '</span>';
+                            : '<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.6; text-decoration: underline dotted;">' + getMapCompletionKeyDisplayLabel(bin) + '</span>';
                         var subLine = address
-                            ? '<span style="display: block; font-size: 0.8em; opacity: 0.55; padding-left: 22px;">BIN ' + bin + (completedOn ? ' · Completed ' + completedOn : '') + '</span>'
+                            ? '<span style="display: block; font-size: 0.8em; opacity: 0.55; padding-left: 22px;">' + getMapCompletionKeyDisplayLabel(bin) + (completedOn ? ' · Completed ' + completedOn : '') + '</span>'
                             : (completedOn ? '<span style="display: block; font-size: 0.8em; opacity: 0.55;">Completed ' + completedOn + '</span>' : '');
                         var statusHtml = '<div style="margin-top: 6px; display: flex; align-items: center; gap: 6px;">'
                             + '<label style="font-size: 0.78em; opacity: 0.7; flex-shrink: 0;">Status:</label>'
@@ -24464,17 +24567,24 @@
                 showMapNotification('Building is hidden — click "Show" to reveal it first', '#888');
                 return;
             }
-            if (!mapBuildingsData) return;
-            const idx = mapBuildingsData.findIndex(b => b.bin === bin);
-            if (idx === -1 || !mapMarkers[idx]) return;
-            const marker = mapMarkers[idx];
-            // Ensure marker is on the map (may be filtered out by month filter)
-            if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
-            const latLng = marker.getLatLng();
-            buildingMap.setView([latLng.lat, latLng.lng], 17);
-            openMapMarkerPopup(marker);
-            if (hidden[bin] && opts.temporarilyShowHidden) {
-                showMapNotification('Temporarily showing hidden on-hold building', '#607d8b');
+            if (mapBuildingsData) {
+                const idx = mapBuildingsData.findIndex(b => b.bin === bin);
+                if (idx !== -1 && mapMarkers[idx]) {
+                    const marker = mapMarkers[idx];
+                    // Ensure marker is on the map (may be filtered out by month filter)
+                    if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                    const latLng = marker.getLatLng();
+                    buildingMap.setView([latLng.lat, latLng.lng], 17);
+                    openMapMarkerPopup(marker);
+                    if (hidden[bin] && opts.temporarilyShowHidden) {
+                        showMapNotification('Temporarily showing hidden on-hold building', '#607d8b');
+                    }
+                    return;
+                }
+            }
+            const location = findAdditionalLocationByCompletionKey(bin);
+            if (location) {
+                flyToAdditionalLocation(location.latitude, location.longitude);
             }
         }
 
@@ -26265,9 +26375,19 @@
                 const hasCustomName = !!(location.customName && String(location.customName).trim());
                 const isHouse = !!location.isHouse;
                 const isTransportation = !!location.isTransportation;
+                const completionKey = getAdditionalLocationCompletionKey(location);
+                const completedEntry = (completionKey && completed[completionKey]) || {};
+                const isLocationCompleted = !!completionKey && !!completed[completionKey];
+                const locationCompletionType = normalizeMapCompletedTestType(completedEntry.completionType || completedEntry.testType);
+                const locationCompletionColor = getMapCompletionColor(locationCompletionType);
+                const locationCompletedTestLabel = getMapCompletedTestLabel(locationCompletionType);
+                const locationCompletedSourceLabel = completedEntry.source ? ` · ${escapeMapSuggestionHtml(completedEntry.source)}` : '';
+                const useCompletionMarkerStyle = isLocationCompleted && locationCompletionType !== 'PVI' && locationCompletionType !== 'Category';
                 let iconText;
                 let iconHtml;
-                if (deviceCount > 0) {
+                if (useCompletionMarkerStyle) {
+                    iconText = '✓';
+                } else if (deviceCount > 0) {
                     iconText = deviceCount;
                 } else if (isHouse) {
                     iconText = '🏠';
@@ -26277,7 +26397,9 @@
                     iconText = '📍';
                 }
                 let markerBg;
-                if (isHouse) {
+                if (useCompletionMarkerStyle) {
+                    markerBg = locationCompletionColor;
+                } else if (isHouse) {
                     markerBg = '#8d6e63';
                 } else if (isTransportation) {
                     markerBg = MAP_TRANSPORTATION_COLOR;
@@ -26308,6 +26430,9 @@
 
                 const additionalMarker = L.marker([location.latitude, location.longitude], { icon: additionalIcon })
                     .addTo(buildingMap);
+                if (shouldHideCompletedAdditionalLocation(location)) {
+                    buildingMap.removeLayer(additionalMarker);
+                }
 
                 // Create popup content matching building popup format
                 const readyList = readyDevices.slice(0, 3).map(d =>
@@ -26368,26 +26493,42 @@
                 const totalViolations = violationDetails.length;
                 const escapedAddress = String(location.label || location.customName || location.bin || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 const currentMonthLabel = location.bin ? getMonthLabel(location.bin) : null;
-                const headerAccent = isHouse ? '#8d6e63' : (isTransportation ? MAP_TRANSPORTATION_COLOR : (hasCustomName ? '#e64a19' : '#00bcd4'));
+                const defaultHeaderAccent = isHouse ? '#8d6e63' : (isTransportation ? MAP_TRANSPORTATION_COLOR : (hasCustomName ? '#e64a19' : '#00bcd4'));
+                const headerAccent = useCompletionMarkerStyle ? locationCompletionColor : defaultHeaderAccent;
                 
                 // Build popup content matching building popup format
                 const additionalPopupContent = `
                     <div class="map-popup-content" style="min-width: 380px; max-width: 460px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${headerAccent};">
-                            <div style="font-weight: bold; font-size: 14px; flex: 1; line-height: 1.35; white-space: normal; word-break: break-word;">${String(location.customName || location.label || ('BIN ' + (location.bin || ''))).toUpperCase()}</div>
-                            <div style="display: flex; gap: 4px; margin-left: 8px; flex-wrap: wrap; justify-content: flex-end;">
+                        <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${headerAccent};">
+                            <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${String(location.customName || location.label || ('BIN ' + (location.bin || ''))).toUpperCase()}</div>
+                            <div style="display: flex; gap: 6px; justify-content: space-between; flex-wrap: wrap;">
+                                <button onclick="toggleAdditionalLocationCompleted(${location.latitude}, ${location.longitude})"
+                                        title="${isLocationCompleted ? 'Unmark as completed' : 'Mark as completed'}"
+                                        style="background: ${isLocationCompleted ? locationCompletionColor : 'rgba(39,174,96,0.1)'};
+                                               color: ${isLocationCompleted ? 'white' : '#27ae60'};
+                                               border: 1px solid ${isLocationCompleted ? locationCompletionColor : '#27ae60'};
+                                               border-radius: 6px;
+                                               min-width: 36px; height: 32px;
+                                               cursor: pointer;
+                                               font-size: 15px;
+                                               display: flex; align-items: center; justify-content: center;
+                                               flex: 1;
+                                               transition: all 0.2s;">✓</button>
                                 ${location.bin ? `
                                 <button onclick="promoteAdditionalLocationByCoords(${location.latitude}, ${location.longitude})"
                                         title="Move to main buildings and fetch device data"
                                         style="background: rgba(39,174,96,0.12);
                                                color: #27ae60;
                                                border: 1px solid #27ae60;
-                                               border-radius: 4px;
-                                               padding: 4px 8px;
+                                               border-radius: 6px;
+                                               min-width: 36px; height: 32px;
+                                               padding: 0 8px;
                                                cursor: pointer;
                                                font-size: 11px;
                                                font-weight: 600;
                                                white-space: nowrap;
+                                               display: flex; align-items: center; justify-content: center;
+                                               flex: 1.6;
                                                transition: all 0.2s;">⬆ Move to Buildings</button>
                                 ` : ''}
                                 <button onclick="removeAdditionalLocationByCoords(${location.latitude}, ${location.longitude})" 
@@ -26395,11 +26536,28 @@
                                         style="background: rgba(255,107,107,0.1); 
                                                color: #ff6b6b; 
                                                border: 1px solid #ff6b6b; 
-                                               border-radius: 4px; 
-                                               padding: 4px 8px; 
+                                               border-radius: 6px; 
+                                               min-width: 36px; height: 32px;
                                                cursor: pointer; 
                                                font-size: 14px;
+                                               display: flex; align-items: center; justify-content: center;
+                                               flex: 1;
                                                transition: all 0.2s;">✕</button>
+                            </div>
+                        </div>
+
+                        ${isLocationCompleted ? `
+                        <div style="font-size: 11px; color: ${locationCompletionColor}; font-weight: 700; margin-bottom: 10px; padding: 5px 8px; background: color-mix(in srgb, ${locationCompletionColor} 11%, transparent); border: 1px solid color-mix(in srgb, ${locationCompletionColor} 28%, transparent); border-radius: 5px; text-align: center;">
+                            ${locationCompletionType === 'PVI' ? 'P' : locationCompletionType === 'Category' ? 'C' : '✓'} ${locationCompletedTestLabel}${locationCompletedSourceLabel}
+                        </div>` : ''}
+
+                        <div style="margin-bottom: 10px; padding: 8px; background: rgba(39,174,96,0.08); border-radius: 6px; border: 1px solid rgba(39,174,96,0.28);">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 12px; color: #27ae60; font-weight: 600;">Status:</span>
+                                <select onchange="updateAdditionalLocationCompletionStatus(${location.latitude}, ${location.longitude}, this.value)"
+                                        style="flex: 1; padding: 4px 8px; border-radius: 4px; border: 1px solid ${isLocationCompleted ? '#27ae60' : 'var(--input-border)'}; background: var(--input-bg); color: var(--text-color); font-size: 11px; cursor: pointer;">
+                                    ${renderMapCompletionStatusOptions(isLocationCompleted)}
+                                </select>
                             </div>
                         </div>
                         
@@ -26573,7 +26731,9 @@
 
                 additionalMarker.bindPopup(additionalPopupContent, { maxWidth: 480, minWidth: 380 });
                 additionalLocationMarkers.push(additionalMarker);
-                bounds.extend([location.latitude, location.longitude]);
+                if (!shouldHideCompletedAdditionalLocation(location)) {
+                    bounds.extend([location.latitude, location.longitude]);
+                }
             });
 
             // Restore requested view or fit map to show all markers
@@ -26730,7 +26890,13 @@
                 }
             });
 
-            additionalLocationMarkers.forEach(marker => {
+            const additionalLocations = getAdditionalLocations();
+            additionalLocationMarkers.forEach((marker, index) => {
+                const location = additionalLocations[index];
+                if (shouldHideCompletedAdditionalLocation(location)) {
+                    if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
+                    return;
+                }
                 if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                 bounds.extend(marker.getLatLng());
             });
@@ -26997,7 +27163,10 @@
                 const additionalLocations = getAdditionalLocations();
                 additionalLocationMarkers.forEach((marker, index) => {
                     const location = additionalLocations[index];
-                    const shouldShowAdditional = (location && (location.isHouse || location.isTransportation || location.type === 'pinned')) || !hasMapViewFilter || matchedAdditionalIndexes.has(index);
+                    const shouldShowAdditional = matchedAdditionalIndexes.has(index) || (
+                        !shouldHideCompletedAdditionalLocation(location) &&
+                        ((location && (location.isHouse || location.isTransportation || location.type === 'pinned')) || !hasMapViewFilter)
+                    );
                     if (shouldShowAdditional) {
                         if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     } else if (buildingMap.hasLayer(marker)) {
@@ -38151,7 +38320,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.4</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.5</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
