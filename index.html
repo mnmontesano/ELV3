@@ -1223,6 +1223,10 @@
                             #mapControlsPanel.mcp-popped-out #noTestByJuneList,
                             #mapControlsPanel.mcp-popped-out #noTestYetList,
                             #mapControlsPanel.mcp-popped-out #testDatesPanelList { max-height: none !important; }
+                            #noTestYetList .no-test-yet-linked {
+                                box-shadow: 0 0 0 2px #c0392b;
+                                background: rgba(192,57,43,0.16) !important;
+                            }
                             /* Custom resize handles (floating mode only) */
                             .mcp-rh { display: none; position: absolute; z-index: 10; }
                             #mapControlsPanel.mcp-popped-out .mcp-rh { display: block; }
@@ -23388,42 +23392,55 @@
             return formatMapDaysLeftLabel(row.daysToCompleteBoth) + ' to complete ' + pendingLabel;
         }
 
+        function escapeMapNoTestYetJsString(value) {
+            return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+
         function renderMapNoTestYetPopupSection(rows, options) {
             const list = Array.isArray(rows) ? rows : [];
             if (!list.length) return '';
             const opts = options || {};
             const bin = String(opts.bin || '');
             const address = String(opts.address || '');
-            const binJs = String(bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const filterJs = String(address || bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const binJs = escapeMapNoTestYetJsString(bin);
+            const filterJs = escapeMapNoTestYetJsString(bin || address);
             const windowInfo = getMapBothTestsWindow();
             const yearEndLabel = windowInfo.yearEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
             const firstTestLabel = windowInfo.lastFirstTestDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
             const summary = windowInfo.canStartInTime
                 ? (formatMapDaysLeftLabel(windowInfo.daysToCompleteBoth) + ' to finish both by ' + yearEndLabel + '. First test by ' + firstTestLabel + '.')
                 : ('91-day gap no longer fits before ' + yearEndLabel + '.');
-            const deviceRows = list.slice(0, 8).map(row => `
-                <div style="font-size:11px; padding:4px 0; display:flex; justify-content:space-between; gap:8px; border-bottom:1px solid rgba(192,57,43,0.12);">
+            const deviceRows = list.slice(0, 8).map(row => {
+                const numberJs = escapeMapNoTestYetJsString(row.number);
+                return `
+                <div onclick="openMapNoTestYetSection('${binJs}', '${filterJs}', '${numberJs}')"
+                     title="View this device in No Test Yet"
+                     style="font-size:11px; padding:4px 0; display:flex; justify-content:space-between; gap:8px; border-bottom:1px solid rgba(192,57,43,0.12); cursor:pointer;">
                     <span style="font-weight:700; flex-shrink:0;">${escapeMapSuggestionHtml(row.number)}</span>
                     <span style="text-align:right; line-height:1.3;">
                         <span style="display:block; color:${MAP_NO_TEST_YET_COLOR}; font-weight:700;">${escapeMapSuggestionHtml(row.pending.join(' + ') || 'No test')}</span>
                         <span style="display:block; font-size:10px; opacity:0.8;">${escapeMapSuggestionHtml(renderMapNoTestYetCountdownLine(row))}</span>
                     </span>
-                </div>`).join('');
+                </div>`;
+            }).join('');
             const more = list.length > 8
                 ? `<div style="font-size:10px; opacity:0.65; margin-top:4px; text-align:center;">+${list.length - 8} more in Settings</div>`
                 : '';
             return `
-                <div style="margin:10px 0; background:rgba(192,57,43,0.08); border:1px solid rgba(192,57,43,0.3); border-radius:6px; overflow:hidden;">
+                <div class="map-no-test-yet-popup" style="margin:10px 0; background:rgba(192,57,43,0.08); border:1px solid rgba(192,57,43,0.3); border-radius:6px; overflow:hidden;">
                     <div onclick="openMapNoTestYetSection('${binJs}', '${filterJs}')"
                          style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 10px; cursor:pointer;">
                         <span style="font-size:12px; color:${MAP_NO_TEST_YET_COLOR}; font-weight:700;">🚫 No test yet (${list.length})</span>
-                        <span style="font-size:10px; color:${MAP_NO_TEST_YET_COLOR}; font-weight:700;">Open in Settings</span>
+                        <span style="font-size:10px; color:${MAP_NO_TEST_YET_COLOR}; font-weight:700;">View in No Test Yet ›</span>
                     </div>
                     <div style="padding:0 10px 10px 10px;">
                         <div style="font-size:10px; line-height:1.4; opacity:0.82; margin-bottom:6px;">${escapeMapSuggestionHtml(summary)} Category and PVI must be 91 days apart.</div>
                         ${deviceRows}
                         ${more}
+                        <button type="button" onclick="openMapNoTestYetSection('${binJs}', '${filterJs}')"
+                                style="width:100%; margin-top:8px; padding:6px 8px; background:rgba(192,57,43,0.12); color:${MAP_NO_TEST_YET_COLOR}; border:1px solid rgba(192,57,43,0.35); border-radius:5px; cursor:pointer; font-size:11px; font-weight:700;">
+                            View in No Test Yet
+                        </button>
                     </div>
                 </div>`;
         }
@@ -23442,20 +23459,36 @@
             }
         }
 
-        function openMapNoTestYetSection(bin, filterText) {
+        function openMapNoTestYetSection(bin, filterText, deviceNumber) {
             showMapControlsPanel();
-            updateNoTestYetPanel();
             openMcpSection('mcpNoTestYet');
             const search = document.getElementById('noTestYetSearchInput');
-            const query = String(filterText || bin || '').trim();
+            const key = String(bin || '').trim();
+            const query = key || String(filterText || '').trim();
             if (search) {
                 search.value = query;
                 filterMcpBinRowList('noTestYetList', query);
             }
-            if (query) {
-                const list = document.getElementById('noTestYetList');
-                const match = list && list.querySelector('[data-bin="' + String(bin || '').replace(/"/g, '') + '"]');
-                if (match) match.scrollIntoView({ block: 'nearest' });
+            const list = document.getElementById('noTestYetList');
+            if (!list) return;
+            list.querySelectorAll('.no-test-yet-linked').forEach(el => el.classList.remove('no-test-yet-linked'));
+            const cards = Array.from(list.querySelectorAll(':scope > div[data-bin]'));
+            let match = key
+                ? cards.find(el => String(el.getAttribute('data-bin') || '') === key)
+                : null;
+            if (!match) {
+                match = cards.find(el => el.style.display !== 'none') || null;
+            }
+            if (!match) return;
+            match.classList.add('no-test-yet-linked');
+            match.scrollIntoView({ block: 'nearest' });
+            const deviceKey = String(deviceNumber || '').trim();
+            if (!deviceKey) return;
+            const deviceRow = Array.from(match.querySelectorAll('[data-device-number]'))
+                .find(el => String(el.getAttribute('data-device-number') || '') === deviceKey);
+            if (deviceRow) {
+                deviceRow.classList.add('no-test-yet-linked');
+                deviceRow.scrollIntoView({ block: 'nearest' });
             }
         }
 
@@ -23504,7 +23537,7 @@
                     ? `flyToAdditionalLocation(${Number(group.latitude)}, ${Number(group.longitude)})`
                     : `flyToMapBuilding('${String(bin || key).replace(/'/g, "\\'")}')`;
                 const deviceRows = group.devices.map(row => `
-                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:5px 0;border-top:1px solid rgba(192,57,43,0.14);">
+                    <div data-device-number="${escapeMapSuggestionHtml(row.number)}" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:5px 0;border-top:1px solid rgba(192,57,43,0.14);">
                         <span style="font-weight:700;color:var(--text-color);">${escapeMapSuggestionHtml(row.number)}</span>
                         <span style="text-align:right;font-size:0.82em;line-height:1.35;min-width:0;">
                             <span style="display:block;color:${MAP_NO_TEST_YET_COLOR};font-weight:700;">${escapeMapSuggestionHtml(row.pending.join(' + ') || 'No test')}</span>
@@ -23512,7 +23545,7 @@
                         </span>
                     </div>`).join('');
                 return `
-                    <div data-bin="${escapeMapSuggestionHtml(bin || key)}" data-address="${addrEsc}" data-filter-text="${escapeMapSuggestionHtml(deviceFilterText)}" style="padding:8px; background:var(--input-bg); border:1px solid rgba(192,57,43,0.22); border-radius:6px; margin-bottom:6px; font-size:1em;">
+                    <div data-no-test-yet-card="1" data-bin="${escapeMapSuggestionHtml(bin || key)}" data-address="${addrEsc}" data-filter-text="${escapeMapSuggestionHtml(deviceFilterText)}" style="padding:8px; background:var(--input-bg); border:1px solid rgba(192,57,43,0.22); border-radius:6px; margin-bottom:6px; font-size:1em;">
                         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;">
                             <span style="flex:1;min-width:0;cursor:pointer;" title="Click to view on map" onclick="${flyAction}">
                                 <span style="display:flex;align-items:center;gap:4px;overflow:hidden;">
@@ -26634,6 +26667,7 @@
                             </div>
                         </div>
                         <div id="mapUntrackedDevices_${building.bin}" style="margin-bottom: 10px;"></div>
+                        ${renderMapNoTestYetPopupSection(building.noTestYetDevices || [], { bin: building.bin, address: building.address })}
                         
                         <div style="margin-bottom: 10px; padding: 8px; background: rgba(23,162,184,0.1); border-radius: 6px; border: 1px solid rgba(23,162,184,0.3);">
                             <div style="display: flex; align-items: center; gap: 8px;">
@@ -26705,7 +26739,6 @@
                                 <span style="color: #ff9800; font-weight: 600;">○ ${building.incomplete} Incomplete</span>
                             </div>
                         </div>
-                        ${renderMapNoTestYetPopupSection(building.noTestYetDevices || [], { bin: building.bin, address: building.address })}
                         
                         ${building.violations > 0 ? `
                         <div style="margin-bottom: 10px;">
@@ -27149,6 +27182,7 @@
                                 <strong>Devices:</strong> ${deviceCount}
                             </div>
                         </div>
+                        ${renderMapNoTestYetPopupSection(noTestYetDevices, { bin: location.bin || getAdditionalLocationCompletionKey(location), address: location.customName || location.label || '' })}
                         
                         ${location.bin ? `
                         <div style="margin-bottom: 10px; padding: 8px; background: rgba(23,162,184,0.1); border-radius: 6px; border: 1px solid rgba(23,162,184,0.3);">
@@ -27218,7 +27252,6 @@
                                 <span style="color: #ff9800; font-weight: 600;">○ ${incomplete} Incomplete</span>
                             </div>
                         </div>
-                        ${renderMapNoTestYetPopupSection(noTestYetDevices, { bin: location.bin || getAdditionalLocationCompletionKey(location), address: location.customName || location.label || '' })}
                         
                         ${totalViolations > 0 ? `
                         <div style="margin-bottom: 10px;">
