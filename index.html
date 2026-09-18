@@ -1186,6 +1186,7 @@
                             #mapControlsPanelBody.mcp-detail-mode #category5BypassedList,
                             #mapControlsPanelBody.mcp-detail-mode #immediateAttentionList,
                             #mapControlsPanelBody.mcp-detail-mode #noTestByJuneList,
+                            #mapControlsPanelBody.mcp-detail-mode #noTestByJuneDisregardedList,
                             #mapControlsPanelBody.mcp-detail-mode #testDatesPanelList { max-height: min(68vh, 620px) !important; }
                             #favoritesBuildingsList,
                             #monitoredBuildingsList,
@@ -1202,6 +1203,7 @@
                             #mapActivityLogList,
                             #immediateAttentionList,
                             #noTestByJuneList,
+                            #noTestByJuneDisregardedList,
                             #testDatesPanelList { max-height: min(52vh, 460px) !important; }
                             /* Popped-out panel: lift list height caps so content fills available space */
                             #mapControlsPanel.mcp-popped-out #favoritesBuildingsList,
@@ -1219,6 +1221,7 @@
                             #mapControlsPanel.mcp-popped-out #mapActivityLogList,
                             #mapControlsPanel.mcp-popped-out #immediateAttentionList,
                             #mapControlsPanel.mcp-popped-out #noTestByJuneList,
+                            #mapControlsPanel.mcp-popped-out #noTestByJuneDisregardedList,
                             #mapControlsPanel.mcp-popped-out #testDatesPanelList { max-height: none !important; }
                             /* Custom resize handles (floating mode only) */
                             .mcp-rh { display: none; position: absolute; z-index: 10; }
@@ -1400,7 +1403,7 @@
                             </div>
                             <div class="mcp-body" id="mcpNoTestByJune">
                                 <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">
-                                    Buildings with no PVI or Category test performed yet this calendar year. Starting June 1, these markers turn deep red on the map. List is sorted with no scheduled date first, then buildings that already have a test date attached. Jobs on hold are labeled and listed after active jobs in each group. Show on MAP can be clicked again to restore the previous map view. Copy All Devices copies each device with its building name and BIN.
+                                    Buildings with no PVI or Category test performed yet this calendar year. Starting June 1, these markers turn deep red on the map. List is sorted with no scheduled date first, then buildings that already have a test date attached. Jobs on hold are labeled and listed after active jobs in each group. Show on MAP can be clicked again to restore the previous map view. Copy All Devices copies each device with its building name and BIN. Disregard hides a building from this list and the deep-red map highlight for the current year; you can add a note and undo it later.
                                 </p>
                                 <div id="noTestByJuneStatus" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(139,0,0,0.28); background:rgba(139,0,0,0.08); color:var(--text-color); font-size:0.9em; line-height:1.4;"></div>
                                 <input type="text" id="noTestByJuneSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
@@ -1410,6 +1413,15 @@
                                 </div>
                                 <button id="mapNoTestByJuneShowOnMapBtn" onclick="toggleNoTestByJuneShowOnMap()" class="mcp-btn" style="color:#8B0000; font-weight:700;">Show on MAP</button>
                                 <button id="mapNoTestByJuneCopyDevicesBtn" onclick="copyNoTestByJuneDevices(event)" class="mcp-btn" style="color:#8B0000; font-weight:600;">Copy All Devices</button>
+                                <button id="mapNoTestByJuneDisregardedBtn" onclick="toggleNoTestByJuneDisregardedList()" class="mcp-btn" style="color:#607d8b; font-weight:600;">Disregarded - <span id="mapNoTestByJuneDisregardedCount">0</span></button>
+                                <div id="noTestByJuneDisregardedSection" style="display:none; margin-top:8px;">
+                                    <p class="mcp-desc" style="margin-bottom:6px;">Buildings hidden from No Test by June for this year, with optional notes. Undo puts them back on the list and restores deep-red highlighting.</p>
+                                    <input type="text" id="noTestByJuneDisregardedSearchInput" class="mcp-search-input" placeholder="🔍 Search disregarded by address, BIN, or note..."
+                                           oninput="filterMcpBinRowList('noTestByJuneDisregardedList', this.value)">
+                                    <div id="noTestByJuneDisregardedList" style="max-height: 280px; overflow-y: auto; margin-bottom: 4px;">
+                                        <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No disregarded buildings</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -1665,6 +1677,7 @@
                                     <li>Fully completed = PVI and Category both have a date (manual entry or DOB Info Update)</li>
                                     <li>Map view filter: Hide Category Completed leaves PVI-only jobs visible; Hide PVI Completed leaves Category-only jobs visible. Fully completed jobs are hidden by both.</li>
                                     <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
+                                    <li>Disregard in No Test by June hides a building from that list and deep-red highlighting for the current year; add a note and undo later</li>
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
@@ -10222,6 +10235,7 @@
         let mapDeadlines = {};
         let mapNotes = {};
         let mapCat5Bypasses = {}; // key: "BIN::DEVICE_NUMBER" → { bypassed, note, timestamp }
+        let mapNoTestByJuneDisregarded = {}; // key: "BIN::YEAR" → { disregarded, note, timestamp, bin, year, address }
         let mapActivityLog = [];
         let mapAdditionalLocations = [];
         let mapDeviceMonitors = {};
@@ -10581,6 +10595,7 @@
                 deadlines: getMapDeadlines(),
                 notes: getMapNotes(),
                 cat5Bypasses: getMapCat5Bypasses(),
+                noTestByJuneDisregarded: getMapNoTestByJuneDisregarded(),
                 activityLog: getMapActivityLog(),
                 dobInfoUpdatedAt: mapDobInfoUpdatedAt,
                 monthLabels: scopedMonthLabels,
@@ -15191,6 +15206,7 @@
                     ['Scheduled Date Buildings', Object.keys(view.testDates || {}).length],
                     ['Deadline Buildings', Object.keys(view.deadlines || {}).length],
                     ['Note Buildings', Object.keys(view.notes || {}).length],
+                    ['No Test Disregarded', Object.keys(view.noTestByJuneDisregarded || {}).length],
                     ['Activity Entries', Array.isArray(view.activityLog) ? view.activityLog.length : 0],
                     ['Month Assignments', Array.isArray(view.monthAssignments) ? view.monthAssignments.length : Object.keys(view.monthLabels || {}).length],
                     ['Notes Sheet Included', exportOptions.includeNotesSheet ? 'Yes' : 'No'],
@@ -15373,6 +15389,7 @@
                     ...splitMapExcelSectionRows('testDates', view.testDates || {}),
                     ...splitMapExcelSectionRows('deadlines', view.deadlines || {}),
                     ...splitMapExcelSectionRows('notes', view.notes || {}),
+                    ...splitMapExcelSectionRows('noTestByJuneDisregarded', view.noTestByJuneDisregarded || {}),
                     ...splitMapExcelSectionRows('activityLog', view.activityLog || []),
                     ...splitMapExcelSectionRows('monthLabels', view.monthLabels || {}),
                     ...splitMapExcelSectionRows('monthAssignments', view.monthAssignments || []),
@@ -15450,6 +15467,7 @@
                     deadlines: view.deadlines || {},
                     notes: view.notes || {},
                     cat5Bypasses: view.cat5Bypasses || {},
+                    noTestByJuneDisregarded: view.noTestByJuneDisregarded || {},
                     activityLog: Array.isArray(view.activityLog) ? view.activityLog : [],
                     dobInfoUpdatedAt: view.dobInfoUpdatedAt || null,
                     monthLabels: view.monthLabels || {},
@@ -15571,6 +15589,52 @@
             return normalized;
         }
 
+        function normalizeImportedNoTestByJuneDisregarded(rawDisregarded) {
+            if (rawDisregarded === undefined || rawDisregarded === null) return {};
+            if (typeof rawDisregarded !== 'object' || Array.isArray(rawDisregarded)) {
+                throw new Error('Map view contains invalid No Test by June disregarded data.');
+            }
+
+            const normalized = {};
+            Object.entries(rawDisregarded).forEach(([key, entry]) => {
+                const keyMatch = String(key || '').match(/^(\d{6,7})(?:::(20\d{2}))?$/);
+                if (!keyMatch || !entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                    throw new Error('Map view contains invalid No Test by June disregarded data.');
+                }
+                const bin = keyMatch[1];
+                const yearFromKey = keyMatch[2] ? parseInt(keyMatch[2], 10) : 0;
+                const yearFromEntry = Number(entry.year);
+                const year = yearFromKey || (Number.isFinite(yearFromEntry) && yearFromEntry >= 2000 ? yearFromEntry : 0);
+                if (!year) {
+                    throw new Error('Map view contains invalid No Test by June disregarded data.');
+                }
+                if ((entry.bin !== undefined && String(entry.bin) !== bin) ||
+                    (entry.year !== undefined && Number(entry.year) !== year) ||
+                    (entry.note !== undefined && entry.note !== null && typeof entry.note !== 'string') ||
+                    (entry.address !== undefined && entry.address !== null && typeof entry.address !== 'string')) {
+                    throw new Error('Map view contains inconsistent No Test by June disregarded data.');
+                }
+
+                let timestamp = null;
+                if (entry.timestamp !== undefined && entry.timestamp !== null && entry.timestamp !== '') {
+                    timestamp = Number(entry.timestamp);
+                    if (!Number.isFinite(timestamp) || timestamp < 0) {
+                        throw new Error('Map view contains an invalid No Test by June disregarded timestamp.');
+                    }
+                }
+
+                normalized[`${bin}::${year}`] = {
+                    disregarded: entry.disregarded !== false,
+                    note: entry.note ? String(entry.note) : '',
+                    timestamp,
+                    bin,
+                    year,
+                    address: entry.address ? String(entry.address) : ''
+                };
+            });
+            return normalized;
+        }
+
         function normalizeImportedMapView(rawData) {
             const rawSource = rawData && rawData.view ? rawData.view : rawData;
             const source = sanitizeImportedMapValue(rawSource);
@@ -15599,6 +15663,7 @@
                 if (invalidKey) throw new Error(`Map view contains invalid BIN keys in ${field}.`);
             });
             const normalizedCat5Bypasses = normalizeImportedCat5Bypasses(source.cat5Bypasses);
+            const normalizedNoTestByJuneDisregarded = normalizeImportedNoTestByJuneDisregarded(source.noTestByJuneDisregarded);
             if (Array.isArray(source.activityLog) && source.activityLog.length > 10000) {
                 throw new Error('Map view contains too many activity entries.');
             }
@@ -15723,6 +15788,7 @@
                 deadlines: source.deadlines || {},
                 notes: source.notes || {},
                 cat5Bypasses: normalizedCat5Bypasses,
+                noTestByJuneDisregarded: normalizedNoTestByJuneDisregarded,
                 activityLog: Array.isArray(source.activityLog) ? source.activityLog : [],
                 dobInfoUpdatedAt: parseMapTimestamp(source.dobInfoUpdatedAt),
                 monthLabels: source.monthLabels || {},
@@ -15744,6 +15810,7 @@
             setMapDeadlines(view.deadlines || {});
             setMapNotes(view.notes || {});
             setMapCat5Bypasses(view.cat5Bypasses || {});
+            setMapNoTestByJuneDisregarded(view.noTestByJuneDisregarded || {});
             setMapActivityLog(view.activityLog || []);
             setMapDobInfoUpdatedAt(view.dobInfoUpdatedAt || null);
             const restoredMonthLabels = (Array.isArray(view.monthAssignments) && view.monthAssignments.length > 0)
@@ -23149,6 +23216,188 @@
             return !mapBuildingHasAnyPerformedTestThisYear(key, year, binGroup);
         }
 
+        function getMapNoTestByJuneDisregarded(view) {
+            if (view && view.noTestByJuneDisregarded && typeof view.noTestByJuneDisregarded === 'object' && !Array.isArray(view.noTestByJuneDisregarded)) {
+                return view.noTestByJuneDisregarded;
+            }
+            return mapNoTestByJuneDisregarded || {};
+        }
+
+        function setMapNoTestByJuneDisregarded(disregarded) {
+            mapNoTestByJuneDisregarded = disregarded && typeof disregarded === 'object' && !Array.isArray(disregarded)
+                ? disregarded
+                : {};
+        }
+
+        function getMapNoTestByJuneDisregardKey(bin, year) {
+            const targetYear = Number(year) || new Date().getFullYear();
+            return String(bin || '').trim() + '::' + String(targetYear);
+        }
+
+        function getMapNoTestByJuneDisregardEntry(bin, year, view) {
+            const key = getMapNoTestByJuneDisregardKey(bin, year);
+            const store = getMapNoTestByJuneDisregarded(view);
+            const entry = store[key] || store[String(bin || '').trim()];
+            return entry && typeof entry === 'object' ? entry : null;
+        }
+
+        function isMapNoTestByJuneDisregarded(bin, year, view) {
+            const entry = getMapNoTestByJuneDisregardEntry(bin, year, view);
+            return !!(entry && entry.disregarded !== false);
+        }
+
+        function getMapNoTestByJuneDisregardedBuildings(referenceDate, sourceView) {
+            const today = referenceDate instanceof Date ? new Date(referenceDate.getTime()) : new Date();
+            const year = today.getFullYear();
+            const view = sourceView || null;
+            const store = getMapNoTestByJuneDisregarded(view);
+            const binGroups = (view && view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups)
+                || (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups)
+                || {};
+            return Object.values(store)
+                .filter(entry => entry && Number(entry.year) === year && entry.disregarded !== false)
+                .map(entry => {
+                    const bin = String(entry.bin || '');
+                    const group = binGroups[bin] || {};
+                    return {
+                        bin,
+                        year,
+                        address: entry.address || group.address || '',
+                        note: entry.note ? String(entry.note) : '',
+                        timestamp: entry.timestamp || null,
+                        deviceCount: countMapJobDevices(group.devices)
+                    };
+                })
+                .sort((a, b) => (a.address || a.bin).localeCompare(b.address || b.bin));
+        }
+
+        function setMapNoTestByJuneDisregard(bin, options) {
+            const keyBin = String(bin || '').trim();
+            if (!keyBin) return null;
+            const opts = options || {};
+            const year = Number(opts.year) || new Date().getFullYear();
+            const key = getMapNoTestByJuneDisregardKey(keyBin, year);
+            const existing = getMapNoTestByJuneDisregardEntry(keyBin, year) || {};
+            const note = opts.note !== undefined ? String(opts.note || '').trim() : (existing.note || '');
+            const disregarded = opts.disregarded !== undefined ? !!opts.disregarded : true;
+            if (!disregarded) {
+                delete mapNoTestByJuneDisregarded[key];
+                delete mapNoTestByJuneDisregarded[keyBin];
+                return null;
+            }
+            const group = getMapGroupForBin(keyBin) || {};
+            mapNoTestByJuneDisregarded[key] = {
+                disregarded: true,
+                note,
+                timestamp: Date.now(),
+                bin: keyBin,
+                year,
+                address: opts.address || existing.address || group.address || ''
+            };
+            return mapNoTestByJuneDisregarded[key];
+        }
+
+        function clearMapNoTestByJuneDisregard(bin, year) {
+            const keyBin = String(bin || '').trim();
+            const key = getMapNoTestByJuneDisregardKey(keyBin, year);
+            const existed = !!(mapNoTestByJuneDisregarded[key] || mapNoTestByJuneDisregarded[keyBin]);
+            delete mapNoTestByJuneDisregarded[key];
+            delete mapNoTestByJuneDisregarded[keyBin];
+            return existed;
+        }
+
+        function refreshMapAfterNoTestByJuneDisregardChange() {
+            updateNoTestByJunePanel();
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && buildingMap) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            } else if (getSelectedMapViewFilter() === 'no-test-by-june') {
+                applyMapViewDropdownFilter({ fitMap: false, quiet: true });
+            }
+        }
+
+        function closeNoTestByJuneDisregardModal() {
+            const modal = document.getElementById('noTestByJuneDisregardModal');
+            if (modal) modal.remove();
+        }
+
+        function showNoTestByJuneDisregardModal(bin, options) {
+            const opts = options || {};
+            const keyBin = String(bin || '').trim();
+            if (!keyBin) return;
+            const year = Number(opts.year) || new Date().getFullYear();
+            const existing = getMapNoTestByJuneDisregardEntry(keyBin, year) || {};
+            const group = getMapGroupForBin(keyBin) || {};
+            const address = opts.address || existing.address || group.address || ('BIN ' + keyBin);
+            const note = existing.note || '';
+            const isUpdate = isMapNoTestByJuneDisregarded(keyBin, year);
+            closeNoTestByJuneDisregardModal();
+
+            const modal = document.createElement('div');
+            modal.id = 'noTestByJuneDisregardModal';
+            modal.style.cssText = 'display:flex; position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:10036; justify-content:center; align-items:center;';
+            modal.innerHTML = `
+                <div style="background:var(--card-bg); border:1px solid var(--input-border); border-radius:12px; padding:22px; max-width:460px; width:92%; box-shadow:0 12px 42px rgba(0,0,0,0.35);">
+                    <h3 style="margin:0 0 8px 0; color:var(--header-color);">${isUpdate ? 'Update disregard note' : 'Disregard building'}</h3>
+                    <div style="font-size:0.92em; color:var(--text-color); line-height:1.45; margin-bottom:12px;">
+                        <strong>${escapeMapSuggestionHtml(address)}</strong>
+                        <div style="opacity:0.72; margin-top:4px;">BIN ${escapeMapSuggestionHtml(keyBin)} · ${year}</div>
+                        <div style="opacity:0.82; margin-top:8px;">${isUpdate
+                            ? 'This building stays hidden from No Test by June for ' + year + '. Update the note or cancel.'
+                            : 'This hides the building from the No Test by June list and deep-red map highlighting for ' + year + '. You can undo it later.'}</div>
+                    </div>
+                    <label for="noTestByJuneDisregardNote" style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:5px;">Note (optional)</label>
+                    <textarea id="noTestByJuneDisregardNote" rows="3" placeholder="e.g. Owner confirmed the test was filed / not our job this year..."
+                              style="width:100%; box-sizing:border-box; padding:8px 9px; border-radius:6px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); font-size:0.95em; resize:vertical; min-height:72px;">${escapeMapSuggestionHtml(note)}</textarea>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+                        <button type="button" onclick="closeNoTestByJuneDisregardModal()" style="padding:8px 14px; border-radius:6px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); cursor:pointer;">Cancel</button>
+                        <button type="button" onclick="confirmNoTestByJuneDisregard('${keyBin}', ${year})" style="padding:8px 14px; border-radius:6px; border:1px solid #8B0000; background:#8B0000; color:white; font-weight:700; cursor:pointer;">${isUpdate ? 'Save Note' : 'Disregard'}</button>
+                    </div>
+                </div>
+            `;
+            modal.addEventListener('click', function(event) {
+                if (event.target === modal) closeNoTestByJuneDisregardModal();
+            });
+            document.body.appendChild(modal);
+            const noteEl = document.getElementById('noTestByJuneDisregardNote');
+            if (noteEl) {
+                noteEl.focus();
+                noteEl.setSelectionRange(noteEl.value.length, noteEl.value.length);
+            }
+        }
+
+        function confirmNoTestByJuneDisregard(bin, year) {
+            const noteEl = document.getElementById('noTestByJuneDisregardNote');
+            const note = noteEl ? String(noteEl.value || '').trim() : '';
+            const wasDisregarded = isMapNoTestByJuneDisregarded(bin, year);
+            const group = getMapGroupForBin(bin) || {};
+            setMapNoTestByJuneDisregard(bin, {
+                year,
+                note,
+                address: group.address || '',
+                disregarded: true
+            });
+            addMapActivity(wasDisregarded ? 'Updated No Test by June disregard note' : 'Disregarded No Test by June building', {
+                type: 'No Test by June',
+                bin,
+                details: (wasDisregarded ? 'Updated note' : 'Disregarded for ' + year) + (note ? ' — ' + (note.length > 80 ? note.substring(0, 80) + '...' : note) : '')
+            });
+            closeNoTestByJuneDisregardModal();
+            showMapNotification(wasDisregarded ? 'Disregard note saved' : 'Building disregarded for No Test by June', '#607d8b');
+            refreshMapAfterNoTestByJuneDisregardChange();
+        }
+
+        function undoNoTestByJuneDisregard(bin, year) {
+            const keyBin = String(bin || '').trim();
+            if (!clearMapNoTestByJuneDisregard(keyBin, year)) return;
+            addMapActivity('Restored No Test by June building', {
+                type: 'No Test by June',
+                bin: keyBin,
+                details: 'Removed disregard for ' + (year || new Date().getFullYear())
+            });
+            showMapNotification('Building restored to No Test by June', '#8B0000');
+            refreshMapAfterNoTestByJuneDisregardChange();
+        }
+
         function getMapNoTestByJuneBuildings(referenceDate, sourceView) {
             const today = referenceDate instanceof Date ? new Date(referenceDate.getTime()) : new Date();
             today.setHours(0, 0, 0, 0);
@@ -23162,6 +23411,7 @@
             const hold = view ? (view.hold || {}) : getMapHold();
             return Object.entries(binGroups)
                 .filter(([bin, group]) => mapBuildingMissedJuneTestDeadline(bin, today, group))
+                .filter(([bin]) => !isMapNoTestByJuneDisregarded(bin, year, view))
                 .map(([bin, group]) => {
                     const key = String(bin);
                     const scheduleDates = view
@@ -23205,6 +23455,7 @@
             const highlightActive = mapIsNoTestByJuneHighlightActive(today);
             const juneDeadline = getMapJuneDeadlineDate(year);
             const buildings = getMapNoTestByJuneBuildings(today);
+            const disregarded = getMapNoTestByJuneDisregardedBuildings(today);
             const unscheduledCount = buildings.filter(item => !item.hasScheduledTestDate).length;
             const scheduledCount = buildings.length - unscheduledCount;
             const holdCount = buildings.filter(item => item.isHold).length;
@@ -23217,19 +23468,20 @@
                 const holdNote = holdCount
                     ? ` ${holdCount} on hold.`
                     : '';
+                const disregardedNote = disregarded.length
+                    ? ` ${disregarded.length} disregarded.`
+                    : '';
                 if (highlightActive) {
-                    statusEl.innerHTML = `<strong style="color:${MAP_NO_TEST_BY_JUNE_COLOR};">${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} with no ${year} test yet — map markers are deep red as of June 1.${splitNote}${holdNote}`;
+                    statusEl.innerHTML = `<strong style="color:${MAP_NO_TEST_BY_JUNE_COLOR};">${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} with no ${year} test yet — map markers are deep red as of June 1.${splitNote}${holdNote}${disregardedNote}`;
                 } else {
                     const juneLabel = juneDeadline.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                    statusEl.innerHTML = `<strong>${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} still have no ${year} test. Deep-red map highlighting starts <strong>${juneLabel}</strong>.${splitNote}${holdNote}`;
+                    statusEl.innerHTML = `<strong>${buildings.length}</strong> building${buildings.length !== 1 ? 's' : ''} still have no ${year} test. Deep-red map highlighting starts <strong>${juneLabel}</strong>.${splitNote}${holdNote}${disregardedNote}`;
                 }
             }
 
             if (buildings.length === 0) {
-                listEl.innerHTML = `<div style="font-size:1em; opacity:0.6; text-align:center; padding:8px;">All active buildings have a ${year} test</div>`;
-                return;
-            }
-
+                listEl.innerHTML = `<div style="font-size:1em; opacity:0.6; text-align:center; padding:8px;">${disregarded.length ? 'No remaining buildings missing a test' : 'All active buildings have a ' + year + ' test'}</div>`;
+            } else {
             listEl.innerHTML = buildings.map(item => {
                 const bin = item.bin;
                 const addrEsc = String(item.address || '').replace(/"/g, '&quot;');
@@ -23258,15 +23510,94 @@
                         </span>
                         <span style="font-size:0.8em; opacity:0.55; padding-left:22px;">BIN ${escapeMapSuggestionHtml(bin)}${item.deviceCount ? ' · ' + item.deviceCount + ' device' + (item.deviceCount !== 1 ? 's' : '') : ''} · no ${year} test${scheduleDetail}${holdDetail}</span>
                     </span>
-                    <span style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">${holdBadge}${scheduleBadge}</span>
+                    <span style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                        ${holdBadge}${scheduleBadge}
+                        <button type="button" onclick="event.stopPropagation(); showNoTestByJuneDisregardModal('${bin}', { year: ${year} })" title="Hide this building from No Test by June and add a note" style="flex-shrink:0; background:transparent; color:#607d8b; border:1px solid rgba(96,125,139,0.4); border-radius:3px; padding:2px 7px; cursor:pointer; font-size:0.72em; font-weight:700;">Disregard</button>
+                    </span>
                 </div>`;
             }).join('');
+            }
 
             const searchInput = document.getElementById('noTestByJuneSearchInput');
             if (searchInput && searchInput.value.trim()) {
                 filterMcpBinRowList('noTestByJuneList', searchInput.value);
             }
             updateMapNoTestByJuneShowOnMapButton();
+            updateNoTestByJuneDisregardedPanel();
+        }
+
+        function updateNoTestByJuneDisregardedButton() {
+            const groups = getMapNoTestByJuneDisregardedBuildings();
+            const countEl = document.getElementById('mapNoTestByJuneDisregardedCount');
+            if (countEl) countEl.textContent = String(groups.length);
+            const btn = document.getElementById('mapNoTestByJuneDisregardedBtn');
+            const section = document.getElementById('noTestByJuneDisregardedSection');
+            const isOpen = !!(section && section.style.display !== 'none');
+            if (btn) {
+                if (isOpen) {
+                    btn.style.background = '#607d8b';
+                    btn.style.color = 'white';
+                    btn.style.borderColor = '#607d8b';
+                    btn.style.fontWeight = '700';
+                } else {
+                    btn.style.background = '';
+                    btn.style.color = '#607d8b';
+                    btn.style.borderColor = '';
+                    btn.style.fontWeight = '600';
+                }
+            }
+        }
+
+        function updateNoTestByJuneDisregardedPanel() {
+            const listEl = document.getElementById('noTestByJuneDisregardedList');
+            const groups = getMapNoTestByJuneDisregardedBuildings();
+            updateNoTestByJuneDisregardedButton();
+            if (!listEl) return;
+            if (groups.length === 0) {
+                listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No disregarded buildings</div>';
+                return;
+            }
+            const year = new Date().getFullYear();
+            listEl.innerHTML = groups.map(item => {
+                const addrEsc = String(item.address || '').replace(/"/g, '&quot;');
+                const noteHtml = item.note
+                    ? `<span style="display:block; font-size:0.8em; line-height:1.35; margin-top:3px;"><strong>Note:</strong> ${escapeMapSuggestionHtml(item.note)}</span>`
+                    : '<span style="display:block; font-size:0.8em; opacity:0.55; font-style:italic; margin-top:3px;">No note</span>';
+                const disregardedOn = item.timestamp
+                    ? new Date(item.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : '';
+                const filterTextEsc = escapeMapSuggestionHtml((item.note || '') + ' disregarded');
+                return `
+                    <div data-bin="${item.bin}" data-address="${addrEsc}" data-filter-text="${filterTextEsc}" style="padding:8px; background:var(--input-bg); border:1px solid rgba(96,125,139,0.28); border-radius:6px; margin-bottom:6px; font-size:1em;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                            <span style="min-width:0; flex:1; cursor:pointer;" title="Click to view on map" onclick="flyToMapBuilding('${item.bin}')">
+                                <span style="display:flex; align-items:center; gap:4px; overflow:hidden;">
+                                    <span style="color:#607d8b; font-weight:700; flex-shrink:0;">⊘</span>
+                                    <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; text-decoration:underline dotted;">${escapeMapSuggestionHtml(item.address || ('BIN ' + item.bin))}</span>
+                                </span>
+                                <span style="display:block; font-size:0.8em; opacity:0.55; padding-left:22px;">BIN ${escapeMapSuggestionHtml(item.bin)}${item.deviceCount ? ' · ' + item.deviceCount + ' device' + (item.deviceCount !== 1 ? 's' : '') : ''}${disregardedOn ? ' · ' + disregardedOn : ''}</span>
+                                <span style="padding-left:22px;">${noteHtml}</span>
+                            </span>
+                            <span style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                                <button type="button" onclick="event.stopPropagation(); showNoTestByJuneDisregardModal('${item.bin}', { year: ${year} })" style="flex-shrink:0; background:transparent; color:#1a73e8; border:1px solid rgba(26,115,232,0.35); border-radius:3px; padding:3px 8px; cursor:pointer; font-size:0.78em; font-weight:700;">Note</button>
+                                <button type="button" onclick="event.stopPropagation(); undoNoTestByJuneDisregard('${item.bin}', ${year})" style="flex-shrink:0; background:#ff9800; color:white; border:none; border-radius:3px; padding:3px 8px; cursor:pointer; font-size:0.78em; font-weight:700;">Undo</button>
+                            </span>
+                        </div>
+                    </div>`;
+            }).join('');
+            const searchInput = document.getElementById('noTestByJuneDisregardedSearchInput');
+            if (searchInput && searchInput.value.trim()) {
+                filterMcpBinRowList('noTestByJuneDisregardedList', searchInput.value);
+            }
+        }
+
+        function toggleNoTestByJuneDisregardedList() {
+            const section = document.getElementById('noTestByJuneDisregardedSection');
+            if (!section) return;
+            const isOpen = section.style.display !== 'none';
+            section.style.display = isOpen ? 'none' : 'block';
+            if (!isOpen) updateNoTestByJuneDisregardedPanel();
+            else updateNoTestByJuneDisregardedButton();
         }
 
         function isMapNoTestByJuneShowOnMapActive() {
@@ -25847,7 +26178,7 @@
                 markerColor = '#e67e22'; // Orange - in process
             } else if (isHold) {
                 markerColor = '#607d8b'; // Blue-gray - on hold
-            } else if (building.missedJuneTestDeadline && mapIsNoTestByJuneHighlightActive()) {
+            } else if (building.missedJuneTestDeadline && mapIsNoTestByJuneHighlightActive() && !isMapNoTestByJuneDisregarded(building.bin, building.calendarYear || new Date().getFullYear())) {
                 markerColor = MAP_NO_TEST_BY_JUNE_COLOR; // Deep red - no test by June
             } else if (isFavorited) {
                 markerColor = '#9b59b6'; // Purple - favorited building
