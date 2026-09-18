@@ -1400,7 +1400,7 @@
                             </div>
                             <div class="mcp-body" id="mcpNoTestByJune">
                                 <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">
-                                    Buildings with no PVI or Category test performed yet this calendar year. Starting June 1, these markers turn deep red on the map. List is sorted with no scheduled date first, then buildings that already have a test date attached. Jobs on hold are labeled and listed after active jobs in each group.
+                                    Buildings with no PVI or Category test performed yet this calendar year. Starting June 1, these markers turn deep red on the map. List is sorted with no scheduled date first, then buildings that already have a test date attached. Jobs on hold are labeled and listed after active jobs in each group. Show on MAP can be clicked again to restore the previous map view. Copy All Devices copies each device with its building name and BIN.
                                 </p>
                                 <div id="noTestByJuneStatus" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(139,0,0,0.28); background:rgba(139,0,0,0.08); color:var(--text-color); font-size:0.9em; line-height:1.4;"></div>
                                 <input type="text" id="noTestByJuneSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
@@ -1408,7 +1408,8 @@
                                 <div id="noTestByJuneList" style="max-height: 280px; overflow-y: auto; margin-bottom: 8px;">
                                     <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No buildings missing a test</div>
                                 </div>
-                                <button id="mapNoTestByJuneShowOnMapBtn" onclick="showNoTestByJuneOnMap()" class="mcp-btn" style="color:#8B0000; font-weight:700;">Show on MAP</button>
+                                <button id="mapNoTestByJuneShowOnMapBtn" onclick="toggleNoTestByJuneShowOnMap()" class="mcp-btn" style="color:#8B0000; font-weight:700;">Show on MAP</button>
+                                <button id="mapNoTestByJuneCopyDevicesBtn" onclick="copyNoTestByJuneDevices(event)" class="mcp-btn" style="color:#8B0000; font-weight:600;">Copy All Devices</button>
                             </div>
                         </div>
 
@@ -10228,6 +10229,7 @@
         let activeMonthFilters = new Set();
         let pendingMapHideScheduledMonthPrompt = false;
         let mapHideScheduledMonthSelectionReady = false;
+        let mapNoTestByJunePreviousView = null;
 
         let additionalLocationMarkers = [];
         const MAP_TRANSPORTATION_COLOR = '#1565c0';
@@ -15003,6 +15005,7 @@
                     updateMonthFilterStatus();
                 }
                 updateMapCategory5ShowOnMapButton();
+                updateMapNoTestByJuneShowOnMapButton();
                 if (!quiet) showMapNotification('Showing current map view', '#17a2b8');
                 return;
             }
@@ -15052,6 +15055,7 @@
 
             updateMonthFilterStatus();
             updateMapCategory5ShowOnMapButton();
+            updateMapNoTestByJuneShowOnMapButton();
             // Only re-zoom when none of the filtered buildings are already on screen,
             // so changing filters doesn't reset the user's zoom/position.
             if (shouldFitMap && bounds.isValid() && !shownInViewport) buildingMap.fitBounds(bounds, { padding: [50, 50] });
@@ -17048,6 +17052,8 @@
             updateHideInProcessBtn();
             updateHideHoldBtn();
             updateMapCategory5ShowOnMapButton();
+            mapNoTestByJunePreviousView = null;
+            updateMapNoTestByJuneShowOnMapButton();
 
             const hideCompletedToggle = document.getElementById('mapHideCompletedToggle');
             if (hideCompletedToggle) hideCompletedToggle.checked = false;
@@ -23260,9 +23266,77 @@
             if (searchInput && searchInput.value.trim()) {
                 filterMcpBinRowList('noTestByJuneList', searchInput.value);
             }
+            updateMapNoTestByJuneShowOnMapButton();
         }
 
-        function showNoTestByJuneOnMap() {
+        function isMapNoTestByJuneShowOnMapActive() {
+            return getSelectedMapViewFilter() === 'no-test-by-june';
+        }
+
+        function updateMapNoTestByJuneShowOnMapButton() {
+            const btn = document.getElementById('mapNoTestByJuneShowOnMapBtn');
+            if (!btn) return;
+            if (isMapNoTestByJuneShowOnMapActive() && mapNoTestByJunePreviousView) {
+                btn.textContent = 'Restore Previous View';
+                btn.style.background = '#8B0000';
+                btn.style.color = 'white';
+                btn.style.borderColor = '#8B0000';
+                btn.style.fontWeight = '700';
+            } else {
+                btn.textContent = 'Show on MAP';
+                btn.style.background = '';
+                btn.style.color = '#8B0000';
+                btn.style.borderColor = '';
+                btn.style.fontWeight = '700';
+            }
+        }
+
+        function captureMapNoTestByJunePreviousView() {
+            let center = null;
+            let zoom = null;
+            if (buildingMap) {
+                try {
+                    const currentCenter = buildingMap.getCenter();
+                    center = [currentCenter.lat, currentCenter.lng];
+                    zoom = buildingMap.getZoom();
+                } catch (error) {
+                    console.warn('Could not capture previous map camera:', error);
+                }
+            }
+            return {
+                viewFilter: getSelectedMapViewFilter() || 'all',
+                monthFilters: [...activeMonthFilters],
+                mapHideScheduledMonthSelectionReady: !!mapHideScheduledMonthSelectionReady,
+                pendingMapHideScheduledMonthPrompt: !!pendingMapHideScheduledMonthPrompt,
+                center: center,
+                zoom: zoom
+            };
+        }
+
+        function restoreMapNoTestByJunePreviousView(previous) {
+            const snapshot = previous || {};
+            activeMonthFilters.clear();
+            (Array.isArray(snapshot.monthFilters) ? snapshot.monthFilters : []).forEach(month => {
+                activeMonthFilters.add(month);
+            });
+            mapHideScheduledMonthSelectionReady = !!snapshot.mapHideScheduledMonthSelectionReady;
+            pendingMapHideScheduledMonthPrompt = !!snapshot.pendingMapHideScheduledMonthPrompt;
+            updateMonthFilterButtons();
+
+            let restoreFilter = snapshot.viewFilter || 'all';
+            if (restoreFilter === 'no-test-by-june') restoreFilter = 'all';
+            setSelectedMapViewFilter(restoreFilter, { applyOptions: { fitMap: false, quiet: true } });
+
+            if (buildingMap && Array.isArray(snapshot.center) && snapshot.center.length === 2 && snapshot.zoom != null) {
+                try {
+                    buildingMap.setView(snapshot.center, snapshot.zoom);
+                } catch (error) {
+                    console.warn('Could not restore previous map camera:', error);
+                }
+            }
+        }
+
+        function toggleNoTestByJuneShowOnMap() {
             const buildings = getMapNoTestByJuneBuildings();
             if (buildings.length === 0) {
                 showMapNotification('No buildings are missing a test this year', '#27ae60');
@@ -23272,14 +23346,131 @@
                 showMapNotification('Open the map first, then try Show on MAP', '#ff6b6b');
                 return;
             }
-            const select = document.getElementById('mapViewFilterSelect');
-            if (select) select.value = 'no-test-by-june';
-            applyMapViewDropdownFilter({ fitMap: true });
+
+            if (isMapNoTestByJuneShowOnMapActive()) {
+                const previous = mapNoTestByJunePreviousView;
+                mapNoTestByJunePreviousView = null;
+                if (previous) {
+                    restoreMapNoTestByJunePreviousView(previous);
+                    showMapNotification('Restored previous map view', '#17a2b8');
+                } else {
+                    setSelectedMapViewFilter('all', { applyOptions: { fitMap: false, quiet: true } });
+                    showMapNotification('Cleared No Test by June map filter', '#17a2b8');
+                }
+                updateMapNoTestByJuneShowOnMapButton();
+                return;
+            }
+
+            mapNoTestByJunePreviousView = captureMapNoTestByJunePreviousView();
+            setSelectedMapViewFilter('no-test-by-june', { applyOptions: { fitMap: true } });
+            updateMapNoTestByJuneShowOnMapButton();
             const highlightActive = mapIsNoTestByJuneHighlightActive();
             showMapNotification(
                 `${buildings.length} building${buildings.length !== 1 ? 's' : ''} with no test by June${highlightActive ? '' : ' (highlight starts June 1)'}`,
                 MAP_NO_TEST_BY_JUNE_COLOR
             );
+        }
+
+        function showNoTestByJuneOnMap() {
+            toggleNoTestByJuneShowOnMap();
+        }
+
+        function getNoTestByJuneDevicesByBuilding(options) {
+            const opts = options || {};
+            const buildings = getMapNoTestByJuneBuildings();
+            let selected = buildings;
+            if (opts.visibleOnly) {
+                const listEl = document.getElementById('noTestByJuneList');
+                if (listEl) {
+                    const visibleBins = new Set();
+                    listEl.querySelectorAll(':scope > div[data-bin]').forEach(el => {
+                        if (el.style.display !== 'none') visibleBins.add(String(el.getAttribute('data-bin')));
+                    });
+                    selected = buildings.filter(item => visibleBins.has(String(item.bin)));
+                }
+            }
+            return selected.map(item => {
+                const group = getMapGroupForBin(item.bin) || {};
+                const devices = (Array.isArray(group.devices) ? group.devices : [])
+                    .filter(device => !isRemovedFromMapJob(device) && mapDobDeviceIsActiveForCompletion(device))
+                    .map(device => ({
+                        number: String(device.device_number || '').trim(),
+                        type: String(device.device_type || '').trim()
+                    }))
+                    .filter(device => device.number)
+                    .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true, sensitivity: 'base' }));
+                return {
+                    bin: item.bin,
+                    address: item.address || ('BIN ' + item.bin),
+                    devices: devices
+                };
+            });
+        }
+
+        function formatNoTestByJuneDeviceCopyText(groups) {
+            const rows = ['Device\tBuilding\tBIN'];
+            (groups || []).forEach(group => {
+                const address = group.address || ('BIN ' + group.bin);
+                const bin = String(group.bin || '');
+                const devices = Array.isArray(group.devices) ? group.devices : [];
+                devices.forEach(device => {
+                    const number = typeof device === 'string' ? device : (device && device.number);
+                    if (!number) return;
+                    rows.push([number, address, bin].join('\t'));
+                });
+            });
+            return rows.length > 1 ? rows.join('\n') : '';
+        }
+
+        async function copyNoTestByJuneDevices(event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            const searchInput = document.getElementById('noTestByJuneSearchInput');
+            const visibleOnly = !!(searchInput && searchInput.value.trim());
+            const groups = getNoTestByJuneDevicesByBuilding({ visibleOnly: visibleOnly });
+            const deviceCount = groups.reduce((sum, group) => sum + ((group.devices && group.devices.length) || 0), 0);
+            const text = formatNoTestByJuneDeviceCopyText(groups);
+            if (!text || deviceCount === 0) {
+                showMapNotification('No devices to copy', '#ff6b6b');
+                return;
+            }
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                }
+                const btn = document.getElementById('mapNoTestByJuneCopyDevicesBtn');
+                if (btn) {
+                    const originalText = btn.textContent;
+                    btn.textContent = 'Copied ' + deviceCount + ' Device' + (deviceCount !== 1 ? 's' : '') + '!';
+                    btn.style.background = '#4CAF50';
+                    btn.style.color = 'white';
+                    btn.style.borderColor = '#4CAF50';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.style.background = '';
+                        btn.style.color = '#8B0000';
+                        btn.style.borderColor = '';
+                    }, 2000);
+                }
+                showMapNotification(
+                    'Copied ' + deviceCount + ' device' + (deviceCount !== 1 ? 's' : '') + ' with building names',
+                    MAP_NO_TEST_BY_JUNE_COLOR
+                );
+            } catch (err) {
+                console.error('Failed to copy no-test-by-June devices:', err);
+                showMapNotification('Failed to copy devices', '#ff6b6b');
+            }
         }
 
         function isHideInProcessActive() {
