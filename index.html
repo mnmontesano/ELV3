@@ -1525,7 +1525,7 @@
                                 <span class="mcp-arrow" id="mcpAdditionalArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpAdditional">
-                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> and <strong>Transportation</strong> sections to manage tagged pins. Click ✓ on a pin to mark it completed. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
+                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> and <strong>Transportation</strong> sections to manage tagged pins. Click ✓ on a pin to mark it completed — choose Category, PVI, or both. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
                                 <input type="text" id="additionalLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
                                        oninput="filterAdditionalLocationsList(this.value)">
                                 <div id="additionalLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
@@ -1667,7 +1667,7 @@
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
-                                    <li>Custom location pins have a ✓ completed button, matching building markers</li>
+                                    <li>Custom location pins have a ✓ completed button, matching building markers. Choose Category, PVI, or both when marking complete</li>
                                     <li><strong>Save your work</strong> — data is not kept between sessions</li>
                                 </ul>
                             </div>
@@ -13231,9 +13231,9 @@
             const monthOptions = [{ value: '', label: 'No month' }].concat(ALL_MONTHS.map(month => ({ value: month, label: month })));
             const completionOptions = [
                 { value: '', label: 'Not Completed' },
-                { value: 'Category', label: 'Category completed' },
-                { value: 'PVI', label: 'PVI completed' },
-                { value: 'Full', label: 'Full (existing/DOB)', disabled: true },
+                { value: 'Category', label: 'Category completed only' },
+                { value: 'PVI', label: 'PVI completed only' },
+                { value: 'Full', label: 'PVI and Category completed' },
                 { value: 'Legacy', label: 'Legacy (existing)', disabled: true }
             ];
             const deviceDateColumns = {
@@ -13341,9 +13341,9 @@
                             parse: (rawValue, row) => {
                                 const value = normalizeMapCompletedTestType(rawValue);
                                 if (!String(rawValue || '').trim()) return { valid: true, value: '' };
-                                if (value === 'Category' || value === 'PVI') return { valid: true, value };
+                                if (value === 'Category' || value === 'PVI' || value === 'Full') return { valid: true, value };
                                 if (value && value === row.values.completionType) return { valid: true, value };
-                                return { valid: false, message: 'Choose Category or PVI for a manual completion.' };
+                                return { valid: false, message: 'Choose Category, PVI, or both for a manual completion.' };
                             }
                         }),
                         planningColumn('completion_date', 'Completion Date', 'completionDate', { parse: parseMapTableSingleDateInput }),
@@ -16446,8 +16446,14 @@
                     listEl.innerHTML = regularLocations.map(({ loc, index }) => {
                         const hasBin = loc.bin ? true : false;
                         const locCompleted = isAdditionalLocationCompleted(loc);
+                        const locCompletedEntry = locCompleted
+                            ? (getMapCompleted()[getAdditionalLocationCompletionKey(loc)] || {})
+                            : {};
                         const locCompletionColor = locCompleted
-                            ? getMapCompletionColor((getMapCompleted()[getAdditionalLocationCompletionKey(loc)] || {}).completionType)
+                            ? getMapCompletionColor(locCompletedEntry.completionType || locCompletedEntry.testType)
+                            : '';
+                        const locCompletedLabel = locCompleted
+                            ? getMapCompletedTestLabel(locCompletedEntry.completionType || locCompletedEntry.testType)
                             : '';
                         const addrEsc = (loc.label || '').replace(/"/g, '&quot;');
                         const customEsc = (loc.customName || '').replace(/"/g, '&quot;');
@@ -16474,7 +16480,7 @@
                                     ${loc.customName ? `<div style="font-size: 0.88em; font-weight: 700; color: #e64a19; margin-bottom: 1px; word-break: break-word; text-decoration: underline dotted;">🏷️ ${loc.customName}</div>` : ''}
                                     <div style="font-size: 0.88em; font-weight: 600; color: var(--text-color); margin-bottom: 2px; word-break: break-word; text-decoration: underline dotted;">${loc.label}</div>
                                     <div style="opacity: 0.55; font-size: 0.8em;">${hasBin ? 'BIN ' + loc.bin + ' · ' : ''}${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}</div>
-                                    ${locCompleted ? `<div style="margin-top:4px; font-size:0.78em; font-weight:700; color:${locCompletionColor};">✓ Completed</div>` : ''}
+                                    ${locCompleted ? `<div style="margin-top:4px; font-size:0.78em; font-weight:700; color:${locCompletionColor};">${locCompletedLabel}</div>` : ''}
                                 </div>
                                 <button onclick="removeAdditionalLocation(${index})"
                                         title="Remove location"
@@ -17686,6 +17692,7 @@
         }
 
         const MAP_COMPLETED_TEST_OPTIONS = [
+            { value: 'Full', label: 'PVI and Category completed' },
             { value: 'Category', label: 'Category completed only' },
             { value: 'PVI', label: 'PVI completed only' }
         ];
@@ -17693,9 +17700,11 @@
         function normalizeMapCompletedTestType(value) {
             const text = String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
             if (text === 'FULL' || text === 'FULLY COMPLETED' || text === 'ALL TEST COMPLETED' || text === 'ALL TESTS COMPLETED') return 'Full';
+            if (text === 'PVI AND CATEGORY' || text === 'PVI AND CATEGORY COMPLETED' || text === 'CATEGORY AND PVI' || text === 'CATEGORY AND PVI COMPLETED') return 'Full';
+            if (text === 'BOTH' || text === 'BOTH COMPLETED' || text === 'CAT AND PVI' || text === 'CAT AND PVI COMPLETED') return 'Full';
             if (text === 'LEGACY' || text === 'UNSPECIFIED' || text === 'NOT SPECIFIED') return 'Legacy';
-            if (text === 'PVI') return 'PVI';
-            if (text === 'CATEGORY' || text === 'CATEGORY ONLY' || text === 'CAT1' || text === 'CAT 1' || text === 'CAT5' || text === 'CAT 5') return 'Category';
+            if (text === 'PVI' || text === 'PVI COMPLETED ONLY' || text === 'PVI COMPLETED') return 'PVI';
+            if (text === 'CATEGORY' || text === 'CATEGORY ONLY' || text === 'CATEGORY COMPLETED ONLY' || text === 'CATEGORY COMPLETED' || text === 'CAT1' || text === 'CAT 1' || text === 'CAT5' || text === 'CAT 5') return 'Category';
             if (text === 'CAT 1 + CAT 5' || text === 'CAT1 + CAT5' || text === 'CAT 1/CAT 5' || text === 'CAT1/CAT5') return 'Category';
             return '';
         }
@@ -17784,9 +17793,7 @@
         function renderMapCompletedTestOptions(selectedValue) {
             const selected = normalizeMapCompletedTestType(selectedValue);
             const hasSelectableValue = MAP_COMPLETED_TEST_OPTIONS.some(option => option.value === selected);
-            const placeholder = selected === 'Full'
-                ? 'PVI + Category already recorded'
-                : 'Select PVI or Category...';
+            const placeholder = 'Select Category, PVI, or both...';
             return `<option value="" ${hasSelectableValue ? '' : 'selected'} disabled>${placeholder}</option>` + MAP_COMPLETED_TEST_OPTIONS.map(option => {
                 return `<option value="${option.value}" ${selected === option.value ? 'selected' : ''}>${option.label}</option>`;
             }).join('');
