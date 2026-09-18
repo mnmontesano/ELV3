@@ -1413,7 +1413,7 @@
                             </div>
                             <div class="mcp-body" id="mcpNoTestYet">
                                 <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">
-                                    Devices with no Category or PVI test filed yet this calendar year. Both tests still need to be completed, and they must be <strong>91 days apart</strong>. The countdown is days left to finish both before December 31 — start the first test in time to leave 91 days for the second.
+                                    Devices with no Category or PVI test filed yet this calendar year. Both tests still need to be completed, and they must be <strong>91 days apart</strong>. The countdown is days left to finish both before December 31 — start the first test in time to leave 91 days for the second. Show on MAP can be clicked again to restore the previous map view. Copy All Devices copies each device with its building name and BIN. Disregard hides a device from this list and the map highlight for the current year; you can add a note and undo it later.
                                 </p>
                                 <div id="noTestYetStatus" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(192,57,43,0.28); background:rgba(192,57,43,0.08); color:var(--text-color); font-size:0.9em; line-height:1.45;"></div>
                                 <input type="text" id="noTestYetSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or device..."
@@ -1421,7 +1421,17 @@
                                 <div id="noTestYetList" style="max-height: 320px; overflow-y: auto; margin-bottom: 8px;">
                                     <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No devices are missing a first test</div>
                                 </div>
-                                <button id="mapNoTestYetShowOnMapBtn" onclick="showNoTestYetOnMap()" class="mcp-btn" style="color:#c0392b; font-weight:700;">Show on MAP</button>
+                                <button id="mapNoTestYetShowOnMapBtn" onclick="toggleNoTestYetShowOnMap()" class="mcp-btn" style="color:#c0392b; font-weight:700;">Show on MAP</button>
+                                <button id="mapNoTestYetCopyDevicesBtn" onclick="copyNoTestYetDevices(event)" class="mcp-btn" style="color:#c0392b; font-weight:600;">Copy All Devices</button>
+                                <button id="mapNoTestYetDisregardedBtn" onclick="toggleNoTestYetDisregardedList()" class="mcp-btn" style="color:#607d8b; font-weight:600;">Disregarded - <span id="mapNoTestYetDisregardedCount">0</span></button>
+                                <div id="noTestYetDisregardedSection" style="display:none; margin-top:8px;">
+                                    <p class="mcp-desc" style="margin-bottom:6px;">Devices hidden from No Test Yet for this year, with optional notes. Undo puts them back on the list and restores the map highlight.</p>
+                                    <input type="text" id="noTestYetDisregardedSearchInput" class="mcp-search-input" placeholder="🔍 Search disregarded by address, BIN, device, or note..."
+                                           oninput="filterMcpBinRowList('noTestYetDisregardedList', this.value)">
+                                    <div id="noTestYetDisregardedList" style="max-height: 280px; overflow-y: auto; margin-bottom: 4px;">
+                                        <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No disregarded devices</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -10268,6 +10278,7 @@
         let mapNotes = {};
         let mapCat5Bypasses = {}; // key: "BIN::DEVICE_NUMBER" → { bypassed, note, timestamp }
         let mapNoTestByJuneDisregarded = {}; // key: "BIN::YEAR" → { disregarded, note, timestamp, bin, year, address }
+        let mapNoTestYetDisregarded = {}; // key: "LOCATION::DEVICE::YEAR" → { disregarded, note, timestamp, locationKey, deviceNumber, year, address, bin }
         let mapActivityLog = [];
         let mapAdditionalLocations = [];
         let mapDeviceMonitors = {};
@@ -10276,6 +10287,7 @@
         let pendingMapHideScheduledMonthPrompt = false;
         let mapHideScheduledMonthSelectionReady = false;
         let mapNoTestByJunePreviousView = null;
+        let mapNoTestYetPreviousView = null;
 
         let additionalLocationMarkers = [];
         const MAP_TRANSPORTATION_COLOR = '#1565c0';
@@ -10628,6 +10640,7 @@
                 notes: getMapNotes(),
                 cat5Bypasses: getMapCat5Bypasses(),
                 noTestByJuneDisregarded: getMapNoTestByJuneDisregarded(),
+                noTestYetDisregarded: getMapNoTestYetDisregarded(),
                 activityLog: getMapActivityLog(),
                 dobInfoUpdatedAt: mapDobInfoUpdatedAt,
                 monthLabels: scopedMonthLabels,
@@ -15062,6 +15075,7 @@
                 }
                 updateMapCategory5ShowOnMapButton();
                 updateMapNoTestByJuneShowOnMapButton();
+                updateMapNoTestYetShowOnMapButton();
                 if (!quiet) showMapNotification('Showing current map view', '#17a2b8');
                 return;
             }
@@ -15126,6 +15140,7 @@
             updateMonthFilterStatus();
             updateMapCategory5ShowOnMapButton();
             updateMapNoTestByJuneShowOnMapButton();
+            updateMapNoTestYetShowOnMapButton();
             // Only re-zoom when none of the filtered buildings are already on screen,
             // so changing filters doesn't reset the user's zoom/position.
             if (shouldFitMap && bounds.isValid() && !shownInViewport) buildingMap.fitBounds(bounds, { padding: [50, 50] });
@@ -15262,6 +15277,7 @@
                     ['Deadline Buildings', Object.keys(view.deadlines || {}).length],
                     ['Note Buildings', Object.keys(view.notes || {}).length],
                     ['No Test Disregarded', Object.keys(view.noTestByJuneDisregarded || {}).length],
+                    ['No Test Yet Disregarded', Object.keys(view.noTestYetDisregarded || {}).length],
                     ['Activity Entries', Array.isArray(view.activityLog) ? view.activityLog.length : 0],
                     ['Month Assignments', Array.isArray(view.monthAssignments) ? view.monthAssignments.length : Object.keys(view.monthLabels || {}).length],
                     ['Notes Sheet Included', exportOptions.includeNotesSheet ? 'Yes' : 'No'],
@@ -15445,6 +15461,7 @@
                     ...splitMapExcelSectionRows('deadlines', view.deadlines || {}),
                     ...splitMapExcelSectionRows('notes', view.notes || {}),
                     ...splitMapExcelSectionRows('noTestByJuneDisregarded', view.noTestByJuneDisregarded || {}),
+                    ...splitMapExcelSectionRows('noTestYetDisregarded', view.noTestYetDisregarded || {}),
                     ...splitMapExcelSectionRows('activityLog', view.activityLog || []),
                     ...splitMapExcelSectionRows('monthLabels', view.monthLabels || {}),
                     ...splitMapExcelSectionRows('monthAssignments', view.monthAssignments || []),
@@ -15523,6 +15540,7 @@
                     notes: view.notes || {},
                     cat5Bypasses: view.cat5Bypasses || {},
                     noTestByJuneDisregarded: view.noTestByJuneDisregarded || {},
+                    noTestYetDisregarded: view.noTestYetDisregarded || {},
                     activityLog: Array.isArray(view.activityLog) ? view.activityLog : [],
                     dobInfoUpdatedAt: view.dobInfoUpdatedAt || null,
                     monthLabels: view.monthLabels || {},
@@ -15690,6 +15708,78 @@
             return normalized;
         }
 
+        function parseMapNoTestYetDisregardKey(key) {
+            const raw = String(key || '');
+            const yearSep = raw.lastIndexOf('::');
+            if (yearSep <= 0) return null;
+            const yearPart = raw.slice(yearSep + 2);
+            if (!/^20\d{2}$/.test(yearPart)) return null;
+            const deviceSep = raw.lastIndexOf('::', yearSep - 1);
+            if (deviceSep <= 0) return null;
+            const locationKey = raw.slice(0, deviceSep);
+            const deviceNumber = raw.slice(deviceSep + 2, yearSep);
+            if (!isValidMapCompletedStoreKey(locationKey)) return null;
+            if (!/^[A-Z0-9-]{1,32}$/i.test(deviceNumber)) return null;
+            return {
+                locationKey,
+                deviceNumber: deviceNumber.toUpperCase(),
+                year: parseInt(yearPart, 10)
+            };
+        }
+
+        function normalizeImportedNoTestYetDisregarded(rawDisregarded) {
+            if (rawDisregarded === undefined || rawDisregarded === null) return {};
+            if (typeof rawDisregarded !== 'object' || Array.isArray(rawDisregarded)) {
+                throw new Error('Map view contains invalid No Test Yet disregarded data.');
+            }
+
+            const normalized = {};
+            Object.entries(rawDisregarded).forEach(([key, entry]) => {
+                const parsed = parseMapNoTestYetDisregardKey(key);
+                if (!parsed || !entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                    throw new Error('Map view contains invalid No Test Yet disregarded data.');
+                }
+                const locationKey = parsed.locationKey;
+                const deviceNumber = parsed.deviceNumber;
+                const year = parsed.year;
+                const entryDevice = entry.deviceNumber !== undefined && entry.deviceNumber !== null
+                    ? String(entry.deviceNumber).trim().toUpperCase()
+                    : deviceNumber;
+                const yearFromEntry = Number(entry.year);
+                if ((entry.locationKey !== undefined && String(entry.locationKey) !== locationKey) ||
+                    (entry.bin !== undefined && entry.bin !== null && entry.bin !== '' && String(entry.bin) !== locationKey && !isMapBinStoreKey(String(entry.bin))) ||
+                    entryDevice !== deviceNumber ||
+                    (entry.year !== undefined && Number.isFinite(yearFromEntry) && yearFromEntry !== year) ||
+                    (entry.note !== undefined && entry.note !== null && typeof entry.note !== 'string') ||
+                    (entry.address !== undefined && entry.address !== null && typeof entry.address !== 'string')) {
+                    throw new Error('Map view contains inconsistent No Test Yet disregarded data.');
+                }
+
+                let timestamp = null;
+                if (entry.timestamp !== undefined && entry.timestamp !== null && entry.timestamp !== '') {
+                    timestamp = Number(entry.timestamp);
+                    if (!Number.isFinite(timestamp) || timestamp < 0) {
+                        throw new Error('Map view contains an invalid No Test Yet disregarded timestamp.');
+                    }
+                }
+
+                const bin = isMapBinStoreKey(locationKey)
+                    ? locationKey
+                    : (entry.bin && isMapBinStoreKey(String(entry.bin)) ? String(entry.bin) : '');
+                normalized[`${locationKey}::${deviceNumber}::${year}`] = {
+                    disregarded: entry.disregarded !== false,
+                    note: entry.note ? String(entry.note) : '',
+                    timestamp,
+                    locationKey,
+                    deviceNumber,
+                    year,
+                    bin,
+                    address: entry.address ? String(entry.address) : ''
+                };
+            });
+            return normalized;
+        }
+
         function normalizeImportedMapView(rawData) {
             const rawSource = rawData && rawData.view ? rawData.view : rawData;
             const source = sanitizeImportedMapValue(rawSource);
@@ -15719,6 +15809,7 @@
             });
             const normalizedCat5Bypasses = normalizeImportedCat5Bypasses(source.cat5Bypasses);
             const normalizedNoTestByJuneDisregarded = normalizeImportedNoTestByJuneDisregarded(source.noTestByJuneDisregarded);
+            const normalizedNoTestYetDisregarded = normalizeImportedNoTestYetDisregarded(source.noTestYetDisregarded);
             if (Array.isArray(source.activityLog) && source.activityLog.length > 10000) {
                 throw new Error('Map view contains too many activity entries.');
             }
@@ -15844,6 +15935,7 @@
                 notes: source.notes || {},
                 cat5Bypasses: normalizedCat5Bypasses,
                 noTestByJuneDisregarded: normalizedNoTestByJuneDisregarded,
+                noTestYetDisregarded: normalizedNoTestYetDisregarded,
                 activityLog: Array.isArray(source.activityLog) ? source.activityLog : [],
                 dobInfoUpdatedAt: parseMapTimestamp(source.dobInfoUpdatedAt),
                 monthLabels: source.monthLabels || {},
@@ -15866,6 +15958,7 @@
             setMapNotes(view.notes || {});
             setMapCat5Bypasses(view.cat5Bypasses || {});
             setMapNoTestByJuneDisregarded(view.noTestByJuneDisregarded || {});
+            setMapNoTestYetDisregarded(view.noTestYetDisregarded || {});
             setMapActivityLog(view.activityLog || []);
             setMapDobInfoUpdatedAt(view.dobInfoUpdatedAt || null);
             const restoredMonthLabels = (Array.isArray(view.monthAssignments) && view.monthAssignments.length > 0)
@@ -17182,6 +17275,8 @@
             updateMapCategory5ShowOnMapButton();
             mapNoTestByJunePreviousView = null;
             updateMapNoTestByJuneShowOnMapButton();
+            mapNoTestYetPreviousView = null;
+            updateMapNoTestYetShowOnMapButton();
 
             const hideCompletedToggle = document.getElementById('mapHideCompletedToggle');
             if (hideCompletedToggle) hideCompletedToggle.checked = false;
@@ -23557,12 +23652,14 @@
             return !(testInfo.hasPVI || testInfo.hasCat1 || testInfo.hasCat5);
         }
 
-        function getMapNoTestYetDeviceRows(bin, devices, year) {
+        function getMapNoTestYetDeviceRows(bin, devices, year, sourceView) {
             const targetYear = Number(year) || new Date().getFullYear();
             const windowInfo = getMapBothTestsWindow(new Date());
+            const locationKey = String(bin || '').trim();
             return (Array.isArray(devices) ? devices : []).map(device => {
                 const info = getMapDeviceReportTestInfo(device || {}, targetYear, bin);
                 if (!mapDeviceHasNoAnnualTest(info)) return null;
+                if (isMapNoTestYetDisregarded(locationKey, device.device_number, targetYear, sourceView)) return null;
                 const pending = [];
                 if (info.requiresPVI) pending.push('PVI');
                 if (info.requiresCat1) pending.push('CAT 1');
@@ -23625,7 +23722,7 @@
             const year = today.getFullYear();
             const windowInfo = getMapBothTestsWindow(today);
             return collectMapNoTestYetSourceGroups(sourceView).map(group => {
-                const devices = getMapNoTestYetDeviceRows(group.bin || group.key, group.devices, year);
+                const devices = getMapNoTestYetDeviceRows(group.bin || group.key, group.devices, year, sourceView);
                 if (!devices.length) return null;
                 return {
                     ...group,
@@ -23638,6 +23735,227 @@
                 if (a.needsBothCount !== b.needsBothCount) return b.needsBothCount - a.needsBothCount;
                 return String(a.address || a.bin || a.key).localeCompare(String(b.address || b.bin || b.key), undefined, { sensitivity: 'base' });
             });
+        }
+
+        function getMapNoTestYetDisregarded(view) {
+            if (view && view.noTestYetDisregarded && typeof view.noTestYetDisregarded === 'object' && !Array.isArray(view.noTestYetDisregarded)) {
+                return view.noTestYetDisregarded;
+            }
+            return mapNoTestYetDisregarded || {};
+        }
+
+        function setMapNoTestYetDisregarded(disregarded) {
+            mapNoTestYetDisregarded = disregarded && typeof disregarded === 'object' && !Array.isArray(disregarded)
+                ? disregarded
+                : {};
+        }
+
+        function getMapNoTestYetDisregardKey(locationKey, deviceNumber, year) {
+            const targetYear = Number(year) || new Date().getFullYear();
+            const device = String(deviceNumber || '').trim().toUpperCase();
+            return String(locationKey || '').trim() + '::' + device + '::' + String(targetYear);
+        }
+
+        function getMapNoTestYetDisregardEntry(locationKey, deviceNumber, year, view) {
+            const key = getMapNoTestYetDisregardKey(locationKey, deviceNumber, year);
+            const store = getMapNoTestYetDisregarded(view);
+            const entry = store[key];
+            return entry && typeof entry === 'object' ? entry : null;
+        }
+
+        function isMapNoTestYetDisregarded(locationKey, deviceNumber, year, view) {
+            const entry = getMapNoTestYetDisregardEntry(locationKey, deviceNumber, year, view);
+            return !!(entry && entry.disregarded !== false);
+        }
+
+        function findMapNoTestYetSourceGroup(locationKey, sourceView) {
+            const key = String(locationKey || '').trim();
+            if (!key) return null;
+            return collectMapNoTestYetSourceGroups(sourceView).find(group =>
+                String(group.key || '') === key || String(group.bin || '') === key
+            ) || null;
+        }
+
+        function getMapNoTestYetDisregardedDevices(referenceDate, sourceView) {
+            const today = startOfMapLocalDay(referenceDate);
+            const year = today.getFullYear();
+            const view = sourceView || null;
+            const store = getMapNoTestYetDisregarded(view);
+            return Object.values(store)
+                .filter(entry => entry && Number(entry.year) === year && entry.disregarded !== false)
+                .map(entry => {
+                    const locationKey = String(entry.locationKey || entry.bin || '');
+                    const group = findMapNoTestYetSourceGroup(locationKey, view) || {};
+                    return {
+                        locationKey,
+                        bin: entry.bin || group.bin || '',
+                        deviceNumber: String(entry.deviceNumber || ''),
+                        year,
+                        address: entry.address || group.address || '',
+                        note: entry.note ? String(entry.note) : '',
+                        timestamp: entry.timestamp || null,
+                        source: group.source || (isMapCustomLocationStoreKey(locationKey) ? 'additional' : 'building'),
+                        latitude: group.latitude,
+                        longitude: group.longitude
+                    };
+                })
+                .sort((a, b) => {
+                    const addressCmp = (a.address || a.bin || a.locationKey).localeCompare(b.address || b.bin || b.locationKey);
+                    if (addressCmp) return addressCmp;
+                    return String(a.deviceNumber).localeCompare(String(b.deviceNumber), undefined, { numeric: true, sensitivity: 'base' });
+                });
+        }
+
+        function setMapNoTestYetDisregard(locationKey, deviceNumber, options) {
+            const keyLoc = String(locationKey || '').trim();
+            const device = String(deviceNumber || '').trim().toUpperCase();
+            if (!keyLoc || !device) return null;
+            const opts = options || {};
+            const year = Number(opts.year) || new Date().getFullYear();
+            const key = getMapNoTestYetDisregardKey(keyLoc, device, year);
+            const existing = getMapNoTestYetDisregardEntry(keyLoc, device, year) || {};
+            const note = opts.note !== undefined ? String(opts.note || '').trim() : (existing.note || '');
+            const disregarded = opts.disregarded !== undefined ? !!opts.disregarded : true;
+            if (!disregarded) {
+                delete mapNoTestYetDisregarded[key];
+                return null;
+            }
+            const group = findMapNoTestYetSourceGroup(keyLoc) || {};
+            const bin = isMapBinStoreKey(keyLoc)
+                ? keyLoc
+                : (opts.bin || existing.bin || group.bin || '');
+            mapNoTestYetDisregarded[key] = {
+                disregarded: true,
+                note,
+                timestamp: Date.now(),
+                locationKey: keyLoc,
+                deviceNumber: device,
+                year,
+                bin,
+                address: opts.address || existing.address || group.address || ''
+            };
+            return mapNoTestYetDisregarded[key];
+        }
+
+        function clearMapNoTestYetDisregard(locationKey, deviceNumber, year) {
+            const key = getMapNoTestYetDisregardKey(locationKey, deviceNumber, year);
+            const existed = !!mapNoTestYetDisregarded[key];
+            delete mapNoTestYetDisregarded[key];
+            return existed;
+        }
+
+        function refreshMapAfterNoTestYetDisregardChange() {
+            updateNoTestYetPanel();
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && buildingMap) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            } else if (getSelectedMapViewFilter() === 'no-test-yet') {
+                applyMapViewDropdownFilter({ fitMap: false, quiet: true });
+            }
+        }
+
+        function closeNoTestYetDisregardModal() {
+            const modal = document.getElementById('noTestYetDisregardModal');
+            if (modal) modal.remove();
+        }
+
+        function showNoTestYetDisregardModal(locationKey, deviceNumber, year) {
+            const keyLoc = String(locationKey || '').trim();
+            const device = String(deviceNumber || '').trim();
+            if (!keyLoc || !device) return;
+            const targetYear = Number(year) || new Date().getFullYear();
+            const existing = getMapNoTestYetDisregardEntry(keyLoc, device, targetYear) || {};
+            const group = findMapNoTestYetSourceGroup(keyLoc) || {};
+            const address = existing.address || group.address || (isMapBinStoreKey(keyLoc) ? ('BIN ' + keyLoc) : 'Custom location');
+            const note = existing.note || '';
+            const isUpdate = isMapNoTestYetDisregarded(keyLoc, device, targetYear);
+            closeNoTestYetDisregardModal();
+
+            const modal = document.createElement('div');
+            modal.id = 'noTestYetDisregardModal';
+            modal.style.cssText = 'display:flex; position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:10036; justify-content:center; align-items:center;';
+            const locationJs = escapeMapNoTestYetJsString(keyLoc);
+            const deviceJs = escapeMapNoTestYetJsString(device);
+            modal.innerHTML = `
+                <div style="background:var(--card-bg); border:1px solid var(--input-border); border-radius:12px; padding:22px; max-width:460px; width:92%; box-shadow:0 12px 42px rgba(0,0,0,0.35);">
+                    <h3 style="margin:0 0 8px 0; color:var(--header-color);">${isUpdate ? 'Update disregard note' : 'Disregard device'}</h3>
+                    <div style="font-size:0.92em; color:var(--text-color); line-height:1.45; margin-bottom:12px;">
+                        <strong>${escapeMapSuggestionHtml(device)}</strong>
+                        <div style="opacity:0.72; margin-top:4px;">${escapeMapSuggestionHtml(address)}${isMapBinStoreKey(keyLoc) ? ' · BIN ' + escapeMapSuggestionHtml(keyLoc) : ''} · ${targetYear}</div>
+                        <div style="opacity:0.82; margin-top:8px;">${isUpdate
+                            ? 'This device stays hidden from No Test Yet for ' + targetYear + '. Update the note or cancel.'
+                            : 'This hides the device from the No Test Yet list and map highlight for ' + targetYear + '. You can undo it later.'}</div>
+                    </div>
+                    <label for="noTestYetDisregardNote" style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:5px;">Note (optional)</label>
+                    <textarea id="noTestYetDisregardNote" rows="3" placeholder="e.g. Owner confirmed the test was filed / not our job this year..."
+                              style="width:100%; box-sizing:border-box; padding:8px 9px; border-radius:6px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); font-size:0.95em; resize:vertical; min-height:72px;">${escapeMapSuggestionHtml(note)}</textarea>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+                        <button type="button" onclick="closeNoTestYetDisregardModal()" style="padding:8px 14px; border-radius:6px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); cursor:pointer;">Cancel</button>
+                        <button type="button" onclick="confirmNoTestYetDisregard('${locationJs}', '${deviceJs}', ${targetYear})" style="padding:8px 14px; border-radius:6px; border:1px solid #c0392b; background:#c0392b; color:white; font-weight:700; cursor:pointer;">${isUpdate ? 'Save Note' : 'Disregard'}</button>
+                    </div>
+                </div>
+            `;
+            modal.addEventListener('click', function(event) {
+                if (event.target === modal) closeNoTestYetDisregardModal();
+            });
+            document.body.appendChild(modal);
+            const noteEl = document.getElementById('noTestYetDisregardNote');
+            if (noteEl) {
+                noteEl.focus();
+                noteEl.setSelectionRange(noteEl.value.length, noteEl.value.length);
+            }
+        }
+
+        function confirmNoTestYetDisregard(locationKey, deviceNumber, year) {
+            const noteEl = document.getElementById('noTestYetDisregardNote');
+            const note = noteEl ? String(noteEl.value || '').trim() : '';
+            const wasDisregarded = isMapNoTestYetDisregarded(locationKey, deviceNumber, year);
+            const group = findMapNoTestYetSourceGroup(locationKey) || {};
+            setMapNoTestYetDisregard(locationKey, deviceNumber, {
+                year,
+                note,
+                address: group.address || '',
+                bin: group.bin || '',
+                disregarded: true
+            });
+            addMapActivity(wasDisregarded ? 'Updated No Test Yet disregard note' : 'Disregarded No Test Yet device', {
+                type: 'No Test Yet',
+                bin: group.bin || locationKey,
+                details: (wasDisregarded ? 'Updated note for ' : 'Disregarded ') + String(deviceNumber || '') + ' for ' + year + (note ? ' — ' + (note.length > 80 ? note.substring(0, 80) + '...' : note) : '')
+            });
+            closeNoTestYetDisregardModal();
+            showMapNotification(wasDisregarded ? 'Disregard note saved' : 'Device disregarded for No Test Yet', '#607d8b');
+            refreshMapAfterNoTestYetDisregardChange();
+        }
+
+        function undoNoTestYetDisregard(locationKey, deviceNumber, year) {
+            const keyLoc = String(locationKey || '').trim();
+            const device = String(deviceNumber || '').trim();
+            if (!clearMapNoTestYetDisregard(keyLoc, device, year)) return;
+            addMapActivity('Restored No Test Yet device', {
+                type: 'No Test Yet',
+                bin: keyLoc,
+                details: 'Removed disregard for ' + device + ' in ' + (year || new Date().getFullYear())
+            });
+            showMapNotification('Device restored to No Test Yet', MAP_NO_TEST_YET_COLOR);
+            refreshMapAfterNoTestYetDisregardChange();
+        }
+
+        function flyToNoTestYetLocation(locationKey) {
+            const key = String(locationKey || '').trim();
+            if (!key) return;
+            if (isMapBinStoreKey(key)) {
+                flyToMapBuilding(key);
+                return;
+            }
+            const location = typeof findAdditionalLocationByCompletionKey === 'function'
+                ? findAdditionalLocationByCompletionKey(key)
+                : null;
+            if (location && Number.isFinite(Number(location.latitude)) && Number.isFinite(Number(location.longitude))) {
+                flyToAdditionalLocation(Number(location.latitude), Number(location.longitude));
+                return;
+            }
+            const match = key.match(/^custom:(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/);
+            if (match) flyToAdditionalLocation(Number(match[1]), Number(match[2]));
         }
 
         function renderMapNoTestYetCountdownLine(row) {
@@ -23759,50 +24077,57 @@
 
             const windowInfo = getMapBothTestsWindow();
             const groups = getMapNoTestYetGroups();
+            const disregarded = getMapNoTestYetDisregardedDevices();
             const deviceCount = groups.reduce((sum, group) => sum + group.deviceCount, 0);
             if (countEl) countEl.textContent = String(deviceCount);
 
             const yearEndLabel = windowInfo.yearEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
             const firstTestLabel = windowInfo.lastFirstTestDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+            const disregardedNote = disregarded.length
+                ? ` ${disregarded.length} disregarded.`
+                : '';
             if (statusEl) {
                 if (deviceCount === 0) {
-                    statusEl.innerHTML = `Every loaded device has at least one ${windowInfo.year} test. Both Category and PVI still need to be <strong>91 days apart</strong> when both are required.`;
+                    statusEl.innerHTML = disregarded.length
+                        ? `No remaining devices missing a first ${windowInfo.year} test.${disregardedNote}`
+                        : `Every loaded device has at least one ${windowInfo.year} test. Both Category and PVI still need to be <strong>91 days apart</strong> when both are required.`;
                 } else if (windowInfo.canStartInTime) {
                     statusEl.innerHTML = `<strong style="color:${MAP_NO_TEST_YET_COLOR};">${deviceCount}</strong> device${deviceCount !== 1 ? 's' : ''} with no ${windowInfo.year} test yet.
                         <strong>${formatMapDaysLeftLabel(windowInfo.daysToCompleteBoth)}</strong> to complete both Category and PVI by <strong>${yearEndLabel}</strong>.
                         They must be <strong>${MAP_ANNUAL_TEST_GAP_DAYS} days apart</strong>, so the first test must be done by <strong>${firstTestLabel}</strong>
-                        (<strong>${formatMapDaysLeftLabel(windowInfo.daysToFirstTestDeadline)}</strong>).`;
+                        (<strong>${formatMapDaysLeftLabel(windowInfo.daysToFirstTestDeadline)}</strong>).${disregardedNote}`;
                 } else {
                     statusEl.innerHTML = `<strong style="color:${MAP_NO_TEST_YET_COLOR};">${deviceCount}</strong> device${deviceCount !== 1 ? 's' : ''} still have no ${windowInfo.year} test.
                         There are <strong>${formatMapDaysLeftLabel(windowInfo.daysToCompleteBoth)}</strong> until ${yearEndLabel}, which is not enough to finish both tests <strong>${MAP_ANNUAL_TEST_GAP_DAYS} days apart</strong>
-                        (first test needed by ${firstTestLabel}).`;
+                        (first test needed by ${firstTestLabel}).${disregardedNote}`;
                 }
             }
 
             if (groups.length === 0) {
                 const emptyMsg = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups
-                    ? `All loaded devices have a ${windowInfo.year} test`
+                    ? (disregarded.length ? 'No remaining devices missing a first test' : `All loaded devices have a ${windowInfo.year} test`)
                     : 'Load map buildings to see devices with no test yet';
                 listEl.innerHTML = `<div style="font-size:1em; opacity:0.6; text-align:center; padding:8px;">${emptyMsg}</div>`;
-                return;
-            }
-
+            } else {
             listEl.innerHTML = groups.map(group => {
                 const key = group.key || group.bin;
                 const bin = group.bin || '';
                 const addrEsc = String(group.address || '').replace(/"/g, '&quot;');
                 const deviceFilterText = group.devices.map(d => d.number + ' ' + d.type + ' ' + d.pending.join(' ')).join(' ');
-                const flyAction = group.source === 'additional' && Number.isFinite(Number(group.latitude)) && Number.isFinite(Number(group.longitude))
-                    ? `flyToAdditionalLocation(${Number(group.latitude)}, ${Number(group.longitude)})`
-                    : `flyToMapBuilding('${String(bin || key).replace(/'/g, "\\'")}')`;
-                const deviceRows = group.devices.map(row => `
+                const locationJs = escapeMapNoTestYetJsString(key);
+                const flyAction = `flyToNoTestYetLocation('${locationJs}')`;
+                const deviceRows = group.devices.map(row => {
+                    const numberJs = escapeMapNoTestYetJsString(row.number);
+                    return `
                     <div data-device-number="${escapeMapSuggestionHtml(row.number)}" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:5px 0;border-top:1px solid rgba(192,57,43,0.14);">
                         <span style="font-weight:700;color:var(--text-color);">${escapeMapSuggestionHtml(row.number)}</span>
                         <span style="text-align:right;font-size:0.82em;line-height:1.35;min-width:0;">
                             <span style="display:block;color:${MAP_NO_TEST_YET_COLOR};font-weight:700;">${escapeMapSuggestionHtml(row.pending.join(' + ') || 'No test')}</span>
                             <span style="display:block;color:var(--text-color);opacity:0.78;">${escapeMapSuggestionHtml(renderMapNoTestYetCountdownLine(row))}</span>
+                            <button type="button" onclick="event.stopPropagation(); showNoTestYetDisregardModal('${locationJs}', '${numberJs}', ${windowInfo.year})" title="Hide this device from No Test Yet and add a note" style="margin-top:4px; background:transparent; color:#607d8b; border:1px solid rgba(96,125,139,0.4); border-radius:3px; padding:2px 7px; cursor:pointer; font-size:0.72em; font-weight:700;">Disregard</button>
                         </span>
-                    </div>`).join('');
+                    </div>`;
+                }).join('');
                 return `
                     <div data-no-test-yet-card="1" data-bin="${escapeMapSuggestionHtml(bin || key)}" data-address="${addrEsc}" data-filter-text="${escapeMapSuggestionHtml(deviceFilterText)}" style="padding:8px; background:var(--input-bg); border:1px solid rgba(192,57,43,0.22); border-radius:6px; margin-bottom:6px; font-size:1em;">
                         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;">
@@ -23822,9 +24147,157 @@
             if (searchInput && searchInput.value.trim()) {
                 filterMcpBinRowList('noTestYetList', searchInput.value);
             }
+            }
+
+            updateMapNoTestYetShowOnMapButton();
+            updateNoTestYetDisregardedPanel();
+            if (typeof refreshMcpDetailBackTitle === 'function') refreshMcpDetailBackTitle();
         }
 
-        function showNoTestYetOnMap() {
+        function updateNoTestYetDisregardedButton() {
+            const groups = getMapNoTestYetDisregardedDevices();
+            const countEl = document.getElementById('mapNoTestYetDisregardedCount');
+            if (countEl) countEl.textContent = String(groups.length);
+            const btn = document.getElementById('mapNoTestYetDisregardedBtn');
+            const section = document.getElementById('noTestYetDisregardedSection');
+            const isOpen = !!(section && section.style.display !== 'none');
+            if (btn) {
+                if (isOpen) {
+                    btn.style.background = '#607d8b';
+                    btn.style.color = 'white';
+                    btn.style.borderColor = '#607d8b';
+                    btn.style.fontWeight = '700';
+                } else {
+                    btn.style.background = '';
+                    btn.style.color = '#607d8b';
+                    btn.style.borderColor = '';
+                    btn.style.fontWeight = '600';
+                }
+            }
+        }
+
+        function updateNoTestYetDisregardedPanel() {
+            const listEl = document.getElementById('noTestYetDisregardedList');
+            const groups = getMapNoTestYetDisregardedDevices();
+            updateNoTestYetDisregardedButton();
+            if (!listEl) return;
+            if (groups.length === 0) {
+                listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No disregarded devices</div>';
+                return;
+            }
+            const year = new Date().getFullYear();
+            listEl.innerHTML = groups.map(item => {
+                const addrEsc = String(item.address || '').replace(/"/g, '&quot;');
+                const locationJs = escapeMapNoTestYetJsString(item.locationKey);
+                const numberJs = escapeMapNoTestYetJsString(item.deviceNumber);
+                const noteHtml = item.note
+                    ? `<span style="display:block; font-size:0.8em; line-height:1.35; margin-top:3px;"><strong>Note:</strong> ${escapeMapSuggestionHtml(item.note)}</span>`
+                    : '<span style="display:block; font-size:0.8em; opacity:0.55; font-style:italic; margin-top:3px;">No note</span>';
+                const disregardedOn = item.timestamp
+                    ? new Date(item.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : '';
+                const filterTextEsc = escapeMapSuggestionHtml((item.deviceNumber || '') + ' ' + (item.note || '') + ' disregarded');
+                return `
+                    <div data-bin="${escapeMapSuggestionHtml(item.bin || item.locationKey)}" data-address="${addrEsc}" data-filter-text="${filterTextEsc}" style="padding:8px; background:var(--input-bg); border:1px solid rgba(96,125,139,0.28); border-radius:6px; margin-bottom:6px; font-size:1em;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                            <span style="min-width:0; flex:1; cursor:pointer;" title="Click to view on map" onclick="flyToNoTestYetLocation('${locationJs}')">
+                                <span style="display:flex; align-items:center; gap:4px; overflow:hidden;">
+                                    <span style="color:#607d8b; font-weight:700; flex-shrink:0;">⊘</span>
+                                    <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; text-decoration:underline dotted;">${escapeMapSuggestionHtml(item.deviceNumber)}</span>
+                                </span>
+                                <span style="display:block; font-size:0.8em; opacity:0.55; padding-left:22px;">${escapeMapSuggestionHtml(item.address || (item.bin ? ('BIN ' + item.bin) : 'Custom location'))}${item.bin ? ' · BIN ' + escapeMapSuggestionHtml(item.bin) : ''}${disregardedOn ? ' · ' + disregardedOn : ''}</span>
+                                <span style="padding-left:22px;">${noteHtml}</span>
+                            </span>
+                            <span style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                                <button type="button" onclick="event.stopPropagation(); showNoTestYetDisregardModal('${locationJs}', '${numberJs}', ${year})" style="flex-shrink:0; background:transparent; color:#1a73e8; border:1px solid rgba(26,115,232,0.35); border-radius:3px; padding:3px 8px; cursor:pointer; font-size:0.78em; font-weight:700;">Note</button>
+                                <button type="button" onclick="event.stopPropagation(); undoNoTestYetDisregard('${locationJs}', '${numberJs}', ${year})" style="flex-shrink:0; background:#ff9800; color:white; border:none; border-radius:3px; padding:3px 8px; cursor:pointer; font-size:0.78em; font-weight:700;">Undo</button>
+                            </span>
+                        </div>
+                    </div>`;
+            }).join('');
+            const searchInput = document.getElementById('noTestYetDisregardedSearchInput');
+            if (searchInput && searchInput.value.trim()) {
+                filterMcpBinRowList('noTestYetDisregardedList', searchInput.value);
+            }
+        }
+
+        function toggleNoTestYetDisregardedList() {
+            const section = document.getElementById('noTestYetDisregardedSection');
+            if (!section) return;
+            const isOpen = section.style.display !== 'none';
+            section.style.display = isOpen ? 'none' : 'block';
+            if (!isOpen) updateNoTestYetDisregardedPanel();
+            else updateNoTestYetDisregardedButton();
+        }
+
+        function isMapNoTestYetShowOnMapActive() {
+            return getSelectedMapViewFilter() === 'no-test-yet';
+        }
+
+        function updateMapNoTestYetShowOnMapButton() {
+            const btn = document.getElementById('mapNoTestYetShowOnMapBtn');
+            if (!btn) return;
+            if (isMapNoTestYetShowOnMapActive() && mapNoTestYetPreviousView) {
+                btn.textContent = 'Restore Previous View';
+                btn.style.background = '#c0392b';
+                btn.style.color = 'white';
+                btn.style.borderColor = '#c0392b';
+                btn.style.fontWeight = '700';
+            } else {
+                btn.textContent = 'Show on MAP';
+                btn.style.background = '';
+                btn.style.color = '#c0392b';
+                btn.style.borderColor = '';
+                btn.style.fontWeight = '700';
+            }
+        }
+
+        function captureMapNoTestYetPreviousView() {
+            let center = null;
+            let zoom = null;
+            if (buildingMap) {
+                try {
+                    const currentCenter = buildingMap.getCenter();
+                    center = [currentCenter.lat, currentCenter.lng];
+                    zoom = buildingMap.getZoom();
+                } catch (error) {
+                    console.warn('Could not capture previous map camera:', error);
+                }
+            }
+            return {
+                viewFilter: getSelectedMapViewFilter() || 'all',
+                monthFilters: [...activeMonthFilters],
+                mapHideScheduledMonthSelectionReady: !!mapHideScheduledMonthSelectionReady,
+                pendingMapHideScheduledMonthPrompt: !!pendingMapHideScheduledMonthPrompt,
+                center: center,
+                zoom: zoom
+            };
+        }
+
+        function restoreMapNoTestYetPreviousView(previous) {
+            const snapshot = previous || {};
+            activeMonthFilters.clear();
+            (Array.isArray(snapshot.monthFilters) ? snapshot.monthFilters : []).forEach(month => {
+                activeMonthFilters.add(month);
+            });
+            mapHideScheduledMonthSelectionReady = !!snapshot.mapHideScheduledMonthSelectionReady;
+            pendingMapHideScheduledMonthPrompt = !!snapshot.pendingMapHideScheduledMonthPrompt;
+            updateMonthFilterButtons();
+
+            let restoreFilter = snapshot.viewFilter || 'all';
+            if (restoreFilter === 'no-test-yet') restoreFilter = 'all';
+            setSelectedMapViewFilter(restoreFilter, { applyOptions: { fitMap: false, quiet: true } });
+
+            if (buildingMap && Array.isArray(snapshot.center) && snapshot.center.length === 2 && snapshot.zoom != null) {
+                try {
+                    buildingMap.setView(snapshot.center, snapshot.zoom);
+                } catch (error) {
+                    console.warn('Could not restore previous map camera:', error);
+                }
+            }
+        }
+
+        function toggleNoTestYetShowOnMap() {
             const groups = getMapNoTestYetGroups();
             const deviceCount = groups.reduce((sum, group) => sum + group.deviceCount, 0);
             if (deviceCount === 0) {
@@ -23835,13 +24308,124 @@
                 showMapNotification('Open the map first, then try Show on MAP', '#ff6b6b');
                 return;
             }
-            const select = document.getElementById('mapViewFilterSelect');
-            if (select) select.value = 'no-test-yet';
-            applyMapViewDropdownFilter({ fitMap: true });
+
+            if (isMapNoTestYetShowOnMapActive()) {
+                const previous = mapNoTestYetPreviousView;
+                mapNoTestYetPreviousView = null;
+                if (previous) {
+                    restoreMapNoTestYetPreviousView(previous);
+                    showMapNotification('Restored previous map view', '#17a2b8');
+                } else {
+                    setSelectedMapViewFilter('all', { applyOptions: { fitMap: false, quiet: true } });
+                    showMapNotification('Cleared No Test Yet map filter', '#17a2b8');
+                }
+                updateMapNoTestYetShowOnMapButton();
+                return;
+            }
+
+            mapNoTestYetPreviousView = captureMapNoTestYetPreviousView();
+            setSelectedMapViewFilter('no-test-yet', { applyOptions: { fitMap: true } });
+            updateMapNoTestYetShowOnMapButton();
             showMapNotification(
                 `${deviceCount} device${deviceCount !== 1 ? 's' : ''} with no test yet across ${groups.length} location${groups.length !== 1 ? 's' : ''}`,
                 MAP_NO_TEST_YET_COLOR
             );
+        }
+
+        function showNoTestYetOnMap() {
+            toggleNoTestYetShowOnMap();
+        }
+
+        function getNoTestYetDevicesByBuilding(options) {
+            const opts = options || {};
+            const groups = getMapNoTestYetGroups();
+            let selected = groups;
+            if (opts.visibleOnly) {
+                const listEl = document.getElementById('noTestYetList');
+                if (listEl) {
+                    const visibleKeys = new Set();
+                    listEl.querySelectorAll(':scope > div[data-bin]').forEach(el => {
+                        if (el.style.display !== 'none') visibleKeys.add(String(el.getAttribute('data-bin')));
+                    });
+                    selected = groups.filter(item => visibleKeys.has(String(item.bin || item.key)));
+                }
+            }
+            return selected.map(item => ({
+                bin: item.bin || '',
+                address: item.address || (item.bin ? ('BIN ' + item.bin) : 'Custom location'),
+                devices: (Array.isArray(item.devices) ? item.devices : [])
+                    .map(device => ({
+                        number: String(device.number || '').trim(),
+                        type: String(device.type || '').trim()
+                    }))
+                    .filter(device => device.number)
+            }));
+        }
+
+        function formatNoTestYetDeviceCopyText(groups) {
+            const rows = ['Device\tBuilding\tBIN'];
+            (groups || []).forEach(group => {
+                const address = group.address || (group.bin ? ('BIN ' + group.bin) : 'Custom location');
+                const bin = String(group.bin || '');
+                const devices = Array.isArray(group.devices) ? group.devices : [];
+                devices.forEach(device => {
+                    const number = typeof device === 'string' ? device : (device && device.number);
+                    if (!number) return;
+                    rows.push([number, address, bin].join('\t'));
+                });
+            });
+            return rows.length > 1 ? rows.join('\n') : '';
+        }
+
+        async function copyNoTestYetDevices(event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            const searchInput = document.getElementById('noTestYetSearchInput');
+            const visibleOnly = !!(searchInput && searchInput.value.trim());
+            const groups = getNoTestYetDevicesByBuilding({ visibleOnly: visibleOnly });
+            const deviceCount = groups.reduce((sum, group) => sum + ((group.devices && group.devices.length) || 0), 0);
+            const text = formatNoTestYetDeviceCopyText(groups);
+            if (!text || deviceCount === 0) {
+                showMapNotification('No devices to copy', '#ff6b6b');
+                return;
+            }
+            try {
+                try {
+                    await navigator.clipboard.writeText(text);
+                } catch (clipboardErr) {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                }
+                const btn = document.getElementById('mapNoTestYetCopyDevicesBtn');
+                if (btn) {
+                    const originalText = btn.textContent;
+                    btn.textContent = 'Copied ' + deviceCount + ' Device' + (deviceCount !== 1 ? 's' : '') + '!';
+                    btn.style.background = '#4CAF50';
+                    btn.style.color = 'white';
+                    btn.style.borderColor = '#4CAF50';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.style.background = '';
+                        btn.style.color = '#c0392b';
+                        btn.style.borderColor = '';
+                    }, 2000);
+                }
+                showMapNotification(
+                    'Copied ' + deviceCount + ' device' + (deviceCount !== 1 ? 's' : '') + ' with building names',
+                    MAP_NO_TEST_YET_COLOR
+                );
+            } catch (err) {
+                console.error('Failed to copy No Test Yet devices:', err);
+                showMapNotification('Failed to copy devices', '#ff6b6b');
+            }
         }
 
         function updateNoTestByJunePanel() {
@@ -25638,6 +26222,7 @@
             reapplyBinSidebarSearch('notesSearchInput', 'notesBuildingsList');
             reapplyBinSidebarSearch('deadlinesSearchInput', 'deadlinesBuildingsList');
             reapplyBinSidebarSearch('noTestYetSearchInput', 'noTestYetList');
+            reapplyBinSidebarSearch('noTestYetDisregardedSearchInput', 'noTestYetDisregardedList');
             var housesInp = document.getElementById('housesLocationsSearchInput');
             if (housesInp && housesInp.value.trim()) {
                 filterHousesLocationsList(housesInp.value);

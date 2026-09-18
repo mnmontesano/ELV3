@@ -48,6 +48,11 @@ assert.equal(context.formatMapDaysLeftLabel(-3), '3 days past');
 
 const htmlHasSection = html.includes('id="mcpNoTestYet"') && html.includes('No Test Yet');
 assert.ok(htmlHasSection, 'Settings must include the No Test Yet section');
+assert.match(html, /toggleNoTestYetShowOnMap/);
+assert.match(html, /copyNoTestYetDevices/);
+assert.match(html, /showNoTestYetDisregardModal/);
+assert.match(html, /id="mapNoTestYetCopyDevicesBtn"/);
+assert.match(html, /id="noTestYetDisregardedList"/);
 assert.match(html, /openMapNoTestYetSection/);
 assert.match(html, /renderMapNoTestYetPopupSection/);
 assert.match(html, /data-no-test-yet-card/);
@@ -107,5 +112,57 @@ assert.match(popupHtml, /View in No Test Yet/);
 assert.match(popupHtml, /1P1234/);
 assert.match(popupHtml, /PVI \+ CAT 1/);
 assert.doesNotMatch(popupHtml, /123 Main St/);
+
+const copyStart = html.indexOf('        function formatNoTestYetDeviceCopyText(groups) {');
+assert.ok(copyStart >= 0, 'formatNoTestYetDeviceCopyText must exist');
+const copyEnd = html.indexOf('        async function copyNoTestYetDevices(event) {', copyStart);
+assert.ok(copyEnd > copyStart, 'copyNoTestYetDevices must follow the copy formatter');
+const copyContext = vm.createContext({});
+vm.runInContext(html.slice(copyStart, copyEnd) + '\nthis.formatNoTestYetDeviceCopyText = formatNoTestYetDeviceCopyText;\n', copyContext);
+assert.equal(copyContext.formatNoTestYetDeviceCopyText([
+    { address: '123 MAIN STREET', bin: '1000001', devices: [{ number: '1P11111' }, { number: '1P22222' }] },
+    { address: '456 OTHER AVENUE', bin: '1000002', devices: [{ number: '2P33333' }] }
+]), [
+    'Device\tBuilding\tBIN',
+    '1P11111\t123 MAIN STREET\t1000001',
+    '1P22222\t123 MAIN STREET\t1000001',
+    '2P33333\t456 OTHER AVENUE\t1000002'
+].join('\n'));
+
+const helperStart = html.indexOf('        function isMapBinStoreKey(key) {');
+const helperEnd = html.indexOf('        function getAdditionalLocationCompletionKey(location) {', helperStart);
+const parseStart = html.indexOf('        function parseMapNoTestYetDisregardKey(key) {');
+const parseEnd = html.indexOf('        function normalizeImportedMapView(rawData) {', parseStart);
+assert.ok(helperStart >= 0 && helperEnd > helperStart, 'BIN store key helpers must exist');
+assert.ok(parseStart >= 0 && parseEnd > parseStart, 'No Test Yet disregard import helpers must exist');
+const parseContext = vm.createContext({});
+vm.runInContext(
+    html.slice(helperStart, helperEnd) + html.slice(parseStart, parseEnd) + `
+this.parseMapNoTestYetDisregardKey = parseMapNoTestYetDisregardKey;
+this.normalizeImportedNoTestYetDisregarded = normalizeImportedNoTestYetDisregarded;
+`,
+    parseContext
+);
+const year = 2026;
+const imported = parseContext.normalizeImportedNoTestYetDisregarded({
+    [`1000001::1P11111::${year}`]: {
+        disregarded: true,
+        note: 'Owner confirmed test was filed',
+        timestamp: 1700000000000,
+        locationKey: '1000001',
+        deviceNumber: '1p11111',
+        year,
+        bin: '1000001',
+        address: '123 MAIN STREET'
+    }
+});
+assert.equal(imported[`1000001::1P11111::${year}`].note, 'Owner confirmed test was filed');
+assert.equal(imported[`1000001::1P11111::${year}`].deviceNumber, '1P11111');
+const parsedCustom = parseContext.parseMapNoTestYetDisregardKey(`custom:40.758000,-73.985500::2P33333::${year}`);
+assert.equal(parsedCustom.locationKey, 'custom:40.758000,-73.985500');
+assert.equal(parsedCustom.deviceNumber, '2P33333');
+assert.equal(parsedCustom.year, year);
+assert.equal(Object.keys(parseContext.normalizeImportedNoTestYetDisregarded(undefined)).length, 0);
+assert.equal(Object.keys(parseContext.normalizeImportedNoTestYetDisregarded(null)).length, 0);
 
 console.log('MAP No Test Yet countdown uses a 91-day Category/PVI window before year-end.');
