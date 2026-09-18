@@ -1186,6 +1186,7 @@
                             #mapControlsPanelBody.mcp-detail-mode #category5BypassedList,
                             #mapControlsPanelBody.mcp-detail-mode #immediateAttentionList,
                             #mapControlsPanelBody.mcp-detail-mode #noTestByJuneList,
+                            #mapControlsPanelBody.mcp-detail-mode #noTestYetList,
                             #mapControlsPanelBody.mcp-detail-mode #testDatesPanelList { max-height: min(68vh, 620px) !important; }
                             #favoritesBuildingsList,
                             #monitoredBuildingsList,
@@ -1202,6 +1203,7 @@
                             #mapActivityLogList,
                             #immediateAttentionList,
                             #noTestByJuneList,
+                            #noTestYetList,
                             #testDatesPanelList { max-height: min(52vh, 460px) !important; }
                             /* Popped-out panel: lift list height caps so content fills available space */
                             #mapControlsPanel.mcp-popped-out #favoritesBuildingsList,
@@ -1219,7 +1221,12 @@
                             #mapControlsPanel.mcp-popped-out #mapActivityLogList,
                             #mapControlsPanel.mcp-popped-out #immediateAttentionList,
                             #mapControlsPanel.mcp-popped-out #noTestByJuneList,
+                            #mapControlsPanel.mcp-popped-out #noTestYetList,
                             #mapControlsPanel.mcp-popped-out #testDatesPanelList { max-height: none !important; }
+                            #noTestYetList .no-test-yet-linked {
+                                box-shadow: 0 0 0 2px #c0392b;
+                                background: rgba(192,57,43,0.16) !important;
+                            }
                             /* Custom resize handles (floating mode only) */
                             .mcp-rh { display: none; position: absolute; z-index: 10; }
                             #mapControlsPanel.mcp-popped-out .mcp-rh { display: block; }
@@ -1392,6 +1399,26 @@
                             </div>
                         </div>
 
+                        <!-- No Test Yet -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpNoTestYet'); updateNoTestYetPanel();">
+                                <span class="mcp-title"><span style="color:#c0392b;">🚫</span> No Test Yet - <span id="mapNoTestYetCount">0</span></span>
+                                <span class="mcp-arrow" id="mcpNoTestYetArrow">›</span>
+                            </div>
+                            <div class="mcp-body" id="mcpNoTestYet">
+                                <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">
+                                    Devices with no Category or PVI test filed yet this calendar year. Both tests still need to be completed, and they must be <strong>91 days apart</strong>. The countdown is days left to finish both before December 31 — start the first test in time to leave 91 days for the second.
+                                </p>
+                                <div id="noTestYetStatus" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(192,57,43,0.28); background:rgba(192,57,43,0.08); color:var(--text-color); font-size:0.9em; line-height:1.45;"></div>
+                                <input type="text" id="noTestYetSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or device..."
+                                       oninput="filterMcpBinRowList('noTestYetList', this.value)">
+                                <div id="noTestYetList" style="max-height: 320px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No devices are missing a first test</div>
+                                </div>
+                                <button id="mapNoTestYetShowOnMapBtn" onclick="showNoTestYetOnMap()" class="mcp-btn" style="color:#c0392b; font-weight:700;">Show on MAP</button>
+                            </div>
+                        </div>
+
                         <!-- No Test by June -->
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpNoTestByJune'); updateNoTestByJunePanel();">
@@ -1525,7 +1552,7 @@
                                 <span class="mcp-arrow" id="mcpAdditionalArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpAdditional">
-                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> and <strong>Transportation</strong> sections to manage tagged pins. Click ✓ on a pin to mark it completed. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
+                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> and <strong>Transportation</strong> sections to manage tagged pins. Click ✓ on a pin to mark it completed — choose Category, PVI, or both. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
                                 <input type="text" id="additionalLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
                                        oninput="filterAdditionalLocationsList(this.value)">
                                 <div id="additionalLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
@@ -1663,11 +1690,12 @@
                                     <li>Completion markers: green check = fully completed; PVI-only / Category-only use normal ready/not-ready colors and device counts</li>
                                     <li>Fully completed = PVI and Category both have a date (manual entry or DOB Info Update)</li>
                                     <li>Map view filter: Hide Category Completed leaves PVI-only jobs visible; Hide PVI Completed leaves Category-only jobs visible. Fully completed jobs are hidden by both.</li>
+                                    <li>No Test Yet lists devices with no Category or PVI this year and counts down days left to finish both tests 91 days apart</li>
                                     <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
-                                    <li>Custom location pins have a ✓ completed button, matching building markers</li>
+                                    <li>Custom location pins have a ✓ completed button, matching building markers. Choose Category, PVI, or both when marking complete</li>
                                     <li><strong>Save your work</strong> — data is not kept between sessions</li>
                                 </ul>
                             </div>
@@ -1693,6 +1721,7 @@
                                     <option value="in-process">In Process</option>
                                     <option value="hold">On Hold</option>
                                     <option value="immediate-attention" disabled hidden>Immediate Attention</option>
+                                    <option value="no-test-yet">No Test Yet</option>
                                     <option value="no-test-by-june">No Test by June</option>
                                     <option value="scheduled">Scheduled Test Dates</option>
                                     <option value="scheduled-cat">CAT Scheduled Jobs</option>
@@ -13231,9 +13260,9 @@
             const monthOptions = [{ value: '', label: 'No month' }].concat(ALL_MONTHS.map(month => ({ value: month, label: month })));
             const completionOptions = [
                 { value: '', label: 'Not Completed' },
-                { value: 'Category', label: 'Category completed' },
-                { value: 'PVI', label: 'PVI completed' },
-                { value: 'Full', label: 'Full (existing/DOB)', disabled: true },
+                { value: 'Category', label: 'Category completed only' },
+                { value: 'PVI', label: 'PVI completed only' },
+                { value: 'Full', label: 'PVI and Category completed' },
                 { value: 'Legacy', label: 'Legacy (existing)', disabled: true }
             ];
             const deviceDateColumns = {
@@ -13341,9 +13370,9 @@
                             parse: (rawValue, row) => {
                                 const value = normalizeMapCompletedTestType(rawValue);
                                 if (!String(rawValue || '').trim()) return { valid: true, value: '' };
-                                if (value === 'Category' || value === 'PVI') return { valid: true, value };
+                                if (value === 'Category' || value === 'PVI' || value === 'Full') return { valid: true, value };
                                 if (value && value === row.values.completionType) return { valid: true, value };
-                                return { valid: false, message: 'Choose Category or PVI for a manual completion.' };
+                                return { valid: false, message: 'Choose Category, PVI, or both for a manual completion.' };
                             }
                         }),
                         planningColumn('completion_date', 'Completion Date', 'completionDate', { parse: parseMapTableSingleDateInput }),
@@ -14561,6 +14590,7 @@
                 'in-process': 'In Process',
                 hold: 'On Hold',
                 'immediate-attention': 'Immediate Attention',
+                'no-test-yet': 'No Test Yet',
                 'no-test-by-june': 'No Test by June',
                 scheduled: 'Scheduled Test Dates',
                 'scheduled-cat': 'CAT Scheduled Jobs',
@@ -14813,6 +14843,14 @@
                     .filter(item => !item.viewLevel)
                     .map(item => String(item.bin)));
             }
+            if (filterValue === 'no-test-yet') {
+                const keys = new Set();
+                getMapNoTestYetGroups(new Date(), view).forEach(group => {
+                    if (group.bin) keys.add(String(group.bin));
+                    if (group.key) keys.add(String(group.key));
+                });
+                return keys;
+            }
             if (filterValue === 'no-test-by-june') {
                 return new Set(getMapNoTestByJuneBuildings(new Date(), view).map(item => String(item.bin)));
             }
@@ -15039,6 +15077,20 @@
                 const location = additionalLocations[index];
                 if (shouldHideCompletedAdditionalLocation(location)) {
                     if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
+                    return;
+                }
+                if (filterValue === 'no-test-yet') {
+                    const key = getAdditionalLocationCompletionKey(location);
+                    const bin = location && location.bin ? String(location.bin) : '';
+                    const match = (bin && bins.has(bin)) || (key && bins.has(key));
+                    if (match) {
+                        if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                        bounds.extend(marker.getLatLng());
+                        if (viewport.contains(marker.getLatLng())) shownInViewport = true;
+                        shown++;
+                    } else if (buildingMap.hasLayer(marker)) {
+                        buildingMap.removeLayer(marker);
+                    }
                     return;
                 }
                 // Tagged custom pins and right-clicked pins stay visible under map view filters
@@ -16446,8 +16498,14 @@
                     listEl.innerHTML = regularLocations.map(({ loc, index }) => {
                         const hasBin = loc.bin ? true : false;
                         const locCompleted = isAdditionalLocationCompleted(loc);
+                        const locCompletedEntry = locCompleted
+                            ? (getMapCompleted()[getAdditionalLocationCompletionKey(loc)] || {})
+                            : {};
                         const locCompletionColor = locCompleted
-                            ? getMapCompletionColor((getMapCompleted()[getAdditionalLocationCompletionKey(loc)] || {}).completionType)
+                            ? getMapCompletionColor(locCompletedEntry.completionType || locCompletedEntry.testType)
+                            : '';
+                        const locCompletedLabel = locCompleted
+                            ? getMapCompletedTestLabel(locCompletedEntry.completionType || locCompletedEntry.testType)
                             : '';
                         const addrEsc = (loc.label || '').replace(/"/g, '&quot;');
                         const customEsc = (loc.customName || '').replace(/"/g, '&quot;');
@@ -16474,7 +16532,7 @@
                                     ${loc.customName ? `<div style="font-size: 0.88em; font-weight: 700; color: #e64a19; margin-bottom: 1px; word-break: break-word; text-decoration: underline dotted;">🏷️ ${loc.customName}</div>` : ''}
                                     <div style="font-size: 0.88em; font-weight: 600; color: var(--text-color); margin-bottom: 2px; word-break: break-word; text-decoration: underline dotted;">${loc.label}</div>
                                     <div style="opacity: 0.55; font-size: 0.8em;">${hasBin ? 'BIN ' + loc.bin + ' · ' : ''}${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}</div>
-                                    ${locCompleted ? `<div style="margin-top:4px; font-size:0.78em; font-weight:700; color:${locCompletionColor};">✓ Completed</div>` : ''}
+                                    ${locCompleted ? `<div style="margin-top:4px; font-size:0.78em; font-weight:700; color:${locCompletionColor};">${locCompletedLabel}</div>` : ''}
                                 </div>
                                 <button onclick="removeAdditionalLocation(${index})"
                                         title="Remove location"
@@ -17686,6 +17744,7 @@
         }
 
         const MAP_COMPLETED_TEST_OPTIONS = [
+            { value: 'Full', label: 'PVI and Category completed' },
             { value: 'Category', label: 'Category completed only' },
             { value: 'PVI', label: 'PVI completed only' }
         ];
@@ -17693,9 +17752,11 @@
         function normalizeMapCompletedTestType(value) {
             const text = String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
             if (text === 'FULL' || text === 'FULLY COMPLETED' || text === 'ALL TEST COMPLETED' || text === 'ALL TESTS COMPLETED') return 'Full';
+            if (text === 'PVI AND CATEGORY' || text === 'PVI AND CATEGORY COMPLETED' || text === 'CATEGORY AND PVI' || text === 'CATEGORY AND PVI COMPLETED') return 'Full';
+            if (text === 'BOTH' || text === 'BOTH COMPLETED' || text === 'CAT AND PVI' || text === 'CAT AND PVI COMPLETED') return 'Full';
             if (text === 'LEGACY' || text === 'UNSPECIFIED' || text === 'NOT SPECIFIED') return 'Legacy';
-            if (text === 'PVI') return 'PVI';
-            if (text === 'CATEGORY' || text === 'CATEGORY ONLY' || text === 'CAT1' || text === 'CAT 1' || text === 'CAT5' || text === 'CAT 5') return 'Category';
+            if (text === 'PVI' || text === 'PVI COMPLETED ONLY' || text === 'PVI COMPLETED') return 'PVI';
+            if (text === 'CATEGORY' || text === 'CATEGORY ONLY' || text === 'CATEGORY COMPLETED ONLY' || text === 'CATEGORY COMPLETED' || text === 'CAT1' || text === 'CAT 1' || text === 'CAT5' || text === 'CAT 5') return 'Category';
             if (text === 'CAT 1 + CAT 5' || text === 'CAT1 + CAT5' || text === 'CAT 1/CAT 5' || text === 'CAT1/CAT5') return 'Category';
             return '';
         }
@@ -17784,9 +17845,7 @@
         function renderMapCompletedTestOptions(selectedValue) {
             const selected = normalizeMapCompletedTestType(selectedValue);
             const hasSelectableValue = MAP_COMPLETED_TEST_OPTIONS.some(option => option.value === selected);
-            const placeholder = selected === 'Full'
-                ? 'PVI + Category already recorded'
-                : 'Select PVI or Category...';
+            const placeholder = 'Select Category, PVI, or both...';
             return `<option value="" ${hasSelectableValue ? '' : 'selected'} disabled>${placeholder}</option>` + MAP_COMPLETED_TEST_OPTIONS.map(option => {
                 return `<option value="${option.value}" ${selected === option.value ? 'selected' : ''}>${option.label}</option>`;
             }).join('');
@@ -23187,6 +23246,345 @@
                 });
         }
 
+        // MAP annual Category + PVI window (91-day gap before year-end)
+        const MAP_ANNUAL_TEST_GAP_DAYS = 91;
+        const MAP_NO_TEST_YET_COLOR = '#c0392b';
+
+        function startOfMapLocalDay(value) {
+            const timestamp = value && typeof value.getTime === 'function' ? value.getTime() : NaN;
+            const date = Number.isFinite(timestamp) ? new Date(timestamp) : new Date();
+            date.setHours(0, 0, 0, 0);
+            return date;
+        }
+
+        function mapDiffLocalDays(fromDate, toDate) {
+            const from = startOfMapLocalDay(fromDate);
+            const to = startOfMapLocalDay(toDate);
+            return Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+        }
+
+        function getMapBothTestsWindow(referenceDate) {
+            const today = startOfMapLocalDay(referenceDate);
+            const year = today.getFullYear();
+            const yearEnd = new Date(year, 11, 31);
+            const lastFirstTestDate = new Date(yearEnd.getTime());
+            lastFirstTestDate.setDate(lastFirstTestDate.getDate() - MAP_ANNUAL_TEST_GAP_DAYS);
+            const daysToCompleteBoth = mapDiffLocalDays(today, yearEnd);
+            const daysToFirstTestDeadline = mapDiffLocalDays(today, lastFirstTestDate);
+            return {
+                year,
+                yearEnd,
+                lastFirstTestDate,
+                daysToCompleteBoth,
+                daysToFirstTestDeadline,
+                canStartInTime: daysToFirstTestDeadline >= 0,
+                gapDays: MAP_ANNUAL_TEST_GAP_DAYS
+            };
+        }
+
+        function formatMapDaysLeftLabel(days) {
+            const count = Number(days);
+            if (!Number.isFinite(count)) return '';
+            if (count > 1) return count + ' days left';
+            if (count === 1) return '1 day left';
+            if (count === 0) return 'due today';
+            if (count === -1) return '1 day past';
+            return Math.abs(count) + ' days past';
+        }
+
+        function mapDeviceHasNoAnnualTest(testInfo) {
+            if (!testInfo || testInfo.isRemoved) return false;
+            if (!(testInfo.requiresPVI || testInfo.requiresCat1 || testInfo.requiresCat5)) return false;
+            return !(testInfo.hasPVI || testInfo.hasCat1 || testInfo.hasCat5);
+        }
+
+        function getMapNoTestYetDeviceRows(bin, devices, year) {
+            const targetYear = Number(year) || new Date().getFullYear();
+            const windowInfo = getMapBothTestsWindow(new Date());
+            return (Array.isArray(devices) ? devices : []).map(device => {
+                const info = getMapDeviceReportTestInfo(device || {}, targetYear, bin);
+                if (!mapDeviceHasNoAnnualTest(info)) return null;
+                const pending = [];
+                if (info.requiresPVI) pending.push('PVI');
+                if (info.requiresCat1) pending.push('CAT 1');
+                if (info.requiresCat5) pending.push('CAT 5');
+                return {
+                    number: device.device_number || 'N/A',
+                    type: device.device_type || 'Unknown',
+                    pending,
+                    needsBoth: !!(info.requiresPVI && info.requiresCat1),
+                    daysToCompleteBoth: windowInfo.daysToCompleteBoth,
+                    daysToFirstTestDeadline: windowInfo.daysToFirstTestDeadline,
+                    canStartInTime: windowInfo.canStartInTime,
+                    lastFirstTestDate: windowInfo.lastFirstTestDate,
+                    yearEnd: windowInfo.yearEnd
+                };
+            }).filter(Boolean).sort((a, b) => String(a.number).localeCompare(String(b.number), undefined, { numeric: true, sensitivity: 'base' }));
+        }
+
+        function collectMapNoTestYetSourceGroups(sourceView) {
+            const view = sourceView || null;
+            const binGroups = (view && view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups)
+                || (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups)
+                || {};
+            const groups = [];
+            const seenBins = new Set();
+            Object.entries(binGroups).forEach(([bin, group]) => {
+                const key = String(bin);
+                seenBins.add(key);
+                groups.push({
+                    key,
+                    bin: key,
+                    address: (group && group.address) || '',
+                    devices: Array.isArray(group && group.devices) ? group.devices : [],
+                    source: 'building'
+                });
+            });
+            const additionalLocations = view && Array.isArray(view.additionalLocations)
+                ? view.additionalLocations
+                : getAdditionalLocations();
+            (additionalLocations || []).forEach(location => {
+                const bin = location && location.bin && isMapBinStoreKey(location.bin) ? String(location.bin) : '';
+                if (bin && seenBins.has(bin)) return;
+                const devices = Array.isArray(location && location.devices) ? location.devices : [];
+                if (!devices.length) return;
+                groups.push({
+                    key: getAdditionalLocationCompletionKey(location),
+                    bin,
+                    address: getAdditionalLocationLabel(location),
+                    devices,
+                    source: 'additional',
+                    latitude: location.latitude,
+                    longitude: location.longitude
+                });
+            });
+            return groups;
+        }
+
+        function getMapNoTestYetGroups(referenceDate, sourceView) {
+            const today = startOfMapLocalDay(referenceDate);
+            const year = today.getFullYear();
+            const windowInfo = getMapBothTestsWindow(today);
+            return collectMapNoTestYetSourceGroups(sourceView).map(group => {
+                const devices = getMapNoTestYetDeviceRows(group.bin || group.key, group.devices, year);
+                if (!devices.length) return null;
+                return {
+                    ...group,
+                    devices,
+                    deviceCount: devices.length,
+                    needsBothCount: devices.filter(device => device.needsBoth).length,
+                    windowInfo
+                };
+            }).filter(Boolean).sort((a, b) => {
+                if (a.needsBothCount !== b.needsBothCount) return b.needsBothCount - a.needsBothCount;
+                return String(a.address || a.bin || a.key).localeCompare(String(b.address || b.bin || b.key), undefined, { sensitivity: 'base' });
+            });
+        }
+
+        function renderMapNoTestYetCountdownLine(row) {
+            if (row.needsBoth) {
+                if (row.canStartInTime) {
+                    return formatMapDaysLeftLabel(row.daysToCompleteBoth) + ' to finish both · first test ' + formatMapDaysLeftLabel(row.daysToFirstTestDeadline);
+                }
+                return 'Too late to finish both this year with a 91-day gap';
+            }
+            const pendingLabel = row.pending.length ? row.pending.join(' + ') : 'required test';
+            return formatMapDaysLeftLabel(row.daysToCompleteBoth) + ' to complete ' + pendingLabel;
+        }
+
+        function escapeMapNoTestYetJsString(value) {
+            return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+
+        function renderMapNoTestYetPopupSection(rows, options) {
+            const list = Array.isArray(rows) ? rows : [];
+            if (!list.length) return '';
+            const opts = options || {};
+            const bin = String(opts.bin || '');
+            const address = String(opts.address || '');
+            const binJs = escapeMapNoTestYetJsString(bin);
+            const filterJs = escapeMapNoTestYetJsString(bin || address);
+            const windowInfo = getMapBothTestsWindow();
+            const yearEndLabel = windowInfo.yearEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+            const firstTestLabel = windowInfo.lastFirstTestDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+            const summary = windowInfo.canStartInTime
+                ? (formatMapDaysLeftLabel(windowInfo.daysToCompleteBoth) + ' to finish both by ' + yearEndLabel + '. First test by ' + firstTestLabel + '.')
+                : ('91-day gap no longer fits before ' + yearEndLabel + '.');
+            const deviceRows = list.slice(0, 8).map(row => {
+                const numberJs = escapeMapNoTestYetJsString(row.number);
+                return `
+                <div onclick="openMapNoTestYetSection('${binJs}', '${filterJs}', '${numberJs}')"
+                     title="View this device in No Test Yet"
+                     style="font-size:11px; padding:4px 0; display:flex; justify-content:space-between; gap:8px; border-bottom:1px solid rgba(192,57,43,0.12); cursor:pointer;">
+                    <span style="font-weight:700; flex-shrink:0;">${escapeMapSuggestionHtml(row.number)}</span>
+                    <span style="text-align:right; line-height:1.3;">
+                        <span style="display:block; color:${MAP_NO_TEST_YET_COLOR}; font-weight:700;">${escapeMapSuggestionHtml(row.pending.join(' + ') || 'No test')}</span>
+                        <span style="display:block; font-size:10px; opacity:0.8;">${escapeMapSuggestionHtml(renderMapNoTestYetCountdownLine(row))}</span>
+                    </span>
+                </div>`;
+            }).join('');
+            const more = list.length > 8
+                ? `<div style="font-size:10px; opacity:0.65; margin-top:4px; text-align:center;">+${list.length - 8} more in Settings</div>`
+                : '';
+            return `
+                <div class="map-no-test-yet-popup" style="margin:10px 0; background:rgba(192,57,43,0.08); border:1px solid rgba(192,57,43,0.3); border-radius:6px; overflow:hidden;">
+                    <div onclick="openMapNoTestYetSection('${binJs}', '${filterJs}')"
+                         style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 10px; cursor:pointer;">
+                        <span style="font-size:12px; color:${MAP_NO_TEST_YET_COLOR}; font-weight:700;">🚫 No test yet (${list.length})</span>
+                        <span style="font-size:10px; color:${MAP_NO_TEST_YET_COLOR}; font-weight:700;">View in No Test Yet ›</span>
+                    </div>
+                    <div style="padding:0 10px 10px 10px;">
+                        <div style="font-size:10px; line-height:1.4; opacity:0.82; margin-bottom:6px;">${escapeMapSuggestionHtml(summary)} Category and PVI must be 91 days apart.</div>
+                        ${deviceRows}
+                        ${more}
+                        <button type="button" onclick="openMapNoTestYetSection('${binJs}', '${filterJs}')"
+                                style="width:100%; margin-top:8px; padding:6px 8px; background:rgba(192,57,43,0.12); color:${MAP_NO_TEST_YET_COLOR}; border:1px solid rgba(192,57,43,0.35); border-radius:5px; cursor:pointer; font-size:11px; font-weight:700;">
+                            View in No Test Yet
+                        </button>
+                    </div>
+                </div>`;
+        }
+
+        function showMapControlsPanel() {
+            const panel = document.getElementById('mapControlsPanel');
+            if (!panel) return;
+            if (panel.style.display === 'none') {
+                panel.style.display = 'flex';
+                if (!mapControlsPanelIsPopped && typeof setDockedMapControlsToDefaultWidth === 'function') {
+                    setDockedMapControlsToDefaultWidth(panel);
+                }
+                if (buildingMap && !mapControlsPanelIsPopped && typeof requestMapResizeAfterControlsChange === 'function') {
+                    setTimeout(requestMapResizeAfterControlsChange, 100);
+                }
+            }
+        }
+
+        function openMapNoTestYetSection(bin, filterText, deviceNumber) {
+            showMapControlsPanel();
+            openMcpSection('mcpNoTestYet');
+            const search = document.getElementById('noTestYetSearchInput');
+            const key = String(bin || '').trim();
+            const query = key || String(filterText || '').trim();
+            if (search) {
+                search.value = query;
+                filterMcpBinRowList('noTestYetList', query);
+            }
+            const list = document.getElementById('noTestYetList');
+            if (!list) return;
+            list.querySelectorAll('.no-test-yet-linked').forEach(el => el.classList.remove('no-test-yet-linked'));
+            const cards = Array.from(list.querySelectorAll(':scope > div[data-bin]'));
+            let match = key
+                ? cards.find(el => String(el.getAttribute('data-bin') || '') === key)
+                : null;
+            if (!match) {
+                match = cards.find(el => el.style.display !== 'none') || null;
+            }
+            if (!match) return;
+            match.classList.add('no-test-yet-linked');
+            match.scrollIntoView({ block: 'nearest' });
+            const deviceKey = String(deviceNumber || '').trim();
+            if (!deviceKey) return;
+            const deviceRow = Array.from(match.querySelectorAll('[data-device-number]'))
+                .find(el => String(el.getAttribute('data-device-number') || '') === deviceKey);
+            if (deviceRow) {
+                deviceRow.classList.add('no-test-yet-linked');
+                deviceRow.scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        function updateNoTestYetPanel() {
+            const listEl = document.getElementById('noTestYetList');
+            const countEl = document.getElementById('mapNoTestYetCount');
+            const statusEl = document.getElementById('noTestYetStatus');
+            if (!listEl) return;
+
+            const windowInfo = getMapBothTestsWindow();
+            const groups = getMapNoTestYetGroups();
+            const deviceCount = groups.reduce((sum, group) => sum + group.deviceCount, 0);
+            if (countEl) countEl.textContent = String(deviceCount);
+
+            const yearEndLabel = windowInfo.yearEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+            const firstTestLabel = windowInfo.lastFirstTestDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+            if (statusEl) {
+                if (deviceCount === 0) {
+                    statusEl.innerHTML = `Every loaded device has at least one ${windowInfo.year} test. Both Category and PVI still need to be <strong>91 days apart</strong> when both are required.`;
+                } else if (windowInfo.canStartInTime) {
+                    statusEl.innerHTML = `<strong style="color:${MAP_NO_TEST_YET_COLOR};">${deviceCount}</strong> device${deviceCount !== 1 ? 's' : ''} with no ${windowInfo.year} test yet.
+                        <strong>${formatMapDaysLeftLabel(windowInfo.daysToCompleteBoth)}</strong> to complete both Category and PVI by <strong>${yearEndLabel}</strong>.
+                        They must be <strong>${MAP_ANNUAL_TEST_GAP_DAYS} days apart</strong>, so the first test must be done by <strong>${firstTestLabel}</strong>
+                        (<strong>${formatMapDaysLeftLabel(windowInfo.daysToFirstTestDeadline)}</strong>).`;
+                } else {
+                    statusEl.innerHTML = `<strong style="color:${MAP_NO_TEST_YET_COLOR};">${deviceCount}</strong> device${deviceCount !== 1 ? 's' : ''} still have no ${windowInfo.year} test.
+                        There are <strong>${formatMapDaysLeftLabel(windowInfo.daysToCompleteBoth)}</strong> until ${yearEndLabel}, which is not enough to finish both tests <strong>${MAP_ANNUAL_TEST_GAP_DAYS} days apart</strong>
+                        (first test needed by ${firstTestLabel}).`;
+                }
+            }
+
+            if (groups.length === 0) {
+                const emptyMsg = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups
+                    ? `All loaded devices have a ${windowInfo.year} test`
+                    : 'Load map buildings to see devices with no test yet';
+                listEl.innerHTML = `<div style="font-size:1em; opacity:0.6; text-align:center; padding:8px;">${emptyMsg}</div>`;
+                return;
+            }
+
+            listEl.innerHTML = groups.map(group => {
+                const key = group.key || group.bin;
+                const bin = group.bin || '';
+                const addrEsc = String(group.address || '').replace(/"/g, '&quot;');
+                const deviceFilterText = group.devices.map(d => d.number + ' ' + d.type + ' ' + d.pending.join(' ')).join(' ');
+                const flyAction = group.source === 'additional' && Number.isFinite(Number(group.latitude)) && Number.isFinite(Number(group.longitude))
+                    ? `flyToAdditionalLocation(${Number(group.latitude)}, ${Number(group.longitude)})`
+                    : `flyToMapBuilding('${String(bin || key).replace(/'/g, "\\'")}')`;
+                const deviceRows = group.devices.map(row => `
+                    <div data-device-number="${escapeMapSuggestionHtml(row.number)}" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:5px 0;border-top:1px solid rgba(192,57,43,0.14);">
+                        <span style="font-weight:700;color:var(--text-color);">${escapeMapSuggestionHtml(row.number)}</span>
+                        <span style="text-align:right;font-size:0.82em;line-height:1.35;min-width:0;">
+                            <span style="display:block;color:${MAP_NO_TEST_YET_COLOR};font-weight:700;">${escapeMapSuggestionHtml(row.pending.join(' + ') || 'No test')}</span>
+                            <span style="display:block;color:var(--text-color);opacity:0.78;">${escapeMapSuggestionHtml(renderMapNoTestYetCountdownLine(row))}</span>
+                        </span>
+                    </div>`).join('');
+                return `
+                    <div data-no-test-yet-card="1" data-bin="${escapeMapSuggestionHtml(bin || key)}" data-address="${addrEsc}" data-filter-text="${escapeMapSuggestionHtml(deviceFilterText)}" style="padding:8px; background:var(--input-bg); border:1px solid rgba(192,57,43,0.22); border-radius:6px; margin-bottom:6px; font-size:1em;">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;">
+                            <span style="flex:1;min-width:0;cursor:pointer;" title="Click to view on map" onclick="${flyAction}">
+                                <span style="display:flex;align-items:center;gap:4px;overflow:hidden;">
+                                    <span style="color:${MAP_NO_TEST_YET_COLOR};font-weight:700;flex-shrink:0;">🚫</span>
+                                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;text-decoration:underline dotted;">${escapeMapSuggestionHtml(group.address || bin || 'Custom location')}</span>
+                                </span>
+                                <span style="display:block;font-size:0.8em;opacity:0.55;padding-left:22px;">${bin ? 'BIN ' + escapeMapSuggestionHtml(bin) + ' · ' : ''}${group.deviceCount} device${group.deviceCount !== 1 ? 's' : ''} with no ${windowInfo.year} test</span>
+                            </span>
+                        </div>
+                        <div style="padding-left:8px;">${deviceRows}</div>
+                    </div>`;
+            }).join('');
+
+            const searchInput = document.getElementById('noTestYetSearchInput');
+            if (searchInput && searchInput.value.trim()) {
+                filterMcpBinRowList('noTestYetList', searchInput.value);
+            }
+        }
+
+        function showNoTestYetOnMap() {
+            const groups = getMapNoTestYetGroups();
+            const deviceCount = groups.reduce((sum, group) => sum + group.deviceCount, 0);
+            if (deviceCount === 0) {
+                showMapNotification('No devices are missing a first test this year', '#27ae60');
+                return;
+            }
+            if (!buildingMap || !Array.isArray(mapMarkers)) {
+                showMapNotification('Open the map first, then try Show on MAP', '#ff6b6b');
+                return;
+            }
+            const select = document.getElementById('mapViewFilterSelect');
+            if (select) select.value = 'no-test-yet';
+            applyMapViewDropdownFilter({ fitMap: true });
+            showMapNotification(
+                `${deviceCount} device${deviceCount !== 1 ? 's' : ''} with no test yet across ${groups.length} location${groups.length !== 1 ? 's' : ''}`,
+                MAP_NO_TEST_YET_COLOR
+            );
+        }
+
         function updateNoTestByJunePanel() {
             const listEl = document.getElementById('noTestByJuneList');
             const countEl = document.getElementById('mapNoTestByJuneCount');
@@ -23642,6 +24040,9 @@
 
             if (id === 'mcpCategory5' && typeof updateMapCategory5Panel === 'function') {
                 updateMapCategory5Panel();
+            }
+            if (id === 'mcpNoTestYet' && typeof updateNoTestYetPanel === 'function') {
+                updateNoTestYetPanel();
             }
             if (id === 'mcpDateCalculator' && typeof refreshMapDateCalculatorSummary === 'function') {
                 refreshMapDateCalculatorSummary();
@@ -24693,6 +25094,7 @@
             updateTestDatesPanel();
             updateMapDeadlinesPanel();
             updateImmediateAttentionPanel();
+            updateNoTestYetPanel();
             updateNoTestByJunePanel();
 
             function reapplyBinSidebarSearch(inputId, listId) {
@@ -24709,6 +25111,7 @@
             reapplyBinSidebarSearch('completedSearchInput', 'completedBuildingsList');
             reapplyBinSidebarSearch('notesSearchInput', 'notesBuildingsList');
             reapplyBinSidebarSearch('deadlinesSearchInput', 'deadlinesBuildingsList');
+            reapplyBinSidebarSearch('noTestYetSearchInput', 'noTestYetList');
             var housesInp = document.getElementById('housesLocationsSearchInput');
             if (housesInp && housesInp.value.trim()) {
                 filterHousesLocationsList(housesInp.value);
@@ -25908,6 +26311,7 @@
                         // Devices count = active job devices only (excludes Removed/Deleted).
                         // Includes untested WIP devices even though they are omitted from Ready/Not Ready.
                         const activeDeviceCount = countMapJobDevices(group.devices);
+                        const noTestYetDevices = getMapNoTestYetDeviceRows(bin, group.devices, currentYear);
                         
                         buildingsWithCoords.push({
                             bin,
@@ -25923,6 +26327,7 @@
                             notReadyDevices,
                             completedDevices,
                             removedDeletedDevices,
+                            noTestYetDevices,
                             allRequiredTestsCompletedForYear,
                             calendarYear: currentYear,
                             missedJuneTestDeadline: mapBuildingMissedJuneTestDeadline(bin, new Date(), group),
@@ -26262,6 +26667,7 @@
                             </div>
                         </div>
                         <div id="mapUntrackedDevices_${building.bin}" style="margin-bottom: 10px;"></div>
+                        ${renderMapNoTestYetPopupSection(building.noTestYetDevices || [], { bin: building.bin, address: building.address })}
                         
                         <div style="margin-bottom: 10px; padding: 8px; background: rgba(23,162,184,0.1); border-radius: 6px; border: 1px solid rgba(23,162,184,0.3);">
                             <div style="display: flex; align-items: center; gap: 8px;">
@@ -26449,6 +26855,7 @@
                 const violationDetails = [];
                 let allRequiredTestsCompletedForYear = false;
                 let calendarYear = new Date().getFullYear();
+                let noTestYetDevices = [];
                 
                 if (location.devices && location.devices.length > 0) {
                     const currentYear = new Date().getFullYear();
@@ -26549,6 +26956,11 @@
                     // Devices count = active job devices only (excludes Removed/Deleted).
                     // Includes untested WIP devices even though they are omitted from Ready/Not Ready.
                     deviceCount = countMapJobDevices(location.devices);
+                    noTestYetDevices = getMapNoTestYetDeviceRows(
+                        location.bin || getAdditionalLocationCompletionKey(location),
+                        location.devices,
+                        currentYear
+                    );
                 }
                 
                 const hasCustomName = !!(location.customName && String(location.customName).trim());
@@ -26770,6 +27182,7 @@
                                 <strong>Devices:</strong> ${deviceCount}
                             </div>
                         </div>
+                        ${renderMapNoTestYetPopupSection(noTestYetDevices, { bin: location.bin || getAdditionalLocationCompletionKey(location), address: location.customName || location.label || '' })}
                         
                         ${location.bin ? `
                         <div style="margin-bottom: 10px; padding: 8px; background: rgba(23,162,184,0.1); border-radius: 6px; border: 1px solid rgba(23,162,184,0.3);">
