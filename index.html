@@ -1027,6 +1027,10 @@
                     <div id="mapModalTitleBar" class="map-modal-title-bar">
                         <h3 class="map-modal-heading">📍 Building Locations</h3>
                         <div class="map-modal-window-controls">
+                            <button id="mapOpenTerminalBtn" type="button" onclick="popoutVerticalTerminal()" title="Open Vertical Terminal in a separate window" aria-label="Open Vertical Terminal in a separate window" style="background: #1a73e8; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap;">
+                                <span aria-hidden="true">↗</span>
+                                <span>Terminal</span>
+                            </button>
                             <button id="mapFocusModeBtn" onclick="toggleMapFocusMode()" title="Focus Mode — hide search &amp; controls" style="background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 5px; padding: 2px 6px; cursor: pointer; color: var(--text-color); font-size: 0.82em; display: flex; align-items: center;">⊟</button>
                             <button id="mapMinimizeBtn" onclick="minimizeMap()" title="Minimize — keep map open in background" style="display: none; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 5px; padding: 2px 6px; cursor: pointer; color: var(--text-color); font-size: 0.9em; line-height: 1; align-items: center;">&#8722;</button>
                             <button id="mapFullscreenBtn" onclick="toggleMapFullscreen()" title="Toggle fullscreen" style="background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 5px; padding: 2px 6px; cursor: pointer; color: var(--text-color); font-size: 0.82em; display: flex; align-items: center;">⛶</button>
@@ -12306,6 +12310,29 @@
                 '_blank',
                 'noopener,noreferrer,width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes,location=yes'
             );
+        }
+
+        function getVerticalTerminalPopoutUrl() {
+            try {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('popout');
+                return url.toString();
+            } catch (e) {
+                return window.location.pathname || './';
+            }
+        }
+
+        function popoutVerticalTerminal() {
+            const features = 'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=yes,menubar=yes,location=yes';
+            const url = getVerticalTerminalPopoutUrl();
+            const win = window.open(url, 'verticalTerminalMain', features);
+            if (win) {
+                try { win.focus(); } catch (e) {}
+                return;
+            }
+            if (typeof showMapNotification === 'function') {
+                showMapNotification('Pop-up blocked — allow pop-ups to open Vertical Terminal', '#c77700');
+            }
         }
 
         function updateDeviceSearchButtonState(isSearching, text, progressPercent) {
