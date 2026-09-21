@@ -48,6 +48,15 @@ assert.equal(context.formatMapDaysLeftLabel(-3), '3 days past');
 
 const htmlHasSection = html.includes('id="mcpNoTestYet"') && html.includes('No Test Yet');
 assert.ok(htmlHasSection, 'Settings must include the No Test Yet section');
+const helpTag = html.indexOf('<details class="mcp-desc-collapse" id="noTestYetHelp">');
+const statusTag = html.indexOf('id="noTestYetStatus"');
+assert.ok(helpTag >= 0, 'No Test Yet help must be a collapsed details block');
+assert.ok(statusTag > helpTag, 'Red device-count status must stay visible after the short help');
+const helpBlock = html.slice(helpTag, statusTag);
+assert.doesNotMatch(helpBlock, /\sopen(?:\s|=|>)/, 'No Test Yet help starts collapsed');
+assert.match(helpBlock, /<summary>Devices with no Category or PVI test filed yet this calendar year/);
+assert.match(helpBlock, /mcp-desc-collapse-body/);
+assert.match(helpBlock, /Copy on a building copies that building's device numbers only/);
 assert.match(html, /toggleNoTestYetShowOnMap/);
 assert.match(html, /copyNoTestYetDevices/);
 assert.match(html, /showNoTestYetDisregardModal/);
@@ -120,7 +129,10 @@ assert.ok(copyStart >= 0, 'formatNoTestYetDeviceCopyText must exist');
 const copyEnd = html.indexOf('        async function copyNoTestYetDevices(event) {', copyStart);
 assert.ok(copyEnd > copyStart, 'copyNoTestYetDevices must follow the copy formatter');
 const copyContext = vm.createContext({});
-vm.runInContext(html.slice(copyStart, copyEnd) + '\nthis.formatNoTestYetDeviceCopyText = formatNoTestYetDeviceCopyText;\n', copyContext);
+vm.runInContext(html.slice(copyStart, copyEnd) + `
+this.formatNoTestYetDeviceCopyText = formatNoTestYetDeviceCopyText;
+this.copyNoTestYetDeviceGroups = copyNoTestYetDeviceGroups;
+`, copyContext);
 assert.equal(copyContext.formatNoTestYetDeviceCopyText([
     { address: '123 MAIN STREET', bin: '1000001', devices: [{ number: '1P11111' }, { number: '1P22222' }] },
     { address: '456 OTHER AVENUE', bin: '1000002', devices: [{ number: '2P33333' }] }
