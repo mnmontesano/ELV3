@@ -1417,7 +1417,7 @@
                             </div>
                             <div class="mcp-body" id="mcpNoTestYet">
                                 <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">
-                                    Devices with no Category or PVI test filed yet this calendar year. Both tests still need to be completed, and they must be <strong>91 days apart</strong>. The countdown is days left to finish both before December 31 — start the first test in time to leave 91 days for the second. Show on MAP can be clicked again to restore the previous map view. Copy on a building copies that building's devices; Copy All Devices copies every remaining device across all buildings, with building name and BIN. Disregard hides only that device from this list and the map highlight for the current year; other devices at the same building stay visible. You can add a note and undo it later.
+                                    Devices with no Category or PVI test filed yet this calendar year. Both tests still need to be completed, and they must be <strong>91 days apart</strong>. The countdown is days left to finish both before December 31 — start the first test in time to leave 91 days for the second. Show on MAP can be clicked again to restore the previous map view. Copy on a building copies that building's device numbers only; Copy All Devices copies every remaining device across all buildings, with building name and BIN. Disregard hides only that device from this list and the map highlight for the current year; other devices at the same building stay visible. You can add a note and undo it later.
                                 </p>
                                 <div id="noTestYetStatus" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(192,57,43,0.28); background:rgba(192,57,43,0.08); color:var(--text-color); font-size:0.9em; line-height:1.45;"></div>
                                 <input type="text" id="noTestYetSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or device..."
@@ -1722,7 +1722,7 @@
                                     <li>Map view filter: Hide Category Completed leaves PVI-only jobs visible; Hide PVI Completed leaves Category-only jobs visible. Fully completed jobs are hidden by both.</li>
                                     <li>No Test Yet lists devices with no Category or PVI this year and counts down days left to finish both tests 91 days apart</li>
                                     <li>Disregard in No Test Yet hides only that device from the list and map highlight; other devices at the same building stay visible</li>
-                                    <li>Copy on a No Test Yet building copies that building's devices; Copy All Devices copies every remaining device across all buildings</li>
+                                    <li>Copy on a No Test Yet building copies that building's device numbers only; Copy All Devices copies every remaining device across all buildings, with building name and BIN</li>
                                     <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
                                     <li>Disregard in No Test by June hides a building from that list and deep-red highlighting for the current year; add a note and undo later</li>
                                     <li>In-process buildings turn orange</li>
@@ -24166,7 +24166,7 @@
                         ${more}
                         <button type="button" onclick="event.stopPropagation(); copyNoTestYetDevicesForLocation('${binJs}', event)"
                                 style="width:100%; margin-top:8px; padding:6px 8px; background:rgba(192,57,43,0.12); color:${MAP_NO_TEST_YET_COLOR}; border:1px solid rgba(192,57,43,0.35); border-radius:5px; cursor:pointer; font-size:11px; font-weight:700;">
-                            Copy this building's devices
+                            Copy this building's device numbers
                         </button>
                         <button type="button" onclick="openMapNoTestYetSection('${binJs}', '${filterJs}')"
                                 style="width:100%; margin-top:6px; padding:6px 8px; background:rgba(192,57,43,0.12); color:${MAP_NO_TEST_YET_COLOR}; border:1px solid rgba(192,57,43,0.35); border-radius:5px; cursor:pointer; font-size:11px; font-weight:700;">
@@ -24292,7 +24292,7 @@
                                 </span>
                                 <span style="display:block;font-size:0.8em;opacity:0.55;padding-left:22px;">${bin ? 'BIN ' + escapeMapSuggestionHtml(bin) + ' · ' : ''}${group.deviceCount} device${group.deviceCount !== 1 ? 's' : ''} with no ${windowInfo.year} test</span>
                             </span>
-                            <button type="button" onclick="event.stopPropagation(); copyNoTestYetDevicesForLocation('${locationJs}', event)" title="Copy this building's No Test Yet devices" style="flex-shrink:0; background:transparent; color:${MAP_NO_TEST_YET_COLOR}; border:1px solid rgba(192,57,43,0.4); border-radius:3px; padding:3px 8px; cursor:pointer; font-size:0.72em; font-weight:700;">Copy</button>
+                            <button type="button" onclick="event.stopPropagation(); copyNoTestYetDevicesForLocation('${locationJs}', event)" title="Copy this building's device numbers only" style="flex-shrink:0; background:transparent; color:${MAP_NO_TEST_YET_COLOR}; border:1px solid rgba(192,57,43,0.4); border-radius:3px; padding:3px 8px; cursor:pointer; font-size:0.72em; font-weight:700;">Copy</button>
                         </div>
                         <div style="padding-left:8px;">${deviceRows}</div>
                     </div>`;
@@ -24523,8 +24523,12 @@
             }));
         }
 
-        function formatNoTestYetDeviceCopyText(groups) {
-            const rows = ['Device\tBuilding\tBIN'];
+        function formatNoTestYetDeviceCopyText(groups, options) {
+            const opts = options || {};
+            const rows = [];
+            if (!opts.devicesOnly) {
+                rows.push('Device\tBuilding\tBIN');
+            }
             (groups || []).forEach(group => {
                 const address = group.address || (group.bin ? ('BIN ' + group.bin) : 'Custom location');
                 const bin = String(group.bin || '');
@@ -24532,10 +24536,10 @@
                 devices.forEach(device => {
                     const number = typeof device === 'string' ? device : (device && device.number);
                     if (!number) return;
-                    rows.push([number, address, bin].join('\t'));
+                    rows.push(opts.devicesOnly ? String(number) : [number, address, bin].join('\t'));
                 });
             });
-            return rows.length > 1 ? rows.join('\n') : '';
+            return rows.length > (opts.devicesOnly ? 0 : 1) ? rows.join('\n') : '';
         }
 
         async function writeMapClipboardText(text) {
@@ -24574,7 +24578,7 @@
         async function copyNoTestYetDeviceGroups(groups, options) {
             const opts = options || {};
             const deviceCount = (groups || []).reduce((sum, group) => sum + ((group.devices && group.devices.length) || 0), 0);
-            const text = formatNoTestYetDeviceCopyText(groups);
+            const text = formatNoTestYetDeviceCopyText(groups, { devicesOnly: !!opts.devicesOnly });
             if (!text || deviceCount === 0) {
                 showMapNotification('No devices to copy', '#ff6b6b');
                 return 0;
@@ -24583,7 +24587,7 @@
                 await writeMapClipboardText(text);
                 flashNoTestYetCopyButton(opts.button, deviceCount);
                 showMapNotification(
-                    'Copied ' + deviceCount + ' device' + (deviceCount !== 1 ? 's' : '') + ' ' + (opts.scopeLabel || 'with building names'),
+                    'Copied ' + deviceCount + ' device' + (deviceCount !== 1 ? 's' : '') + ' ' + (opts.scopeLabel || (opts.devicesOnly ? 'from this building' : 'with building names')),
                     MAP_NO_TEST_YET_COLOR
                 );
                 return deviceCount;
@@ -24616,7 +24620,8 @@
             const address = groups[0] && groups[0].address;
             await copyNoTestYetDeviceGroups(groups, {
                 button: event && event.currentTarget ? event.currentTarget : null,
-                scopeLabel: address ? ('from ' + address) : 'from this building'
+                scopeLabel: address ? ('from ' + address) : 'from this building',
+                devicesOnly: true
             });
         }
 
