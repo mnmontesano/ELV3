@@ -1413,7 +1413,7 @@
                             </div>
                             <div class="mcp-body" id="mcpNoTestYet">
                                 <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">
-                                    Devices with no Category or PVI test filed yet this calendar year. Both tests still need to be completed, and they must be <strong>91 days apart</strong>. The countdown is days left to finish both before December 31 — start the first test in time to leave 91 days for the second. Show on MAP can be clicked again to restore the previous map view. Copy All Devices copies each device with its building name and BIN. Disregard hides only that device from this list and the map highlight for the current year; other devices at the same building stay visible. You can add a note and undo it later.
+                                    Devices with no Category or PVI test filed yet this calendar year. Both tests still need to be completed, and they must be <strong>91 days apart</strong>. The countdown is days left to finish both before December 31 — start the first test in time to leave 91 days for the second. Show on MAP can be clicked again to restore the previous map view. Copy on a building copies that building's devices; Copy All Devices copies every remaining device across all buildings, with building name and BIN. Disregard hides only that device from this list and the map highlight for the current year; other devices at the same building stay visible. You can add a note and undo it later.
                                 </p>
                                 <div id="noTestYetStatus" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(192,57,43,0.28); background:rgba(192,57,43,0.08); color:var(--text-color); font-size:0.9em; line-height:1.45;"></div>
                                 <input type="text" id="noTestYetSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or device..."
@@ -1718,6 +1718,7 @@
                                     <li>Map view filter: Hide Category Completed leaves PVI-only jobs visible; Hide PVI Completed leaves Category-only jobs visible. Fully completed jobs are hidden by both.</li>
                                     <li>No Test Yet lists devices with no Category or PVI this year and counts down days left to finish both tests 91 days apart</li>
                                     <li>Disregard in No Test Yet hides only that device from the list and map highlight; other devices at the same building stay visible</li>
+                                    <li>Copy on a No Test Yet building copies that building's devices; Copy All Devices copies every remaining device across all buildings</li>
                                     <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
                                     <li>Disregard in No Test by June hides a building from that list and deep-red highlighting for the current year; add a note and undo later</li>
                                     <li>In-process buildings turn orange</li>
@@ -24136,8 +24137,12 @@
                         <div style="font-size:10px; line-height:1.4; opacity:0.82; margin-bottom:6px;">${escapeMapSuggestionHtml(summary)} Category and PVI must be 91 days apart.</div>
                         ${deviceRows}
                         ${more}
-                        <button type="button" onclick="openMapNoTestYetSection('${binJs}', '${filterJs}')"
+                        <button type="button" onclick="event.stopPropagation(); copyNoTestYetDevicesForLocation('${binJs}', event)"
                                 style="width:100%; margin-top:8px; padding:6px 8px; background:rgba(192,57,43,0.12); color:${MAP_NO_TEST_YET_COLOR}; border:1px solid rgba(192,57,43,0.35); border-radius:5px; cursor:pointer; font-size:11px; font-weight:700;">
+                            Copy this building's devices
+                        </button>
+                        <button type="button" onclick="openMapNoTestYetSection('${binJs}', '${filterJs}')"
+                                style="width:100%; margin-top:6px; padding:6px 8px; background:rgba(192,57,43,0.12); color:${MAP_NO_TEST_YET_COLOR}; border:1px solid rgba(192,57,43,0.35); border-radius:5px; cursor:pointer; font-size:11px; font-weight:700;">
                             View in No Test Yet
                         </button>
                     </div>
@@ -24260,6 +24265,7 @@
                                 </span>
                                 <span style="display:block;font-size:0.8em;opacity:0.55;padding-left:22px;">${bin ? 'BIN ' + escapeMapSuggestionHtml(bin) + ' · ' : ''}${group.deviceCount} device${group.deviceCount !== 1 ? 's' : ''} with no ${windowInfo.year} test</span>
                             </span>
+                            <button type="button" onclick="event.stopPropagation(); copyNoTestYetDevicesForLocation('${locationJs}', event)" title="Copy this building's No Test Yet devices" style="flex-shrink:0; background:transparent; color:${MAP_NO_TEST_YET_COLOR}; border:1px solid rgba(192,57,43,0.4); border-radius:3px; padding:3px 8px; cursor:pointer; font-size:0.72em; font-weight:700;">Copy</button>
                         </div>
                         <div style="padding-left:8px;">${deviceRows}</div>
                     </div>`;
@@ -24462,7 +24468,13 @@
             const opts = options || {};
             const groups = getMapNoTestYetGroups();
             let selected = groups;
-            if (opts.visibleOnly) {
+            const locationKey = String(opts.locationKey || '').trim();
+            if (locationKey) {
+                selected = groups.filter(item =>
+                    String(item.key || '') === locationKey ||
+                    String(item.bin || '') === locationKey
+                );
+            } else if (opts.visibleOnly) {
                 const listEl = document.getElementById('noTestYetList');
                 if (listEl) {
                     const visibleKeys = new Set();
@@ -24499,55 +24511,86 @@
             return rows.length > 1 ? rows.join('\n') : '';
         }
 
+        async function writeMapClipboardText(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch (clipboardErr) {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            }
+        }
+
+        function flashNoTestYetCopyButton(btn, deviceCount) {
+            if (!btn) return;
+            const originalText = btn.textContent;
+            const originalBackground = btn.style.background;
+            const originalColor = btn.style.color;
+            const originalBorder = btn.style.borderColor;
+            btn.textContent = 'Copied ' + deviceCount + ' Device' + (deviceCount !== 1 ? 's' : '') + '!';
+            btn.style.background = '#4CAF50';
+            btn.style.color = 'white';
+            btn.style.borderColor = '#4CAF50';
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = originalBackground;
+                btn.style.color = originalColor;
+                btn.style.borderColor = originalBorder;
+            }, 2000);
+        }
+
+        async function copyNoTestYetDeviceGroups(groups, options) {
+            const opts = options || {};
+            const deviceCount = (groups || []).reduce((sum, group) => sum + ((group.devices && group.devices.length) || 0), 0);
+            const text = formatNoTestYetDeviceCopyText(groups);
+            if (!text || deviceCount === 0) {
+                showMapNotification('No devices to copy', '#ff6b6b');
+                return 0;
+            }
+            try {
+                await writeMapClipboardText(text);
+                flashNoTestYetCopyButton(opts.button, deviceCount);
+                showMapNotification(
+                    'Copied ' + deviceCount + ' device' + (deviceCount !== 1 ? 's' : '') + ' ' + (opts.scopeLabel || 'with building names'),
+                    MAP_NO_TEST_YET_COLOR
+                );
+                return deviceCount;
+            } catch (err) {
+                console.error('Failed to copy No Test Yet devices:', err);
+                showMapNotification('Failed to copy devices', '#ff6b6b');
+                return 0;
+            }
+        }
+
         async function copyNoTestYetDevices(event) {
             if (event) {
                 event.preventDefault();
                 event.stopPropagation();
             }
-            const searchInput = document.getElementById('noTestYetSearchInput');
-            const visibleOnly = !!(searchInput && searchInput.value.trim());
-            const groups = getNoTestYetDevicesByBuilding({ visibleOnly: visibleOnly });
-            const deviceCount = groups.reduce((sum, group) => sum + ((group.devices && group.devices.length) || 0), 0);
-            const text = formatNoTestYetDeviceCopyText(groups);
-            if (!text || deviceCount === 0) {
-                showMapNotification('No devices to copy', '#ff6b6b');
-                return;
+            const groups = getNoTestYetDevicesByBuilding();
+            await copyNoTestYetDeviceGroups(groups, {
+                button: document.getElementById('mapNoTestYetCopyDevicesBtn'),
+                scopeLabel: 'across all buildings'
+            });
+        }
+
+        async function copyNoTestYetDevicesForLocation(locationKey, event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
             }
-            try {
-                try {
-                    await navigator.clipboard.writeText(text);
-                } catch (clipboardErr) {
-                    const textarea = document.createElement('textarea');
-                    textarea.value = text;
-                    textarea.style.position = 'fixed';
-                    textarea.style.opacity = '0';
-                    document.body.appendChild(textarea);
-                    textarea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textarea);
-                }
-                const btn = document.getElementById('mapNoTestYetCopyDevicesBtn');
-                if (btn) {
-                    const originalText = btn.textContent;
-                    btn.textContent = 'Copied ' + deviceCount + ' Device' + (deviceCount !== 1 ? 's' : '') + '!';
-                    btn.style.background = '#4CAF50';
-                    btn.style.color = 'white';
-                    btn.style.borderColor = '#4CAF50';
-                    setTimeout(() => {
-                        btn.textContent = originalText;
-                        btn.style.background = '';
-                        btn.style.color = '#c0392b';
-                        btn.style.borderColor = '';
-                    }, 2000);
-                }
-                showMapNotification(
-                    'Copied ' + deviceCount + ' device' + (deviceCount !== 1 ? 's' : '') + ' with building names',
-                    MAP_NO_TEST_YET_COLOR
-                );
-            } catch (err) {
-                console.error('Failed to copy No Test Yet devices:', err);
-                showMapNotification('Failed to copy devices', '#ff6b6b');
-            }
+            const key = String(locationKey || '').trim();
+            const groups = getNoTestYetDevicesByBuilding({ locationKey: key });
+            const address = groups[0] && groups[0].address;
+            await copyNoTestYetDeviceGroups(groups, {
+                button: event && event.currentTarget ? event.currentTarget : null,
+                scopeLabel: address ? ('from ' + address) : 'from this building'
+            });
         }
 
         function updateNoTestByJunePanel() {

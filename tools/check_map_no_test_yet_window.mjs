@@ -109,6 +109,8 @@ assert.match(popupHtml, /No test yet \(1\)/);
 assert.match(popupHtml, /openMapNoTestYetSection\('1000001', '1000001'\)/);
 assert.match(popupHtml, /openMapNoTestYetSection\('1000001', '1000001', '1P1234'\)/);
 assert.match(popupHtml, /View in No Test Yet/);
+assert.match(popupHtml, /Copy this building's devices/);
+assert.match(popupHtml, /copyNoTestYetDevicesForLocation\('1000001'/);
 assert.match(popupHtml, /1P1234/);
 assert.match(popupHtml, /PVI \+ CAT 1/);
 assert.doesNotMatch(popupHtml, /123 Main St/);
@@ -128,6 +130,41 @@ assert.equal(copyContext.formatNoTestYetDeviceCopyText([
     '1P22222\t123 MAIN STREET\t1000001',
     '2P33333\t456 OTHER AVENUE\t1000002'
 ].join('\n'));
+assert.equal(copyContext.formatNoTestYetDeviceCopyText([
+    { address: '123 MAIN STREET', bin: '1000001', devices: [{ number: '1P11111' }, { number: '1P22222' }] }
+]), [
+    'Device\tBuilding\tBIN',
+    '1P11111\t123 MAIN STREET\t1000001',
+    '1P22222\t123 MAIN STREET\t1000001'
+].join('\n'));
+assert.match(html, /copyNoTestYetDevicesForLocation/);
+assert.match(html, /Copy this building's devices/);
+assert.match(html, /scopeLabel: 'across all buildings'/);
+
+const byBuildingStart = html.indexOf('        function getNoTestYetDevicesByBuilding(options) {');
+const byBuildingEnd = html.indexOf('        function formatNoTestYetDeviceCopyText(groups) {', byBuildingStart);
+assert.ok(byBuildingStart >= 0 && byBuildingEnd > byBuildingStart, 'getNoTestYetDevicesByBuilding must exist');
+const byBuildingContext = vm.createContext({
+    document: { getElementById: () => null }
+});
+vm.runInContext(`
+function getMapNoTestYetGroups() {
+    return [
+        { key: '1000001', bin: '1000001', address: '123 MAIN STREET', devices: [{ number: '1P11111' }, { number: '1P22222' }] },
+        { key: '1000002', bin: '1000002', address: '456 OTHER AVENUE', devices: [{ number: '2P33333' }] }
+    ];
+}
+` + html.slice(byBuildingStart, byBuildingEnd) + `
+this.getNoTestYetDevicesByBuilding = getNoTestYetDevicesByBuilding;
+`, byBuildingContext);
+const allCopyGroups = byBuildingContext.getNoTestYetDevicesByBuilding();
+assert.equal(allCopyGroups.length, 2);
+assert.equal(allCopyGroups.reduce((sum, group) => sum + group.devices.length, 0), 3);
+const oneBuilding = byBuildingContext.getNoTestYetDevicesByBuilding({ locationKey: '1000001' });
+assert.equal(oneBuilding.length, 1);
+assert.equal(oneBuilding[0].bin, '1000001');
+assert.equal(oneBuilding[0].devices.map(device => device.number).join(','), '1P11111,1P22222');
+
 
 const helperStart = html.indexOf('        function isMapBinStoreKey(key) {');
 const helperEnd = html.indexOf('        function getAdditionalLocationCompletionKey(location) {', helperStart);
