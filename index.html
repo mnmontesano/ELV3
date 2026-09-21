@@ -1413,7 +1413,7 @@
                             </div>
                             <div class="mcp-body" id="mcpNoTestYet">
                                 <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">
-                                    Devices with no Category or PVI test filed yet this calendar year. Both tests still need to be completed, and they must be <strong>91 days apart</strong>. The countdown is days left to finish both before December 31 — start the first test in time to leave 91 days for the second. Show on MAP can be clicked again to restore the previous map view. Copy All Devices copies each device with its building name and BIN. Disregard hides a device from this list and the map highlight for the current year; you can add a note and undo it later.
+                                    Devices with no Category or PVI test filed yet this calendar year. Both tests still need to be completed, and they must be <strong>91 days apart</strong>. The countdown is days left to finish both before December 31 — start the first test in time to leave 91 days for the second. Show on MAP can be clicked again to restore the previous map view. Copy on a building copies that building's devices; Copy All Devices copies every remaining device across all buildings, with building name and BIN. Disregard hides only that device from this list and the map highlight for the current year; other devices at the same building stay visible. You can add a note and undo it later.
                                 </p>
                                 <div id="noTestYetStatus" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(192,57,43,0.28); background:rgba(192,57,43,0.08); color:var(--text-color); font-size:0.9em; line-height:1.45;"></div>
                                 <input type="text" id="noTestYetSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or device..."
@@ -1717,6 +1717,8 @@
                                     <li>Fully completed = PVI and Category both have a date (manual entry or DOB Info Update)</li>
                                     <li>Map view filter: Hide Category Completed leaves PVI-only jobs visible; Hide PVI Completed leaves Category-only jobs visible. Fully completed jobs are hidden by both.</li>
                                     <li>No Test Yet lists devices with no Category or PVI this year and counts down days left to finish both tests 91 days apart</li>
+                                    <li>Disregard in No Test Yet hides only that device from the list and map highlight; other devices at the same building stay visible</li>
+                                    <li>Copy on a No Test Yet building copies that building's devices; Copy All Devices copies every remaining device across all buildings</li>
                                     <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
                                     <li>Disregard in No Test by June hides a building from that list and deep-red highlighting for the current year; add a note and undo later</li>
                                     <li>In-process buildings turn orange</li>
@@ -14878,7 +14880,9 @@
             }
             if (filterValue === 'no-test-yet') {
                 const keys = new Set();
-                getMapNoTestYetGroups(new Date(), view).forEach(group => {
+                // Use live remaining-device groups so disregarding one device cannot
+                // drop its whole building from the No Test Yet map.
+                getMapNoTestYetGroups(new Date(), null).forEach(group => {
                     if (group.bin) keys.add(String(group.bin));
                     if (group.key) keys.add(String(group.key));
                 });
@@ -14942,6 +14946,8 @@
                 matchesFilter = !mapViewHasCompletedTest(activeView, building.bin, building, 'Category');
             } else if (filterValue === 'hide-pvi-completed') {
                 matchesFilter = !mapViewHasCompletedTest(activeView, building.bin, building, 'PVI');
+            } else if (filterValue === 'no-test-yet') {
+                matchesFilter = mapBuildingHasRemainingNoTestYetDevices(building, activeView);
             } else {
                 const filterBins = bins || getMapViewFilterBins(activeView, filterValue) || new Set();
                 matchesFilter = filterBins.has(String(building.bin));
@@ -15117,7 +15123,13 @@
                 if (filterValue === 'no-test-yet') {
                     const key = getAdditionalLocationCompletionKey(location);
                     const bin = location && location.bin ? String(location.bin) : '';
-                    const match = (bin && bins.has(bin)) || (key && bins.has(key));
+                    const locationKey = bin || key;
+                    const match = mapLocationHasRemainingNoTestYetDevices(
+                        locationKey,
+                        (location && location.devices) || [],
+                        null,
+                        { bin: bin, key: key }
+                    );
                     if (match) {
                         if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                         bounds.extend(marker.getLatLng());
@@ -23652,20 +23664,48 @@
             return !(testInfo.hasPVI || testInfo.hasCat1 || testInfo.hasCat5);
         }
 
-        function getMapNoTestYetDeviceRows(bin, devices, year, sourceView) {
+        function getMapNoTestYetDeviceNumber(deviceOrNumber) {
+            if (deviceOrNumber && typeof deviceOrNumber === 'object') {
+                return String(deviceOrNumber.device_number || deviceOrNumber.deviceNumber || deviceOrNumber.number || '').trim().toUpperCase();
+            }
+            return String(deviceOrNumber || '').trim().toUpperCase();
+        }
+
+        function getMapNoTestYetLocationKeys(locationKey, extra) {
+            const keys = [];
+            const add = (value) => {
+                const key = String(value || '').trim();
+                if (key && keys.indexOf(key) === -1) keys.push(key);
+            };
+            add(locationKey);
+            if (extra && typeof extra === 'object') {
+                add(extra.bin);
+                add(extra.key);
+                add(extra.locationKey);
+            }
+            return keys;
+        }
+
+        function getMapNoTestYetDeviceRows(bin, devices, year, sourceView, extraLocation) {
             const targetYear = Number(year) || new Date().getFullYear();
             const windowInfo = getMapBothTestsWindow(new Date());
-            const locationKey = String(bin || '').trim();
+            const locationKeys = getMapNoTestYetLocationKeys(bin, extraLocation);
             return (Array.isArray(devices) ? devices : []).map(device => {
                 const info = getMapDeviceReportTestInfo(device || {}, targetYear, bin);
                 if (!mapDeviceHasNoAnnualTest(info)) return null;
-                if (isMapNoTestYetDisregarded(locationKey, device.device_number, targetYear, sourceView)) return null;
+                const deviceNumber = getMapNoTestYetDeviceNumber(device);
+                const displayNumber = deviceNumber || 'N/A';
+                // Only the matched device is hidden. Empty numbers never match every device
+                // in the building, which would incorrectly drop the whole location.
+                if (deviceNumber && locationKeys.some(key => isMapNoTestYetDisregarded(key, deviceNumber, targetYear, sourceView))) {
+                    return null;
+                }
                 const pending = [];
                 if (info.requiresPVI) pending.push('PVI');
                 if (info.requiresCat1) pending.push('CAT 1');
                 if (info.requiresCat5) pending.push('CAT 5');
                 return {
-                    number: device.device_number || 'N/A',
+                    number: displayNumber,
                     type: device.device_type || 'Unknown',
                     pending,
                     needsBoth: !!(info.requiresPVI && info.requiresCat1),
@@ -23722,7 +23762,7 @@
             const year = today.getFullYear();
             const windowInfo = getMapBothTestsWindow(today);
             return collectMapNoTestYetSourceGroups(sourceView).map(group => {
-                const devices = getMapNoTestYetDeviceRows(group.bin || group.key, group.devices, year, sourceView);
+                const devices = getMapNoTestYetDeviceRows(group.bin || group.key, group.devices, year, sourceView, group);
                 if (!devices.length) return null;
                 return {
                     ...group,
@@ -23752,19 +23792,37 @@
 
         function getMapNoTestYetDisregardKey(locationKey, deviceNumber, year) {
             const targetYear = Number(year) || new Date().getFullYear();
-            const device = String(deviceNumber || '').trim().toUpperCase();
+            const device = getMapNoTestYetDeviceNumber(deviceNumber);
             return String(locationKey || '').trim() + '::' + device + '::' + String(targetYear);
         }
 
         function getMapNoTestYetDisregardEntry(locationKey, deviceNumber, year, view) {
-            const key = getMapNoTestYetDisregardKey(locationKey, deviceNumber, year);
+            const device = getMapNoTestYetDeviceNumber(deviceNumber);
+            if (!device) return null;
             const store = getMapNoTestYetDisregarded(view);
-            const entry = store[key];
-            return entry && typeof entry === 'object' ? entry : null;
+            const keys = getMapNoTestYetLocationKeys(locationKey);
+            for (let i = 0; i < keys.length; i++) {
+                const entry = store[getMapNoTestYetDisregardKey(keys[i], device, year)];
+                if (entry && typeof entry === 'object') return entry;
+            }
+            const targetYear = Number(year) || new Date().getFullYear();
+            const location = String(locationKey || '').trim();
+            return Object.values(store).find(entry =>
+                entry && typeof entry === 'object' &&
+                entry.disregarded !== false &&
+                Number(entry.year) === targetYear &&
+                getMapNoTestYetDeviceNumber(entry.deviceNumber) === device &&
+                (
+                    String(entry.locationKey || '').trim() === location ||
+                    String(entry.bin || '').trim() === location
+                )
+            ) || null;
         }
 
         function isMapNoTestYetDisregarded(locationKey, deviceNumber, year, view) {
-            const entry = getMapNoTestYetDisregardEntry(locationKey, deviceNumber, year, view);
+            const device = getMapNoTestYetDeviceNumber(deviceNumber);
+            if (!device) return false;
+            const entry = getMapNoTestYetDisregardEntry(locationKey, device, year, view);
             return !!(entry && entry.disregarded !== false);
         }
 
@@ -23808,7 +23866,7 @@
 
         function setMapNoTestYetDisregard(locationKey, deviceNumber, options) {
             const keyLoc = String(locationKey || '').trim();
-            const device = String(deviceNumber || '').trim().toUpperCase();
+            const device = getMapNoTestYetDeviceNumber(deviceNumber);
             if (!keyLoc || !device) return null;
             const opts = options || {};
             const year = Number(opts.year) || new Date().getFullYear();
@@ -23844,13 +23902,78 @@
             return existed;
         }
 
-        function refreshMapAfterNoTestYetDisregardChange() {
+        function mapLocationHasRemainingNoTestYetDevices(locationKey, devices, sourceView, extraLocation) {
+            const key = String(locationKey || '').trim();
+            const rows = getMapNoTestYetDeviceRows(key, devices, new Date().getFullYear(), sourceView, extraLocation);
+            return rows.length > 0;
+        }
+
+        function mapBuildingHasRemainingNoTestYetDevices(building, sourceView) {
+            if (!building) return false;
+            const bin = String(building.bin || '').trim();
+            const binGroups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups)
+                || (sourceView && sourceView.lastBulkSearchResults && sourceView.lastBulkSearchResults.binGroups)
+                || {};
+            const group = binGroups[bin] || {};
+            const devices = Array.isArray(group.devices) ? group.devices : [];
+            if (devices.length) {
+                return mapLocationHasRemainingNoTestYetDevices(bin, devices, null);
+            }
+            return Array.isArray(building.noTestYetDevices) && building.noTestYetDevices.length > 0;
+        }
+
+        function keepMapNoTestYetLocationVisible(locationKey) {
+            const key = String(locationKey || '').trim();
+            if (!key || !buildingMap) return;
+            if (typeof getSelectedMapViewFilter === 'function' && getSelectedMapViewFilter() !== 'no-test-yet') return;
+            if (Array.isArray(mapMarkers) && Array.isArray(mapBuildingsData)) {
+                mapMarkers.forEach((marker, index) => {
+                    const building = mapBuildingsData[index];
+                    if (!building) return;
+                    if (String(building.bin) !== key) return;
+                    if (typeof isBuildingHiddenByMapSettings === 'function' && isBuildingHiddenByMapSettings(building)) return;
+                    if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                });
+            }
+            const additionalLocations = typeof getAdditionalLocations === 'function' ? getAdditionalLocations() : [];
+            if (Array.isArray(additionalLocationMarkers)) {
+                additionalLocationMarkers.forEach((marker, index) => {
+                    const location = additionalLocations[index];
+                    if (!location) return;
+                    const locKey = typeof getAdditionalLocationCompletionKey === 'function'
+                        ? getAdditionalLocationCompletionKey(location)
+                        : '';
+                    const bin = location.bin ? String(location.bin) : '';
+                    if (key !== locKey && key !== bin) return;
+                    if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                });
+            }
+        }
+
+        function retainNoTestYetBuildingInSearch(locationKey) {
+            const search = document.getElementById('noTestYetSearchInput');
+            if (!search || !search.value.trim()) return;
+            const list = document.getElementById('noTestYetList');
+            if (!list) return;
+            const key = String(locationKey || '').trim();
+            const cards = Array.from(list.querySelectorAll(':scope > div[data-bin]'));
+            const card = cards.find(el => String(el.getAttribute('data-bin') || '') === key);
+            if (!card) return;
+            if (card.style.display === 'none') {
+                search.value = key;
+                filterMcpBinRowList('noTestYetList', key);
+            }
+        }
+
+        function refreshMapAfterNoTestYetDisregardChange(locationKey) {
             updateNoTestYetPanel();
+            retainNoTestYetBuildingInSearch(locationKey);
             if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && buildingMap) {
                 initBuildingMap(window.lastBulkSearchResults.binGroups, true);
             } else if (getSelectedMapViewFilter() === 'no-test-yet') {
                 applyMapViewDropdownFilter({ fitMap: false, quiet: true });
             }
+            keepMapNoTestYetLocationVisible(locationKey);
         }
 
         function closeNoTestYetDisregardModal() {
@@ -23883,7 +24006,7 @@
                         <div style="opacity:0.72; margin-top:4px;">${escapeMapSuggestionHtml(address)}${isMapBinStoreKey(keyLoc) ? ' · BIN ' + escapeMapSuggestionHtml(keyLoc) : ''} · ${targetYear}</div>
                         <div style="opacity:0.82; margin-top:8px;">${isUpdate
                             ? 'This device stays hidden from No Test Yet for ' + targetYear + '. Update the note or cancel.'
-                            : 'This hides the device from the No Test Yet list and map highlight for ' + targetYear + '. You can undo it later.'}</div>
+                            : 'This hides only this device from the No Test Yet list and map highlight for ' + targetYear + '. Other devices at this building stay visible. You can undo it later.'}</div>
                     </div>
                     <label for="noTestYetDisregardNote" style="display:block; font-size:0.88em; opacity:0.75; margin-bottom:5px;">Note (optional)</label>
                     <textarea id="noTestYetDisregardNote" rows="3" placeholder="e.g. Owner confirmed the test was filed / not our job this year..."
@@ -23924,7 +24047,7 @@
             });
             closeNoTestYetDisregardModal();
             showMapNotification(wasDisregarded ? 'Disregard note saved' : 'Device disregarded for No Test Yet', '#607d8b');
-            refreshMapAfterNoTestYetDisregardChange();
+            refreshMapAfterNoTestYetDisregardChange(locationKey);
         }
 
         function undoNoTestYetDisregard(locationKey, deviceNumber, year) {
@@ -23937,7 +24060,7 @@
                 details: 'Removed disregard for ' + device + ' in ' + (year || new Date().getFullYear())
             });
             showMapNotification('Device restored to No Test Yet', MAP_NO_TEST_YET_COLOR);
-            refreshMapAfterNoTestYetDisregardChange();
+            refreshMapAfterNoTestYetDisregardChange(keyLoc);
         }
 
         function flyToNoTestYetLocation(locationKey) {
@@ -24014,8 +24137,12 @@
                         <div style="font-size:10px; line-height:1.4; opacity:0.82; margin-bottom:6px;">${escapeMapSuggestionHtml(summary)} Category and PVI must be 91 days apart.</div>
                         ${deviceRows}
                         ${more}
-                        <button type="button" onclick="openMapNoTestYetSection('${binJs}', '${filterJs}')"
+                        <button type="button" onclick="event.stopPropagation(); copyNoTestYetDevicesForLocation('${binJs}', event)"
                                 style="width:100%; margin-top:8px; padding:6px 8px; background:rgba(192,57,43,0.12); color:${MAP_NO_TEST_YET_COLOR}; border:1px solid rgba(192,57,43,0.35); border-radius:5px; cursor:pointer; font-size:11px; font-weight:700;">
+                            Copy this building's devices
+                        </button>
+                        <button type="button" onclick="openMapNoTestYetSection('${binJs}', '${filterJs}')"
+                                style="width:100%; margin-top:6px; padding:6px 8px; background:rgba(192,57,43,0.12); color:${MAP_NO_TEST_YET_COLOR}; border:1px solid rgba(192,57,43,0.35); border-radius:5px; cursor:pointer; font-size:11px; font-weight:700;">
                             View in No Test Yet
                         </button>
                     </div>
@@ -24138,6 +24265,7 @@
                                 </span>
                                 <span style="display:block;font-size:0.8em;opacity:0.55;padding-left:22px;">${bin ? 'BIN ' + escapeMapSuggestionHtml(bin) + ' · ' : ''}${group.deviceCount} device${group.deviceCount !== 1 ? 's' : ''} with no ${windowInfo.year} test</span>
                             </span>
+                            <button type="button" onclick="event.stopPropagation(); copyNoTestYetDevicesForLocation('${locationJs}', event)" title="Copy this building's No Test Yet devices" style="flex-shrink:0; background:transparent; color:${MAP_NO_TEST_YET_COLOR}; border:1px solid rgba(192,57,43,0.4); border-radius:3px; padding:3px 8px; cursor:pointer; font-size:0.72em; font-weight:700;">Copy</button>
                         </div>
                         <div style="padding-left:8px;">${deviceRows}</div>
                     </div>`;
@@ -24340,7 +24468,13 @@
             const opts = options || {};
             const groups = getMapNoTestYetGroups();
             let selected = groups;
-            if (opts.visibleOnly) {
+            const locationKey = String(opts.locationKey || '').trim();
+            if (locationKey) {
+                selected = groups.filter(item =>
+                    String(item.key || '') === locationKey ||
+                    String(item.bin || '') === locationKey
+                );
+            } else if (opts.visibleOnly) {
                 const listEl = document.getElementById('noTestYetList');
                 if (listEl) {
                     const visibleKeys = new Set();
@@ -24377,55 +24511,86 @@
             return rows.length > 1 ? rows.join('\n') : '';
         }
 
+        async function writeMapClipboardText(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch (clipboardErr) {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            }
+        }
+
+        function flashNoTestYetCopyButton(btn, deviceCount) {
+            if (!btn) return;
+            const originalText = btn.textContent;
+            const originalBackground = btn.style.background;
+            const originalColor = btn.style.color;
+            const originalBorder = btn.style.borderColor;
+            btn.textContent = 'Copied ' + deviceCount + ' Device' + (deviceCount !== 1 ? 's' : '') + '!';
+            btn.style.background = '#4CAF50';
+            btn.style.color = 'white';
+            btn.style.borderColor = '#4CAF50';
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = originalBackground;
+                btn.style.color = originalColor;
+                btn.style.borderColor = originalBorder;
+            }, 2000);
+        }
+
+        async function copyNoTestYetDeviceGroups(groups, options) {
+            const opts = options || {};
+            const deviceCount = (groups || []).reduce((sum, group) => sum + ((group.devices && group.devices.length) || 0), 0);
+            const text = formatNoTestYetDeviceCopyText(groups);
+            if (!text || deviceCount === 0) {
+                showMapNotification('No devices to copy', '#ff6b6b');
+                return 0;
+            }
+            try {
+                await writeMapClipboardText(text);
+                flashNoTestYetCopyButton(opts.button, deviceCount);
+                showMapNotification(
+                    'Copied ' + deviceCount + ' device' + (deviceCount !== 1 ? 's' : '') + ' ' + (opts.scopeLabel || 'with building names'),
+                    MAP_NO_TEST_YET_COLOR
+                );
+                return deviceCount;
+            } catch (err) {
+                console.error('Failed to copy No Test Yet devices:', err);
+                showMapNotification('Failed to copy devices', '#ff6b6b');
+                return 0;
+            }
+        }
+
         async function copyNoTestYetDevices(event) {
             if (event) {
                 event.preventDefault();
                 event.stopPropagation();
             }
-            const searchInput = document.getElementById('noTestYetSearchInput');
-            const visibleOnly = !!(searchInput && searchInput.value.trim());
-            const groups = getNoTestYetDevicesByBuilding({ visibleOnly: visibleOnly });
-            const deviceCount = groups.reduce((sum, group) => sum + ((group.devices && group.devices.length) || 0), 0);
-            const text = formatNoTestYetDeviceCopyText(groups);
-            if (!text || deviceCount === 0) {
-                showMapNotification('No devices to copy', '#ff6b6b');
-                return;
+            const groups = getNoTestYetDevicesByBuilding();
+            await copyNoTestYetDeviceGroups(groups, {
+                button: document.getElementById('mapNoTestYetCopyDevicesBtn'),
+                scopeLabel: 'across all buildings'
+            });
+        }
+
+        async function copyNoTestYetDevicesForLocation(locationKey, event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
             }
-            try {
-                try {
-                    await navigator.clipboard.writeText(text);
-                } catch (clipboardErr) {
-                    const textarea = document.createElement('textarea');
-                    textarea.value = text;
-                    textarea.style.position = 'fixed';
-                    textarea.style.opacity = '0';
-                    document.body.appendChild(textarea);
-                    textarea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textarea);
-                }
-                const btn = document.getElementById('mapNoTestYetCopyDevicesBtn');
-                if (btn) {
-                    const originalText = btn.textContent;
-                    btn.textContent = 'Copied ' + deviceCount + ' Device' + (deviceCount !== 1 ? 's' : '') + '!';
-                    btn.style.background = '#4CAF50';
-                    btn.style.color = 'white';
-                    btn.style.borderColor = '#4CAF50';
-                    setTimeout(() => {
-                        btn.textContent = originalText;
-                        btn.style.background = '';
-                        btn.style.color = '#c0392b';
-                        btn.style.borderColor = '';
-                    }, 2000);
-                }
-                showMapNotification(
-                    'Copied ' + deviceCount + ' device' + (deviceCount !== 1 ? 's' : '') + ' with building names',
-                    MAP_NO_TEST_YET_COLOR
-                );
-            } catch (err) {
-                console.error('Failed to copy No Test Yet devices:', err);
-                showMapNotification('Failed to copy devices', '#ff6b6b');
-            }
+            const key = String(locationKey || '').trim();
+            const groups = getNoTestYetDevicesByBuilding({ locationKey: key });
+            const address = groups[0] && groups[0].address;
+            await copyNoTestYetDeviceGroups(groups, {
+                button: event && event.currentTarget ? event.currentTarget : null,
+                scopeLabel: address ? ('from ' + address) : 'from this building'
+            });
         }
 
         function updateNoTestByJunePanel() {
@@ -27422,7 +27587,7 @@
                         // Devices count = active job devices only (excludes Removed/Deleted).
                         // Includes untested WIP devices even though they are omitted from Ready/Not Ready.
                         const activeDeviceCount = countMapJobDevices(group.devices);
-                        const noTestYetDevices = getMapNoTestYetDeviceRows(bin, group.devices, currentYear);
+                        const noTestYetDevices = getMapNoTestYetDeviceRows(bin, group.devices, currentYear, null, { bin, key: bin });
                         
                         buildingsWithCoords.push({
                             bin,
@@ -28070,7 +28235,9 @@
                     noTestYetDevices = getMapNoTestYetDeviceRows(
                         location.bin || getAdditionalLocationCompletionKey(location),
                         location.devices,
-                        currentYear
+                        currentYear,
+                        null,
+                        { bin: location.bin, key: getAdditionalLocationCompletionKey(location) }
                     );
                 }
                 
