@@ -1523,7 +1523,7 @@
                                 <span class="mcp-arrow" id="mcpMissingDevicesArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpMissingDevices">
-                                <p class="mcp-desc">Paste or import device numbers. Numbers already saved in this map file are left as they are. Numbers that are not in the file are looked up and added so you can see what was missing. Use Save to write the added devices into the JSON file.</p>
+                                <p class="mcp-desc">Paste or import device numbers, then scan them against this map file. A window lists the devices that are missing so you can choose which ones to add. Use Save to write the added devices into the JSON file.</p>
                                 <div id="mapMissingDevicesFileCount" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(13,110,253,0.28); background:rgba(13,110,253,0.08); color:var(--text-color); font-size:0.9em; line-height:1.4;">Devices in this map file: —</div>
                                 <textarea id="mapMissingDevicesInput"
                                           placeholder="One device number per line, or paste a spreadsheet column"
@@ -1531,7 +1531,7 @@
                                           style="width:100%; min-height:110px; padding:8px 10px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:0.95em; box-sizing:border-box; resize:vertical; margin-bottom:8px;"></textarea>
                                 <input id="mapMissingDevicesFile" type="file" accept=".txt,.csv,.tsv,.xlsx,.xls,text/plain,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none;" onchange="handleMapMissingDevicesFile(event)">
                                 <button type="button" onclick="triggerMapMissingDevicesFile()" class="mcp-btn" style="color:#0d6efd; font-weight:600;">Import device numbers…</button>
-                                <button type="button" id="mapMissingDevicesAddBtn" onclick="addMissingMapDevices()" class="mcp-btn" style="background:#0d6efd; color:white; border-color:#0d6efd; font-weight:700;">Add devices missing from file</button>
+                                <button type="button" id="mapMissingDevicesAddBtn" onclick="addMissingMapDevices()" class="mcp-btn" style="background:#0d6efd; color:white; border-color:#0d6efd; font-weight:700;">Scan for missing devices</button>
                                 <button type="button" onclick="clearMapMissingDevicesInput()" class="mcp-btn">Clear list</button>
                                 <div id="mapMissingDevicesResult" style="margin-top:8px;"></div>
                             </div>
@@ -1749,7 +1749,7 @@
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
-                                    <li>Missing Devices compares an imported device list with this map file and adds only the numbers that are not already saved</li>
+                                    <li>Missing Devices scans an imported list against this map file, then lets you choose which missing devices to add</li>
                                     <li>Custom location pins have a ✓ completed button, matching building markers. Choose Category, PVI, or both when marking complete</li>
                                     <li><strong>Save your work</strong> — data is not kept between sessions</li>
                                 </ul>
@@ -16045,6 +16045,9 @@
                 renderLoadedMapViewSummary(view);
             }
             lastMapMissingDeviceImport = null;
+            pendingMissingDeviceRecords = {};
+            const missingDevicesPicker = document.getElementById('mapMissingDevicesPickerOverlay');
+            if (missingDevicesPicker) missingDevicesPicker.remove();
             const missingDevicesResult = document.getElementById('mapMissingDevicesResult');
             if (missingDevicesResult) missingDevicesResult.innerHTML = '';
             if (typeof refreshMapMissingDevicesFileCount === 'function') refreshMapMissingDevicesFileCount();
@@ -16197,9 +16200,21 @@
             groups[bin].devices.push(device);
             return { added: true, reason: 'added', bin };
         }
+
+        function buildMissingDeviceChoice(deviceNumber, record) {
+            const device = record || {};
+            return {
+                deviceNumber: String(device.device_number || deviceNumber || '').trim().toUpperCase(),
+                bin: String(device.bin || '').trim() || 'Unknown BIN',
+                address: formatImportedMapDeviceAddress(device),
+                type: String(device.device_type || '').trim(),
+                status: String(device.device_status || '').trim()
+            };
+        }
         // end MAP missing-device import helpers
 
         let lastMapMissingDeviceImport = null;
+        let pendingMissingDeviceRecords = {};
         let mapMissingDeviceImportInProgress = false;
 
         function getLiveMapFileDeviceNumbers() {
@@ -16228,6 +16243,8 @@
             if (textarea) textarea.value = '';
             if (result) result.innerHTML = '';
             lastMapMissingDeviceImport = null;
+            pendingMissingDeviceRecords = {};
+            closeMissingDevicesPicker();
         }
 
         function appendDeviceNumbersToBulkTextareas(deviceNumbers) {
@@ -16304,6 +16321,7 @@
             if (!result) return;
             const added = summary.added || [];
             const notFound = summary.notFound || [];
+            const pending = summary.pendingChoices || [];
             const preview = items => items.slice(0, 40).map(item => `<div style="padding:4px 0; border-bottom:1px solid var(--input-border); line-height:1.35;">${item}</div>`).join('');
             const more = (items, label) => items.length > 40
                 ? `<div style="margin-top:4px; opacity:0.7; font-size:0.85em;">Showing 40 of ${items.length} ${label}.</div>`
@@ -16322,16 +16340,224 @@
                 <div style="padding:8px 10px; border-radius:6px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); font-size:0.9em; line-height:1.45;">
                     <div style="font-weight:700; margin-bottom:6px;">Comparison with this map file</div>
                     <div>Already in the file: <strong>${summary.alreadyPresent.length}</strong></div>
-                    <div>Missing and added: <strong style="color:${added.length ? '#0d6efd' : 'inherit'};">${added.length}</strong></div>
+                    <div>Missing devices found: <strong style="color:${pending.length ? '#0d6efd' : 'inherit'};">${pending.length}</strong></div>
+                    <div>Added to the map: <strong style="color:${added.length ? '#0d6efd' : 'inherit'};">${added.length}</strong></div>
                     <div>Not found in DOB: <strong style="color:${notFound.length ? '#ff6b6b' : 'inherit'};">${notFound.length}</strong></div>
                     ${summary.skippedBins.length ? `<div>BIN numbers skipped: <strong>${summary.skippedBins.length}</strong></div>` : ''}
                     ${summary.skippedOther.length ? `<div>Other values skipped: <strong>${summary.skippedOther.length}</strong></div>` : ''}
+                    ${pending.length ? `<button type="button" onclick="showMissingDevicesPicker()" class="mcp-btn" style="color:#0d6efd; font-weight:700;">Choose devices to add</button>` : ''}
                     ${added.length ? `<div style="margin-top:8px; font-weight:700;">Added to the map</div><div style="max-height:220px; overflow-y:auto;">${addedHtml}</div>${more(added, 'added devices')}` : ''}
-                    ${!added.length && summary.missing.length === 0 ? `<div style="margin-top:8px;">Nothing was missing. Every imported device number is already in this map file.</div>` : ''}
+                    ${!added.length && !pending.length && summary.missing.length === 0 ? `<div style="margin-top:8px;">Nothing was missing. Every imported device number is already in this map file.</div>` : ''}
                     ${notFound.length ? `<div style="margin-top:8px; font-weight:700; color:#ff6b6b;">Not found</div><div style="max-height:140px; overflow-y:auto;">${preview(notFound.map(escapeMapSuggestionHtml))}</div>${more(notFound, 'not found')}` : ''}
                     ${added.length ? `<button type="button" onclick="focusMapOnMissingDeviceImport()" class="mcp-btn" style="color:#0d6efd; font-weight:700;">Show added on MAP</button>` : ''}
                 </div>
             `;
+        }
+
+        function closeMissingDevicesPicker() {
+            const overlay = document.getElementById('mapMissingDevicesPickerOverlay');
+            if (overlay) overlay.remove();
+        }
+
+        function updateMissingDevicesPickerCount() {
+            const boxes = [...document.querySelectorAll('#mapMissingDevicesPickerList input[type="checkbox"][data-device-number]')];
+            const checked = boxes.filter(box => box.checked).length;
+            const count = document.getElementById('mapMissingDevicesPickerCount');
+            const button = document.getElementById('mapMissingDevicesPickerAddBtn');
+            if (count) count.textContent = `${checked} of ${boxes.length} selected`;
+            if (button && !button.disabled) button.textContent = `Add selected (${checked})`;
+        }
+
+        function setMissingDevicesPickerChecks(checked) {
+            document.querySelectorAll('#mapMissingDevicesPickerList input[type="checkbox"][data-device-number]').forEach(box => {
+                box.checked = checked;
+            });
+            updateMissingDevicesPickerCount();
+        }
+
+        function filterMissingDevicesPicker(query) {
+            const needle = String(query || '').trim().toUpperCase();
+            document.querySelectorAll('#mapMissingDevicesPickerList [data-picker-row]').forEach(row => {
+                const haystack = row.getAttribute('data-search') || '';
+                row.style.display = !needle || haystack.includes(needle) ? '' : 'none';
+            });
+        }
+
+        function showMissingDevicesPicker() {
+            const summary = lastMapMissingDeviceImport;
+            const choices = summary && Array.isArray(summary.pendingChoices) ? summary.pendingChoices : [];
+            if (!choices.length) return;
+            closeMissingDevicesPicker();
+
+            const notFound = summary.notFound || [];
+            const rows = choices.map(choice => {
+                const deviceNumber = escapeMapSuggestionHtml(choice.deviceNumber);
+                const address = escapeMapSuggestionHtml(choice.address || 'Unknown address');
+                const bin = escapeMapSuggestionHtml(choice.bin || '');
+                const type = escapeMapSuggestionHtml(choice.type || 'Device');
+                const status = escapeMapSuggestionHtml(choice.status || '');
+                const search = escapeMapSuggestionHtml([choice.deviceNumber, choice.address, choice.bin, choice.type, choice.status].join(' ').toUpperCase());
+                return `<label data-picker-row data-search="${search}" style="display:flex; gap:10px; align-items:flex-start; padding:8px 4px; border-bottom:1px solid var(--input-border,#444); cursor:pointer;">
+                    <input type="checkbox" data-device-number="${deviceNumber}" style="margin-top:3px; width:16px; height:16px; flex-shrink:0;">
+                    <span style="min-width:0; line-height:1.35;">
+                        <span style="font-weight:700; color:var(--text-color,#fff);">${deviceNumber}</span>
+                        <span style="opacity:0.75;"> · ${type}${status ? ` · ${status}` : ''}</span>
+                        <span style="display:block; opacity:0.85;">${address}${bin ? ` · BIN ${bin}` : ''}</span>
+                    </span>
+                </label>`;
+            }).join('');
+            const notFoundHtml = notFound.length
+                ? `<div style="margin-top:12px; font-size:12px; line-height:1.4; color:#ff6b6b;">Not found in DOB, so they cannot be added: ${escapeMapSuggestionHtml(notFound.slice(0, 20).join(', '))}${notFound.length > 20 ? ` and ${notFound.length - 20} more` : ''}</div>`
+                : '';
+
+            const overlay = document.createElement('div');
+            overlay.id = 'mapMissingDevicesPickerOverlay';
+            overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:10030; display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;';
+            overlay.innerHTML = `
+                <div role="dialog" aria-modal="true" aria-labelledby="mapMissingDevicesPickerTitle" style="background:var(--card-bg,#1e1e2e); border:1px solid var(--input-border,#444); border-radius:14px; padding:20px; max-width:640px; width:100%; max-height:calc(100vh - 32px); overflow:hidden; box-sizing:border-box; box-shadow:0 18px 55px rgba(0,0,0,0.5); display:flex; flex-direction:column;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:12px;">
+                        <div>
+                            <h3 id="mapMissingDevicesPickerTitle" style="margin:0 0 4px; color:var(--text-color,#fff); font-size:17px;">Missing devices</h3>
+                            <p style="margin:0; font-size:12px; opacity:0.75; color:var(--text-color,#ccc); line-height:1.4;">${choices.length} device number${choices.length === 1 ? '' : 's'} ${choices.length === 1 ? 'is' : 'are'} not in this map file. Select the ones to add. ${summary.alreadyPresent.length} imported number${summary.alreadyPresent.length === 1 ? ' is' : 's are'} already saved.</p>
+                        </div>
+                        <button type="button" id="mapMissingDevicesPickerCloseBtn" aria-label="Close" style="margin:0; background:none; border:none; color:var(--text-color,#ccc); font-size:22px; cursor:pointer; line-height:1; padding:2px;">×</button>
+                    </div>
+                    <input id="mapMissingDevicesPickerSearch" type="search" placeholder="Search device, address, or BIN" style="width:100%; box-sizing:border-box; padding:8px 10px; border-radius:8px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); font-size:13px; margin-bottom:8px;">
+                    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
+                        <button type="button" id="mapMissingDevicesPickerSelectAll" style="margin:0; padding:6px 10px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); cursor:pointer; font-size:12px; font-weight:700;">Select all</button>
+                        <button type="button" id="mapMissingDevicesPickerSelectNone" style="margin:0; padding:6px 10px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); cursor:pointer; font-size:12px; font-weight:700;">Select none</button>
+                        <span id="mapMissingDevicesPickerCount" style="font-size:12px; opacity:0.8; color:var(--text-color,#ccc);"></span>
+                    </div>
+                    <div id="mapMissingDevicesPickerList" style="overflow-y:auto; min-height:80px; max-height:46vh; border:1px solid var(--input-border,#444); border-radius:8px; padding:0 8px; background:var(--input-bg,#2a2a3e);">${rows}</div>
+                    ${notFoundHtml}
+                    <div id="mapMissingDevicesPickerFeedback" style="display:none; margin-top:10px; font-size:12px; line-height:1.4; color:#ff6b6b;"></div>
+                    <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+                        <button type="button" id="mapMissingDevicesPickerAddBtn" style="flex:1; min-width:160px; margin:0; padding:10px; border-radius:7px; border:none; background:#0d6efd; color:white; cursor:pointer; font-size:13px; font-weight:700;">Add selected</button>
+                        <button type="button" id="mapMissingDevicesPickerCancelBtn" style="margin:0; padding:10px 14px; border-radius:7px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); cursor:pointer; font-size:13px; font-weight:700;">Cancel</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+            overlay.addEventListener('click', event => {
+                if (event.target === overlay) closeMissingDevicesPicker();
+            });
+            document.getElementById('mapMissingDevicesPickerCloseBtn').addEventListener('click', closeMissingDevicesPicker);
+            document.getElementById('mapMissingDevicesPickerCancelBtn').addEventListener('click', closeMissingDevicesPicker);
+            document.getElementById('mapMissingDevicesPickerSelectAll').addEventListener('click', () => setMissingDevicesPickerChecks(true));
+            document.getElementById('mapMissingDevicesPickerSelectNone').addEventListener('click', () => setMissingDevicesPickerChecks(false));
+            document.getElementById('mapMissingDevicesPickerSearch').addEventListener('input', event => filterMissingDevicesPicker(event.target.value));
+            document.getElementById('mapMissingDevicesPickerList').addEventListener('change', updateMissingDevicesPickerCount);
+            document.getElementById('mapMissingDevicesPickerAddBtn').addEventListener('click', () => addSelectedMissingMapDevices());
+            updateMissingDevicesPickerCount();
+            const search = document.getElementById('mapMissingDevicesPickerSearch');
+            if (search) setTimeout(() => search.focus(), 0);
+        }
+
+        async function addSelectedMissingMapDevices() {
+            if (mapMissingDeviceImportInProgress) return;
+            const selected = [...document.querySelectorAll('#mapMissingDevicesPickerList input[type="checkbox"][data-device-number]:checked')]
+                .map(box => String(box.getAttribute('data-device-number') || '').trim().toUpperCase())
+                .filter(deviceNumber => pendingMissingDeviceRecords[deviceNumber]);
+            const feedback = document.getElementById('mapMissingDevicesPickerFeedback');
+            const button = document.getElementById('mapMissingDevicesPickerAddBtn');
+            if (!selected.length) {
+                if (feedback) {
+                    feedback.style.display = 'block';
+                    feedback.textContent = 'Select at least one missing device to add.';
+                }
+                return;
+            }
+
+            const hasMapFile = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
+            if (!hasMapFile) {
+                alert('Load a map view file or run a device lookup before adding devices.');
+                return;
+            }
+
+            mapMissingDeviceImportInProgress = true;
+            if (button) {
+                button.disabled = true;
+                button.textContent = 'Adding…';
+            }
+            const added = [];
+            try {
+                const binGroups = window.lastBulkSearchResults.binGroups;
+                let completed = 0;
+                await runWithLimitedConcurrency(selected, 4, async deviceNumber => {
+                    const record = pendingMissingDeviceRecords[deviceNumber];
+                    if (!record) return;
+                    let violations = [];
+                    let machineType = '';
+                    try {
+                        const [violationRows, info] = await Promise.all([
+                            fetchViolations(deviceNumber),
+                            fetchDeviceInfo(deviceNumber)
+                        ]);
+                        violations = activeViolationsFromLookup(violationRows);
+                        machineType = info && info.machine_type ? info.machine_type : '';
+                    } catch (error) {
+                        console.warn('Missing-device detail lookup failed:', deviceNumber, error);
+                    }
+                    const device = {
+                        ...record,
+                        device_number: record.device_number || deviceNumber,
+                        violations,
+                        machine_type: machineType
+                    };
+                    const merge = mergeMissingDeviceIntoBinGroups(binGroups, device);
+                    if (merge.added) {
+                        added.push({
+                            deviceNumber: String(device.device_number).trim().toUpperCase(),
+                            bin: merge.bin,
+                            address: binGroups[merge.bin] && binGroups[merge.bin].address
+                                ? binGroups[merge.bin].address
+                                : formatImportedMapDeviceAddress(device)
+                        });
+                    }
+                    completed += 1;
+                    if (button) button.textContent = `Adding ${completed} of ${selected.length}…`;
+                });
+
+                const selectedSet = new Set(selected);
+                const previous = lastMapMissingDeviceImport || { alreadyPresent: [], missing: [], skippedBins: [], skippedOther: [], notFound: [], pendingChoices: [] };
+                const remaining = (previous.pendingChoices || []).filter(choice => !selectedSet.has(choice.deviceNumber));
+                selected.forEach(deviceNumber => {
+                    delete pendingMissingDeviceRecords[deviceNumber];
+                });
+                const previouslyAdded = previous.added || [];
+                lastMapMissingDeviceImport = {
+                    ...previous,
+                    pendingChoices: remaining,
+                    added: previouslyAdded.concat(added)
+                };
+                if (added.length) {
+                    appendDeviceNumbersToBulkTextareas(added.map(item => item.deviceNumber));
+                    addMapActivity('Added missing devices', {
+                        type: 'Device',
+                        details: `${added.length} selected device${added.length === 1 ? '' : 's'} added that ${added.length === 1 ? 'was' : 'were'} not in the map file`
+                    });
+                    if (buildingMap) initBuildingMap(binGroups, true);
+                }
+                closeMissingDevicesPicker();
+                renderMapMissingDevicesResult(lastMapMissingDeviceImport);
+                refreshMapMissingDevicesFileCount();
+                if (added.length) {
+                    showMapNotification(`Added ${added.length} selected device${added.length === 1 ? '' : 's'}`, '#0d6efd');
+                } else {
+                    showMapNotification('Those devices are already in this map file', '#4CAF50');
+                }
+            } catch (error) {
+                console.error('Error adding selected missing devices:', error);
+                if (feedback) {
+                    feedback.style.display = 'block';
+                    feedback.textContent = error.message || 'Could not add the selected devices.';
+                }
+                if (button) {
+                    button.disabled = false;
+                    updateMissingDevicesPickerCount();
+                }
+            } finally {
+                mapMissingDeviceImportInProgress = false;
+            }
         }
 
         function focusMapOnMissingDeviceImport() {
@@ -16380,7 +16606,9 @@
 
             const summary = summarizeMapMissingDeviceImport(parsed, getLiveMapFileDeviceNumbers());
             if (!summary.missing.length) {
-                lastMapMissingDeviceImport = { ...summary, added: [], notFound: [], failed: [] };
+                pendingMissingDeviceRecords = {};
+                closeMissingDevicesPicker();
+                lastMapMissingDeviceImport = { ...summary, added: [], notFound: [], pendingChoices: [], failed: [] };
                 renderMapMissingDevicesResult(lastMapMissingDeviceImport);
                 refreshMapMissingDevicesFileCount();
                 showMapNotification('Every imported device number is already in this map file', '#4CAF50');
@@ -16388,15 +16616,15 @@
             }
 
             mapMissingDeviceImportInProgress = true;
+            closeMissingDevicesPicker();
             if (button) {
                 button.disabled = true;
-                button.textContent = 'Checking devices…';
+                button.textContent = 'Scanning…';
             }
             if (result) {
                 result.innerHTML = `<div style="padding:8px 10px; font-size:0.9em;">Looking up ${summary.missing.length} device number${summary.missing.length === 1 ? '' : 's'} that ${summary.missing.length === 1 ? 'is' : 'are'} not in this map file…</div>`;
             }
 
-            const added = [];
             const notFound = [];
             try {
                 const lookup = await fetchCurrentDobDeviceRecords(summary.missing, (completed, total) => {
@@ -16408,62 +16636,29 @@
                 summary.missing.forEach(deviceNumber => {
                     if (!lookup.freshByDevice[deviceNumber]) notFound.push(deviceNumber);
                 });
-
-                const binGroups = window.lastBulkSearchResults.binGroups;
-                await runWithLimitedConcurrency(foundNumbers, 4, async deviceNumber => {
-                    const record = lookup.freshByDevice[deviceNumber];
-                    if (!record) return;
-                    let violations = [];
-                    let machineType = '';
-                    try {
-                        const [violationRows, info] = await Promise.all([
-                            fetchViolations(deviceNumber),
-                            fetchDeviceInfo(deviceNumber)
-                        ]);
-                        violations = activeViolationsFromLookup(violationRows);
-                        machineType = info && info.machine_type ? info.machine_type : '';
-                    } catch (error) {
-                        console.warn('Missing-device detail lookup failed:', deviceNumber, error);
-                    }
-                    const device = {
-                        ...record,
-                        device_number: record.device_number || deviceNumber,
-                        violations,
-                        machine_type: machineType
-                    };
-                    const merge = mergeMissingDeviceIntoBinGroups(binGroups, device);
-                    if (merge.added) {
-                        added.push({
-                            deviceNumber: String(device.device_number).trim().toUpperCase(),
-                            bin: merge.bin,
-                            address: binGroups[merge.bin] && binGroups[merge.bin].address
-                                ? binGroups[merge.bin].address
-                                : formatImportedMapDeviceAddress(device)
-                        });
-                    }
+                const choices = foundNumbers
+                    .map(deviceNumber => buildMissingDeviceChoice(deviceNumber, lookup.freshByDevice[deviceNumber]))
+                    .filter(choice => choice.deviceNumber)
+                    .sort((a, b) => a.address.localeCompare(b.address) || a.deviceNumber.localeCompare(b.deviceNumber, undefined, { numeric: true }));
+                pendingMissingDeviceRecords = {};
+                choices.forEach(choice => {
+                    pendingMissingDeviceRecords[choice.deviceNumber] = lookup.freshByDevice[choice.deviceNumber];
                 });
-
-                if (added.length) {
-                    appendDeviceNumbersToBulkTextareas(added.map(item => item.deviceNumber));
-                    addMapActivity('Added missing devices', {
-                        type: 'Device',
-                        details: `${added.length} device${added.length === 1 ? '' : 's'} added that ${added.length === 1 ? 'was' : 'were'} not in the map file`
-                    });
-                    if (buildingMap) initBuildingMap(binGroups, true);
-                }
 
                 lastMapMissingDeviceImport = {
                     ...summary,
-                    added,
+                    added: [],
                     notFound,
+                    pendingChoices: choices,
                     failed: lookup.failed || []
                 };
                 renderMapMissingDevicesResult(lastMapMissingDeviceImport);
                 refreshMapMissingDevicesFileCount();
-                if (added.length) {
-                    showMapNotification(`Added ${added.length} device${added.length === 1 ? '' : 's'} that ${added.length === 1 ? 'was' : 'were'} missing from this map file`, '#0d6efd');
+                if (choices.length) {
+                    showMissingDevicesPicker();
+                    showMapNotification(`${choices.length} missing device${choices.length === 1 ? '' : 's'} found. Choose which ones to add.`, '#0d6efd');
                 } else if (notFound.length) {
-                    showMapNotification('No missing devices could be added. Check the numbers that were not found.', '#ff9800');
+                    showMapNotification('No missing devices could be found in DOB. Check the numbers that were not found.', '#ff9800');
                 } else {
                     showMapNotification('Those device numbers are already in this map file', '#4CAF50');
                 }
@@ -16476,7 +16671,7 @@
                 mapMissingDeviceImportInProgress = false;
                 if (button) {
                     button.disabled = false;
-                    button.textContent = 'Add devices missing from file';
+                    button.textContent = 'Scan for missing devices';
                 }
             }
         }
@@ -27036,6 +27231,11 @@
                 const devicesOverlay = document.getElementById('mapSelectDevicesOverlay');
                 if (devicesOverlay) {
                     devicesOverlay.remove();
+                    return;
+                }
+                const missingDevicesPicker = document.getElementById('mapMissingDevicesPickerOverlay');
+                if (missingDevicesPicker) {
+                    missingDevicesPicker.remove();
                     return;
                 }
                 if (mapSelectMode) {

@@ -17,6 +17,7 @@ this.collectMapFileDeviceNumbers = collectMapFileDeviceNumbers;
 this.summarizeMapMissingDeviceImport = summarizeMapMissingDeviceImport;
 this.mergeMissingDeviceIntoBinGroups = mergeMissingDeviceIntoBinGroups;
 this.formatImportedMapDeviceAddress = formatImportedMapDeviceAddress;
+this.buildMissingDeviceChoice = buildMissingDeviceChoice;
 `;
 const context = vm.createContext({});
 vm.runInContext(source, context);
@@ -112,13 +113,24 @@ const addedNewBuilding = context.mergeMissingDeviceIntoBinGroups(binGroups, {
 assert.equal(addedNewBuilding.added, true);
 assert.equal(binGroups['2000002'].address, '5 Broadway, Brooklyn');
 assert.equal(binGroups['2000002'].devices.length, 1);
-assert.equal(context.formatImportedMapDeviceAddress({ house_number: '5', street_name: 'Broadway', borough: 'Brooklyn' }), '5 Broadway, Brooklyn');
+assert.equal(context.buildMissingDeviceChoice('1p55555', {
+    device_number: '1P55555',
+    bin: '1000001',
+    house_number: '10',
+    street_name: 'Main St',
+    borough: 'Manhattan',
+    device_type: 'Passenger Elevator',
+    device_status: 'ACTIVE'
+}).address, '10 Main St, Manhattan');
 
 assert.ok(html.includes('id="mcpMissingDevices"'), 'Settings must include the Missing Devices section');
 assert.match(html, /onclick="addMissingMapDevices\(\)"/);
 assert.match(html, /onclick="triggerMapMissingDevicesFile\(\)"/);
 assert.match(html, /handleMapMissingDevicesFile\(event\)/);
-assert.match(html, /Missing Devices compares an imported device list/);
+assert.match(html, /Missing Devices scans an imported list/);
+assert.match(html, /function showMissingDevicesPicker\(/);
+assert.match(html, /function addSelectedMissingMapDevices\(/);
+assert.match(html, /mapMissingDevicesPickerOverlay/);
 assert.equal((html.match(/function addMissingMapDevices\(/g) || []).length, 1);
 assert.equal((html.match(/id="mapMissingDevicesInput"/g) || []).length, 1);
 
