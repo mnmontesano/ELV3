@@ -1530,8 +1530,8 @@
                                           oninput="this.value = this.value.toUpperCase()"
                                           style="width:100%; min-height:110px; padding:8px 10px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:0.95em; box-sizing:border-box; resize:vertical; margin-bottom:8px;"></textarea>
                                 <input id="mapMissingDevicesFile" type="file" accept=".txt,.csv,.tsv,.xlsx,.xls,text/plain,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none;" onchange="handleMapMissingDevicesFile(event)">
-                                <button type="button" onclick="triggerMapMissingDevicesFile()" class="mcp-btn" style="color:#0d6efd; font-weight:600;">Import device numbers…</button>
                                 <button type="button" id="mapMissingDevicesAddBtn" onclick="addMissingMapDevices()" class="mcp-btn" style="background:#0d6efd; color:white; border-color:#0d6efd; font-weight:700;">Scan for missing devices</button>
+                                <button type="button" onclick="triggerMapMissingDevicesFile()" class="mcp-btn" style="color:#0d6efd; font-weight:600;">Import device numbers…</button>
                                 <button type="button" onclick="clearMapMissingDevicesInput()" class="mcp-btn">Clear list</button>
                                 <div id="mapMissingDevicesResult" style="margin-top:8px;"></div>
                             </div>
@@ -16377,10 +16377,22 @@
 
         function filterMissingDevicesPicker(query) {
             const needle = String(query || '').trim().toUpperCase();
+            let visible = 0;
             document.querySelectorAll('#mapMissingDevicesPickerList [data-picker-row]').forEach(row => {
                 const haystack = row.getAttribute('data-search') || '';
-                row.style.display = !needle || haystack.includes(needle) ? '' : 'none';
+                const show = !needle || haystack.includes(needle);
+                row.style.display = show ? '' : 'none';
+                if (show) visible += 1;
             });
+            const empty = document.getElementById('mapMissingDevicesPickerEmpty');
+            if (empty) empty.style.display = visible ? 'none' : 'block';
+        }
+
+        function missingDeviceStatusStyle(status) {
+            const value = String(status || '').toUpperCase();
+            if (value === 'ACTIVE') return 'background:rgba(39,174,96,0.16);color:#1e8e4e;';
+            if (value.includes('DISMANT') || value.includes('REMOVED') || value.includes('DELETED')) return 'background:rgba(255,107,107,0.16);color:#d64545;';
+            return 'background:rgba(128,128,128,0.16);color:var(--text-color,#666);';
         }
 
         function showMissingDevicesPicker() {
@@ -16390,6 +16402,7 @@
             closeMissingDevicesPicker();
 
             const notFound = summary.notFound || [];
+            const alreadyCount = (summary.alreadyPresent || []).length;
             const rows = choices.map(choice => {
                 const deviceNumber = escapeMapSuggestionHtml(choice.deviceNumber);
                 const address = escapeMapSuggestionHtml(choice.address || 'Unknown address');
@@ -16397,43 +16410,95 @@
                 const type = escapeMapSuggestionHtml(choice.type || 'Device');
                 const status = escapeMapSuggestionHtml(choice.status || '');
                 const search = escapeMapSuggestionHtml([choice.deviceNumber, choice.address, choice.bin, choice.type, choice.status].join(' ').toUpperCase());
-                return `<label data-picker-row data-search="${search}" style="display:flex; gap:10px; align-items:flex-start; padding:8px 4px; border-bottom:1px solid var(--input-border,#444); cursor:pointer;">
-                    <input type="checkbox" data-device-number="${deviceNumber}" style="margin-top:3px; width:16px; height:16px; flex-shrink:0;">
-                    <span style="min-width:0; line-height:1.35;">
-                        <span style="font-weight:700; color:var(--text-color,#fff);">${deviceNumber}</span>
-                        <span style="opacity:0.75;"> · ${type}${status ? ` · ${status}` : ''}</span>
-                        <span style="display:block; opacity:0.85;">${address}${bin ? ` · BIN ${bin}` : ''}</span>
+                const statusPill = status
+                    ? `<span class="map-missing-device-status" style="${missingDeviceStatusStyle(choice.status)}">${status}</span>`
+                    : '';
+                return `<label data-picker-row data-search="${search}" class="map-missing-device-card">
+                    <input type="checkbox" data-device-number="${deviceNumber}" aria-label="Select ${deviceNumber}">
+                    <span class="map-missing-device-body">
+                        <span class="map-missing-device-top">
+                            <span class="map-missing-device-number">${deviceNumber}</span>
+                            ${statusPill}
+                        </span>
+                        <span class="map-missing-device-address">${address}</span>
+                        <span class="map-missing-device-meta">${type}${bin ? ` · BIN ${bin}` : ''}</span>
                     </span>
                 </label>`;
             }).join('');
             const notFoundHtml = notFound.length
-                ? `<div style="margin-top:12px; font-size:12px; line-height:1.4; color:#ff6b6b;">Not found in DOB, so they cannot be added: ${escapeMapSuggestionHtml(notFound.slice(0, 20).join(', '))}${notFound.length > 20 ? ` and ${notFound.length - 20} more` : ''}</div>`
+                ? `<div class="map-missing-picker-notfound"><strong>${notFound.length} not found in DOB</strong><span>${escapeMapSuggestionHtml(notFound.slice(0, 12).join(', '))}${notFound.length > 12 ? ` and ${notFound.length - 12} more` : ''}</span></div>`
                 : '';
 
             const overlay = document.createElement('div');
             overlay.id = 'mapMissingDevicesPickerOverlay';
-            overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:10030; display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;';
             overlay.innerHTML = `
-                <div role="dialog" aria-modal="true" aria-labelledby="mapMissingDevicesPickerTitle" style="background:var(--card-bg,#1e1e2e); border:1px solid var(--input-border,#444); border-radius:14px; padding:20px; max-width:640px; width:100%; max-height:calc(100vh - 32px); overflow:hidden; box-sizing:border-box; box-shadow:0 18px 55px rgba(0,0,0,0.5); display:flex; flex-direction:column;">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:12px;">
+                <style>
+                    #mapMissingDevicesPickerOverlay { position:fixed; inset:0; z-index:10030; display:flex; align-items:center; justify-content:center; padding:18px; box-sizing:border-box; background:rgba(8,12,20,0.62); }
+                    #mapMissingDevicesPickerOverlay .map-missing-picker-dialog { width:min(760px, 100%); max-height:calc(100vh - 36px); display:flex; flex-direction:column; overflow:hidden; box-sizing:border-box; color:var(--text-color,#1c1c1c); background:var(--card-bg,#fff); border:1px solid var(--input-border,#d7dbe3); border-radius:18px; box-shadow:0 28px 80px rgba(0,0,0,0.38); }
+                    #mapMissingDevicesPickerOverlay .map-missing-picker-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:18px 20px 14px; background:linear-gradient(180deg, rgba(13,110,253,0.14), transparent 78%); border-bottom:1px solid var(--input-border,#d7dbe3); }
+                    #mapMissingDevicesPickerOverlay .map-missing-picker-kicker { font-size:11px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#0d6efd; margin-bottom:4px; }
+                    #mapMissingDevicesPickerOverlay h3 { margin:0; font-size:22px; line-height:1.2; color:var(--header-color, var(--text-color,#1c1c1c)); }
+                    #mapMissingDevicesPickerOverlay .map-missing-picker-sub { margin:6px 0 0; font-size:13px; line-height:1.4; opacity:0.75; }
+                    #mapMissingDevicesPickerOverlay .map-missing-picker-close { margin:0; width:34px; height:34px; border-radius:10px; border:1px solid var(--input-border,#d7dbe3); background:var(--panel-bg,#fff); color:var(--text-color,#1c1c1c); font-size:20px; line-height:1; cursor:pointer; }
+                    #mapMissingDevicesPickerOverlay .map-missing-picker-body { padding:14px 20px 18px; display:flex; flex-direction:column; min-height:0; }
+                    #mapMissingDevicesPickerOverlay .map-missing-picker-stats { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+                    #mapMissingDevicesPickerOverlay .map-missing-stat { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--input-border,#d7dbe3); background:var(--panel-bg,#f6f8fb); font-size:12px; font-weight:700; }
+                    #mapMissingDevicesPickerOverlay .map-missing-stat strong { font-size:14px; }
+                    #mapMissingDevicesPickerOverlay .map-missing-stat-missing { color:#0d6efd; border-color:rgba(13,110,253,0.35); background:rgba(13,110,253,0.1); }
+                    #mapMissingDevicesPickerOverlay .map-missing-stat-found { color:#1e8e4e; border-color:rgba(39,174,96,0.35); background:rgba(39,174,96,0.1); }
+                    #mapMissingDevicesPickerOverlay .map-missing-stat-miss { color:#d64545; border-color:rgba(255,107,107,0.4); background:rgba(255,107,107,0.1); }
+                    #mapMissingDevicesPickerOverlay .map-missing-picker-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap; }
+                    #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerSearch { flex:1 1 220px; min-width:180px; margin:0; box-sizing:border-box; padding:10px 12px; border-radius:10px; border:1px solid var(--input-border,#d7dbe3); background:var(--input-bg,#fff); color:var(--text-color,#1c1c1c); font-size:14px; }
+                    #mapMissingDevicesPickerOverlay .map-missing-picker-toolbar button { margin:0; padding:8px 12px; border-radius:10px; border:1px solid var(--input-border,#d7dbe3); background:var(--panel-bg,#fff); color:var(--text-color,#1c1c1c); cursor:pointer; font-size:12px; font-weight:800; }
+                    #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerCount { margin-left:auto; font-size:12px; font-weight:800; opacity:0.75; }
+                    #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerList { overflow-y:auto; min-height:120px; max-height:min(48vh, 460px); padding:2px; }
+                    #mapMissingDevicesPickerOverlay .map-missing-device-card { display:flex; gap:12px; align-items:flex-start; margin:0 0 8px; padding:12px; border:1px solid var(--input-border,#d7dbe3); border-radius:12px; background:var(--panel-bg,#f8fafc); cursor:pointer; }
+                    #mapMissingDevicesPickerOverlay .map-missing-device-card:hover { border-color:#8eb6f8; }
+                    #mapMissingDevicesPickerOverlay .map-missing-device-card:has(input:checked) { border-color:#0d6efd; background:rgba(13,110,253,0.1); box-shadow:inset 3px 0 0 #0d6efd; }
+                    #mapMissingDevicesPickerOverlay .map-missing-device-card input { margin-top:3px; width:18px; height:18px; flex-shrink:0; accent-color:#0d6efd; }
+                    #mapMissingDevicesPickerOverlay .map-missing-device-body { min-width:0; display:block; }
+                    #mapMissingDevicesPickerOverlay .map-missing-device-top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+                    #mapMissingDevicesPickerOverlay .map-missing-device-number { font-size:16px; font-weight:800; letter-spacing:0.02em; }
+                    #mapMissingDevicesPickerOverlay .map-missing-device-status { font-size:11px; font-weight:800; letter-spacing:0.03em; border-radius:999px; padding:3px 8px; }
+                    #mapMissingDevicesPickerOverlay .map-missing-device-address { display:block; margin-top:4px; font-size:13px; font-weight:700; }
+                    #mapMissingDevicesPickerOverlay .map-missing-device-meta { display:block; margin-top:2px; font-size:12px; opacity:0.68; }
+                    #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerEmpty { display:none; padding:22px 8px; text-align:center; font-size:13px; opacity:0.7; }
+                    #mapMissingDevicesPickerOverlay .map-missing-picker-notfound { display:flex; flex-direction:column; gap:3px; margin-top:10px; padding:10px 12px; border-radius:10px; background:rgba(255,107,107,0.1); border:1px solid rgba(255,107,107,0.28); color:#d64545; font-size:12px; line-height:1.4; }
+                    #mapMissingDevicesPickerOverlay .map-missing-picker-notfound span { opacity:0.9; }
+                    #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerFeedback { display:none; margin-top:10px; font-size:12px; font-weight:700; line-height:1.4; color:#d64545; }
+                    #mapMissingDevicesPickerOverlay .map-missing-picker-actions { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+                    #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerAddBtn { flex:1; min-width:180px; margin:0; padding:12px 14px; border:none; border-radius:12px; background:#0d6efd; color:#fff; cursor:pointer; font-size:14px; font-weight:800; }
+                    #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerAddBtn:disabled { opacity:0.7; cursor:wait; }
+                    #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerCancelBtn { margin:0; padding:12px 16px; border-radius:12px; border:1px solid var(--input-border,#d7dbe3); background:var(--panel-bg,#fff); color:var(--text-color,#1c1c1c); cursor:pointer; font-size:14px; font-weight:800; }
+                </style>
+                <div class="map-missing-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="mapMissingDevicesPickerTitle">
+                    <div class="map-missing-picker-header">
                         <div>
-                            <h3 id="mapMissingDevicesPickerTitle" style="margin:0 0 4px; color:var(--text-color,#fff); font-size:17px;">Missing devices</h3>
-                            <p style="margin:0; font-size:12px; opacity:0.75; color:var(--text-color,#ccc); line-height:1.4;">${choices.length} device number${choices.length === 1 ? '' : 's'} ${choices.length === 1 ? 'is' : 'are'} not in this map file. Select the ones to add. ${summary.alreadyPresent.length} imported number${summary.alreadyPresent.length === 1 ? ' is' : 's are'} already saved.</p>
+                            <div class="map-missing-picker-kicker">Scan results</div>
+                            <h3 id="mapMissingDevicesPickerTitle">Missing devices</h3>
+                            <p class="map-missing-picker-sub">These device numbers are not in this map file. Check the ones you want to add.</p>
                         </div>
-                        <button type="button" id="mapMissingDevicesPickerCloseBtn" aria-label="Close" style="margin:0; background:none; border:none; color:var(--text-color,#ccc); font-size:22px; cursor:pointer; line-height:1; padding:2px;">×</button>
+                        <button type="button" id="mapMissingDevicesPickerCloseBtn" class="map-missing-picker-close" aria-label="Close">×</button>
                     </div>
-                    <input id="mapMissingDevicesPickerSearch" type="search" placeholder="Search device, address, or BIN" style="width:100%; box-sizing:border-box; padding:8px 10px; border-radius:8px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); font-size:13px; margin-bottom:8px;">
-                    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
-                        <button type="button" id="mapMissingDevicesPickerSelectAll" style="margin:0; padding:6px 10px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); cursor:pointer; font-size:12px; font-weight:700;">Select all</button>
-                        <button type="button" id="mapMissingDevicesPickerSelectNone" style="margin:0; padding:6px 10px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); cursor:pointer; font-size:12px; font-weight:700;">Select none</button>
-                        <span id="mapMissingDevicesPickerCount" style="font-size:12px; opacity:0.8; color:var(--text-color,#ccc);"></span>
-                    </div>
-                    <div id="mapMissingDevicesPickerList" style="overflow-y:auto; min-height:80px; max-height:46vh; border:1px solid var(--input-border,#444); border-radius:8px; padding:0 8px; background:var(--input-bg,#2a2a3e);">${rows}</div>
-                    ${notFoundHtml}
-                    <div id="mapMissingDevicesPickerFeedback" style="display:none; margin-top:10px; font-size:12px; line-height:1.4; color:#ff6b6b;"></div>
-                    <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
-                        <button type="button" id="mapMissingDevicesPickerAddBtn" style="flex:1; min-width:160px; margin:0; padding:10px; border-radius:7px; border:none; background:#0d6efd; color:white; cursor:pointer; font-size:13px; font-weight:700;">Add selected</button>
-                        <button type="button" id="mapMissingDevicesPickerCancelBtn" style="margin:0; padding:10px 14px; border-radius:7px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); cursor:pointer; font-size:13px; font-weight:700;">Cancel</button>
+                    <div class="map-missing-picker-body">
+                        <div class="map-missing-picker-stats">
+                            <span class="map-missing-stat map-missing-stat-missing"><strong>${choices.length}</strong> missing</span>
+                            <span class="map-missing-stat map-missing-stat-found"><strong>${alreadyCount}</strong> already in file</span>
+                            ${notFound.length ? `<span class="map-missing-stat map-missing-stat-miss"><strong>${notFound.length}</strong> not found</span>` : ''}
+                        </div>
+                        <div class="map-missing-picker-toolbar">
+                            <input id="mapMissingDevicesPickerSearch" type="search" placeholder="Search device, address, or BIN" aria-label="Search missing devices">
+                            <button type="button" id="mapMissingDevicesPickerSelectAll">Select all</button>
+                            <button type="button" id="mapMissingDevicesPickerSelectNone">Select none</button>
+                            <span id="mapMissingDevicesPickerCount"></span>
+                        </div>
+                        <div id="mapMissingDevicesPickerList">${rows}<div id="mapMissingDevicesPickerEmpty">No devices match that search.</div></div>
+                        ${notFoundHtml}
+                        <div id="mapMissingDevicesPickerFeedback"></div>
+                        <div class="map-missing-picker-actions">
+                            <button type="button" id="mapMissingDevicesPickerAddBtn">Add selected</button>
+                            <button type="button" id="mapMissingDevicesPickerCancelBtn">Cancel</button>
+                        </div>
                     </div>
                 </div>`;
             document.body.appendChild(overlay);

@@ -130,7 +130,14 @@ assert.match(html, /handleMapMissingDevicesFile\(event\)/);
 assert.match(html, /Missing Devices scans an imported list/);
 assert.match(html, /function showMissingDevicesPicker\(/);
 assert.match(html, /function addSelectedMissingMapDevices\(/);
-assert.match(html, /mapMissingDevicesPickerOverlay/);
+assert.match(html, /map-missing-device-card/);
+const missingSectionStart = html.indexOf('id="mcpMissingDevices"');
+const missingSectionEnd = html.indexOf('id="mcpDateCalculator"', missingSectionStart);
+const missingSection = html.slice(missingSectionStart, missingSectionEnd);
+assert.ok(
+    missingSection.indexOf('>Scan for missing devices<') < missingSection.indexOf('>Import device numbers…<'),
+    'Scan must appear above Import in Missing Devices'
+);
 assert.equal((html.match(/function addMissingMapDevices\(/g) || []).length, 1);
 assert.equal((html.match(/id="mapMissingDevicesInput"/g) || []).length, 1);
 
