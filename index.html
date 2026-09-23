@@ -1516,6 +1516,27 @@
                             </div>
                         </div>
 
+                        <!-- Find devices missing from the map JSON -->
+                        <div class="mcp-section" id="mcpMissingDevicesSection">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpMissingDevices')">
+                                <span class="mcp-title"><span style="color:#0d6efd;">➕</span> Missing Devices</span>
+                                <span class="mcp-arrow" id="mcpMissingDevicesArrow">›</span>
+                            </div>
+                            <div class="mcp-body" id="mcpMissingDevices">
+                                <p class="mcp-desc">Paste or import device numbers. Numbers already saved in this map file are left as they are. Numbers that are not in the file are looked up and added so you can see what was missing. Use Save to write the added devices into the JSON file.</p>
+                                <div id="mapMissingDevicesFileCount" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(13,110,253,0.28); background:rgba(13,110,253,0.08); color:var(--text-color); font-size:0.9em; line-height:1.4;">Devices in this map file: —</div>
+                                <textarea id="mapMissingDevicesInput"
+                                          placeholder="One device number per line, or paste a spreadsheet column"
+                                          oninput="this.value = this.value.toUpperCase()"
+                                          style="width:100%; min-height:110px; padding:8px 10px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:0.95em; box-sizing:border-box; resize:vertical; margin-bottom:8px;"></textarea>
+                                <input id="mapMissingDevicesFile" type="file" accept=".txt,.csv,.tsv,.xlsx,.xls,text/plain,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none;" onchange="handleMapMissingDevicesFile(event)">
+                                <button type="button" onclick="triggerMapMissingDevicesFile()" class="mcp-btn" style="color:#0d6efd; font-weight:600;">Import device numbers…</button>
+                                <button type="button" id="mapMissingDevicesAddBtn" onclick="addMissingMapDevices()" class="mcp-btn" style="background:#0d6efd; color:white; border-color:#0d6efd; font-weight:700;">Add devices missing from file</button>
+                                <button type="button" onclick="clearMapMissingDevicesInput()" class="mcp-btn">Clear list</button>
+                                <div id="mapMissingDevicesResult" style="margin-top:8px;"></div>
+                            </div>
+                        </div>
+
                         <!-- Date Calculator -->
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpDateCalculator'); refreshMapDateCalculatorSummary();">
@@ -1728,6 +1749,7 @@
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
+                                    <li>Missing Devices compares an imported device list with this map file and adds only the numbers that are not already saved</li>
                                     <li>Custom location pins have a ✓ completed button, matching building markers. Choose Category, PVI, or both when marking complete</li>
                                     <li><strong>Save your work</strong> — data is not kept between sessions</li>
                                 </ul>
@@ -16022,6 +16044,10 @@
                 if (mapTabMapBtn) mapTabMapBtn.style.display = 'block';
                 renderLoadedMapViewSummary(view);
             }
+            lastMapMissingDeviceImport = null;
+            const missingDevicesResult = document.getElementById('mapMissingDevicesResult');
+            if (missingDevicesResult) missingDevicesResult.innerHTML = '';
+            if (typeof refreshMapMissingDevicesFileCount === 'function') refreshMapMissingDevicesFileCount();
 
             pendingLoadedMapViewState = view.mapState ? { ...view.mapState } : {};
             // Always show Settings when loading a MAP file so filters and controls
@@ -16062,6 +16088,396 @@
             } catch (error) {
                 console.error('Error loading map view file:', error);
                 alert(`Unable to load file: ${error.message || 'Invalid JSON file.'}`);
+            }
+        }
+
+        // MAP missing-device import helpers
+        const MAP_MISSING_DEVICE_HEADER_KEYS = new Set([
+            'DEVICE', 'DEVICES', 'DEVICENUMBER', 'DEVICENUMBERS', 'DEVICE#', 'DEVICENO',
+            'DEV', 'NUMBER', 'NUMBERS', 'BIN', 'BINS', 'ELEVATOR', 'ELEVATORS'
+        ]);
+
+        function isImportedMapDeviceNumber(value) {
+            const token = String(value || '').trim().toUpperCase();
+            return /^\d+[A-Z][A-Z0-9]{0,12}$/.test(token) || /^[A-Z0-9]{1,12}-[A-Z0-9-]{1,12}$/.test(token);
+        }
+
+        function parseImportedMapDeviceNumbers(text) {
+            const tokens = String(text || '').split(/[\s,;|]+/);
+            const devices = [];
+            const seen = new Set();
+            const skippedBins = [];
+            const skippedOther = [];
+            tokens.forEach(token => {
+                const value = String(token || '').trim().replace(/^["']+|["']+$/g, '').replace(/\s+/g, '').toUpperCase();
+                if (!value || seen.has(value)) return;
+                const headerKey = value.replace(/[^A-Z0-9#]/g, '');
+                if (MAP_MISSING_DEVICE_HEADER_KEYS.has(headerKey)) return;
+                seen.add(value);
+                if (isImportedMapDeviceNumber(value)) devices.push(value);
+                else if (/^\d{6,7}$/.test(value)) skippedBins.push(value);
+                else if (/\d/.test(value) && value.length <= 24) skippedOther.push(value);
+            });
+            return { devices, skippedBins, skippedOther };
+        }
+
+        function deviceNumbersTextFromRows(rows) {
+            const cells = [];
+            (rows || []).forEach(row => {
+                const values = Array.isArray(row) ? row : [row];
+                values.forEach(cell => {
+                    if (cell !== undefined && cell !== null && String(cell).trim()) cells.push(String(cell));
+                });
+            });
+            return cells.join('\n');
+        }
+
+        function collectMapFileDeviceNumbers(binGroups, additionalLocations) {
+            const numbers = new Set();
+            const addList = devices => {
+                (devices || []).forEach(device => {
+                    const key = String(device && device.device_number || '').trim().toUpperCase();
+                    if (key) numbers.add(key);
+                });
+            };
+            Object.values(binGroups || {}).forEach(group => addList(group && group.devices));
+            (additionalLocations || []).forEach(location => addList(location && location.devices));
+            return numbers;
+        }
+
+        function summarizeMapMissingDeviceImport(parsed, existingNumbers) {
+            const existing = existingNumbers instanceof Set
+                ? existingNumbers
+                : new Set((existingNumbers || []).map(number => String(number || '').trim().toUpperCase()).filter(Boolean));
+            const missing = [];
+            const alreadyPresent = [];
+            (parsed && parsed.devices || []).forEach(device => {
+                if (existing.has(device)) alreadyPresent.push(device);
+                else missing.push(device);
+            });
+            return {
+                missing,
+                alreadyPresent,
+                skippedBins: (parsed && parsed.skippedBins) || [],
+                skippedOther: (parsed && parsed.skippedOther) || []
+            };
+        }
+
+        function formatImportedMapDeviceAddress(device) {
+            const street = [device && device.house_number, device && device.street_name].filter(Boolean).join(' ').trim();
+            const borough = device && device.borough ? String(device.borough).trim() : '';
+            if (street && borough) return `${street}, ${borough}`;
+            return street || borough || 'Unknown address';
+        }
+
+        function mergeMissingDeviceIntoBinGroups(binGroups, device) {
+            const groups = binGroups || {};
+            const deviceNumber = String(device && device.device_number || '').trim().toUpperCase();
+            if (!deviceNumber) return { added: false, reason: 'missing-number', bin: '' };
+            const alreadyPresent = Object.values(groups).some(group =>
+                (group && group.devices || []).some(existing =>
+                    String(existing && existing.device_number || '').trim().toUpperCase() === deviceNumber
+                )
+            );
+            if (alreadyPresent) return { added: false, reason: 'already-present', bin: String(device.bin || '') };
+            const bin = String(device.bin || '').trim() || 'Unknown BIN';
+            if (!groups[bin]) {
+                groups[bin] = {
+                    address: formatImportedMapDeviceAddress(device),
+                    devices: [],
+                    latitude: device.latitude || null,
+                    longitude: device.longitude || null
+                };
+            }
+            if (!groups[bin].latitude && device.latitude) {
+                groups[bin].latitude = device.latitude;
+                groups[bin].longitude = device.longitude;
+            }
+            if (!groups[bin].address) groups[bin].address = formatImportedMapDeviceAddress(device);
+            groups[bin].devices.push(device);
+            return { added: true, reason: 'added', bin };
+        }
+        // end MAP missing-device import helpers
+
+        let lastMapMissingDeviceImport = null;
+        let mapMissingDeviceImportInProgress = false;
+
+        function getLiveMapFileDeviceNumbers() {
+            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups
+                ? window.lastBulkSearchResults.binGroups
+                : {};
+            return collectMapFileDeviceNumbers(binGroups, getAdditionalLocations());
+        }
+
+        function refreshMapMissingDevicesFileCount() {
+            const el = document.getElementById('mapMissingDevicesFileCount');
+            if (!el) return;
+            const count = getLiveMapFileDeviceNumbers().size;
+            const fileName = currentMapViewFileName ? ` in ${currentMapViewFileName}` : '';
+            el.textContent = `Devices in this map file${fileName}: ${count}`;
+        }
+
+        function triggerMapMissingDevicesFile() {
+            const input = document.getElementById('mapMissingDevicesFile');
+            if (input) input.click();
+        }
+
+        function clearMapMissingDevicesInput() {
+            const textarea = document.getElementById('mapMissingDevicesInput');
+            const result = document.getElementById('mapMissingDevicesResult');
+            if (textarea) textarea.value = '';
+            if (result) result.innerHTML = '';
+            lastMapMissingDeviceImport = null;
+        }
+
+        function appendDeviceNumbersToBulkTextareas(deviceNumbers) {
+            ['bulkDeviceNumbers', 'mapTabBulkDeviceNumbers'].forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const existing = new Set(String(el.value || '').split(/\n/).map(line => line.trim().toUpperCase()).filter(Boolean));
+                const toAdd = (deviceNumbers || []).filter(number => number && !existing.has(number));
+                if (!toAdd.length) return;
+                const prefix = el.value && !/\n$/.test(el.value) ? '\n' : (el.value ? '' : '');
+                el.value = `${el.value || ''}${prefix}${toAdd.join('\n')}`;
+            });
+        }
+
+        function activeViolationsFromLookup(violations) {
+            if (!Array.isArray(violations) || violations.lookupFailed) return [];
+            try {
+                return violations.filter(violation => {
+                    const status = String(violation && violation.violation_status || '').toUpperCase();
+                    return status === 'ACTIVE' || status === 'OPEN';
+                });
+            } catch (error) {
+                return [];
+            }
+        }
+
+        async function handleMapMissingDevicesFile(event) {
+            const input = event && event.target;
+            const file = input && input.files ? input.files[0] : null;
+            if (!file) return;
+            try {
+                assertUploadSize(file, ELV3_UPLOAD_LIMITS.spreadsheetBytes, 'Device number file');
+                const name = file.name.toLowerCase();
+                let text = '';
+                if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+                    if (typeof XLSX === 'undefined') throw new Error('Spreadsheet support is not available in this browser.');
+                    const buffer = await file.arrayBuffer();
+                    const workbook = XLSX.read(buffer, { sheetRows: 20001 });
+                    const parts = workbook.SheetNames.map(sheetName => {
+                        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' });
+                        return deviceNumbersTextFromRows(rows);
+                    });
+                    text = parts.join('\n');
+                } else {
+                    text = await file.text();
+                }
+                const parsed = parseImportedMapDeviceNumbers(text);
+                if (!parsed.devices.length) {
+                    alert('No device numbers were found in that file. Use one number per line, or a spreadsheet column of device numbers.');
+                    return;
+                }
+                const textarea = document.getElementById('mapMissingDevicesInput');
+                if (!textarea) return;
+                const existing = new Set(parseImportedMapDeviceNumbers(textarea.value).devices);
+                const incoming = parsed.devices.filter(deviceNumber => !existing.has(deviceNumber));
+                if (incoming.length) {
+                    const prefix = textarea.value && !/\n$/.test(textarea.value) ? '\n' : '';
+                    textarea.value = `${textarea.value || ''}${prefix}${incoming.join('\n')}`;
+                }
+                const skippedNote = parsed.skippedBins.length
+                    ? ` ${parsed.skippedBins.length} BIN number${parsed.skippedBins.length === 1 ? '' : 's'} were left out.`
+                    : '';
+                showMapNotification(`Loaded ${incoming.length} device number${incoming.length === 1 ? '' : 's'} from "${file.name}".${skippedNote} Add the ones missing from this map file.`, '#0d6efd');
+            } catch (error) {
+                console.error('Error reading device number file:', error);
+                alert(error.message || 'Unable to read that file.');
+            } finally {
+                if (input) input.value = '';
+            }
+        }
+
+        function renderMapMissingDevicesResult(summary) {
+            const result = document.getElementById('mapMissingDevicesResult');
+            if (!result) return;
+            const added = summary.added || [];
+            const notFound = summary.notFound || [];
+            const preview = items => items.slice(0, 40).map(item => `<div style="padding:4px 0; border-bottom:1px solid var(--input-border); line-height:1.35;">${item}</div>`).join('');
+            const more = (items, label) => items.length > 40
+                ? `<div style="margin-top:4px; opacity:0.7; font-size:0.85em;">Showing 40 of ${items.length} ${label}.</div>`
+                : '';
+            const addedHtml = added.map(item => {
+                const binJs = String(item.bin || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const address = escapeMapSuggestionHtml(item.address || 'Unknown address');
+                const deviceNumber = escapeMapSuggestionHtml(item.deviceNumber);
+                const binLabel = escapeMapSuggestionHtml(item.bin || '');
+                return `<div style="padding:6px 0; border-bottom:1px solid var(--input-border); line-height:1.35;">
+                    <button type="button" onclick="flyToMapBuilding('${binJs}', { temporarilyShowHidden: true })" style="background:none; border:none; padding:0; color:#0d6efd; font-weight:700; cursor:pointer; text-align:left;">${deviceNumber}</button>
+                    <div style="opacity:0.8;">${address}${binLabel ? ` · BIN ${binLabel}` : ''}</div>
+                </div>`;
+            }).join('');
+            result.innerHTML = `
+                <div style="padding:8px 10px; border-radius:6px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); font-size:0.9em; line-height:1.45;">
+                    <div style="font-weight:700; margin-bottom:6px;">Comparison with this map file</div>
+                    <div>Already in the file: <strong>${summary.alreadyPresent.length}</strong></div>
+                    <div>Missing and added: <strong style="color:${added.length ? '#0d6efd' : 'inherit'};">${added.length}</strong></div>
+                    <div>Not found in DOB: <strong style="color:${notFound.length ? '#ff6b6b' : 'inherit'};">${notFound.length}</strong></div>
+                    ${summary.skippedBins.length ? `<div>BIN numbers skipped: <strong>${summary.skippedBins.length}</strong></div>` : ''}
+                    ${summary.skippedOther.length ? `<div>Other values skipped: <strong>${summary.skippedOther.length}</strong></div>` : ''}
+                    ${added.length ? `<div style="margin-top:8px; font-weight:700;">Added to the map</div><div style="max-height:220px; overflow-y:auto;">${addedHtml}</div>${more(added, 'added devices')}` : ''}
+                    ${!added.length && summary.missing.length === 0 ? `<div style="margin-top:8px;">Nothing was missing. Every imported device number is already in this map file.</div>` : ''}
+                    ${notFound.length ? `<div style="margin-top:8px; font-weight:700; color:#ff6b6b;">Not found</div><div style="max-height:140px; overflow-y:auto;">${preview(notFound.map(escapeMapSuggestionHtml))}</div>${more(notFound, 'not found')}` : ''}
+                    ${added.length ? `<button type="button" onclick="focusMapOnMissingDeviceImport()" class="mcp-btn" style="color:#0d6efd; font-weight:700;">Show added on MAP</button>` : ''}
+                </div>
+            `;
+        }
+
+        function focusMapOnMissingDeviceImport() {
+            if (!lastMapMissingDeviceImport || !buildingMap) return;
+            const bins = Array.from(new Set((lastMapMissingDeviceImport.added || []).map(item => item.bin).filter(Boolean)));
+            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups
+                ? window.lastBulkSearchResults.binGroups
+                : {};
+            const points = [];
+            bins.forEach(bin => {
+                const group = binGroups[bin];
+                if (!group) return;
+                const lat = parseFloat(group.latitude);
+                const lng = parseFloat(group.longitude);
+                if (Number.isFinite(lat) && Number.isFinite(lng)) points.push([lat, lng]);
+            });
+            if (!points.length || typeof L === 'undefined') {
+                if (bins[0]) flyToMapBuilding(bins[0], { temporarilyShowHidden: true });
+                return;
+            }
+            if (points.length === 1) {
+                buildingMap.setView(points[0], Math.max(buildingMap.getZoom(), 16));
+                return;
+            }
+            buildingMap.fitBounds(points, { padding: [40, 40], maxZoom: 16 });
+        }
+
+        async function addMissingMapDevices() {
+            if (mapMissingDeviceImportInProgress) return;
+            const textarea = document.getElementById('mapMissingDevicesInput');
+            const result = document.getElementById('mapMissingDevicesResult');
+            const button = document.getElementById('mapMissingDevicesAddBtn');
+            const parsed = parseImportedMapDeviceNumbers(textarea ? textarea.value : '');
+            if (!parsed.devices.length) {
+                if (result) {
+                    result.innerHTML = '<div style="color:#ff6b6b; font-weight:600; font-size:0.9em;">Enter at least one device number. BINs and other text are skipped.</div>';
+                }
+                return;
+            }
+
+            const hasMapFile = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
+            if (!hasMapFile) {
+                alert('Load a map view file or run a device lookup before comparing device numbers.');
+                return;
+            }
+
+            const summary = summarizeMapMissingDeviceImport(parsed, getLiveMapFileDeviceNumbers());
+            if (!summary.missing.length) {
+                lastMapMissingDeviceImport = { ...summary, added: [], notFound: [], failed: [] };
+                renderMapMissingDevicesResult(lastMapMissingDeviceImport);
+                refreshMapMissingDevicesFileCount();
+                showMapNotification('Every imported device number is already in this map file', '#4CAF50');
+                return;
+            }
+
+            mapMissingDeviceImportInProgress = true;
+            if (button) {
+                button.disabled = true;
+                button.textContent = 'Checking devices…';
+            }
+            if (result) {
+                result.innerHTML = `<div style="padding:8px 10px; font-size:0.9em;">Looking up ${summary.missing.length} device number${summary.missing.length === 1 ? '' : 's'} that ${summary.missing.length === 1 ? 'is' : 'are'} not in this map file…</div>`;
+            }
+
+            const added = [];
+            const notFound = [];
+            try {
+                const lookup = await fetchCurrentDobDeviceRecords(summary.missing, (completed, total) => {
+                    if (result) {
+                        result.innerHTML = `<div style="padding:8px 10px; font-size:0.9em;">Looking up missing devices: ${completed} of ${total}…</div>`;
+                    }
+                });
+                const foundNumbers = Object.keys(lookup.freshByDevice || {});
+                summary.missing.forEach(deviceNumber => {
+                    if (!lookup.freshByDevice[deviceNumber]) notFound.push(deviceNumber);
+                });
+
+                const binGroups = window.lastBulkSearchResults.binGroups;
+                await runWithLimitedConcurrency(foundNumbers, 4, async deviceNumber => {
+                    const record = lookup.freshByDevice[deviceNumber];
+                    if (!record) return;
+                    let violations = [];
+                    let machineType = '';
+                    try {
+                        const [violationRows, info] = await Promise.all([
+                            fetchViolations(deviceNumber),
+                            fetchDeviceInfo(deviceNumber)
+                        ]);
+                        violations = activeViolationsFromLookup(violationRows);
+                        machineType = info && info.machine_type ? info.machine_type : '';
+                    } catch (error) {
+                        console.warn('Missing-device detail lookup failed:', deviceNumber, error);
+                    }
+                    const device = {
+                        ...record,
+                        device_number: record.device_number || deviceNumber,
+                        violations,
+                        machine_type: machineType
+                    };
+                    const merge = mergeMissingDeviceIntoBinGroups(binGroups, device);
+                    if (merge.added) {
+                        added.push({
+                            deviceNumber: String(device.device_number).trim().toUpperCase(),
+                            bin: merge.bin,
+                            address: binGroups[merge.bin] && binGroups[merge.bin].address
+                                ? binGroups[merge.bin].address
+                                : formatImportedMapDeviceAddress(device)
+                        });
+                    }
+                });
+
+                if (added.length) {
+                    appendDeviceNumbersToBulkTextareas(added.map(item => item.deviceNumber));
+                    addMapActivity('Added missing devices', {
+                        type: 'Device',
+                        details: `${added.length} device${added.length === 1 ? '' : 's'} added that ${added.length === 1 ? 'was' : 'were'} not in the map file`
+                    });
+                    if (buildingMap) initBuildingMap(binGroups, true);
+                }
+
+                lastMapMissingDeviceImport = {
+                    ...summary,
+                    added,
+                    notFound,
+                    failed: lookup.failed || []
+                };
+                renderMapMissingDevicesResult(lastMapMissingDeviceImport);
+                refreshMapMissingDevicesFileCount();
+                if (added.length) {
+                    showMapNotification(`Added ${added.length} device${added.length === 1 ? '' : 's'} that ${added.length === 1 ? 'was' : 'were'} missing from this map file`, '#0d6efd');
+                } else if (notFound.length) {
+                    showMapNotification('No missing devices could be added. Check the numbers that were not found.', '#ff9800');
+                } else {
+                    showMapNotification('Those device numbers are already in this map file', '#4CAF50');
+                }
+            } catch (error) {
+                console.error('Error adding missing map devices:', error);
+                if (result) {
+                    result.innerHTML = `<div style="color:#ff6b6b; font-weight:600; font-size:0.9em;">Could not compare devices: ${escapeMapSuggestionHtml(error.message || 'Lookup failed')}</div>`;
+                }
+            } finally {
+                mapMissingDeviceImportInProgress = false;
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = 'Add devices missing from file';
+                }
             }
         }
         
@@ -25348,6 +25764,9 @@
             }
             if (id === 'mcpDateCalculator' && typeof refreshMapDateCalculatorSummary === 'function') {
                 refreshMapDateCalculatorSummary();
+            }
+            if (id === 'mcpMissingDevices' && typeof refreshMapMissingDevicesFileCount === 'function') {
+                refreshMapMissingDevicesFileCount();
             }
 
             panelBody.scrollTop = 0;
