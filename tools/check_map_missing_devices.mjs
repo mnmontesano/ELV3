@@ -113,6 +113,17 @@ const addedNewBuilding = context.mergeMissingDeviceIntoBinGroups(binGroups, {
 assert.equal(addedNewBuilding.added, true);
 assert.equal(binGroups['2000002'].address, '5 Broadway, Brooklyn');
 assert.equal(binGroups['2000002'].devices.length, 1);
+const markedNa = context.mergeMissingDeviceIntoBinGroups(binGroups, {
+    device_number: '3A999',
+    bin: '1000001',
+    house_number: '10',
+    street_name: 'Main St',
+    borough: 'Manhattan',
+    map_not_applicable: true
+});
+assert.equal(markedNa.added, true);
+assert.equal(binGroups['1000001'].devices.find(device => device.device_number === '3A999').map_not_applicable, true);
+
 assert.equal(context.buildMissingDeviceChoice('1p55555', {
     device_number: '1P55555',
     bin: '1000001',
@@ -130,6 +141,12 @@ assert.match(html, /handleMapMissingDevicesFile\(event\)/);
 assert.match(html, /Missing Devices scans an imported list/);
 assert.match(html, /function showMissingDevicesPicker\(/);
 assert.match(html, /function addSelectedMissingMapDevices\(/);
+assert.match(html, /id="mapMissingDevicesPickerNaBtn"/);
+assert.match(html, /addSelectedMissingMapDevices\(true\)/);
+assert.match(html, /function isNotApplicableMapDevice\(/);
+assert.match(html, /device\.map_not_applicable = true/);
+assert.match(html, /N\/A · NOT YOUR RESPONSIBILITY/);
+assert.match(html, /function clearMapDeviceNotApplicable\(/);
 assert.match(html, /map-missing-device-card/);
 const missingSectionStart = html.indexOf('id="mcpMissingDevices"');
 const missingSectionEnd = html.indexOf('id="mcpDateCalculator"', missingSectionStart);

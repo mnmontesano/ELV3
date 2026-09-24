@@ -1523,7 +1523,7 @@
                                 <span class="mcp-arrow" id="mcpMissingDevicesArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpMissingDevices">
-                                <p class="mcp-desc">Paste or import device numbers, then scan them against this map file. A window lists the devices that are missing so you can choose which ones to add. Use Save to write the added devices into the JSON file.</p>
+                                <p class="mcp-desc">Paste or import device numbers, then scan them against this map file. A window lists the devices that are missing so you can add them, or mark them N/A when they are in the building but not your responsibility. N/A devices are saved in the file and shown on the map with a different label. They are not counted as your devices. Use Save to write them into the JSON file.</p>
                                 <div id="mapMissingDevicesFileCount" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(13,110,253,0.28); background:rgba(13,110,253,0.08); color:var(--text-color); font-size:0.9em; line-height:1.4;">Devices in this map file: —</div>
                                 <textarea id="mapMissingDevicesInput"
                                           placeholder="One device number per line, or paste a spreadsheet column"
@@ -1749,7 +1749,7 @@
                                     <li>In-process buildings turn orange</li>
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
-                                    <li>Missing Devices scans an imported list against this map file, then lets you choose which missing devices to add</li>
+                                    <li>Missing Devices scans an imported list against this map file, then lets you choose which missing devices to add. Mark N/A for devices that are in the building but not your responsibility. Those stay on the map and in the file, labeled N/A, and are left out of device counts, tests, and violations.</li>
                                     <li>Custom location pins have a ✓ completed button, matching building markers. Choose Category, PVI, or both when marking complete</li>
                                     <li><strong>Save your work</strong> — data is not kept between sessions</li>
                                 </ul>
@@ -10334,6 +10334,10 @@
             return status.includes('REMOVED') || status.includes('DELETED');
         }
 
+        function isNotApplicableMapDevice(device) {
+            return !!(device && device.map_not_applicable);
+        }
+
         function isWorkInProgressDevice(device) {
             const status = (device && device.device_status ? device.device_status : '').toUpperCase();
             return status.includes('WORK IN PROGRESS');
@@ -10350,7 +10354,9 @@
         }
 
         function countMapJobDevices(devices) {
-            return Array.isArray(devices) ? devices.filter(device => !isRemovedFromMapJob(device)).length : 0;
+            return Array.isArray(devices)
+                ? devices.filter(device => !isRemovedFromMapJob(device) && !isNotApplicableMapDevice(device)).length
+                : 0;
         }
         
         function getAdditionalLocations() {
@@ -11459,6 +11465,7 @@
             const machineText = (device.machine_type || device.machineType || '').toUpperCase();
             const numberText = (device.device_number || '').toUpperCase();
             const isRemoved = statusText.includes('REMOVED') || statusText.includes('DELETED');
+            const isNotApplicable = isNotApplicableMapDevice(device);
             const isDismantled = statusText.includes('DISMANTLED');
             const isDumbwaiter = isDumbwaiterDevice(device);
             const isConveyor = isConveyorDevice(device);
@@ -11475,13 +11482,14 @@
             const cat5Bypassed = !typeCat5NotRequired && isMapDeviceCat5Bypassed(device, null, binHint);
             const cat5BypassNote = cat5Bypassed ? getMapDeviceCat5BypassNote(findMapBinForDevice(device, binHint), device.device_number) : '';
             const cat5NotRequired = typeCat5NotRequired || cat5Bypassed;
-            const requiresCat5 = !cat5NotRequired && cat5Date && !isNaN(cat5Date.getTime()) && (year - cat5Date.getFullYear()) >= 5;
+            const requiresCat5 = !isNotApplicable && !cat5NotRequired && cat5Date && !isNaN(cat5Date.getTime()) && (year - cat5Date.getFullYear()) >= 5;
             const nextCat5DueYear = (!cat5NotRequired && cat5Date && !isNaN(cat5Date.getTime())) ? cat5Date.getFullYear() + 5 : null;
             return {
                 isRemoved,
+                isNotApplicable,
                 isDismantled,
-                requiresPVI: !isRemoved && !isConveyor,
-                requiresCat1: !isRemoved && !isDismantled,
+                requiresPVI: !isRemoved && !isNotApplicable && !isConveyor,
+                requiresCat1: !isRemoved && !isNotApplicable && !isDismantled,
                 requiresCat5,
                 cat5NotRequired,
                 typeCat5NotRequired,
@@ -11499,6 +11507,7 @@
 
         function getMapDeviceReportPendingTests(testInfo) {
             const pending = [];
+            if (testInfo && testInfo.isNotApplicable) return pending;
             if (!testInfo.isRemoved) {
                 if (testInfo.requiresPVI && !testInfo.hasPVI) pending.push('PVI');
                 if (testInfo.requiresCat1 && !testInfo.hasCat1) pending.push('CAT 1');
@@ -11511,7 +11520,7 @@
             const pending = getMapDeviceReportPendingTests(testInfo);
             const dayStart = today || new Date();
             dayStart.setHours(0, 0, 0, 0);
-            if (testInfo.isRemoved) {
+            if (testInfo.isRemoved || testInfo.isNotApplicable) {
                 return { pending: [], nextTest: null, availableDate: null, daysUntil: null, isAvailableNow: false };
             }
             if (pending.length === 0) {
@@ -11556,7 +11565,9 @@
             const fmt = d => d ? d.toLocaleDateString() : '—';
 
             let nextTestHtml = '';
-            if (isRemoved) {
+            if (testInfo.isNotApplicable) {
+                nextTestHtml = `<span style="color:#3949ab;font-weight:800;letter-spacing:0.04em;">N/A</span> <span style="color:#5c6bc0;font-style:italic;">Not your responsibility</span>`;
+            } else if (isRemoved) {
                 nextTestHtml = `<span style="color:#888;font-style:italic;">N/A (${statusUp.includes('DELETED') ? 'Deleted' : 'Removed'})</span>`;
             } else if (pending.length === 0) {
                 nextTestHtml = '<span style="color:#4CAF50;font-weight:600;">All tests complete ✓</span>';
@@ -11599,7 +11610,9 @@
                     ? `<span style="color:#4CAF50;font-style:italic;">Not required (bypassed)</span><br>${nextCat5Html}`
                     : `${fmt(testInfo.cat5Date)}<br>${nextCat5Html}`;
 
-            const pendingHtml = isRemoved
+            const pendingHtml = testInfo.isNotApplicable
+                ? `<span style="color:#3949ab;font-weight:800;">N/A</span> <span style="color:#5c6bc0;font-style:italic;">Recorded for reference only</span>`
+                : isRemoved
                 ? `<span style="color:#888;font-style:italic;">N/A (${statusUp.includes('DELETED') ? 'Deleted' : 'Removed'})</span>`
                 : pending.length === 0
                     ? '<span style="color:#4CAF50;font-weight:600;">All done ✓</span>'
@@ -12015,9 +12028,11 @@
 
             const existingViolations = savedDevice.violations;
             const existingMachineType = savedDevice.machine_type;
+            const notApplicable = !!savedDevice.map_not_applicable;
             Object.assign(savedDevice, freshDevice);
             if (existingViolations !== undefined) savedDevice.violations = existingViolations;
             if (existingMachineType && !savedDevice.machine_type) savedDevice.machine_type = existingMachineType;
+            if (notApplicable) savedDevice.map_not_applicable = true;
 
             return changes;
         }
@@ -12029,7 +12044,7 @@
         }
 
         function mapDobDeviceIsActiveForCompletion(device) {
-            if (!device) return false;
+            if (!device || isNotApplicableMapDevice(device)) return false;
             const status = String(device.device_status || '').toUpperCase();
             return !(status.includes('REMOVED') || status.includes('DELETED'));
         }
@@ -16326,13 +16341,17 @@
             const more = (items, label) => items.length > 40
                 ? `<div style="margin-top:4px; opacity:0.7; font-size:0.85em;">Showing 40 of ${items.length} ${label}.</div>`
                 : '';
+            const naCount = added.filter(item => item.notApplicable).length;
             const addedHtml = added.map(item => {
                 const binJs = String(item.bin || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 const address = escapeMapSuggestionHtml(item.address || 'Unknown address');
                 const deviceNumber = escapeMapSuggestionHtml(item.deviceNumber);
                 const binLabel = escapeMapSuggestionHtml(item.bin || '');
+                const naBadge = item.notApplicable
+                    ? ` <span style="color:#3949ab;font-weight:800;letter-spacing:0.04em;">N/A</span>`
+                    : '';
                 return `<div style="padding:6px 0; border-bottom:1px solid var(--input-border); line-height:1.35;">
-                    <button type="button" onclick="flyToMapBuilding('${binJs}', { temporarilyShowHidden: true })" style="background:none; border:none; padding:0; color:#0d6efd; font-weight:700; cursor:pointer; text-align:left;">${deviceNumber}</button>
+                    <button type="button" onclick="flyToMapBuilding('${binJs}', { temporarilyShowHidden: true })" style="background:none; border:none; padding:0; color:${item.notApplicable ? '#3949ab' : '#0d6efd'}; font-weight:700; cursor:pointer; text-align:left;">${deviceNumber}</button>${naBadge}
                     <div style="opacity:0.8;">${address}${binLabel ? ` · BIN ${binLabel}` : ''}</div>
                 </div>`;
             }).join('');
@@ -16341,7 +16360,7 @@
                     <div style="font-weight:700; margin-bottom:6px;">Comparison with this map file</div>
                     <div>Already in the file: <strong>${summary.alreadyPresent.length}</strong></div>
                     <div>Missing devices found: <strong style="color:${pending.length ? '#0d6efd' : 'inherit'};">${pending.length}</strong></div>
-                    <div>Added to the map: <strong style="color:${added.length ? '#0d6efd' : 'inherit'};">${added.length}</strong></div>
+                    <div>Added to the map: <strong style="color:${added.length ? '#0d6efd' : 'inherit'};">${added.length}</strong>${naCount ? ` <span style="color:#3949ab;font-weight:800;">(${naCount} N/A)</span>` : ''}</div>
                     <div>Not found in DOB: <strong style="color:${notFound.length ? '#ff6b6b' : 'inherit'};">${notFound.length}</strong></div>
                     ${summary.skippedBins.length ? `<div>BIN numbers skipped: <strong>${summary.skippedBins.length}</strong></div>` : ''}
                     ${summary.skippedOther.length ? `<div>Other values skipped: <strong>${summary.skippedOther.length}</strong></div>` : ''}
@@ -16364,8 +16383,10 @@
             const checked = boxes.filter(box => box.checked).length;
             const count = document.getElementById('mapMissingDevicesPickerCount');
             const button = document.getElementById('mapMissingDevicesPickerAddBtn');
+            const naButton = document.getElementById('mapMissingDevicesPickerNaBtn');
             if (count) count.textContent = `${checked} of ${boxes.length} selected`;
             if (button && !button.disabled) button.textContent = `Add selected (${checked})`;
+            if (naButton && !naButton.disabled) naButton.textContent = `N/A (${checked})`;
         }
 
         function setMissingDevicesPickerChecks(checked) {
@@ -16467,8 +16488,10 @@
                     #mapMissingDevicesPickerOverlay .map-missing-picker-notfound span { opacity:0.9; }
                     #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerFeedback { display:none; margin-top:10px; font-size:12px; font-weight:700; line-height:1.4; color:#d64545; }
                     #mapMissingDevicesPickerOverlay .map-missing-picker-actions { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
-                    #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerAddBtn { flex:1; min-width:180px; margin:0; padding:12px 14px; border:none; border-radius:12px; background:#0d6efd; color:#fff; cursor:pointer; font-size:14px; font-weight:800; }
+                    #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerAddBtn { flex:1; min-width:160px; margin:0; padding:12px 14px; border:none; border-radius:12px; background:#0d6efd; color:#fff; cursor:pointer; font-size:14px; font-weight:800; }
                     #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerAddBtn:disabled { opacity:0.7; cursor:wait; }
+                    #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerNaBtn { flex:1; min-width:140px; margin:0; padding:12px 14px; border:1px solid #5c6bc0; border-radius:12px; background:rgba(92,107,192,0.12); color:#3949ab; cursor:pointer; font-size:14px; font-weight:800; }
+                    #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerNaBtn:disabled { opacity:0.7; cursor:wait; }
                     #mapMissingDevicesPickerOverlay #mapMissingDevicesPickerCancelBtn { margin:0; padding:12px 16px; border-radius:12px; border:1px solid var(--input-border,#d7dbe3); background:var(--panel-bg,#fff); color:var(--text-color,#1c1c1c); cursor:pointer; font-size:14px; font-weight:800; }
                 </style>
                 <div class="map-missing-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="mapMissingDevicesPickerTitle">
@@ -16476,7 +16499,7 @@
                         <div>
                             <div class="map-missing-picker-kicker">Scan results</div>
                             <h3 id="mapMissingDevicesPickerTitle">Missing devices</h3>
-                            <p class="map-missing-picker-sub">These device numbers are not in this map file. Check the ones you want to add.</p>
+                            <p class="map-missing-picker-sub">These device numbers are not in this map file. Add the ones that are yours, or mark N/A for devices in the building that are not your responsibility.</p>
                         </div>
                         <button type="button" id="mapMissingDevicesPickerCloseBtn" class="map-missing-picker-close" aria-label="Close">×</button>
                     </div>
@@ -16497,6 +16520,7 @@
                         <div id="mapMissingDevicesPickerFeedback"></div>
                         <div class="map-missing-picker-actions">
                             <button type="button" id="mapMissingDevicesPickerAddBtn">Add selected</button>
+                            <button type="button" id="mapMissingDevicesPickerNaBtn" title="Save on the map as N/A. These are not counted as your devices.">N/A</button>
                             <button type="button" id="mapMissingDevicesPickerCancelBtn">Cancel</button>
                         </div>
                     </div>
@@ -16511,23 +16535,28 @@
             document.getElementById('mapMissingDevicesPickerSelectNone').addEventListener('click', () => setMissingDevicesPickerChecks(false));
             document.getElementById('mapMissingDevicesPickerSearch').addEventListener('input', event => filterMissingDevicesPicker(event.target.value));
             document.getElementById('mapMissingDevicesPickerList').addEventListener('change', updateMissingDevicesPickerCount);
-            document.getElementById('mapMissingDevicesPickerAddBtn').addEventListener('click', () => addSelectedMissingMapDevices());
+            document.getElementById('mapMissingDevicesPickerAddBtn').addEventListener('click', () => addSelectedMissingMapDevices(false));
+            document.getElementById('mapMissingDevicesPickerNaBtn').addEventListener('click', () => addSelectedMissingMapDevices(true));
             updateMissingDevicesPickerCount();
             const search = document.getElementById('mapMissingDevicesPickerSearch');
             if (search) setTimeout(() => search.focus(), 0);
         }
 
-        async function addSelectedMissingMapDevices() {
+        async function addSelectedMissingMapDevices(markNotApplicable) {
             if (mapMissingDeviceImportInProgress) return;
             const selected = [...document.querySelectorAll('#mapMissingDevicesPickerList input[type="checkbox"][data-device-number]:checked')]
                 .map(box => String(box.getAttribute('data-device-number') || '').trim().toUpperCase())
                 .filter(deviceNumber => pendingMissingDeviceRecords[deviceNumber]);
             const feedback = document.getElementById('mapMissingDevicesPickerFeedback');
             const button = document.getElementById('mapMissingDevicesPickerAddBtn');
+            const naButton = document.getElementById('mapMissingDevicesPickerNaBtn');
+            const asNotApplicable = !!markNotApplicable;
             if (!selected.length) {
                 if (feedback) {
                     feedback.style.display = 'block';
-                    feedback.textContent = 'Select at least one missing device to add.';
+                    feedback.textContent = asNotApplicable
+                        ? 'Select at least one missing device to mark N/A.'
+                        : 'Select at least one missing device to add.';
                 }
                 return;
             }
@@ -16539,8 +16568,11 @@
             }
 
             mapMissingDeviceImportInProgress = true;
-            if (button) {
-                button.disabled = true;
+            if (button) button.disabled = true;
+            if (naButton) naButton.disabled = true;
+            if (asNotApplicable) {
+                if (naButton) naButton.textContent = 'Marking N/A…';
+            } else if (button) {
                 button.textContent = 'Adding…';
             }
             const added = [];
@@ -16565,9 +16597,10 @@
                     const device = {
                         ...record,
                         device_number: record.device_number || deviceNumber,
-                        violations,
+                        violations: asNotApplicable ? [] : violations,
                         machine_type: machineType
                     };
+                    if (asNotApplicable) device.map_not_applicable = true;
                     const merge = mergeMissingDeviceIntoBinGroups(binGroups, device);
                     if (merge.added) {
                         added.push({
@@ -16575,11 +16608,16 @@
                             bin: merge.bin,
                             address: binGroups[merge.bin] && binGroups[merge.bin].address
                                 ? binGroups[merge.bin].address
-                                : formatImportedMapDeviceAddress(device)
+                                : formatImportedMapDeviceAddress(device),
+                            notApplicable: asNotApplicable
                         });
                     }
                     completed += 1;
-                    if (button) button.textContent = `Adding ${completed} of ${selected.length}…`;
+                    const progressLabel = asNotApplicable
+                        ? `Marking N/A ${completed} of ${selected.length}…`
+                        : `Adding ${completed} of ${selected.length}…`;
+                    if (asNotApplicable && naButton) naButton.textContent = progressLabel;
+                    else if (button) button.textContent = progressLabel;
                 });
 
                 const selectedSet = new Set(selected);
@@ -16596,16 +16634,20 @@
                 };
                 if (added.length) {
                     appendDeviceNumbersToBulkTextareas(added.map(item => item.deviceNumber));
-                    addMapActivity('Added missing devices', {
+                    addMapActivity(asNotApplicable ? 'Marked missing devices N/A' : 'Added missing devices', {
                         type: 'Device',
-                        details: `${added.length} selected device${added.length === 1 ? '' : 's'} added that ${added.length === 1 ? 'was' : 'were'} not in the map file`
+                        details: asNotApplicable
+                            ? `${added.length} device${added.length === 1 ? '' : 's'} saved as N/A. Not counted as your devices.`
+                            : `${added.length} selected device${added.length === 1 ? '' : 's'} added that ${added.length === 1 ? 'was' : 'were'} not in the map file`
                     });
                     if (buildingMap) initBuildingMap(binGroups, true);
                 }
                 closeMissingDevicesPicker();
                 renderMapMissingDevicesResult(lastMapMissingDeviceImport);
                 refreshMapMissingDevicesFileCount();
-                if (added.length) {
+                if (added.length && asNotApplicable) {
+                    showMapNotification(`Marked ${added.length} device${added.length === 1 ? '' : 's'} N/A`, '#5c6bc0');
+                } else if (added.length) {
                     showMapNotification(`Added ${added.length} selected device${added.length === 1 ? '' : 's'}`, '#0d6efd');
                 } else {
                     showMapNotification('Those devices are already in this map file', '#4CAF50');
@@ -16616,10 +16658,9 @@
                     feedback.style.display = 'block';
                     feedback.textContent = error.message || 'Could not add the selected devices.';
                 }
-                if (button) {
-                    button.disabled = false;
-                    updateMissingDevicesPickerCount();
-                }
+                if (button) button.disabled = false;
+                if (naButton) naButton.disabled = false;
+                updateMissingDevicesPickerCount();
             } finally {
                 mapMissingDeviceImportInProgress = false;
             }
@@ -21328,8 +21369,9 @@
                 return getMapDeviceReportTestInfo(device, currentYear, reportBin);
             };
 
-            const getDeviceReportPendingTests = function(testInfo) {
+                const getDeviceReportPendingTests = function(testInfo) {
                 const pending = [];
+                if (testInfo && testInfo.isNotApplicable) return pending;
                 if (!testInfo.isRemoved) {
                     if (testInfo.requiresPVI && !testInfo.hasPVI) pending.push('PVI');
                     if (testInfo.requiresCat1 && !testInfo.hasCat1) pending.push('CAT 1');
@@ -21340,7 +21382,7 @@
 
             const getDeviceReportNextTestAvailability = function(device, testInfo) {
                 const pending = getDeviceReportPendingTests(testInfo);
-                if (testInfo.isRemoved) {
+                if (testInfo.isRemoved || testInfo.isNotApplicable) {
                     return { pending: [], nextTest: null, availableDate: null, daysUntil: null, isAvailableNow: false };
                 }
                 if (pending.length === 0) {
@@ -21373,7 +21415,10 @@
                 };
             };
 
-            const activeReportDevices = devices.filter(device => !getDeviceReportTestInfo(device).isRemoved);
+            const activeReportDevices = devices.filter(device => {
+                const info = getDeviceReportTestInfo(device);
+                return !info.isRemoved && !info.isNotApplicable;
+            });
             const reportSummary = activeReportDevices.reduce((summary, device) => {
                 const info = getDeviceReportTestInfo(device);
                 if (info.requiresPVI) {
@@ -21475,6 +21520,7 @@
 
                 const getDeviceReportSortRank = function(device) {
                     const testInfo = getDeviceReportTestInfo(device);
+                    if (testInfo.isNotApplicable) return 5;
                     if (testInfo.isRemoved) return 4;
 
                     // Devices with no tests filed in the current calendar year come first.
@@ -21520,6 +21566,7 @@
                     const statusUp = status.toUpperCase();
                     const testInfo = getDeviceReportTestInfo(device);
                     const isRemoved = testInfo.isRemoved;
+                    const isNotApplicable = !!testInfo.isNotApplicable;
                     const isDismantled = testInfo.isDismantled;
                     const pviDate = testInfo.pviDate;
                     const cat1Date = testInfo.cat1Date;
@@ -21532,7 +21579,9 @@
                     const nextTestAvailability = getDeviceReportNextTestAvailability(device, testInfo);
 
                     let nextTestHtml = '';
-                    if (isRemoved) {
+                    if (isNotApplicable) {
+                        nextTestHtml = `<span style="color:#3949ab;font-weight:800;letter-spacing:0.04em;">N/A</span> <span style="color:#5c6bc0;font-style:italic;">Not your responsibility</span>`;
+                    } else if (isRemoved) {
                         nextTestHtml = `<span style="color:#888;font-style:italic;">N/A (${statusUp.includes('DELETED') ? 'Deleted' : 'Removed'})</span>`;
                     } else if (pending.length === 0) {
                         nextTestHtml = '<span style="color:#4CAF50;font-weight:600;">All tests complete ✓</span>';
@@ -21576,7 +21625,9 @@
                             ? `<span style="color:#4CAF50;font-style:italic;">Not required (bypassed)</span><br>${nextCat5Html}`
                             : `${fmt(cat5Date)}<br>${nextCat5Html}`;
 
-                    const pendingHtml = isRemoved
+                    const pendingHtml = isNotApplicable
+                        ? `<span style="color:#3949ab;font-weight:800;">N/A</span> <span style="color:#5c6bc0;font-style:italic;">Recorded for reference only</span>`
+                        : isRemoved
                         ? `<span style="color:#888;font-style:italic;">N/A (${statusUp.includes('DELETED') ? 'Deleted' : 'Removed'})</span>`
                         : pending.length === 0
                             ? '<span style="color:#4CAF50;font-weight:600;">All done ✓</span>'
@@ -21587,7 +21638,7 @@
                         ? `<span style="color:#ff6b6b;font-weight:600;">⚠️ ${violCount}</span>`
                         : '<span style="opacity:0.45;">—</span>';
 
-                    const showCat5BypassUi = !isRemoved && (!testInfo.typeCat5NotRequired || testInfo.cat5Bypassed);
+                    const showCat5BypassUi = !isRemoved && !isNotApplicable && (!testInfo.typeCat5NotRequired || testInfo.cat5Bypassed);
                     const bypassNoteId = 'cat5BypassNote_' + String(bin) + '_' + String(num).replace(/[^a-zA-Z0-9_-]/g, '_');
                     const binJs = String(bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                     const numJs = String(num).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -21668,7 +21719,9 @@
                             </div>
                         </div>` : '';
 
-                    const rowBg = violCount > 0
+                    const rowBg = isNotApplicable
+                        ? 'rgba(92,107,192,0.1)'
+                        : violCount > 0
                         ? 'rgba(255,107,107,0.05)'
                         : isRemoved
                             ? 'rgba(128,128,128,0.07)'
@@ -21685,13 +21738,14 @@
                          data-has-pvi="${hasPVI ? '1' : '0'}"
                          data-has-cat1="${hasCat1 ? '1' : '0'}"
                          data-has-cat5="${hasCat5 ? '1' : '0'}"
-                         data-missing-pvi="${(!isRemoved && testInfo.requiresPVI && !hasPVI) ? '1' : '0'}"
-                         data-missing-cat1="${(!isRemoved && testInfo.requiresCat1 && !hasCat1) ? '1' : '0'}"
-                         data-missing-cat5="${(!isRemoved && testInfo.requiresCat5 && !hasCat5) ? '1' : '0'}"
-                         data-no-tests-year="${(!isRemoved && !(hasPVI || hasCat1 || hasCat5)) ? '1' : '0'}"
-                         data-all-complete="${(!isRemoved && pending.length === 0) ? '1' : '0'}"
-                         data-any-pending="${(!isRemoved && pending.length > 0) ? '1' : '0'}"
+                         data-missing-pvi="${(!isRemoved && !isNotApplicable && testInfo.requiresPVI && !hasPVI) ? '1' : '0'}"
+                         data-missing-cat1="${(!isRemoved && !isNotApplicable && testInfo.requiresCat1 && !hasCat1) ? '1' : '0'}"
+                         data-missing-cat5="${(!isRemoved && !isNotApplicable && testInfo.requiresCat5 && !hasCat5) ? '1' : '0'}"
+                         data-no-tests-year="${(!isRemoved && !isNotApplicable && !(hasPVI || hasCat1 || hasCat5)) ? '1' : '0'}"
+                         data-all-complete="${(!isRemoved && !isNotApplicable && pending.length === 0) ? '1' : '0'}"
+                         data-any-pending="${(!isRemoved && !isNotApplicable && pending.length > 0) ? '1' : '0'}"
                          data-removed="${isRemoved ? '1' : '0'}"
+                         data-not-applicable="${isNotApplicable ? '1' : '0'}"
                          style="background:${rowBg};border:1px solid var(--input-border);border-radius:8px;padding:12px;margin-bottom:8px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
                             <div>
@@ -21703,6 +21757,7 @@
                                 <span style="font-size:13px;opacity:0.65;margin-left:8px;">${escapeMapSuggestionHtml(type)}</span>
                             </div>
                             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                                ${isNotApplicable ? `<span style="font-size:12px;font-weight:800;letter-spacing:0.04em;padding:2px 8px;border-radius:10px;background:rgba(92,107,192,0.18);color:#3949ab;border:1px solid rgba(92,107,192,0.45);">N/A</span>` : ''}
                                 <span style="font-size:13px;padding:2px 8px;border-radius:10px;background:rgba(128,128,128,0.15);">${status}</span>
                                 ${violHtml !== '<span style="opacity:0.45;">—</span>' ? `<span style="font-size:13px;">${violHtml} violation${violCount !== 1 ? 's' : ''}</span>` : ''}
                                 <button type="button"
@@ -24061,7 +24116,7 @@
             const devices = binGroup && Array.isArray(binGroup.devices) ? binGroup.devices : [];
             const hasDobTest = devices.some(device => {
                 const info = getMapDeviceReportTestInfo(device || {}, targetYear, key);
-                if (info.isRemoved) return false;
+                if (info.isRemoved || info.isNotApplicable) return false;
                 return !!(info.hasPVI || info.hasCat1 || info.hasCat5);
             });
             if (hasDobTest) return true;
@@ -24394,6 +24449,7 @@
             const windowInfo = getMapBothTestsWindow(new Date());
             const locationKeys = getMapNoTestYetLocationKeys(bin, extraLocation);
             return (Array.isArray(devices) ? devices : []).map(device => {
+                if (device && device.map_not_applicable) return null;
                 const info = getMapDeviceReportTestInfo(device || {}, targetYear, bin);
                 if (!mapDeviceHasNoAnnualTest(info)) return null;
                 const deviceNumber = getMapNoTestYetDeviceNumber(device);
@@ -28027,6 +28083,70 @@
             document.addEventListener('mouseup', onUp);
         }
 
+        function renderMapNotApplicableDevicesSection(devices, locationKey) {
+            const list = Array.isArray(devices) ? devices : [];
+            if (!list.length) return '';
+            const keyJs = String(locationKey || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const rows = list.slice(0, 8).map(device => {
+                const number = device && device.number ? device.number : '';
+                const numberJs = String(number).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                return `<div style="font-size: 11px; padding: 4px 0; display: flex; justify-content: space-between; gap: 8px; align-items: center; border-bottom: 1px solid rgba(92,107,192,0.22);">
+                    <span style="min-width:0;"><strong>${escapeMapSuggestionHtml(number)}</strong> <span style="opacity:0.7;">${escapeMapSuggestionHtml(device.type || '')}</span></span>
+                    <span style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                        <span style="font-size:10px; font-weight:800; letter-spacing:0.04em; color:#3949ab; background:rgba(92,107,192,0.16); border-radius:999px; padding:2px 7px;">N/A</span>
+                        <button type="button" onclick="clearMapDeviceNotApplicable('${keyJs}','${numberJs}')" style="border:1px solid rgba(92,107,192,0.5); background:transparent; color:#3949ab; border-radius:6px; font-size:10px; font-weight:700; padding:2px 6px; cursor:pointer;">Count as mine</button>
+                    </span>
+                </div>`;
+            }).join('');
+            return `<div style="margin-top: 10px; background: rgba(92,107,192,0.1); padding: 10px; border-radius: 6px; border: 1px dashed #5c6bc0;">
+                <div style="font-size: 11px; font-weight: 800; color: #3949ab; letter-spacing: 0.04em;">N/A · NOT YOUR RESPONSIBILITY (${list.length})</div>
+                <div style="font-size: 10px; color: #5c6bc0; margin: 4px 0 8px; line-height: 1.35;">On the map for reference only. Not included in this building's device count, tests, or violations.</div>
+                ${rows}
+                ${list.length > 8 ? `<div style="font-size: 10px; opacity: 0.65; margin-top: 6px;">+${list.length - 8} more...</div>` : ''}
+            </div>`;
+        }
+
+        function findSavedMapDevice(locationKey, deviceNumber) {
+            const key = String(locationKey || '').trim();
+            const number = String(deviceNumber || '').trim().toUpperCase();
+            if (!number) return null;
+            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups
+                ? window.lastBulkSearchResults.binGroups
+                : {};
+            const group = binGroups[key];
+            if (group && Array.isArray(group.devices)) {
+                const found = group.devices.find(device => String(device && device.device_number || '').trim().toUpperCase() === number);
+                if (found) return found;
+            }
+            const locations = getAdditionalLocations();
+            for (let index = 0; index < locations.length; index += 1) {
+                const location = locations[index];
+                if (!location || !Array.isArray(location.devices)) continue;
+                const locationKeyMatch = String(location.bin || '') === key || getAdditionalLocationCompletionKey(location) === key;
+                if (key && !locationKeyMatch) continue;
+                const found = location.devices.find(device => String(device && device.device_number || '').trim().toUpperCase() === number);
+                if (found) return found;
+            }
+            return null;
+        }
+
+        function clearMapDeviceNotApplicable(locationKey, deviceNumber) {
+            const device = findSavedMapDevice(locationKey, deviceNumber);
+            if (!device) {
+                showMapNotification('That N/A device is no longer in this map file', '#ff9800');
+                return;
+            }
+            delete device.map_not_applicable;
+            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
+            if (binGroups && buildingMap) initBuildingMap(binGroups, true);
+            addMapActivity('Counted N/A device as a job device', {
+                type: 'Device',
+                bin: locationKey,
+                details: `${device.device_number} is no longer marked N/A`
+            });
+            showMapNotification(`${device.device_number} now counts as your device`, '#0d6efd');
+        }
+
         function createBuildingMarkerIcon(building) {
             const favorites = getMapFavorites();
             const isFavorited = !!favorites[building.bin];
@@ -28056,6 +28176,8 @@
                 markerColor = '#4CAF50'; // Green - all remaining devices ready to test
             } else if (building.readyDevices.length > 0 && building.notReadyDevices.length > 0) {
                 markerColor = '#ffc107'; // Yellow - some devices ready to test
+            } else if (!building.deviceCount && building.notApplicableDevices && building.notApplicableDevices.length > 0) {
+                markerColor = '#5c6bc0'; // Indigo - only N/A reference devices
             } else {
                 markerColor = '#ff6b6b'; // Red - no devices ready to test
             }
@@ -28064,12 +28186,13 @@
             const hasPviScheduled = getTestDatesForBin(building.bin, 'pvi').length > 0;
             const hasLegacyScheduled = getTestDatesForBin(building.bin, 'general').length > 0;
             const showNoteStar = hasBuildingNote && !isHold;
+            const notApplicableOnly = !building.deviceCount && building.notApplicableDevices && building.notApplicableDevices.length > 0;
             const markerLabel = showNoteStar
                 ? '★'
                 : (useCompletionMarkerStyle
                     ? '✓'
-                    : isInProcess ? '⟳' : isHold ? '⏸' : building.deviceCount);
-            const markerFontSize = showNoteStar ? 15 : 11;
+                    : isInProcess ? '⟳' : isHold ? '⏸' : (notApplicableOnly ? 'N/A' : building.deviceCount));
+            const markerFontSize = showNoteStar ? 15 : (notApplicableOnly ? 9 : 11);
             let markerShape;
             let markerTextY = 19;
             if (hasCatScheduled && hasPviScheduled) {
@@ -28200,12 +28323,22 @@
                         const notReadyDevices = [];
                         const completedDevices = []; // Year-complete devices (not Ready/Not Ready)
                         const removedDeletedDevices = []; // Track removed/deleted devices (not dismantled - they still need PVI)
+                        const notApplicableDevices = [];
                         
                         group.devices.forEach(device => {
                             const deviceStatus = (device.device_status || '').toUpperCase();
                             const deviceType = (device.device_type || '').toUpperCase();
                             const isRemoved = isRemovedFromMapJob(device);
                             const isDismantled = deviceStatus.includes('DISMANTLED');
+
+                            if (isNotApplicableMapDevice(device)) {
+                                notApplicableDevices.push({
+                                    number: device.device_number,
+                                    type: device.device_type || 'Unknown',
+                                    status: device.device_status || 'N/A'
+                                });
+                                return;
+                            }
                             
                             // Track only removed/deleted devices - dismantled devices still need PVI tests
                             if (isRemoved) {
@@ -28282,6 +28415,7 @@
                         // Collect violation details for this building
                         const violationDetails = [];
                         group.devices.forEach(device => {
+                            if (isNotApplicableMapDevice(device)) return;
                             if (device.violations && device.violations.length > 0) {
                                 device.violations.forEach(v => {
                                     violationDetails.push({
@@ -28308,12 +28442,13 @@
                             deviceCount: activeDeviceCount,
                             complete,
                             incomplete,
-                            violations: group.devices.reduce((sum, d) => sum + (d.violations ? d.violations.length : 0), 0),
+                            violations: group.devices.reduce((sum, d) => sum + (isNotApplicableMapDevice(d) ? 0 : (d.violations ? d.violations.length : 0)), 0),
                             violationDetails,
                             readyDevices,
                             notReadyDevices,
                             completedDevices,
                             removedDeletedDevices,
+                            notApplicableDevices,
                             noTestYetDevices,
                             allRequiredTestsCompletedForYear,
                             calendarYear: currentYear,
@@ -28650,7 +28785,7 @@
                                 </span>
                             </div>
                             <div style="font-size: 12px;">
-                                <strong>Devices:</strong> ${building.deviceCount}
+                                <strong>Devices:</strong> ${building.deviceCount}${(building.notApplicableDevices && building.notApplicableDevices.length) ? ` <span style="color:#3949ab;font-weight:800;">· N/A ${building.notApplicableDevices.length}</span>` : ''}
                             </div>
                         </div>
                         <div id="mapUntrackedDevices_${building.bin}" style="margin-bottom: 10px;"></div>
@@ -28784,6 +28919,8 @@
                             </div>
                         </div>` : ''}`}
                         
+                        ${renderMapNotApplicableDevicesSection(building.notApplicableDevices, building.bin)}
+
                         ${building.removedDeletedDevices.length > 0 ? `
                         <div style="margin-top: 10px; background: rgba(128,128,128,0.1); padding: 10px; border-radius: 6px; border: 1px solid rgba(128,128,128,0.3);">
                             <div onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.querySelector('.removed-devices-arrow').textContent = this.nextElementSibling.style.display === 'none' ? '▼' : '▲';"
@@ -28839,6 +28976,7 @@
                 const notReadyDevices = [];
                 const completedDevices = [];
                 const removedDeletedDevices = [];
+                const notApplicableDevices = [];
                 const violationDetails = [];
                 let allRequiredTestsCompletedForYear = false;
                 let calendarYear = new Date().getFullYear();
@@ -28854,6 +28992,15 @@
                         const deviceStatus = (device.device_status || '').toUpperCase();
                         const isRemoved = isRemovedFromMapJob(device);
                         const isDismantled = deviceStatus.includes('DISMANTLED');
+
+                        if (isNotApplicableMapDevice(device)) {
+                            notApplicableDevices.push({
+                                number: device.device_number,
+                                type: device.device_type || 'Unknown',
+                                status: device.device_status || 'N/A'
+                            });
+                            return;
+                        }
                         
                         // Track removed/deleted devices
                         if (isRemoved) {
@@ -28925,7 +29072,7 @@
                         }
                         
                         // Collect violation details
-                        if (device.violations && device.violations.length > 0) {
+                        if (!isNotApplicableMapDevice(device) && device.violations && device.violations.length > 0) {
                             device.violations.forEach(v => {
                                 violationDetails.push({
                                     deviceNumber: device.device_number,
@@ -28969,6 +29116,8 @@
                     iconText = '✓';
                 } else if (deviceCount > 0) {
                     iconText = deviceCount;
+                } else if (notApplicableDevices.length > 0) {
+                    iconText = 'N/A';
                 } else if (isHouse) {
                     iconText = '🏠';
                 } else if (isTransportation) {
@@ -28983,6 +29132,8 @@
                     markerBg = '#8d6e63';
                 } else if (isTransportation) {
                     markerBg = MAP_TRANSPORTATION_COLOR;
+                } else if (!deviceCount && notApplicableDevices.length > 0) {
+                    markerBg = '#5c6bc0';
                 } else {
                     markerBg = '#d32f2f';
                 }
@@ -29299,6 +29450,8 @@
                             </div>
                         </div>` : ''}`}
                         
+                        ${renderMapNotApplicableDevicesSection(notApplicableDevices, completionKey || location.bin)}
+
                         ${removedDeletedDevices.length > 0 ? `
                         <div style="margin-top: 10px; background: rgba(128,128,128,0.1); padding: 10px; border-radius: 6px; border: 1px solid rgba(128,128,128,0.3);">
                             <div style="font-size: 11px; font-weight: 600; color: #888; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
@@ -29575,7 +29728,8 @@
                     ...(building.readyDevices || []),
                     ...(building.notReadyDevices || []),
                     ...(building.completedDevices || []),
-                    ...(building.removedDeletedDevices || [])
+                    ...(building.removedDeletedDevices || []),
+                    ...(building.notApplicableDevices || [])
                 ]
                     .map(device => device && device.number)
                     .filter(Boolean);
