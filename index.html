@@ -1115,6 +1115,21 @@
                     </div>
                 </div>
                 <div style="display: flex; flex: 1; min-height: 0; overflow: hidden;">
+                    <style>
+                        #mapBuildingDetailBody .map-popup-content {
+                            min-width: 0 !important;
+                            max-width: none !important;
+                            width: 100%;
+                            box-sizing: border-box;
+                        }
+                    </style>
+                    <div id="mapBuildingDetailPanel" style="display: none; width: min(440px, 48vw); min-width: 280px; max-width: 520px; flex-direction: column; flex-shrink: 0; background: var(--card-bg); border-right: 1px solid var(--input-border); min-height: 0; overflow: hidden;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--panel-bg); border-bottom: 1px solid var(--input-border); flex-shrink: 0;">
+                            <span style="font-size: 13px; font-weight: 700; color: var(--header-color);">Building details</span>
+                            <button type="button" onclick="closeMapBuildingDetailPanel()" title="Close building details" aria-label="Close building details" style="margin: 0; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 5px; width: 28px; height: 28px; cursor: pointer; color: var(--text-color); font-size: 18px; line-height: 1;">×</button>
+                        </div>
+                        <div id="mapBuildingDetailBody" style="flex: 1; min-height: 0; overflow: auto; padding: 10px 12px 16px;"></div>
+                    </div>
                     <div style="flex: 1; min-width: 0; min-height: 400px; position: relative;">
                         <div id="buildingMap" title="Right-click the map to add a pin at that location" style="width: 100%; height: 100%; min-height: 400px;"></div>
                         <div id="mapSelectToolbar" role="region" aria-label="Multi-building selection tools">
@@ -1729,7 +1744,7 @@
                                 <input type="text" id="mcpTipsSearchInput" class="mcp-search-input" placeholder="🔍 Search tips..."
                                        oninput="filterMcpTipsList(this.value)">
                                 <ul id="mcpTipsList" style="font-size: 0.9em; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.7;">
-                                    <li>Click a marker to see building details</li>
+                                    <li>Click a marker to see building details. If the details are taller than the map, they open in a panel on the left so you can scroll them without moving the map</li>
                                     <li>Use ✓ in popup to mark a building complete</li>
                                     <li>Use 🔄 in popup to mark a building in process</li>
                                     <li>Use ⭐ in popup to favorite a building</li>
@@ -11048,6 +11063,9 @@
                 const dobDevices = await ensureMapBinDobDeviceCache(key);
                 const untracked = getUntrackedDobDevicesForBin(key, dobDevices);
                 container.innerHTML = renderMapUntrackedDobDevicesHtml(key, untracked);
+                if (mapActiveLeafletPopup && mapActiveLeafletPopup.isOpen && mapActiveLeafletPopup.isOpen()) {
+                    requestAnimationFrame(() => relocateMapPopupIfTooTall(mapActiveLeafletPopup));
+                }
             } catch (error) {
                 console.warn('Could not load untracked DOB devices for BIN:', key, error);
                 container.innerHTML = `<div style="font-size:10px; color:#ff6b6b; margin-top:4px;">Could not check DOB for other BIN devices.</div>`;
@@ -19643,10 +19661,97 @@
             }
         }
 
+        let mapActiveLeafletPopup = null;
+
+        function refreshMapSizeAfterDetailPanel(then) {
+            if (buildingMap && typeof buildingMap.invalidateSize === 'function') {
+                buildingMap.invalidateSize();
+            }
+            if (typeof then !== 'function') return;
+            requestAnimationFrame(() => requestAnimationFrame(then));
+        }
+
+        function mapPopupContentExceedsMap(popup) {
+            const mapEl = document.getElementById('buildingMap');
+            const root = popup && typeof popup.getElement === 'function' ? popup.getElement() : null;
+            const content = root ? root.querySelector('.leaflet-popup-content') : null;
+            if (!mapEl || !content) return false;
+            const available = mapEl.clientHeight - 36;
+            return available > 80 && content.scrollHeight > available;
+        }
+
+        function showMapBuildingDetailPanel(html) {
+            const panel = document.getElementById('mapBuildingDetailPanel');
+            const body = document.getElementById('mapBuildingDetailBody');
+            if (!panel || !body) return;
+            body.innerHTML = html || '';
+            body.scrollTop = 0;
+            const wasHidden = panel.style.display === 'none';
+            panel.style.display = 'flex';
+            if (wasHidden) refreshMapSizeAfterDetailPanel();
+        }
+
+        function closeMapBuildingDetailPanel() {
+            const panel = document.getElementById('mapBuildingDetailPanel');
+            const body = document.getElementById('mapBuildingDetailBody');
+            if (body) body.innerHTML = '';
+            if (!panel || panel.style.display === 'none') return;
+            panel.style.display = 'none';
+            refreshMapSizeAfterDetailPanel();
+        }
+
+        function ensureMapPopupVisible(popup) {
+            const mapEl = document.getElementById('buildingMap');
+            const el = popup && typeof popup.getElement === 'function' ? popup.getElement() : null;
+            if (!buildingMap || !mapEl || !el || !popup.isOpen || !popup.isOpen()) return;
+            const mapRect = mapEl.getBoundingClientRect();
+            const popRect = el.getBoundingClientRect();
+            if (!popRect.width || !popRect.height) return;
+            const pad = 12;
+            let dx = 0;
+            let dy = 0;
+            if (popRect.left < mapRect.left + pad) dx = popRect.left - (mapRect.left + pad);
+            else if (popRect.right > mapRect.right - pad) dx = popRect.right - (mapRect.right - pad);
+            if (popRect.top < mapRect.top + pad) dy = popRect.top - (mapRect.top + pad);
+            else if (popRect.bottom > mapRect.bottom - pad) dy = popRect.bottom - (mapRect.bottom - pad);
+            if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
+            buildingMap.panBy([dx, dy], { animate: true });
+        }
+
+        function relocateMapPopupIfTooTall(popup) {
+            if (!popup || !mapPopupContentExceedsMap(popup)) return false;
+            const root = popup.getElement();
+            const content = root ? root.querySelector('.leaflet-popup-content') : null;
+            const html = content ? content.innerHTML : '';
+            if (!html.trim()) return false;
+            if (buildingMap && typeof buildingMap.closePopup === 'function') buildingMap.closePopup();
+            showMapBuildingDetailPanel(html);
+            return true;
+        }
+
+        function placeOpenMapPopup(popup) {
+            mapActiveLeafletPopup = popup || null;
+            hydrateOpenMapPopup(popup);
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                if (!popup || !popup.isOpen || !popup.isOpen()) return;
+                if (relocateMapPopupIfTooTall(popup)) return;
+                const panel = document.getElementById('mapBuildingDetailPanel');
+                const panelWasOpen = !!(panel && panel.style.display !== 'none');
+                closeMapBuildingDetailPanel();
+                if (panelWasOpen) {
+                    refreshMapSizeAfterDetailPanel(() => ensureMapPopupVisible(popup));
+                } else {
+                    ensureMapPopupVisible(popup);
+                }
+            }));
+        }
+
         function openMapMarkerPopup(marker) {
             if (!marker || typeof marker.openPopup !== 'function') return;
             if (typeof marker.isPopupOpen === 'function' && marker.isPopupOpen()) {
-                hydrateOpenMapPopup(typeof marker.getPopup === 'function' ? marker.getPopup() : null);
+                const popup = typeof marker.getPopup === 'function' ? marker.getPopup() : null;
+                hydrateOpenMapPopup(popup);
+                requestAnimationFrame(() => relocateMapPopupIfTooTall(popup));
                 return;
             }
             marker.openPopup();
@@ -27588,6 +27693,7 @@
             }
 
             const modal = document.getElementById('buildingMapModal');
+            closeMapBuildingDetailPanel();
             modal.style.display = 'none';
             
             // Re-enable body scrolling when map modal is closed
@@ -28434,6 +28540,7 @@
                 return;
             }
             initBuildingMapInProgress = true;
+            closeMapBuildingDetailPanel();
             try {
             const mapContainer = document.getElementById('buildingMap');
             if (!mapContainer) {
@@ -28729,7 +28836,10 @@
             });
 
             buildingMap.on('popupopen', function (e) {
-                hydrateOpenMapPopup(e.popup);
+                placeOpenMapPopup(e.popup);
+            });
+            buildingMap.on('popupclose', function (e) {
+                if (mapActiveLeafletPopup === e.popup) mapActiveLeafletPopup = null;
             });
 
             // Safari can calculate hidden/flex modal dimensions late; reflow map sizing safely.
@@ -29144,7 +29254,7 @@
                     </div>
                 `;
 
-                marker.bindPopup(popupContent, { maxWidth: 480, minWidth: 380 });
+                marker.bindPopup(popupContent, { maxWidth: 480, minWidth: 380, autoPan: false });
                 attachMapMarkerPopupClickHandler(marker);
                 attachMapMarkerSelectHandler(marker, building.bin);
                 mapMarkers.push(marker);
@@ -29676,7 +29786,7 @@
                     </div>
                 `;
 
-                additionalMarker.bindPopup(additionalPopupContent, { maxWidth: 480, minWidth: 380 });
+                additionalMarker.bindPopup(additionalPopupContent, { maxWidth: 480, minWidth: 380, autoPan: false });
                 attachMapMarkerPopupClickHandler(additionalMarker);
                 additionalLocationMarkers.push(additionalMarker);
                 if (!shouldHideCompletedAdditionalLocation(location)) {
