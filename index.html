@@ -1603,7 +1603,7 @@
                                 <span class="mcp-arrow" id="mcpAdditionalArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpAdditional">
-                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> and <strong>Transportation</strong> sections to manage tagged pins. Click ✓ on a pin to mark it completed — choose Category, PVI, or both. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
+                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> and <strong>Transportation</strong> sections to manage tagged pins. Click ✓ on a pin to mark it completed — choose Category, PVI, or both. House and transportation pins do not show that completed button or the Completed / Not Completed status. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
                                 <input type="text" id="additionalLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
                                        oninput="filterAdditionalLocationsList(this.value)">
                                 <div id="additionalLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
@@ -1751,7 +1751,7 @@
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
                                     <li>Missing Devices scans an imported list against this map file, then lets you choose which missing devices to add. Mark N/A for devices that are in the building but not your responsibility. Those stay on the map and in the file, labeled N/A, and are left out of device counts, tests, and violations.</li>
-                                    <li>Custom location pins have a ✓ completed button, matching building markers. Choose Category, PVI, or both when marking complete</li>
+                                    <li>Custom location pins have a ✓ completed button, matching building markers. Choose Category, PVI, or both when marking complete. House and transportation pins do not show the completed button or Completed / Not Completed status</li>
                                     <li><strong>Save your work</strong> — data is not kept between sessions</li>
                                 </ul>
                             </div>
@@ -29437,6 +29437,7 @@
                 const currentMonthLabel = location.bin ? getMonthLabel(location.bin) : null;
                 const defaultHeaderAccent = isHouse ? '#8d6e63' : (isTransportation ? MAP_TRANSPORTATION_COLOR : (hasCustomName ? '#e64a19' : '#00bcd4'));
                 const headerAccent = useCompletionMarkerStyle ? locationCompletionColor : defaultHeaderAccent;
+                const omitLocationCompletionControls = isHouse || isTransportation;
                 
                 // Build popup content matching building popup format
                 const additionalPopupContent = `
@@ -29444,7 +29445,7 @@
                         <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${headerAccent};">
                             <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${String(location.customName || location.label || ('BIN ' + (location.bin || ''))).toUpperCase()}</div>
                             <div style="display: flex; gap: 6px; justify-content: space-between; flex-wrap: wrap;">
-                                <button onclick="toggleAdditionalLocationCompleted(${location.latitude}, ${location.longitude})"
+                                ${omitLocationCompletionControls ? '' : `<button onclick="toggleAdditionalLocationCompleted(${location.latitude}, ${location.longitude})"
                                         title="${isLocationCompleted ? 'Unmark as completed' : 'Mark as completed'}"
                                         style="background: ${isLocationCompleted ? locationCompletionColor : 'rgba(39,174,96,0.1)'};
                                                color: ${isLocationCompleted ? 'white' : '#27ae60'};
@@ -29455,7 +29456,7 @@
                                                font-size: 15px;
                                                display: flex; align-items: center; justify-content: center;
                                                flex: 1;
-                                               transition: all 0.2s;">✓</button>
+                                               transition: all 0.2s;">✓</button>`}
                                 ${location.bin ? `
                                 <button onclick="promoteAdditionalLocationByCoords(${location.latitude}, ${location.longitude})"
                                         title="Move to main buildings and fetch device data"
@@ -29488,11 +29489,12 @@
                             </div>
                         </div>
 
-                        ${isLocationCompleted ? `
+                        ${omitLocationCompletionControls || !isLocationCompleted ? '' : `
                         <div style="font-size: 11px; color: ${locationCompletionColor}; font-weight: 700; margin-bottom: 10px; padding: 5px 8px; background: color-mix(in srgb, ${locationCompletionColor} 11%, transparent); border: 1px solid color-mix(in srgb, ${locationCompletionColor} 28%, transparent); border-radius: 5px; text-align: center;">
                             ${locationCompletionType === 'PVI' ? 'P' : locationCompletionType === 'Category' ? 'C' : '✓'} ${locationCompletedTestLabel}${locationCompletedSourceLabel}
-                        </div>` : ''}
+                        </div>`}
 
+                        ${omitLocationCompletionControls ? '' : `
                         <div style="margin-bottom: 10px; padding: 8px; background: rgba(39,174,96,0.08); border-radius: 6px; border: 1px solid rgba(39,174,96,0.28);">
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <span style="font-size: 12px; color: #27ae60; font-weight: 600;">Status:</span>
@@ -29501,7 +29503,7 @@
                                     ${renderMapCompletionStatusOptions(isLocationCompleted)}
                                 </select>
                             </div>
-                        </div>
+                        </div>`}
                         
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
                             <div style="font-size: 12px;">
