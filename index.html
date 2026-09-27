@@ -1115,6 +1115,21 @@
                     </div>
                 </div>
                 <div style="display: flex; flex: 1; min-height: 0; overflow: hidden;">
+                    <style>
+                        #mapBuildingDetailBody .map-popup-content {
+                            min-width: 0 !important;
+                            max-width: none !important;
+                            width: 100%;
+                            box-sizing: border-box;
+                        }
+                    </style>
+                    <div id="mapBuildingDetailPanel" style="display: none; width: min(440px, 48vw); min-width: 280px; max-width: 520px; flex-direction: column; flex-shrink: 0; background: var(--card-bg); border-right: 1px solid var(--input-border); min-height: 0; overflow: hidden;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--panel-bg); border-bottom: 1px solid var(--input-border); flex-shrink: 0;">
+                            <span style="font-size: 13px; font-weight: 700; color: var(--header-color);">Building details</span>
+                            <button type="button" onclick="closeMapBuildingDetailPanel()" title="Close building details" aria-label="Close building details" style="margin: 0; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 5px; width: 28px; height: 28px; cursor: pointer; color: var(--text-color); font-size: 18px; line-height: 1;">×</button>
+                        </div>
+                        <div id="mapBuildingDetailBody" style="flex: 1; min-height: 0; overflow: auto; padding: 10px 12px 16px;"></div>
+                    </div>
                     <div style="flex: 1; min-width: 0; min-height: 400px; position: relative;">
                         <div id="buildingMap" title="Right-click the map to add a pin at that location" style="width: 100%; height: 100%; min-height: 400px;"></div>
                         <div id="mapSelectToolbar" role="region" aria-label="Multi-building selection tools">
@@ -1603,7 +1618,7 @@
                                 <span class="mcp-arrow" id="mcpAdditionalArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpAdditional">
-                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> and <strong>Transportation</strong> sections to manage tagged pins. Click ✓ on a pin to mark it completed — choose Category, PVI, or both. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
+                                <p class="mcp-desc">Custom locations appear as teal markers on the map. Right-click the map to drop a pin at that exact spot. Use the <strong>Houses</strong> and <strong>Transportation</strong> sections to manage tagged pins. Click ✓ on a pin to mark it completed — choose Category, PVI, or both. House and transportation pins do not show that completed button or the Completed / Not Completed status. Click "Move to Buildings" to fetch full device data and convert to a main building marker.</p>
                                 <input type="text" id="additionalLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
                                        oninput="filterAdditionalLocationsList(this.value)">
                                 <div id="additionalLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
@@ -1729,13 +1744,14 @@
                                 <input type="text" id="mcpTipsSearchInput" class="mcp-search-input" placeholder="🔍 Search tips..."
                                        oninput="filterMcpTipsList(this.value)">
                                 <ul id="mcpTipsList" style="font-size: 0.9em; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.7;">
-                                    <li>Click a marker to see building details</li>
+                                    <li>Click a marker to see building details. If the details are taller than the map, they open in a panel on the left so you can scroll them without moving the map</li>
                                     <li>Use ✓ in popup to mark a building complete</li>
                                     <li>Use 🔄 in popup to mark a building in process</li>
                                     <li>Use ⭐ in popup to favorite a building</li>
                                     <li>Use 👁️ in popup to hide a building</li>
                                     <li>Use 📅 dropdown to assign a month</li>
                                     <li>Use 🗓️ in popup to schedule test dates</li>
+                                    <li>Adding a Category or PVI date on a building with no inspections completed yet shows the next available date for the other test, 91 days later</li>
                                     <li>Scheduled markers: octagon = CAT, square = PVI, diamond = both</li>
                                     <li>Past-due test dates appear in Settings to confirm</li>
                                     <li>Completion markers: green check = fully completed; PVI-only / Category-only use normal ready/not-ready colors and device counts</li>
@@ -1750,7 +1766,7 @@
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
                                     <li>Missing Devices scans an imported list against this map file, then lets you choose which missing devices to add. Mark N/A for devices that are in the building but not your responsibility. Those stay on the map and in the file, labeled N/A, and are left out of device counts, tests, and violations.</li>
-                                    <li>Custom location pins have a ✓ completed button, matching building markers. Choose Category, PVI, or both when marking complete</li>
+                                    <li>Custom location pins have a ✓ completed button, matching building markers. Choose Category, PVI, or both when marking complete. House and transportation pins do not show the completed button or Completed / Not Completed status</li>
                                     <li><strong>Save your work</strong> — data is not kept between sessions</li>
                                 </ul>
                             </div>
@@ -11047,6 +11063,9 @@
                 const dobDevices = await ensureMapBinDobDeviceCache(key);
                 const untracked = getUntrackedDobDevicesForBin(key, dobDevices);
                 container.innerHTML = renderMapUntrackedDobDevicesHtml(key, untracked);
+                if (mapActiveLeafletPopup && mapActiveLeafletPopup.isOpen && mapActiveLeafletPopup.isOpen()) {
+                    requestAnimationFrame(() => relocateMapPopupIfTooTall(mapActiveLeafletPopup));
+                }
             } catch (error) {
                 console.warn('Could not load untracked DOB devices for BIN:', key, error);
                 container.innerHTML = `<div style="font-size:10px; color:#ff6b6b; margin-top:4px;">Could not check DOB for other BIN devices.</div>`;
@@ -18969,7 +18988,7 @@
                         initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                     }
                 },
-                onConfirm: ({ testType, timestamp, address }) => {
+                onConfirm: ({ testType, timestamp, address, otherInspection }) => {
                     if (!confirmMapCompletionRequirements(bin, testType)) return;
                     const result = saveMapCompletedEntry(bin, { testType, timestamp, address, source: 'Manual' });
                     addMapActivity('Changed completion status', {
@@ -18978,7 +18997,7 @@
                         address: result.address,
                         details: `Status set to Completed; ${getMapCompletedTestLabel(testType)}`
                     });
-                    showMapNotification(`${result.address || bin} marked Completed`, '#27ae60');
+                    showMapNotification(appendMapOtherInspectionNotice(`${result.address || bin} marked Completed`, otherInspection), '#27ae60', otherInspection ? 7000 : 0);
                     if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
                         initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                     }
@@ -19071,7 +19090,8 @@
                         </div>
                     </div>
                     <label style="font-size: 13px; color: var(--text-color, #ccc); display: block; margin-bottom: 6px;">Completed date:</label>
-                    <input type="date" id="completedDateInput" value="${currentDate}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); font-size: 14px; box-sizing: border-box; margin-bottom: 16px;">
+                    <input type="date" id="completedDateInput" value="${currentDate}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); font-size: 14px; box-sizing: border-box; margin-bottom: 8px;">
+                    <div id="completedOtherInspectionHint" role="status" style="${MAP_OTHER_INSPECTION_HINT_STYLE}"></div>
                     <div style="display: flex; gap: 8px;">
                         <button id="completedDetailsCancelBtn" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #ccc); cursor: pointer; font-size: 13px;">Cancel</button>
                         <button id="completedDetailsConfirmBtn" style="flex: 1; padding: 10px; border-radius: 6px; border: none; background: #27ae60; color: white; cursor: pointer; font-size: 13px; font-weight: 600;">Save</button>
@@ -19087,6 +19107,21 @@
             document.getElementById('completedDetailsCancelBtn').addEventListener('click', cancelCompletedDetailsPicker);
             overlay.addEventListener('click', (e) => { if (e.target === overlay) cancelCompletedDetailsPicker(); });
 
+            function refreshCompletedOtherInspectionHint() {
+                const typeInput = document.getElementById('completedTestTypeInput');
+                const dateInput = document.getElementById('completedDateInput');
+                return refreshMapOtherInspectionHint(
+                    'completedOtherInspectionHint',
+                    bin,
+                    typeInput ? typeInput.value : '',
+                    dateInput ? dateInput.value : ''
+                );
+            }
+            document.getElementById('completedTestTypeInput').addEventListener('change', refreshCompletedOtherInspectionHint);
+            document.getElementById('completedDateInput').addEventListener('change', refreshCompletedOtherInspectionHint);
+            document.getElementById('completedDateInput').addEventListener('input', refreshCompletedOtherInspectionHint);
+            refreshCompletedOtherInspectionHint();
+
             document.getElementById('completedDetailsConfirmBtn').addEventListener('click', () => {
                 const dateVal = document.getElementById('completedDateInput').value;
                 const testType = normalizeMapCompletedTestType(document.getElementById('completedTestTypeInput').value);
@@ -19094,9 +19129,10 @@
                 if (!testType) { showMapNotification('Please select the completed test', '#ff6b6b'); return; }
                 if (!confirmMapManualDateForDobCompletedTest(bin, testType, dateVal)) return;
                 const timestamp = new Date(dateVal + 'T00:00:00').getTime();
+                const otherInspection = getMapOtherInspectionAvailability(bin, testType, dateVal);
                 overlay.remove();
                 if (typeof opts.onConfirm === 'function') {
-                    opts.onConfirm({ testType, timestamp, address });
+                    opts.onConfirm({ testType, timestamp, address, otherInspection });
                 }
             });
         }
@@ -19625,10 +19661,97 @@
             }
         }
 
+        let mapActiveLeafletPopup = null;
+
+        function refreshMapSizeAfterDetailPanel(then) {
+            if (buildingMap && typeof buildingMap.invalidateSize === 'function') {
+                buildingMap.invalidateSize();
+            }
+            if (typeof then !== 'function') return;
+            requestAnimationFrame(() => requestAnimationFrame(then));
+        }
+
+        function mapPopupContentExceedsMap(popup) {
+            const mapEl = document.getElementById('buildingMap');
+            const root = popup && typeof popup.getElement === 'function' ? popup.getElement() : null;
+            const content = root ? root.querySelector('.leaflet-popup-content') : null;
+            if (!mapEl || !content) return false;
+            const available = mapEl.clientHeight - 36;
+            return available > 80 && content.scrollHeight > available;
+        }
+
+        function showMapBuildingDetailPanel(html) {
+            const panel = document.getElementById('mapBuildingDetailPanel');
+            const body = document.getElementById('mapBuildingDetailBody');
+            if (!panel || !body) return;
+            body.innerHTML = html || '';
+            body.scrollTop = 0;
+            const wasHidden = panel.style.display === 'none';
+            panel.style.display = 'flex';
+            if (wasHidden) refreshMapSizeAfterDetailPanel();
+        }
+
+        function closeMapBuildingDetailPanel() {
+            const panel = document.getElementById('mapBuildingDetailPanel');
+            const body = document.getElementById('mapBuildingDetailBody');
+            if (body) body.innerHTML = '';
+            if (!panel || panel.style.display === 'none') return;
+            panel.style.display = 'none';
+            refreshMapSizeAfterDetailPanel();
+        }
+
+        function ensureMapPopupVisible(popup) {
+            const mapEl = document.getElementById('buildingMap');
+            const el = popup && typeof popup.getElement === 'function' ? popup.getElement() : null;
+            if (!buildingMap || !mapEl || !el || !popup.isOpen || !popup.isOpen()) return;
+            const mapRect = mapEl.getBoundingClientRect();
+            const popRect = el.getBoundingClientRect();
+            if (!popRect.width || !popRect.height) return;
+            const pad = 12;
+            let dx = 0;
+            let dy = 0;
+            if (popRect.left < mapRect.left + pad) dx = popRect.left - (mapRect.left + pad);
+            else if (popRect.right > mapRect.right - pad) dx = popRect.right - (mapRect.right - pad);
+            if (popRect.top < mapRect.top + pad) dy = popRect.top - (mapRect.top + pad);
+            else if (popRect.bottom > mapRect.bottom - pad) dy = popRect.bottom - (mapRect.bottom - pad);
+            if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
+            buildingMap.panBy([dx, dy], { animate: true });
+        }
+
+        function relocateMapPopupIfTooTall(popup) {
+            if (!popup || !mapPopupContentExceedsMap(popup)) return false;
+            const root = popup.getElement();
+            const content = root ? root.querySelector('.leaflet-popup-content') : null;
+            const html = content ? content.innerHTML : '';
+            if (!html.trim()) return false;
+            if (buildingMap && typeof buildingMap.closePopup === 'function') buildingMap.closePopup();
+            showMapBuildingDetailPanel(html);
+            return true;
+        }
+
+        function placeOpenMapPopup(popup) {
+            mapActiveLeafletPopup = popup || null;
+            hydrateOpenMapPopup(popup);
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                if (!popup || !popup.isOpen || !popup.isOpen()) return;
+                if (relocateMapPopupIfTooTall(popup)) return;
+                const panel = document.getElementById('mapBuildingDetailPanel');
+                const panelWasOpen = !!(panel && panel.style.display !== 'none');
+                closeMapBuildingDetailPanel();
+                if (panelWasOpen) {
+                    refreshMapSizeAfterDetailPanel(() => ensureMapPopupVisible(popup));
+                } else {
+                    ensureMapPopupVisible(popup);
+                }
+            }));
+        }
+
         function openMapMarkerPopup(marker) {
             if (!marker || typeof marker.openPopup !== 'function') return;
             if (typeof marker.isPopupOpen === 'function' && marker.isPopupOpen()) {
-                hydrateOpenMapPopup(typeof marker.getPopup === 'function' ? marker.getPopup() : null);
+                const popup = typeof marker.getPopup === 'function' ? marker.getPopup() : null;
+                hydrateOpenMapPopup(popup);
+                requestAnimationFrame(() => relocateMapPopupIfTooTall(popup));
                 return;
             }
             marker.openPopup();
@@ -19897,7 +20020,7 @@
                 }
             } else {
                 showMapCompletedDetailsPicker(bin, {
-                    onConfirm: ({ testType, timestamp, address }) => {
+                    onConfirm: ({ testType, timestamp, address, otherInspection }) => {
                         if (!confirmMapCompletionRequirements(bin, testType)) return;
                         const result = saveMapCompletedEntry(bin, { testType, timestamp, address, source: 'Manual' });
                         addMapActivity('Marked completed', {
@@ -19906,7 +20029,7 @@
                             address: result.address,
                             details: `${getMapCompletedTestLabel(testType)}${result.savedDates.length ? `; cleared ${result.savedDates.length} scheduled date${result.savedDates.length !== 1 ? 's' : ''}` : ''}`
                         });
-                        showMapNotification(`${result.address || bin} marked as completed ✓`, '#27ae60');
+                        showMapNotification(appendMapOtherInspectionNotice(`${result.address || bin} marked as completed ✓`, otherInspection), '#27ae60', otherInspection ? 7000 : 0);
                         if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
                             initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                         }
@@ -19922,7 +20045,7 @@
             const address = data.address || '';
             showMapCompletedDetailsPicker(bin, {
                 address,
-                onConfirm: ({ testType, timestamp }) => {
+                onConfirm: ({ testType, timestamp, otherInspection }) => {
                 const oldDate = completed[bin].timestamp ? new Date(completed[bin].timestamp).toLocaleDateString() : '';
                 if (!confirmMapCompletionRequirements(bin, testType)) return;
                 completed[bin].timestamp = timestamp;
@@ -19937,7 +20060,7 @@
                     date: new Date(timestamp).toISOString().split('T')[0],
                     details: `${getMapCompletedTestLabel(testType)}${oldDate ? `; date was ${oldDate}` : ''}`
                 });
-                showMapNotification('Completed details updated', '#27ae60');
+                showMapNotification(appendMapOtherInspectionNotice('Completed details updated', otherInspection), '#27ae60', otherInspection ? 7000 : 0);
                 if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
                     initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                 }
@@ -20018,7 +20141,7 @@
 
             showMapCompletedDetailsPicker(bin, {
                 address,
-                onConfirm: ({ testType, timestamp }) => {
+                onConfirm: ({ testType, timestamp, otherInspection }) => {
                     if (!confirmMapCompletionRequirements(bin, testType)) return;
                     const result = saveMapCompletedEntry(bin, { testType, timestamp, address, source: 'Manual' });
                     addMapActivity('Moved in process to completed', {
@@ -20028,7 +20151,7 @@
                         details: `${getMapCompletedTestLabel(testType)}${result.savedDates.length ? `; cleared ${result.savedDates.length} scheduled date${result.savedDates.length !== 1 ? 's' : ''}` : ''}`
                     });
 
-                    showMapNotification(`${address || bin} moved to Completed ✓`, '#27ae60');
+                    showMapNotification(appendMapOtherInspectionNotice(`${address || bin} moved to Completed ✓`, otherInspection), '#27ae60', otherInspection ? 7000 : 0);
                     if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
                         initBuildingMap(window.lastBulkSearchResults.binGroups, true);
                     }
@@ -21050,6 +21173,125 @@
                 devices: unreadyDevices,
                 message: `Warning: ${count} device${count === 1 ? ' is' : 's are'} not ready to be tested by ${scheduledDate.toLocaleDateString()}. ${details}.`
             };
+        }
+
+        const MAP_OTHER_INSPECTION_HINT_STYLE = 'display:none; margin:8px 0 12px; padding:7px 8px; border-radius:6px; border:1px solid rgba(26,115,232,0.4); background:rgba(26,115,232,0.1); color:var(--text-color,#d6e6ff); font-size:11px; line-height:1.45;';
+
+        function resolveMapInspectionLane(type) {
+            const scheduleType = normalizeMapScheduleType(type);
+            if (scheduleType === 'pvi' || scheduleType === 'category') return scheduleType;
+            const completed = normalizeMapCompletedTestType(type);
+            if (completed === 'PVI') return 'pvi';
+            if (completed === 'Category') return 'category';
+            return '';
+        }
+
+        function mapBuildingHasDobInspectionForYear(bin, year) {
+            const targetYear = Number(year) || new Date().getFullYear();
+            const group = getMapGroupForBin(bin);
+            const devices = group && Array.isArray(group.devices)
+                ? group.devices.filter(mapDobDeviceIsActiveForCompletion)
+                : [];
+            return devices.some(device => {
+                const info = getMapDeviceReportTestInfo(device, targetYear, bin);
+                return !!(info && (info.hasPVI || info.hasCat1 || info.hasCat5));
+            });
+        }
+
+        function getMapBuildingAnnualTestRequirements(bin, year) {
+            const facts = getMapBuildingCompletionFacts(getMapGroupForBin(bin), year, bin);
+            return {
+                hasDeviceData: facts.activeDeviceCount > 0,
+                requiresPvi: facts.pviRequiredCount > 0,
+                requiresCategory: facts.categoryRequiredCount > 0
+            };
+        }
+
+        function formatMapOtherInspectionDate(date) {
+            return date.toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            });
+        }
+
+        function getMapOtherInspectionAvailability(bin, type, dateStr) {
+            const lane = resolveMapInspectionLane(type);
+            if (lane !== 'pvi' && lane !== 'category') return null;
+            const entered = parseMapInspectionDate(dateStr);
+            if (!entered) return null;
+            entered.setHours(0, 0, 0, 0);
+            const year = entered.getFullYear();
+            if (mapBuildingHasDobInspectionForYear(bin, year)) return null;
+            const savedPvi = getMapSavedTestCompletionForYear(bin, 'PVI', year);
+            const savedCategory = getMapSavedTestCompletionForYear(bin, 'Category', year);
+            const savedLegacy = getMapSavedTestCompletionForYear(bin, 'Legacy', year);
+            if (savedLegacy && savedLegacy.isComplete) return null;
+            const otherLaneSaved = lane === 'pvi' ? savedCategory && savedCategory.isComplete : savedPvi && savedPvi.isComplete;
+            if (otherLaneSaved) return null;
+            if (savedPvi && savedPvi.isComplete && savedCategory && savedCategory.isComplete) return null;
+
+            const requirements = getMapBuildingAnnualTestRequirements(bin, year);
+            const otherLane = lane === 'pvi' ? 'category' : 'pvi';
+            const otherRequired = otherLane === 'pvi' ? requirements.requiresPvi : requirements.requiresCategory;
+            if (requirements.hasDeviceData && !otherRequired) return null;
+
+            const gapDays = typeof MAP_ANNUAL_TEST_GAP_DAYS === 'number' ? MAP_ANNUAL_TEST_GAP_DAYS : 91;
+            const nextDate = new Date(entered.getTime());
+            nextDate.setDate(nextDate.getDate() + gapDays);
+            nextDate.setHours(0, 0, 0, 0);
+            const yearEnd = new Date(year, 11, 31);
+            const otherLabel = otherLane === 'pvi' ? 'PVI' : 'Category';
+            const enteredLabel = lane === 'pvi' ? 'PVI' : 'Category';
+            const display = formatMapOtherInspectionDate(nextDate);
+            const afterYearEnd = nextDate > yearEnd;
+            const yearNote = afterYearEnd ? ` That is after December 31, ${year}.` : '';
+            return {
+                lane,
+                otherLane,
+                otherLabel,
+                enteredLabel,
+                year,
+                gapDays,
+                nextDate,
+                display,
+                afterYearEnd,
+                shortNotice: `Next available ${otherLabel} date: ${display}.`,
+                message: `No inspections are completed at this building yet. The next available date to complete ${otherLabel} is ${display} (${gapDays} days after this ${enteredLabel} date).${yearNote}`
+            };
+        }
+
+        function formatMapOtherInspectionAvailabilityText(info, buildingCount, totalCount) {
+            if (!info) return '';
+            const count = Number(buildingCount) || 0;
+            const total = Number(totalCount) || count;
+            if (count <= 1 && total <= 1) return info.message;
+            const yearNote = info.afterYearEnd ? ` That is after December 31, ${info.year}.` : '';
+            const scope = count === total
+                ? `${count} selected buildings have no inspections completed yet.`
+                : `${count} of ${total} selected buildings have no inspections completed yet.`;
+            return `${scope} The next available date to complete ${info.otherLabel} is ${info.display} (${info.gapDays} days after this ${info.enteredLabel} date).${yearNote}`;
+        }
+
+        function appendMapOtherInspectionNotice(message, info) {
+            if (!info || !info.shortNotice) return message;
+            return `${message}. ${info.shortNotice}`;
+        }
+
+        function refreshMapOtherInspectionHint(elementOrId, bins, type, dateStr) {
+            const el = typeof elementOrId === 'string' ? document.getElementById(elementOrId) : elementOrId;
+            if (!el) return null;
+            const list = (Array.isArray(bins) ? bins : [bins]).map(bin => String(bin || '').trim()).filter(Boolean);
+            const matches = list.map(bin => getMapOtherInspectionAvailability(bin, type, dateStr)).filter(Boolean);
+            if (!matches.length) {
+                el.style.display = 'none';
+                el.textContent = '';
+                return null;
+            }
+            el.textContent = formatMapOtherInspectionAvailabilityText(matches[0], matches.length, list.length);
+            el.style.display = 'block';
+            return matches[0];
         }
 
         function getMapCategoryScheduleRules(bin, scheduledYear) {
@@ -22108,6 +22350,7 @@
                             <div id="categoryCompletionStatus">${renderMapCategoryCompletionStatusHtml(bin)}</div>
                             <div id="testDatesListCategory" style="margin-bottom:10px;"></div>
                             <div style="display:flex; gap:7px;"><input type="date" id="testDateInputCategory" value="${categoryDefaultDate}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;"><button id="testDateAddCategory" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#8e44ad; color:white; font-size:12px; font-weight:700;">+ Add</button></div>
+                            <div id="categoryOtherInspectionHint" role="status" style="${MAP_OTHER_INSPECTION_HINT_STYLE}"></div>
                             <details style="margin-top:10px; padding:8px 9px; border:1px solid rgba(155,89,182,0.28); border-radius:7px; background:rgba(155,89,182,0.08);">
                                 <summary style="cursor:pointer; color:#b56bd4; font-size:12px; line-height:1.4; font-weight:800; user-select:none;">Advanced scheduling options</summary>
                                 <label style="display:flex; align-items:flex-start; gap:9px; margin-top:10px; color:var(--text-color,#eee); font-size:12px; line-height:1.45; cursor:pointer;">
@@ -22124,6 +22367,7 @@
                             ${pviCompletionNotice}
                             <div id="testDatesListPvi" style="margin-bottom:10px;"></div>
                             <div style="display:flex; gap:7px;"><input type="date" id="testDateInputPvi" value="${pviDefaultDate}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;"><button id="testDateAddPvi" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#1a73e8; color:white; font-size:12px; font-weight:700;">+ Add</button></div>
+                            <div id="pviOtherInspectionHint" role="status" style="${MAP_OTHER_INSPECTION_HINT_STYLE}"></div>
                             <details style="margin-top:10px; padding:8px 9px; border:1px solid rgba(26,115,232,0.28); border-radius:7px; background:rgba(26,115,232,0.08);">
                                 <summary style="cursor:pointer; color:#4a9eff; font-size:12px; line-height:1.4; font-weight:800; user-select:none;">Advanced scheduling options</summary>
                                 <label style="display:flex; align-items:flex-start; gap:9px; margin-top:10px; color:var(--text-color,#eee); font-size:12px; line-height:1.45; cursor:pointer;">
@@ -22285,13 +22529,30 @@
                 }
                 renderDates();
                 refreshMapAfterTestDateChange();
+                const otherInspection = getMapOtherInspectionAvailability(bin, type, val);
+                const addedLabel = type === 'pvi' ? 'PVI' : 'Category';
+                const addedMessage = bypassUsed
+                    ? `${addedLabel} test date added with the recent-test restriction overridden`
+                    : `${addedLabel} test date added`;
                 showMapNotification(
-                    bypassUsed ? `${type === 'pvi' ? 'PVI' : 'Category'} test date added with the recent-test restriction overridden` : `${type === 'pvi' ? 'PVI' : 'Category'} test date added`,
-                    bypassUsed ? '#ff9800' : (type === 'pvi' ? '#1a73e8' : '#9b59b6')
+                    appendMapOtherInspectionNotice(addedMessage, otherInspection),
+                    bypassUsed ? '#ff9800' : (type === 'pvi' ? '#1a73e8' : '#9b59b6'),
+                    otherInspection ? 7000 : 0
+                );
+            }
+
+            function refreshScheduleOtherInspectionHint(type) {
+                const input = document.getElementById(type === 'pvi' ? 'testDateInputPvi' : 'testDateInputCategory');
+                refreshMapOtherInspectionHint(
+                    type === 'pvi' ? 'pviOtherInspectionHint' : 'categoryOtherInspectionHint',
+                    bin,
+                    type,
+                    input ? input.value : ''
                 );
             }
 
             function showTypedDateFeedback(type, dateStr) {
+                refreshScheduleOtherInspectionHint(type);
                 const error = document.getElementById(type === 'pvi' ? 'pviScheduleError' : 'categoryScheduleError');
                 const bypassInput = document.getElementById(type === 'pvi' ? 'testDateBypassPvi' : 'testDateBypassCategory');
                 const bypassEligibility = !!(bypassInput && bypassInput.checked);
@@ -22309,6 +22570,22 @@
 
             document.getElementById('testDateAddPvi').addEventListener('click', () => addTypedDate('pvi', 'testDateInputPvi'));
             document.getElementById('testDateAddCategory').addEventListener('click', () => addTypedDate('category', 'testDateInputCategory'));
+            refreshScheduleOtherInspectionHint('category');
+            refreshScheduleOtherInspectionHint('pvi');
+            document.getElementById('testDateInputPvi').addEventListener('input', event => {
+                refreshScheduleOtherInspectionHint('pvi');
+                showTypedDateFeedback('pvi', event.target.value);
+            });
+            document.getElementById('testDateInputCategory').addEventListener('input', event => {
+                refreshScheduleOtherInspectionHint('category');
+                const validation = showTypedDateFeedback('category', event.target.value);
+                const summary = document.getElementById('categoryScheduleRule');
+                if (summary && validation.rules) {
+                    const completedYear = validation.rules.categoryCompleteForYear;
+                    summary.style.display = completedYear ? 'none' : 'block';
+                    if (!completedYear) summary.innerHTML = getMapCategoryRuleSummaryHtml(validation.rules);
+                }
+            });
             document.getElementById('testDateInputPvi').addEventListener('change', event => {
                 showTypedDateFeedback('pvi', event.target.value);
             });
@@ -22810,6 +23087,7 @@
                                 <button type="button" id="mapBulkAddCategory" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#8e44ad; color:white; font-size:12px; font-weight:700;">+ Add</button>
                                 <button type="button" id="mapBulkClearCategory" style="margin:0; padding:8px 11px; border-radius:6px; border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.12); color:#ff6b6b; font-size:12px; font-weight:700;">Clear Dates</button>
                             </div>
+                            <div id="mapBulkCategoryOtherInspectionHint" role="status" style="${MAP_OTHER_INSPECTION_HINT_STYLE}"></div>
                         </section>
                         <section style="padding:14px; border:1px solid rgba(26,115,232,0.34); border-radius:11px; background:rgba(26,115,232,0.07);">
                             <div style="font-size:13px; font-weight:800; color:#1a73e8; margin-bottom:3px;">PVI TESTING</div>
@@ -22819,6 +23097,7 @@
                                 <button type="button" id="mapBulkAddPvi" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#1a73e8; color:white; font-size:12px; font-weight:700;">+ Add</button>
                                 <button type="button" id="mapBulkClearPvi" style="margin:0; padding:8px 11px; border-radius:6px; border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.12); color:#ff6b6b; font-size:12px; font-weight:700;">Clear Dates</button>
                             </div>
+                            <div id="mapBulkPviOtherInspectionHint" role="status" style="${MAP_OTHER_INSPECTION_HINT_STYLE}"></div>
                         </section>
                     </div>
                     <button type="button" id="mapBulkClearAllDates" style="width:100%; margin:10px 0 0; padding:8px 11px; border-radius:6px; border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.08); color:#ff6b6b; font-size:12px; font-weight:700;">Clear all scheduled dates on selected buildings</button>
@@ -22886,11 +23165,28 @@
                 if (!list) return;
                 if (!current.length) {
                     list.innerHTML = '<div style="font-size:12px; opacity:0.65; padding:8px 0;">No buildings selected.</div>';
+                    refreshBulkOtherInspectionHints();
                     return;
                 }
                 list.innerHTML = current.map(renderMapBulkSelectedBuildingRow).join('');
                 bindDeselectButtons();
+                refreshBulkOtherInspectionHints();
             }
+
+            function refreshBulkOtherInspectionHints() {
+                const bins = getMapSelectedBuildingSummaries().map(item => item.bin);
+                const categoryDate = document.getElementById('mapBulkCategoryDate');
+                const pviDate = document.getElementById('mapBulkPviDate');
+                refreshMapOtherInspectionHint('mapBulkCategoryOtherInspectionHint', bins, 'category', categoryDate ? categoryDate.value : '');
+                refreshMapOtherInspectionHint('mapBulkPviOtherInspectionHint', bins, 'pvi', pviDate ? pviDate.value : '');
+            }
+            ['mapBulkCategoryDate', 'mapBulkPviDate'].forEach(id => {
+                const input = document.getElementById(id);
+                if (!input) return;
+                input.addEventListener('change', refreshBulkOtherInspectionHints);
+                input.addEventListener('input', refreshBulkOtherInspectionHints);
+            });
+            refreshBulkOtherInspectionHints();
 
             function bindDeselectButtons() {
                 const list = document.getElementById('mapBulkSelectedList');
@@ -23030,12 +23326,15 @@
                 const message = summaryParts.length
                     ? `${label} date ${summaryParts.join(', ')} building${(added + replaced + alreadyScheduled + skippedDob + failures.length) === 1 ? '' : 's'}`
                     : `No ${label} dates changed`;
+                const otherHint = document.getElementById(type === 'pvi' ? 'mapBulkPviOtherInspectionHint' : 'mapBulkCategoryOtherInspectionHint');
+                const otherNotice = otherHint && otherHint.style.display !== 'none' ? otherHint.textContent : '';
+                const noticeMessage = otherNotice ? `${message}. ${otherNotice}` : message;
                 if (error && failures.length) {
                     error.textContent = failures.slice(0, 4).join(' · ') + (failures.length > 4 ? ` · +${failures.length - 4} more` : '');
                     error.style.color = '#ff9800';
                     error.style.display = 'block';
                 }
-                showMapNotification(message, added || replaced ? (type === 'pvi' ? '#1a73e8' : '#9b59b6') : '#ff9800');
+                showMapNotification(noticeMessage, added || replaced ? (type === 'pvi' ? '#1a73e8' : '#9b59b6') : '#ff9800', otherNotice ? 7000 : 0);
 
                 // Return to the map after a successful schedule apply. Keep the editor open
                 // only when some buildings were blocked so the user can review the errors.
@@ -26230,7 +26529,7 @@
             }
         }
 
-        function showMapNotification(message, color) {
+        function showMapNotification(message, color, durationMs) {
             const notification = document.createElement('div');
             notification.style.cssText = `
                 position: fixed;
@@ -26242,12 +26541,16 @@
                 padding: 10px 20px;
                 border-radius: 6px;
                 font-size: 14px;
+                line-height: 1.4;
+                text-align: center;
+                max-width: min(560px, calc(100% - 32px));
                 z-index: 10003;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             `;
             notification.textContent = message;
             document.body.appendChild(notification);
-            setTimeout(() => notification.remove(), 2000);
+            const duration = Number(durationMs) > 0 ? Number(durationMs) : 2000;
+            setTimeout(() => notification.remove(), duration);
         }
 
         function formatMapActivityDay(timestamp) {
@@ -27390,6 +27693,7 @@
             }
 
             const modal = document.getElementById('buildingMapModal');
+            closeMapBuildingDetailPanel();
             modal.style.display = 'none';
             
             // Re-enable body scrolling when map modal is closed
@@ -28236,6 +28540,7 @@
                 return;
             }
             initBuildingMapInProgress = true;
+            closeMapBuildingDetailPanel();
             try {
             const mapContainer = document.getElementById('buildingMap');
             if (!mapContainer) {
@@ -28531,7 +28836,10 @@
             });
 
             buildingMap.on('popupopen', function (e) {
-                hydrateOpenMapPopup(e.popup);
+                placeOpenMapPopup(e.popup);
+            });
+            buildingMap.on('popupclose', function (e) {
+                if (mapActiveLeafletPopup === e.popup) mapActiveLeafletPopup = null;
             });
 
             // Safari can calculate hidden/flex modal dimensions late; reflow map sizing safely.
@@ -28946,7 +29254,7 @@
                     </div>
                 `;
 
-                marker.bindPopup(popupContent, { maxWidth: 480, minWidth: 380 });
+                marker.bindPopup(popupContent, { maxWidth: 480, minWidth: 380, autoPan: false });
                 attachMapMarkerPopupClickHandler(marker);
                 attachMapMarkerSelectHandler(marker, building.bin);
                 mapMarkers.push(marker);
@@ -29239,6 +29547,7 @@
                 const currentMonthLabel = location.bin ? getMonthLabel(location.bin) : null;
                 const defaultHeaderAccent = isHouse ? '#8d6e63' : (isTransportation ? MAP_TRANSPORTATION_COLOR : (hasCustomName ? '#e64a19' : '#00bcd4'));
                 const headerAccent = useCompletionMarkerStyle ? locationCompletionColor : defaultHeaderAccent;
+                const omitLocationCompletionControls = isHouse || isTransportation;
                 
                 // Build popup content matching building popup format
                 const additionalPopupContent = `
@@ -29246,7 +29555,7 @@
                         <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${headerAccent};">
                             <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${String(location.customName || location.label || ('BIN ' + (location.bin || ''))).toUpperCase()}</div>
                             <div style="display: flex; gap: 6px; justify-content: space-between; flex-wrap: wrap;">
-                                <button onclick="toggleAdditionalLocationCompleted(${location.latitude}, ${location.longitude})"
+                                ${omitLocationCompletionControls ? '' : `<button onclick="toggleAdditionalLocationCompleted(${location.latitude}, ${location.longitude})"
                                         title="${isLocationCompleted ? 'Unmark as completed' : 'Mark as completed'}"
                                         style="background: ${isLocationCompleted ? locationCompletionColor : 'rgba(39,174,96,0.1)'};
                                                color: ${isLocationCompleted ? 'white' : '#27ae60'};
@@ -29257,7 +29566,7 @@
                                                font-size: 15px;
                                                display: flex; align-items: center; justify-content: center;
                                                flex: 1;
-                                               transition: all 0.2s;">✓</button>
+                                               transition: all 0.2s;">✓</button>`}
                                 ${location.bin ? `
                                 <button onclick="promoteAdditionalLocationByCoords(${location.latitude}, ${location.longitude})"
                                         title="Move to main buildings and fetch device data"
@@ -29290,11 +29599,12 @@
                             </div>
                         </div>
 
-                        ${isLocationCompleted ? `
+                        ${omitLocationCompletionControls || !isLocationCompleted ? '' : `
                         <div style="font-size: 11px; color: ${locationCompletionColor}; font-weight: 700; margin-bottom: 10px; padding: 5px 8px; background: color-mix(in srgb, ${locationCompletionColor} 11%, transparent); border: 1px solid color-mix(in srgb, ${locationCompletionColor} 28%, transparent); border-radius: 5px; text-align: center;">
                             ${locationCompletionType === 'PVI' ? 'P' : locationCompletionType === 'Category' ? 'C' : '✓'} ${locationCompletedTestLabel}${locationCompletedSourceLabel}
-                        </div>` : ''}
+                        </div>`}
 
+                        ${omitLocationCompletionControls ? '' : `
                         <div style="margin-bottom: 10px; padding: 8px; background: rgba(39,174,96,0.08); border-radius: 6px; border: 1px solid rgba(39,174,96,0.28);">
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <span style="font-size: 12px; color: #27ae60; font-weight: 600;">Status:</span>
@@ -29303,7 +29613,7 @@
                                     ${renderMapCompletionStatusOptions(isLocationCompleted)}
                                 </select>
                             </div>
-                        </div>
+                        </div>`}
                         
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
                             <div style="font-size: 12px;">
@@ -29476,7 +29786,7 @@
                     </div>
                 `;
 
-                additionalMarker.bindPopup(additionalPopupContent, { maxWidth: 480, minWidth: 380 });
+                additionalMarker.bindPopup(additionalPopupContent, { maxWidth: 480, minWidth: 380, autoPan: false });
                 attachMapMarkerPopupClickHandler(additionalMarker);
                 additionalLocationMarkers.push(additionalMarker);
                 if (!shouldHideCompletedAdditionalLocation(location)) {
