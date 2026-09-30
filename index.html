@@ -19122,6 +19122,59 @@
             return formatLocalDateInputValue(new Date());
         }
 
+        function getMapDobSuggestedCompletionType(completionFacts) {
+            if (!completionFacts || !completionFacts.activeDeviceCount) return '';
+            const pviDone = completionFacts.pviRequiredCount > 0 && completionFacts.pviComplete;
+            const categoryDone = completionFacts.categoryRequiredCount > 0 && completionFacts.categoryComplete;
+            if (pviDone && categoryDone) return 'Full';
+            if (pviDone) return 'PVI';
+            if (categoryDone) return 'Category';
+            return '';
+        }
+
+        function renderMapCompletionDeviceTestsHtml(completionFacts, year) {
+            const deviceFacts = completionFacts && Array.isArray(completionFacts.deviceFacts) ? completionFacts.deviceFacts : [];
+            if (!deviceFacts.length) return '';
+            const formatDate = date => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const renderCell = (required, done, date) => {
+                if (done && date) return `<span style="color:#27ae60; font-weight:800;" title="Filed with DOB">✓ ${formatDate(date)}</span>`;
+                if (required) return '<span style="color:#ff9800; font-weight:700;">Needed</span>';
+                return '<span style="opacity:0.45;" title="Not required this year">—</span>';
+            };
+            const counts = { pvi: 0, pviRequired: 0, cat1: 0, cat1Required: 0, cat5: 0, cat5Required: 0 };
+            const rows = deviceFacts.map(({ device, info }) => {
+                if (info.requiresPVI) { counts.pviRequired++; if (info.hasPVI) counts.pvi++; }
+                if (info.requiresCat1) { counts.cat1Required++; if (info.hasCat1) counts.cat1++; }
+                if (info.requiresCat5) { counts.cat5Required++; if (info.hasCat5) counts.cat5++; }
+                const deviceNumber = escapeMapSuggestionHtml(String(device.device_number || 'Unknown').trim());
+                return `<tr style="border-top:1px solid var(--input-border,#444);">
+                    <td style="padding:5px 6px; font-weight:700; white-space:nowrap;">${deviceNumber}</td>
+                    <td style="padding:5px 6px; white-space:nowrap;">${renderCell(info.requiresPVI, info.hasPVI, info.pviDate)}</td>
+                    <td style="padding:5px 6px; white-space:nowrap;">${renderCell(info.requiresCat1, info.hasCat1, info.cat1Date)}</td>
+                    <td style="padding:5px 6px; white-space:nowrap;">${renderCell(info.requiresCat5, info.hasCat5, info.cat5Date)}</td>
+                </tr>`;
+            }).join('');
+            const summaryParts = [];
+            if (counts.pviRequired) summaryParts.push(`PVI ${counts.pvi}/${counts.pviRequired}`);
+            if (counts.cat1Required) summaryParts.push(`CAT 1 ${counts.cat1}/${counts.cat1Required}`);
+            if (counts.cat5Required) summaryParts.push(`CAT 5 ${counts.cat5}/${counts.cat5Required}`);
+            const anyFiled = counts.pvi + counts.cat1 + counts.cat5 > 0;
+            return `<details id="completedDeviceTests" ${anyFiled ? 'open' : ''} style="margin:-4px 0 14px; padding:8px 10px; border-radius:7px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); font-size:11px;">
+                <summary style="cursor:pointer; font-weight:800; user-select:none;">DOB tests filed in ${year} by device${summaryParts.length ? ` <span style="font-weight:600; opacity:0.75;">· ${summaryParts.join(' · ')}</span>` : ''}</summary>
+                <div style="margin-top:6px; max-height:190px; overflow-y:auto;">
+                    <table style="width:100%; border-collapse:collapse; font-size:11px;">
+                        <thead><tr style="text-align:left; opacity:0.7;">
+                            <th style="padding:3px 6px; font-weight:700;">Device</th>
+                            <th style="padding:3px 6px; font-weight:700;">PVI</th>
+                            <th style="padding:3px 6px; font-weight:700;">CAT 1</th>
+                            <th style="padding:3px 6px; font-weight:700;">CAT 5</th>
+                        </tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            </details>`;
+        }
+
         function showMapCompletedDetailsPicker(bin, options) {
             const opts = options || {};
             const existing = getMapCompleted()[bin] || {};
@@ -19129,9 +19182,10 @@
             const currentDate = existing.timestamp
                 ? formatLocalDateInputValue(existing.timestamp)
                 : getMapCompletionDefaultDate(bin, existing);
-            const currentTestType = normalizeMapCompletedTestType(opts.testType || existing.completionType || existing.testType);
             const currentYear = new Date().getFullYear();
             const completionFacts = getMapBuildingCompletionFacts(getMapGroupForBin(bin), currentYear, bin);
+            const currentTestType = normalizeMapCompletedTestType(opts.testType || existing.completionType || existing.testType)
+                || getMapDobSuggestedCompletionType(completionFacts);
             const pviCompletionTimeframe = getMapDobCompletionTimeframe(bin, 'pvi', currentYear);
             const categoryCompletionTimeframe = getMapDobCompletionTimeframe(bin, 'category', currentYear);
             const renderCompletionTimeframe = timeframe => timeframe
@@ -19146,7 +19200,7 @@
             `;
 
             overlay.innerHTML = `
-                <div style="background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 24px; width:calc(100% - 32px); max-width:430px; box-sizing:border-box; box-shadow: 0 8px 32px rgba(0,0,0,0.4); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                <div style="background: var(--card-bg, #1e1e2e); border-radius: 12px; padding: 24px; width:calc(100% - 32px); max-width:480px; max-height:calc(100vh - 40px); overflow-y:auto; box-sizing:border-box; box-shadow: 0 8px 32px rgba(0,0,0,0.4); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                     <h3 style="margin: 0 0 6px 0; color: var(--text-color, #fff); font-size: 16px;">${isMapCustomLocationStoreKey(bin) ? '✓ Location Completion' : '✓ Building Completion'}</h3>
                     <p style="margin: 0 0 16px 0; font-size: 12px; opacity: 0.7; color: var(--text-color, #ccc);">${address || getMapCompletionKeyDisplayLabel(bin)}</p>
                     <label style="font-size: 13px; color: var(--text-color, #ccc); display: block; margin-bottom: 6px;">What was completed?</label>
@@ -19163,6 +19217,7 @@
                             ${completionFacts.pviComplete ? renderCompletionTimeframe(pviCompletionTimeframe) : ''}
                         </div>
                     </div>
+                    ${renderMapCompletionDeviceTestsHtml(completionFacts, currentYear)}
                     <label style="font-size: 13px; color: var(--text-color, #ccc); display: block; margin-bottom: 6px;">Completed date:</label>
                     <input type="date" id="completedDateInput" value="${currentDate}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); font-size: 14px; box-sizing: border-box; margin-bottom: 8px;">
                     <div id="completedOtherInspectionHint" role="status" style="${MAP_OTHER_INSPECTION_HINT_STYLE}"></div>
