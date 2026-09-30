@@ -21,6 +21,14 @@ assert.equal(normalize(1234), 1250, 'Widths snap to the 50px slider step');
 assert.equal(normalize('500'), 800, 'Never narrower than the original 800px layout');
 assert.equal(normalize('99999'), 1800, 'Capped at the slider maximum');
 
+const dobTabStart = html.indexOf('<div id="dobContent"');
+const sliderAt = html.indexOf('id="dobTabWidthRange"');
+const settingsStart = html.indexOf('<div id="settingsModal"');
+const settingsEnd = html.indexOf('<div id="settingsOverlay"', settingsStart);
+assert.ok(sliderAt > dobTabStart && html.indexOf('id="dobWidthControl"') > dobTabStart,
+    'Width slider lives on the DOB tab');
+assert.ok(!(sliderAt > settingsStart && sliderAt < settingsEnd), 'Width slider is not in the Settings modal');
+
 const css = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 assert.match(css, /body\.dob-tab-wide\s*\{\s*max-width:\s*var\(--dob-tab-max-width,\s*1100px\)/,
     'DOB tab width comes from the --dob-tab-max-width setting');
