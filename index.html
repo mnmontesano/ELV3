@@ -4968,6 +4968,9 @@
             permits: []
         };
 
+        // Per result panel: fetched building groups plus unsearched devices awaiting "Add Device"
+        window.bulkLookupSessions = {};
+
         // Toggle function for bulk test completion status lists - now shows popup modal
         function toggleBulkTestList(listType) {
             const modal = document.getElementById('bulkDeviceListModal');
@@ -8895,6 +8898,192 @@
             }
         }
 
+        function updateBulkProgressMessage(message) {
+            const progressText = document.getElementById('bulkProgressText');
+            const progressEstimate = document.getElementById('bulkProgressEstimate');
+            if (progressText) progressText.textContent = message;
+            if (progressEstimate) progressEstimate.textContent = '';
+        }
+
+        // BULK unsearched BIN device helpers
+        function normalizeBulkDeviceNumber(deviceNumber) {
+            return String(deviceNumber || '').trim().toUpperCase();
+        }
+
+        // Devices registered to a searched building that the user did not enter themselves.
+        function collectUnsearchedBinDevices(binGroups, binRowsByBin) {
+            const result = {};
+            Object.keys(binRowsByBin || {}).forEach(bin => {
+                const group = binGroups && binGroups[bin];
+                if (!group) return;
+                const known = new Set((group.devices || []).map(d => normalizeBulkDeviceNumber(d.device_number)));
+                const extras = [];
+                (binRowsByBin[bin] || []).forEach(row => {
+                    const number = normalizeBulkDeviceNumber(row && row.device_number);
+                    if (!number || known.has(number)) return;
+                    known.add(number);
+                    extras.push(row);
+                });
+                if (extras.length > 0) result[bin] = extras;
+            });
+            return result;
+        }
+
+        function takeUnsearchedBinDevice(unsearchedBinDevices, bin, deviceNumber) {
+            const list = unsearchedBinDevices && unsearchedBinDevices[bin];
+            if (!list) return null;
+            const target = normalizeBulkDeviceNumber(deviceNumber);
+            const index = list.findIndex(d => normalizeBulkDeviceNumber(d.device_number) === target);
+            if (index < 0) return null;
+            const [device] = list.splice(index, 1);
+            if (list.length === 0) delete unsearchedBinDevices[bin];
+            return device;
+        }
+
+        function appendDeviceNumberToLookupText(text, deviceNumber) {
+            const entries = String(text || '').split('\n').map(e => e.trim()).filter(e => e !== '');
+            const target = normalizeBulkDeviceNumber(deviceNumber);
+            if (!target || entries.some(e => normalizeBulkDeviceNumber(e) === target)) return entries.join('\n');
+            entries.push(String(deviceNumber).trim());
+            return entries.join('\n');
+        }
+        // end BULK unsearched BIN device helpers
+
+        async function fetchUnsearchedBinDevices(binGroups, searchedBins) {
+            const bins = Object.keys(binGroups).filter(bin => /^\d{7}$/.test(bin) && !searchedBins.has(bin));
+            const binRowsByBin = {};
+            await Promise.all(bins.map(async bin => {
+                try {
+                    const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?bin=${encodeURIComponent(bin)}`);
+                    if (!response.ok) return;
+                    const rows = await response.json();
+                    if (Array.isArray(rows)) binRowsByBin[bin] = rows;
+                } catch (error) {
+                    console.error(`Error fetching other devices for BIN ${bin}:`, error);
+                }
+            }));
+            return collectUnsearchedBinDevices(binGroups, binRowsByBin);
+        }
+
+        function buildUnsearchedBinDevicesHtml(resultDivId, bin, devices) {
+            if (!devices || devices.length === 0) return '';
+            const esc = value => escapeMapSuggestionHtml(value == null ? '' : String(value));
+            const formatDate = value => value ? new Date(value).toLocaleDateString() : '—';
+            const cellStyle = 'padding: 8px; border: 1px solid var(--input-border); color: var(--text-color);';
+            const headStyle = 'padding: 8px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;';
+            const rows = devices.map((d, index) => `
+                <tr style="background: ${index % 2 === 0 ? 'var(--input-bg)' : 'var(--panel-bg)'}; opacity: 0.85;">
+                    <td style="${cellStyle} text-align: center;">
+                        <button type="button" class="bulk-add-unsearched-device"
+                                data-result-div="${esc(resultDivId)}" data-bin="${esc(bin)}" data-device="${esc(d.device_number)}"
+                                onclick="event.stopPropagation(); addUnsearchedBulkDevice(this)"
+                                style="margin: 0; padding: 5px 12px; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 0.9em; font-weight: 600; white-space: nowrap;">
+                            + Add Device
+                        </button>
+                    </td>
+                    <td style="${cellStyle} font-weight: 600;">${esc(d.device_number)}</td>
+                    <td style="${cellStyle}">${esc(d.device_type || 'N/A')}</td>
+                    <td style="${cellStyle} text-align: center;">${esc(d.device_status || 'N/A')}</td>
+                    <td style="${cellStyle} text-align: center;">${formatDate(d.periodic_latest_inspection)}</td>
+                    <td style="${cellStyle} text-align: center;">${formatDate(d.cat1_latest_report_filed)}</td>
+                    <td style="${cellStyle} text-align: center;">${formatDate(d.cat5_latest_report_filed)}</td>
+                </tr>
+            `).join('');
+            return `
+                <div class="bulk-unsearched-devices" style="margin-top: 18px; padding: 12px; border: 1px dashed var(--input-border); border-radius: 6px;">
+                    <div style="font-weight: 600; color: var(--header-color); margin-bottom: 4px;">
+                        Other Devices at This BIN (${devices.length})
+                    </div>
+                    <div style="font-size: 0.85em; color: var(--text-color); opacity: 0.75; margin-bottom: 10px;">
+                        These devices were not in your search and are not included in any counts. Use "Add Device" to include one.
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.85em;">
+                            <thead>
+                                <tr style="background: var(--panel-bg);">
+                                    <th style="${headStyle} text-align: center;"></th>
+                                    <th style="${headStyle}">Device #</th>
+                                    <th style="${headStyle}">Type</th>
+                                    <th style="${headStyle} text-align: center;">Status</th>
+                                    <th style="${headStyle} text-align: center;">PVI</th>
+                                    <th style="${headStyle} text-align: center;">CAT 1</th>
+                                    <th style="${headStyle} text-align: center;">CAT 5</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function addUnsearchedBulkDevice(button) {
+            const resultDivId = button.getAttribute('data-result-div');
+            const bin = button.getAttribute('data-bin');
+            const deviceNumber = button.getAttribute('data-device');
+            const session = window.bulkLookupSessions[resultDivId];
+            if (!session || !session.binGroups[bin]) return;
+
+            const pending = (session.unsearchedBinDevices[bin] || [])
+                .find(d => normalizeBulkDeviceNumber(d.device_number) === normalizeBulkDeviceNumber(deviceNumber));
+            if (!pending) return;
+
+            button.disabled = true;
+            button.textContent = 'Adding...';
+            try {
+                const [violations, deviceInfoData] = await Promise.all([
+                    fetchViolations(pending.device_number),
+                    fetchDeviceInfo(pending.device_number)
+                ]);
+                const device = takeUnsearchedBinDevice(session.unsearchedBinDevices, bin, deviceNumber);
+                if (!device) return;
+                device.violations = (violations || []).filter(v =>
+                    v.violation_status?.toUpperCase() === 'ACTIVE' ||
+                    v.violation_status?.toUpperCase() === 'OPEN');
+                device.machine_type = deviceInfoData?.machine_type || '';
+                session.binGroups[bin].devices.push(device);
+
+                const textarea = document.getElementById(session.textareaId);
+                if (textarea) textarea.value = appendDeviceNumberToLookupText(textarea.value, device.device_number);
+                session.entryCount++;
+
+                const resultDiv = document.getElementById(resultDivId);
+                const expandedBins = Array.from(resultDiv.querySelectorAll('.building-card'))
+                    .map(card => card.getAttribute('data-bin'))
+                    .filter(cardBin => {
+                        const container = resultDiv.querySelector(`[id="buildingDevices_${cardBin}"]`);
+                        return container && container.style.display !== 'none';
+                    });
+                const scroller = resultDiv.querySelector('#buildingsContainer');
+                const scrollTop = scroller ? scroller.scrollTop : 0;
+                const searchInput = resultDiv.querySelector('#bulkResultsSearch');
+                const searchTerm = searchInput ? searchInput.value : '';
+
+                await renderBulkLookupResults(session);
+
+                expandedBins.forEach(cardBin => {
+                    const container = resultDiv.querySelector(`[id="buildingDevices_${cardBin}"]`);
+                    const arrow = resultDiv.querySelector(`[id="buildingArrow_${cardBin}"]`);
+                    if (container) container.style.display = 'block';
+                    if (arrow) arrow.style.transform = 'rotate(180deg)';
+                });
+                const newScroller = resultDiv.querySelector('#buildingsContainer');
+                if (newScroller) newScroller.scrollTop = scrollTop;
+                if (searchTerm) {
+                    const newSearchInput = resultDiv.querySelector('#bulkResultsSearch');
+                    if (newSearchInput) {
+                        newSearchInput.value = searchTerm;
+                        filterBulkResults(searchTerm);
+                    }
+                }
+            } catch (error) {
+                console.error(`Error adding device ${deviceNumber}:`, error);
+                button.disabled = false;
+                button.textContent = '+ Add Device';
+                alert(`Could not add device ${deviceNumber}. Please try again.`);
+            }
+        }
+
         // Add these new functions to your script section
         async function lookupBulkDevices(opts) {
             opts = opts || {};
@@ -8937,6 +9126,7 @@
                 // Create an object to group devices by BIN
                 const binGroups = {};
                 const notFound = [];
+                const searchedBins = new Set();
                 let processedCount = 0;
                 const deviceTimes = []; // Track time per device for estimation
 
@@ -8977,6 +9167,7 @@
                         const data = await response.json();
 
                         if (data && data.length > 0) {
+                            searchedBins.add(deviceNumber);
                             // One batched violations call for the whole BIN, device info in parallel
                             const [violationsByDevice, deviceInfos] = await Promise.all([
                                 fetchViolationsForBin(deviceNumber),
@@ -9031,15 +9222,51 @@
                     updateBulkProgress(processedCount, deviceNumbers.length, deviceTimes);
                 }
 
+                updateBulkProgressMessage('Checking searched buildings for other devices...');
+                const unsearchedBinDevices = await fetchUnsearchedBinDevices(binGroups, searchedBins);
+
+                const session = {
+                    binGroups,
+                    notFound,
+                    unsearchedBinDevices,
+                    entryCount: deviceNumbers.length,
+                    textareaId: opts.textareaId || 'bulkDeviceNumbers',
+                    resultDivId: opts.resultDivId || 'bulkResult',
+                    exportBtnId: _exportBtnId,
+                    mapBtnId: _mapBtnId,
+                    permitCache: {}
+                };
+                window.bulkLookupSessions[session.resultDivId] = session;
+                await renderBulkLookupResults(session, { isNewSearch: true });
+            } catch (error) {
+                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
+                console.error('Error:', error);
+            }
+        }
+
+        async function renderBulkLookupResults(session, renderOpts) {
+            renderOpts = renderOpts || {};
+            const resultDiv = document.getElementById(session.resultDivId);
+            const binGroups = session.binGroups;
+            const notFound = session.notFound;
+            const unsearchedBinDevices = session.unsearchedBinDevices || {};
+
+            try {
                     const bulkDevicesFoundCount = Object.values(binGroups).reduce((sum, group) => sum + group.devices.length, 0);
+                    const unsearchedDeviceCount = Object.values(unsearchedBinDevices).reduce((sum, list) => sum + list.length, 0);
                     let html = `
                         <div style="background: var(--input-bg); padding: 25px; border-radius: 8px; box-shadow: 0 2px 4px var(--card-shadow); color: var(--text-color); border: 1px solid var(--input-border);">
                         <div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid var(--input-border);">
                             <div style="font-size: 1.15em; font-weight: 600; color: var(--header-color);">
                                 Total Devices Found: 
                                 <span style="color: var(--text-color);">${bulkDevicesFoundCount}</span>
-                                <span style="font-size: 0.8em; font-weight: 400; opacity: 0.7;">(from ${deviceNumbers.length} ${deviceNumbers.length === 1 ? 'entry' : 'entries'})</span>
+                                <span style="font-size: 0.8em; font-weight: 400; opacity: 0.7;">(from ${session.entryCount} ${session.entryCount === 1 ? 'entry' : 'entries'})</span>
                             </div>
+                            ${unsearchedDeviceCount > 0 ? `
+                            <div style="margin-top: 6px; font-size: 0.9em; color: var(--text-color); opacity: 0.75;">
+                                ${unsearchedDeviceCount} other ${unsearchedDeviceCount === 1 ? 'device was' : 'devices were'} found at the searched buildings but not included in the count. Expand a building to add them.
+                            </div>
+                            ` : ''}
                         </div>
                 `;
 
@@ -9591,9 +9818,13 @@
                 );
                 
                 // Fetch permits for all devices (in batches to avoid overwhelming the API)
+                const permitCache = session.permitCache || {};
                 const permitPromises = allDeviceNumbers.map(async (deviceInfo) => {
                     try {
-                        const result = await fetchPermitInfo(deviceInfo.device_number);
+                        if (!permitCache[deviceInfo.device_number]) {
+                            permitCache[deviceInfo.device_number] = fetchPermitInfo(deviceInfo.device_number);
+                        }
+                        const result = await permitCache[deviceInfo.device_number];
                         if (result.success && result.permits && result.permits.length > 0) {
                             return result.permits.map(permit => ({
                                 ...permit,
@@ -9604,6 +9835,7 @@
                         }
                         return [];
                     } catch (error) {
+                        delete permitCache[deviceInfo.device_number];
                         console.error(`Error fetching permits for ${deviceInfo.device_number}:`, error);
                         return [];
                     }
@@ -9851,6 +10083,7 @@
                     const totalViolations = group.devices.reduce((sum, device) => 
                         sum + (device.violations ? device.violations.length : 0), 0);
                     const deviceNumbers = group.devices.map(d => d.device_number).join(' ');
+                    const unsearchedForBin = unsearchedBinDevices[bin] || [];
                     
                     html += `
                         <div class="building-card" data-bin="${bin}" data-address="${group.address}" data-devices="${deviceNumbers}" style="background: var(--panel-bg); padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid var(--input-border); box-shadow: 0 2px 4px var(--card-shadow);">
@@ -9892,6 +10125,12 @@
                                                 <strong style="color: var(--header-color);">Active Violations:</strong> 
                                                 <span style="color: ${totalViolations > 0 ? '#ff6b6b' : '#4CAF50'}; font-weight: 600;">${totalViolations}</span>
                                             </div>
+                                            ${unsearchedForBin.length > 0 ? `
+                                            <div title="Found at this BIN but not in your search. Not included in counts.">
+                                                <strong style="color: var(--header-color);">Other Devices at BIN:</strong> 
+                                                <span style="color: var(--text-color); opacity: 0.75; font-weight: 600;">${unsearchedForBin.length} (not counted)</span>
+                                            </div>
+                                            ` : ''}
                                         </div>
                                     </div>
                                     <div style="display: flex; align-items: center; gap: 12px;">
@@ -10296,6 +10535,7 @@
                                 </tbody>
                             </table>
                         </div>
+                        ${buildUnsearchedBinDevicesHtml(session.resultDivId, bin, unsearchedForBin)}
                             </div>
                         </div>
                     `;
@@ -10332,12 +10572,14 @@
                     binGroups: binGroups,
                     notFound: notFound
                 };
-                setMapCat5Bypasses({});
-                setMapDobInfoUpdatedAt(null);
+                if (renderOpts.isNewSearch) {
+                    setMapCat5Bypasses({});
+                    setMapDobInfoUpdatedAt(null);
+                }
 
                 // Show the export button and map button if we have results
-                document.getElementById(_exportBtnId).style.display = 'block';
-                document.getElementById(_mapBtnId).style.display = 'block';
+                document.getElementById(session.exportBtnId).style.display = 'block';
+                document.getElementById(session.mapBtnId).style.display = 'block';
             } catch (error) {
                 resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
                 console.error('Error:', error);
