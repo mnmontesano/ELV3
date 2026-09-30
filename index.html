@@ -2010,6 +2010,9 @@
                     .map-availability-row span:first-child { font-weight: 600; }
                     .map-availability-row span:last-child { text-align: right; font-weight: 600; }
                     .map-availability-more { font-size: 10px; opacity: 0.72; margin-top: 3px; }
+                    .map-availability-note { margin-top: 6px; padding: 5px 7px; border-radius: 6px; background: rgba(26,115,232,0.1); border: 1px solid rgba(26,115,232,0.3); }
+                    .map-availability-note-label { font-size: 10px; font-weight: 700; color: #1a73e8; margin-bottom: 2px; }
+                    .map-availability-note-text { font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
                     @media (max-width: 700px) {
                         #mapSelectToolbar { left: 8px; right: 8px; top: 8px; padding: 7px 8px; }
                         #mapSelectToolbar .map-select-actions { margin-left: 0; width: 100%; }
@@ -20036,7 +20039,7 @@
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         }
 
-        function buildMapTestingAvailabilityTooltipHtml(title, devices, year) {
+        function buildMapTestingAvailabilityDevicesHtml(devices, year) {
             const ready = (devices.readyDevices || []).slice();
             const notReady = (devices.notReadyDevices || []).slice()
                 .sort((a, b) => (a.eligibleDate ? a.eligibleDate.getTime() : 0) - (b.eligibleDate ? b.eligibleDate.getTime() : 0));
@@ -20080,17 +20083,27 @@
             const more = rows.length > MAP_AVAILABILITY_TOOLTIP_MAX_ROWS
                 ? `<div class="map-availability-more">+${rows.length - MAP_AVAILABILITY_TOOLTIP_MAX_ROWS} more device${rows.length - MAP_AVAILABILITY_TOOLTIP_MAX_ROWS === 1 ? '' : 's'} · click for details</div>`
                 : '';
-            return `<div class="map-availability-title">${escapeMapSuggestionHtml(title)}</div>
-                <div class="map-availability-summary" style="color:${summaryColor};">${summary}</div>
+            return `<div class="map-availability-summary" style="color:${summaryColor};">${summary}</div>
                 ${shown}${more}`;
         }
 
+        function buildMapTestingAvailabilityTooltipHtml(title, devicesHtml, noteBin) {
+            const note = noteBin ? String(getMapNote(noteBin) || '').trim() : '';
+            if (!devicesHtml && !note) return '';
+            const noteHtml = note
+                ? `<div class="map-availability-note"><div class="map-availability-note-label">📝 Notes</div><div class="map-availability-note-text">${escapeMapSuggestionHtml(note)}</div></div>`
+                : '';
+            return `<div class="map-availability-title">${escapeMapSuggestionHtml(title)}</div>
+                ${devicesHtml || '<div class="map-availability-summary" style="opacity:0.75;">No device testing dates on file</div>'}${noteHtml}`;
+        }
+
         // Hover-only: on touch screens a tap already opens the full popup.
-        function attachMapTestingAvailabilityTooltip(marker, title, devices, year) {
+        // Content is built on each hover so note edits show without rebuilding the map.
+        function attachMapTestingAvailabilityTooltip(marker, title, devices, year, noteBin) {
             if (!marker || !window.matchMedia || !window.matchMedia('(hover: hover)').matches) return;
-            const html = buildMapTestingAvailabilityTooltipHtml(title, devices, year);
-            if (!html) return;
-            marker.bindTooltip(html, {
+            const devicesHtml = buildMapTestingAvailabilityDevicesHtml(devices, year);
+            if (!devicesHtml && !noteBin) return;
+            marker.bindTooltip(() => buildMapTestingAvailabilityTooltipHtml(title, devicesHtml, noteBin), {
                 direction: 'top',
                 offset: [0, -14],
                 opacity: 1,
@@ -20098,7 +20111,11 @@
             });
             marker.on('click popupopen', () => marker.closeTooltip());
             marker.on('mouseover', () => {
-                if (mapSelectMode || (marker.isPopupOpen && marker.isPopupOpen())) marker.closeTooltip();
+                if (mapSelectMode || (marker.isPopupOpen && marker.isPopupOpen())) {
+                    marker.closeTooltip();
+                    return;
+                }
+                if (!buildMapTestingAvailabilityTooltipHtml(title, devicesHtml, noteBin)) marker.closeTooltip();
             });
         }
 
@@ -29980,7 +29997,7 @@
                 `;
 
                 marker.bindPopup(popupContent, { maxWidth: 480, minWidth: 380 });
-                attachMapTestingAvailabilityTooltip(marker, building.address || ('BIN ' + building.bin), building, new Date().getFullYear());
+                attachMapTestingAvailabilityTooltip(marker, building.address || ('BIN ' + building.bin), building, new Date().getFullYear(), building.bin);
                 attachMapMarkerPopupClickHandler(marker);
                 attachMapMarkerSelectHandler(marker, building.bin);
                 mapMarkers.push(marker);
@@ -30513,7 +30530,7 @@
                 `;
 
                 additionalMarker.bindPopup(additionalPopupContent, { maxWidth: 480, minWidth: 380 });
-                attachMapTestingAvailabilityTooltip(additionalMarker, additionalMarker._mapMarkerMeta.title, { readyDevices, notReadyDevices, completedDevices }, new Date().getFullYear());
+                attachMapTestingAvailabilityTooltip(additionalMarker, additionalMarker._mapMarkerMeta.title, { readyDevices, notReadyDevices, completedDevices }, new Date().getFullYear(), location.bin ? String(location.bin) : '');
                 attachMapMarkerPopupClickHandler(additionalMarker);
                 additionalLocationMarkers.push(additionalMarker);
                 if (!shouldHideCompletedAdditionalLocation(location)) {
