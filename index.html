@@ -28798,17 +28798,24 @@
         }
 
         // Unspecified (legacy) schedule dates count toward either deadline type.
+        // Past schedule dates still count — otherwise missed deadlines with an
+        // on-time (but already past) schedule incorrectly show "NO TEST DATE".
         function getMapDeadlineScheduleStatus(bin, deadline, todayKey) {
             const dates = getMapTypedScheduleRows(bin)
-                .filter(row => (row.type === deadline.type || row.type === 'general') && row.date >= todayKey)
+                .filter(row => row.type === deadline.type || row.type === 'general')
                 .map(row => row.date)
                 .sort();
-            const onTime = dates.find(date => date <= deadline.date);
-            const scheduledDate = onTime || dates[0] || '';
+            const onTime = dates.filter(date => date <= deadline.date);
+            const upcomingOnTime = todayKey
+                ? onTime.filter(date => date >= todayKey)
+                : onTime.slice();
+            // Prefer an upcoming on-time date; otherwise the latest on-time date
+            // (including past-due schedules); otherwise the earliest late date.
+            const scheduledDate = upcomingOnTime[0] || onTime[onTime.length - 1] || dates[0] || '';
             return {
                 isScheduled: !!scheduledDate,
                 scheduledDate,
-                isAfterDeadline: !!scheduledDate && !onTime
+                isAfterDeadline: !!scheduledDate && scheduledDate > deadline.date
             };
         }
 
@@ -28951,12 +28958,12 @@
         function renderMapDashboardDeadlineScheduleBadge(entry) {
             const schedule = entry.schedule || {};
             if (!schedule.isScheduled) {
-                return '<span class="mdb-badge" style="background:#dc3545;" title="No upcoming test date is scheduled for this deadline">NO TEST DATE</span>';
+                return '<span class="mdb-badge" style="background:#dc3545;" title="No test date is scheduled for this deadline">NO TEST DATE</span>';
             }
             const dateText = escapeMapSuggestionHtml(formatMapDashboardShortDate(schedule.scheduledDate));
             return schedule.isAfterDeadline
                 ? `<span class="mdb-badge" style="background:#e67e22;" title="The only scheduled test date is after this deadline">📅 ${dateText} · LATE</span>`
-                : `<span class="mdb-badge" style="background:#27ae60;" title="Test date scheduled before the deadline">📅 ${dateText}</span>`;
+                : `<span class="mdb-badge" style="background:#27ae60;" title="Test date scheduled on or before the deadline">📅 ${dateText}</span>`;
         }
 
         function renderMapDashboardDeadlineGroups(deadlines) {

@@ -35,7 +35,14 @@ schedules.general = [['general', '2026-10-05']];
 assert.equal(status('general', 'category', '2026-11-01').isScheduled, true, 'unspecified dates count for any deadline');
 
 schedules.past = [['category', '2026-09-01']];
-assert.equal(status('past', 'category', '2026-11-01').isScheduled, false, 'past schedule dates are ignored');
+assert.deepEqual(status('past', 'category', '2026-11-01'),
+    { isScheduled: true, scheduledDate: '2026-09-01', isAfterDeadline: false },
+    'past on-time schedule dates still count as scheduled');
+
+schedules.missedDeadline = [['category', '2026-09-10']];
+assert.deepEqual(status('missedDeadline', 'category', '2026-09-15'),
+    { isScheduled: true, scheduledDate: '2026-09-10', isAfterDeadline: false },
+    'a past schedule that was on time for a missed deadline still counts');
 
 schedules.today = [['category', '2026-09-30']];
 assert.equal(status('today', 'category', '2026-11-01').isScheduled, true, 'a test scheduled today counts');
@@ -44,8 +51,23 @@ schedules.late = [['category', '2026-12-01']];
 assert.deepEqual(status('late', 'category', '2026-11-01'),
     { isScheduled: true, scheduledDate: '2026-12-01', isAfterDeadline: true }, 'a date after the deadline is flagged');
 
+schedules.pastLate = [['category', '2026-11-20']];
+assert.deepEqual(status('pastLate', 'category', '2026-11-01'),
+    { isScheduled: true, scheduledDate: '2026-11-20', isAfterDeadline: true },
+    'a past schedule after the deadline is flagged LATE, not missing');
+
 schedules.mixed = [['category', '2026-12-01'], ['category', '2026-10-15']];
 assert.deepEqual(status('mixed', 'category', '2026-11-01'),
     { isScheduled: true, scheduledDate: '2026-10-15', isAfterDeadline: false }, 'an on-time date is preferred');
+
+schedules.mixedPastAndUpcoming = [['category', '2026-09-01'], ['category', '2026-10-20'], ['category', '2026-12-01']];
+assert.deepEqual(status('mixedPastAndUpcoming', 'category', '2026-11-01'),
+    { isScheduled: true, scheduledDate: '2026-10-20', isAfterDeadline: false },
+    'an upcoming on-time date is preferred over past on-time and late dates');
+
+schedules.onlyPastOnTime = [['category', '2026-08-01'], ['category', '2026-09-15']];
+assert.deepEqual(status('onlyPastOnTime', 'category', '2026-11-01'),
+    { isScheduled: true, scheduledDate: '2026-09-15', isAfterDeadline: false },
+    'when every on-time date is past, the latest on-time date is shown');
 
 console.log('Deadline schedule status checks passed.');
