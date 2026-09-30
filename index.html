@@ -8940,6 +8940,15 @@
             if (progressEstimate) progressEstimate.textContent = '';
         }
 
+        function setBulkLookupProgress(percent, message, detail) {
+            const progressText = document.getElementById('bulkProgressText');
+            const progressBar = document.getElementById('bulkProgressBar');
+            const progressEstimate = document.getElementById('bulkProgressEstimate');
+            if (progressBar) progressBar.style.width = Math.max(0, Math.min(100, Math.round(percent))) + '%';
+            if (progressText && message) progressText.textContent = message;
+            if (progressEstimate) progressEstimate.textContent = detail || '';
+        }
+
         // BULK unsearched BIN device helpers
         function normalizeBulkDeviceNumber(deviceNumber) {
             return String(deviceNumber || '').trim().toUpperCase();
@@ -9008,16 +9017,14 @@
         async function fetchUnsearchedBinDevices(binGroups, searchedBins) {
             const bins = Object.keys(binGroups).filter(bin => /^\d{7}$/.test(bin) && !searchedBins.has(bin));
             const binRowsByBin = {};
-            await Promise.all(bins.map(async bin => {
+            await runWithLimitedConcurrency(bins, DOB_BIN_SCAN_CONCURRENCY, async bin => {
                 try {
-                    const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?bin=${encodeURIComponent(bin)}`);
-                    if (!response.ok) return;
-                    const rows = await response.json();
+                    const rows = await fetchBulkDevicesForBin(bin);
                     if (Array.isArray(rows)) binRowsByBin[bin] = rows;
                 } catch (error) {
                     console.error(`Error fetching other devices for BIN ${bin}:`, error);
                 }
-            }));
+            });
             return collectUnsearchedBinDevices(binGroups, binRowsByBin);
         }
 
@@ -9267,11 +9274,16 @@
                 const binGroups = {};
                 const notFound = [];
                 const searchedBins = new Set();
-                let processedCount = 0;
-                const deviceTimes = []; // Track time per device for estimation
 
                 // A 7-digit numeric entry is treated as a BIN; anything else as a device number
                 const isBinEntry = entry => /^\d{7}$/.test(entry);
+                const binEntries = [];
+                const deviceEntries = [];
+                deviceNumbers.forEach(entry => {
+                    if (isBinEntry(entry)) binEntries.push(entry);
+                    else deviceEntries.push(entry);
+                });
+                const uniqueBins = Array.from(new Set(binEntries));
 
                 function addDeviceToBinGroups(device, fallbackBin) {
                     const bin = device.bin || fallbackBin || 'Unknown BIN';
@@ -9294,76 +9306,102 @@
                     }
                 }
 
-                // Look up each entry (device number or BIN)
-                for (const deviceNumber of deviceNumbers) {
-                    const deviceStartTime = Date.now();
-
-                    if (isBinEntry(deviceNumber)) {
-                        // BIN entry: fetch every device registered to this building
-                        const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?bin=${encodeURIComponent(deviceNumber)}`);
-                        if (!response.ok) {
-                            throw new Error('Network response was not ok');
-                        }
-                        const data = await response.json();
-
-                        if (data && data.length > 0) {
-                            searchedBins.add(deviceNumber);
-                            // One batched violations call for the whole BIN, device info in parallel
-                            const [violationsByDevice, deviceInfos] = await Promise.all([
-                                fetchViolationsForBin(deviceNumber),
-                                Promise.all(data.map(d => fetchDeviceInfo(d.device_number)))
-                            ]);
-                            data.forEach((device, i) => {
-                                const violations = violationsByDevice[device.device_number] || [];
-                                device.violations = violations.filter(v =>
-                                    v.violation_status?.toUpperCase() === 'ACTIVE' ||
-                                    v.violation_status?.toUpperCase() === 'OPEN');
-                                device.machine_type = deviceInfos[i]?.machine_type || '';
-                                addDeviceToBinGroups(device, deviceNumber);
-                            });
-                        } else {
-                            notFound.push(`BIN ${deviceNumber}`);
-                        }
-                    } else {
-                        const response = await fetch(`https://data.cityofnewyork.us/resource/e5aq-a4j2.json?device_number=${encodeURIComponent(deviceNumber)}`);
-
-                        if (!response.ok) {
-                            throw new Error('Network response was not ok');
-                        }
-
-                        const data = await response.json();
-
-                        if (data && data.length > 0) {
-                            const device = data[0];
-
-                            // Fetch violations and device info in parallel
-                            const [violations, deviceInfoData] = await Promise.all([
-                                fetchViolations(deviceNumber),
-                                fetchDeviceInfo(deviceNumber)
-                            ]);
-                            const activeViolations = violations.filter(v =>
-                                v.violation_status?.toUpperCase() === 'ACTIVE' ||
-                                v.violation_status?.toUpperCase() === 'OPEN');
-
-                            // Store violations and machine_type with device
-                            device.violations = activeViolations;
-                            device.machine_type = deviceInfoData?.machine_type || '';
-                            addDeviceToBinGroups(device);
-                        } else {
-                            notFound.push(deviceNumber);
-                        }
-                    }
-
-                    processedCount++;
-                    const deviceDuration = Date.now() - deviceStartTime;
-                    deviceTimes.push(deviceDuration);
-
-                    // Update progress indicator
-                    updateBulkProgress(processedCount, deviceNumbers.length, deviceTimes);
+                function activeBulkViolations(violations) {
+                    const rows = Array.isArray(violations) ? violations : [];
+                    return rows.filter(v =>
+                        v.violation_status?.toUpperCase() === 'ACTIVE' ||
+                        v.violation_status?.toUpperCase() === 'OPEN');
                 }
 
-                updateBulkProgressMessage('Checking searched buildings for other devices...');
-                const unsearchedBinDevices = await fetchUnsearchedBinDevices(binGroups, searchedBins);
+                // Device records, violations, and machine types are requested together.
+                // BIN lists still use one indexed query per building, several at a time.
+                const uniqueDeviceCount = new Set(deviceEntries.map(entry => normalizeBulkDeviceNumber(entry))).size;
+                const recordTotal = Math.max(1, uniqueDeviceCount + uniqueBins.length);
+                const recordProgress = { devices: 0, bins: 0 };
+                const reportRecords = () => {
+                    const done = Math.min(uniqueDeviceCount + uniqueBins.length, recordProgress.devices + recordProgress.bins);
+                    setBulkLookupProgress(
+                        (done / recordTotal) * 70,
+                        `Looking up records (${done} of ${uniqueDeviceCount + uniqueBins.length})...`,
+                        'Fetching DOB records together'
+                    );
+                };
+                setBulkLookupProgress(0, `Looking up ${deviceNumbers.length} ${deviceNumbers.length === 1 ? 'entry' : 'entries'}...`, 'Fetching DOB records together');
+
+                const deviceRecordPromise = fetchBulkDeviceRecordMap(deviceEntries, (done, total) => {
+                    if (!total) return;
+                    recordProgress.devices = done;
+                    reportRecords();
+                });
+                const typedViolationPromise = fetchViolationsByDeviceNumbers(deviceEntries);
+                const typedMachinePromise = fetchMachineTypesByDeviceNumbers(deviceEntries);
+                // Keep a rejection handler attached until the results are awaited below.
+                typedViolationPromise.catch(() => {});
+                typedMachinePromise.catch(() => {});
+                const binListPromise = fetchBulkBinDeviceLists(uniqueBins, (done, total) => {
+                    if (!total) return;
+                    recordProgress.bins = done;
+                    reportRecords();
+                });
+
+                const [deviceRecordMap, binDeviceLists] = await Promise.all([
+                    deviceRecordPromise,
+                    binListPromise
+                ]);
+
+                const typedDeviceKeys = new Set(deviceEntries.map(entry => normalizeBulkDeviceNumber(entry)));
+                deviceNumbers.forEach(entry => {
+                    if (isBinEntry(entry)) {
+                        const data = binDeviceLists[entry] || [];
+                        if (data.length > 0) {
+                            searchedBins.add(entry);
+                            data.forEach(device => addDeviceToBinGroups({ ...device }, entry));
+                        } else {
+                            notFound.push(`BIN ${entry}`);
+                        }
+                        return;
+                    }
+                    const device = deviceRecordMap[normalizeBulkDeviceNumber(entry)];
+                    if (device) addDeviceToBinGroups({ ...device });
+                    else notFound.push(entry);
+                });
+
+                const extraDeviceNumbers = [];
+                Object.values(binGroups).forEach(group => {
+                    group.devices.forEach(device => {
+                        const key = normalizeBulkDeviceNumber(device.device_number);
+                        if (key && !typedDeviceKeys.has(key)) extraDeviceNumbers.push(device.device_number);
+                    });
+                });
+
+                const groupedCount = Object.values(binGroups).reduce((sum, group) => sum + group.devices.length, 0);
+                setBulkLookupProgress(78, `Loading violations and machine types for ${groupedCount} ${groupedCount === 1 ? 'device' : 'devices'}...`, '');
+
+                const binsWithDevices = uniqueBins.filter(bin => searchedBins.has(bin));
+                const [typedViolations, typedMachineTypes, extraMachineTypes, binViolations, unsearchedBinDevices] = await Promise.all([
+                    typedViolationPromise,
+                    typedMachinePromise,
+                    fetchMachineTypesByDeviceNumbers(extraDeviceNumbers),
+                    fetchViolationsForBins(binsWithDevices),
+                    fetchUnsearchedBinDevices(binGroups, searchedBins)
+                ]);
+
+                Object.values(binGroups).forEach(group => {
+                    group.devices.forEach(device => {
+                        const key = normalizeBulkDeviceNumber(device.device_number);
+                        const binMap = binViolations[device.bin] || binViolations[String(device.bin || '')] || null;
+                        const fromBin = binMap && (binMap[device.device_number] || binMap[key]);
+                        const violations = Object.prototype.hasOwnProperty.call(typedViolations, key)
+                            ? typedViolations[key]
+                            : (fromBin || []);
+                        device.violations = activeBulkViolations(violations);
+                        if (Object.prototype.hasOwnProperty.call(typedMachineTypes, key)) {
+                            device.machine_type = typedMachineTypes[key] || '';
+                        } else {
+                            device.machine_type = extraMachineTypes[key] || '';
+                        }
+                    });
+                });
 
                 const session = {
                     binGroups,
@@ -11348,6 +11386,160 @@
                 if (key && !found[key]) found[key] = rec;
             });
             return found;
+        }
+
+        function chunkBulkLookupValues(values, size) {
+            const chunks = [];
+            for (let i = 0; i < values.length; i += size) chunks.push(values.slice(i, i + size));
+            return chunks;
+        }
+
+        function uniqueBulkDeviceNumbers(values) {
+            return Array.from(new Set((values || []).map(value => normalizeBulkDeviceNumber(value)).filter(Boolean)));
+        }
+
+        async function fetchSodaIn(resource, field, values, limit, select) {
+            const list = values.map(value => `'${String(value).replace(/'/g, "''")}'`).join(',');
+            const params = new URLSearchParams();
+            params.set('$where', `${field} in(${list})`);
+            params.set('$limit', String(limit));
+            if (select) params.set('$select', select);
+            const data = await fetchDobApiJson(
+                `https://data.cityofnewyork.us/resource/${resource}.json?${params.toString()}`,
+                'DOB batch lookup failed'
+            );
+            if (!Array.isArray(data)) throw new Error('DOB batch lookup returned an unexpected response');
+            return data;
+        }
+
+        // Indexed per-device calls stall often enough that a list of devices takes a minute.
+        // One SoQL "in" query per chunk avoids that.
+        async function fetchBulkDeviceRecordMap(deviceNumbers, onProgress) {
+            const numbers = uniqueBulkDeviceNumbers(deviceNumbers);
+            const found = {};
+            if (onProgress) onProgress(0, numbers.length);
+            if (numbers.length === 0) return found;
+
+            let done = 0;
+            await runWithLimitedConcurrency(chunkBulkLookupValues(numbers, DOB_DEVICE_BATCH_SIZE), DOB_DEVICE_BATCH_CONCURRENCY, async (chunk) => {
+                const rows = await fetchDobDeviceRecordsChunk(chunk);
+                Object.assign(found, rows || {});
+                done += chunk.length;
+                if (onProgress) onProgress(done, numbers.length);
+            });
+            return found;
+        }
+
+        async function fetchBulkDevicesForBin(bin) {
+            const params = new URLSearchParams();
+            params.set('bin', String(bin));
+            params.set('$limit', '5000');
+            const data = await fetchDobApiJson(
+                `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?${params.toString()}`,
+                `DOB BIN lookup failed for ${bin}`
+            );
+            return Array.isArray(data) ? data : [];
+        }
+
+        async function fetchBulkBinDeviceLists(bins, onProgress) {
+            const byBin = {};
+            const list = Array.from(new Set((bins || []).map(bin => String(bin || '').trim()).filter(Boolean)));
+            if (onProgress) onProgress(0, list.length);
+            let done = 0;
+            await runWithLimitedConcurrency(list, DOB_BIN_SCAN_CONCURRENCY, async (bin) => {
+                byBin[bin] = await fetchBulkDevicesForBin(bin);
+                done++;
+                if (onProgress) onProgress(done, list.length);
+            });
+            return byBin;
+        }
+
+        async function fetchViolationRowsChunk(deviceNumbers) {
+            if (!deviceNumbers.length) return [];
+            const limit = 5000;
+            let rows = null;
+            try {
+                rows = await fetchSodaIn('855j-jady', 'device_number', deviceNumbers, limit);
+            } catch (error) {
+                const status = Number(error && error.status) || 0;
+                if (status !== 400 || deviceNumbers.length === 1) throw error;
+            }
+            if (rows && (rows.length < limit || deviceNumbers.length === 1)) return rows;
+            const mid = Math.ceil(deviceNumbers.length / 2);
+            const [left, right] = await Promise.all([
+                fetchViolationRowsChunk(deviceNumbers.slice(0, mid)),
+                fetchViolationRowsChunk(deviceNumbers.slice(mid))
+            ]);
+            return left.concat(right);
+        }
+
+        async function fetchViolationsByDeviceNumbers(deviceNumbers, onProgress) {
+            const numbers = uniqueBulkDeviceNumbers(deviceNumbers);
+            const byDevice = {};
+            numbers.forEach(deviceNumber => { byDevice[deviceNumber] = []; });
+            if (onProgress) onProgress(0, numbers.length);
+            if (numbers.length === 0) return byDevice;
+
+            let done = 0;
+            await runWithLimitedConcurrency(chunkBulkLookupValues(numbers, 30), DOB_DEVICE_BATCH_CONCURRENCY, async (chunk) => {
+                const rows = await fetchViolationRowsChunk(chunk);
+                rows.forEach(row => {
+                    const key = normalizeBulkDeviceNumber(row && row.device_number);
+                    if (byDevice[key]) byDevice[key].push(row);
+                });
+                done += chunk.length;
+                if (onProgress) onProgress(done, numbers.length);
+            });
+            return byDevice;
+        }
+
+        async function fetchMachineTypesByDeviceNumbers(deviceNumbers, onProgress) {
+            const numbers = uniqueBulkDeviceNumbers(deviceNumbers);
+            const byDevice = {};
+            if (onProgress) onProgress(0, numbers.length);
+            if (numbers.length === 0) return byDevice;
+
+            let done = 0;
+            await runWithLimitedConcurrency(chunkBulkLookupValues(numbers, DOB_DEVICE_BATCH_SIZE), DOB_DEVICE_BATCH_CONCURRENCY, async (chunk) => {
+                try {
+                    const rows = await fetchSodaIn('juyv-2jek', 'device_id', chunk, Math.max(100, chunk.length * 10), 'device_id,machine_type');
+                    rows.forEach(row => {
+                        const key = normalizeBulkDeviceNumber(row && row.device_id);
+                        if (!key) return;
+                        const machineType = row.machine_type || '';
+                        // Some devices have more than one detail row, and the first can omit machine type.
+                        if (!Object.prototype.hasOwnProperty.call(byDevice, key) || (!byDevice[key] && machineType)) {
+                            byDevice[key] = machineType;
+                        }
+                    });
+                    chunk.forEach(deviceNumber => {
+                        if (!Object.prototype.hasOwnProperty.call(byDevice, deviceNumber)) byDevice[deviceNumber] = '';
+                    });
+                } catch (error) {
+                    console.warn('Bulk machine type lookup failed:', error);
+                    const status = Number(error && error.status) || 0;
+                    if (status === 400) {
+                        await runWithLimitedConcurrency(chunk, DOB_BIN_SCAN_CONCURRENCY, async (deviceNumber) => {
+                            const info = await fetchDeviceInfo(deviceNumber);
+                            byDevice[normalizeBulkDeviceNumber(deviceNumber)] = info?.machine_type || '';
+                        });
+                    } else {
+                        chunk.forEach(deviceNumber => { byDevice[deviceNumber] = ''; });
+                    }
+                }
+                done += chunk.length;
+                if (onProgress) onProgress(done, numbers.length);
+            });
+            return byDevice;
+        }
+
+        async function fetchViolationsForBins(bins) {
+            const byBin = {};
+            const list = Array.from(new Set((bins || []).map(bin => String(bin || '').trim()).filter(Boolean)));
+            await runWithLimitedConcurrency(list, DOB_BIN_SCAN_CONCURRENCY, async (bin) => {
+                byBin[bin] = await fetchViolationsForBin(bin);
+            });
+            return byBin;
         }
 
         // One HTTP call per device made large map refreshes take minutes. Batch + limited
