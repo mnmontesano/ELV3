@@ -2002,6 +2002,14 @@
                     .map-overlap-chooser-btn:hover { background: rgba(26,115,232,0.14); border-color: #1a73e8; }
                     .map-overlap-chooser-btn .map-overlap-chooser-label { font-weight: 600; font-size: 12px; line-height: 1.35; word-break: break-word; }
                     .map-overlap-chooser-btn .map-overlap-chooser-sub { font-size: 11px; opacity: 0.72; margin-top: 2px; }
+                    .leaflet-tooltip.map-availability-tooltip { background: var(--panel-bg, #1e1e2e); color: var(--text-color, #fff); border: 1px solid var(--input-border, #555); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.35); padding: 8px 10px; min-width: 220px; max-width: 320px; white-space: normal; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+                    .leaflet-tooltip.map-availability-tooltip.leaflet-tooltip-top::before { border-top-color: var(--input-border, #555); }
+                    .map-availability-title { font-weight: 700; font-size: 12px; line-height: 1.3; margin-bottom: 3px; word-break: break-word; }
+                    .map-availability-summary { font-size: 11px; font-weight: 600; margin-bottom: 5px; }
+                    .map-availability-row { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; padding: 2px 0; border-top: 1px solid rgba(128,128,128,0.18); }
+                    .map-availability-row span:first-child { font-weight: 600; }
+                    .map-availability-row span:last-child { text-align: right; font-weight: 600; }
+                    .map-availability-more { font-size: 10px; opacity: 0.72; margin-top: 3px; }
                     @media (max-width: 700px) {
                         #mapSelectToolbar { left: 8px; right: 8px; top: 8px; padding: 7px 8px; }
                         #mapSelectToolbar .map-select-actions { margin-left: 0; width: 100%; }
@@ -20022,6 +20030,78 @@
             showMapOverlapChooser(entries, clickedMarker.getLatLng());
         }
 
+        const MAP_AVAILABILITY_TOOLTIP_MAX_ROWS = 8;
+
+        function formatMapAvailabilityDate(date) {
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function buildMapTestingAvailabilityTooltipHtml(title, devices, year) {
+            const ready = (devices.readyDevices || []).slice();
+            const notReady = (devices.notReadyDevices || []).slice()
+                .sort((a, b) => (a.eligibleDate ? a.eligibleDate.getTime() : 0) - (b.eligibleDate ? b.eligibleDate.getTime() : 0));
+            const completed = (devices.completedDevices || []).slice();
+            const total = ready.length + notReady.length + completed.length;
+            if (total === 0) return '';
+
+            let summary;
+            let summaryColor;
+            if (notReady.length > 0) {
+                const lastDate = notReady.reduce((latest, d) => (d.eligibleDate && (!latest || d.eligibleDate > latest) ? d.eligibleDate : latest), null);
+                summary = lastDate
+                    ? `All devices available for testing ${formatMapAvailabilityDate(lastDate)}`
+                    : 'Some devices are not available for testing yet';
+                if (ready.length > 0) summary += ` · ${ready.length} available now`;
+                summaryColor = '#ff9800';
+            } else if (ready.length > 0) {
+                summary = `Testing available now for ${ready.length === 1 ? 'the device' : `all ${ready.length} devices`}${completed.length ? ' that still need testing' : ''}`;
+                summaryColor = '#27ae60';
+            } else {
+                summary = `All required testing completed for ${year}`;
+                summaryColor = '#27ae60';
+            }
+
+            const row = (device, statusText, statusColor) => {
+                const pending = device.nextRequiredTest && device.nextRequiredTest !== 'All required tests filed'
+                    ? `<div style="font-size:10px; font-weight:500; opacity:0.72;">${escapeMapSuggestionHtml(device.nextRequiredTest)}</div>`
+                    : '';
+                return `<div class="map-availability-row"><span>${escapeMapSuggestionHtml(device.number || 'Unknown')}${pending}</span><span style="color:${statusColor};">${statusText}</span></div>`;
+            };
+            const rows = [
+                ...notReady.map(d => {
+                    if (!d.eligibleDate) return row(d, 'Not available yet', '#ff9800');
+                    const days = d.daysUntil > 0 ? ` · ${d.daysUntil} day${d.daysUntil === 1 ? '' : 's'}` : '';
+                    return row(d, `Available ${formatMapAvailabilityDate(d.eligibleDate)}${days}`, '#ff9800');
+                }),
+                ...ready.map(d => row(d, 'Available now', '#27ae60')),
+                ...completed.map(d => row(d, `Completed for ${year}`, '#8e9aaf'))
+            ];
+            const shown = rows.slice(0, MAP_AVAILABILITY_TOOLTIP_MAX_ROWS).join('');
+            const more = rows.length > MAP_AVAILABILITY_TOOLTIP_MAX_ROWS
+                ? `<div class="map-availability-more">+${rows.length - MAP_AVAILABILITY_TOOLTIP_MAX_ROWS} more device${rows.length - MAP_AVAILABILITY_TOOLTIP_MAX_ROWS === 1 ? '' : 's'} · click for details</div>`
+                : '';
+            return `<div class="map-availability-title">${escapeMapSuggestionHtml(title)}</div>
+                <div class="map-availability-summary" style="color:${summaryColor};">${summary}</div>
+                ${shown}${more}`;
+        }
+
+        // Hover-only: on touch screens a tap already opens the full popup.
+        function attachMapTestingAvailabilityTooltip(marker, title, devices, year) {
+            if (!marker || !window.matchMedia || !window.matchMedia('(hover: hover)').matches) return;
+            const html = buildMapTestingAvailabilityTooltipHtml(title, devices, year);
+            if (!html) return;
+            marker.bindTooltip(html, {
+                direction: 'top',
+                offset: [0, -14],
+                opacity: 1,
+                className: 'map-availability-tooltip'
+            });
+            marker.on('click popupopen', () => marker.closeTooltip());
+            marker.on('mouseover', () => {
+                if (mapSelectMode || (marker.isPopupOpen && marker.isPopupOpen())) marker.closeTooltip();
+            });
+        }
+
         function attachMapMarkerPopupClickHandler(marker) {
             if (!marker || marker._mapOverlapHandlerAttached) return;
             marker._mapOverlapHandlerAttached = true;
@@ -29900,6 +29980,7 @@
                 `;
 
                 marker.bindPopup(popupContent, { maxWidth: 480, minWidth: 380 });
+                attachMapTestingAvailabilityTooltip(marker, building.address || ('BIN ' + building.bin), building, new Date().getFullYear());
                 attachMapMarkerPopupClickHandler(marker);
                 attachMapMarkerSelectHandler(marker, building.bin);
                 mapMarkers.push(marker);
@@ -30432,6 +30513,7 @@
                 `;
 
                 additionalMarker.bindPopup(additionalPopupContent, { maxWidth: 480, minWidth: 380 });
+                attachMapTestingAvailabilityTooltip(additionalMarker, additionalMarker._mapMarkerMeta.title, { readyDevices, notReadyDevices, completedDevices }, new Date().getFullYear());
                 attachMapMarkerPopupClickHandler(additionalMarker);
                 additionalLocationMarkers.push(additionalMarker);
                 if (!shouldHideCompletedAdditionalLocation(location)) {
