@@ -15,7 +15,7 @@
     </script>
     <title>Vertical Terminal</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="styles.css?v=20260722-light-dark-only">
+    <link rel="stylesheet" href="styles.css?v=20260930-dob-width-800">
     <!-- Pinned, locally hosted libraries for user-supplied document parsing. -->
     <script src="vendor/pdf-lib/pdf-lib.min.js?v=1.17.1"></script>
     
@@ -41,7 +41,7 @@
         })();
 
         // DOB tab width helpers (Settings preference, applied before paint so the page doesn't jump)
-        var DOB_TAB_WIDTH = { min: 800, max: 1800, step: 50, fallback: 1100 };
+        var DOB_TAB_WIDTH = { min: 800, max: 1800, step: 50, fallback: 800 };
         function normalizeDobTabWidth(value) {
             var width = parseInt(value, 10);
             if (isNaN(width)) return DOB_TAB_WIDTH.fallback;
@@ -378,17 +378,7 @@
             <option value="light">Light</option>
             <option value="dark">Dark</option>
         </select>
-        <label for="dobTabWidthRange" style="display:block; margin-top: 12px;">DOB Tab Width: <strong id="dobTabWidthValue">1100px</strong></label>
-        <input type="range" id="dobTabWidthRange" min="800" max="1800" step="50" value="1100"
-               oninput="previewDobTabWidth(this.value)"
-               style="width: 100%; margin: 10px 0 4px; box-sizing: border-box;">
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8em; opacity: 0.8; margin-bottom: 10px;">
-            <span>Narrow</span>
-            <button type="button" onclick="previewDobTabWidth(DOB_TAB_WIDTH.fallback)"
-                    style="display: inline-block; margin: 0; padding: 3px 10px; font-size: 1em; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer;">Reset</button>
-            <span>Wide</span>
-        </div>
-        <p style="margin: 0 0 8px; font-size: 0.82em; opacity: 0.75; line-height: 1.4;">Saved in this browser only. Tab choice applies on the next visit; theme applies as soon as you save. DOB tab width previews as you drag and applies on screens at least 1000px wide. The disclaimer appears on every page load until Agree.</p>
+        <p style="margin: 0 0 8px; font-size: 0.82em; opacity: 0.75; line-height: 1.4;">Saved in this browser only. Tab choice applies on the next visit; theme applies as soon as you save. The disclaimer appears on every page load until Agree.</p>
         <div style="margin-top: 16px; display: flex; gap: 10px;">
             <button onclick="saveSettings()">Save</button>
             <button onclick="closeSettings()" style="background-color: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; padding: 10px 20px; font-size: 1.2em; transition: background-color 0.3s ease, color 0.3s ease;">Cancel</button>
@@ -820,7 +810,20 @@
             </svg>
         </button>
 
-        
+        <!-- DOB tab width control (sits under the global DOB Now button) -->
+        <div id="dobWidthControl">
+            <button type="button" id="dobWidthToggleBtn" onclick="toggleDobWidthPopover()" aria-expanded="false" aria-controls="dobWidthPopover" title="Adjust DOB tab width">↔ Width</button>
+            <div id="dobWidthPopover" role="dialog" aria-label="DOB tab width" hidden>
+                <label for="dobTabWidthRange">Page Width: <strong id="dobTabWidthValue">800px (default)</strong></label>
+                <input type="range" id="dobTabWidthRange" min="800" max="1800" step="50" value="800" oninput="setDobTabWidth(this.value)">
+                <div class="dob-width-scale">
+                    <span>Narrow</span>
+                    <button type="button" onclick="setDobTabWidth(DOB_TAB_WIDTH.fallback)">Reset</button>
+                    <span>Wide</span>
+                </div>
+                <p>Saved automatically in this browser.</p>
+            </div>
+        </div>
 
         <!-- Replace the Device & BIN Lookup section -->
         <div class="dob-tab-card" style="max-width: 800px; margin: 20px auto; padding: 20px; background: var(--card-bg); border-radius: 5px; box-shadow: 0 2px 8px var(--card-shadow);">
@@ -4143,8 +4146,6 @@
                 themeSelect.value = savedTheme === 'dark' ? 'dark' : 'light';
             }
 
-            previewDobTabWidth(getSavedDobTabWidth());
-
             // Close settings when clicking outside (attach once to avoid stacking listeners)
             if (!overlay.dataset.settingsListenersAttached) {
                 overlay.dataset.settingsListenersAttached = 'true';
@@ -4166,26 +4167,9 @@
             modal.style.display = 'none';
             overlay.style.display = 'none';
             overlay.style.opacity = '0';
-            // Drop any unsaved width preview
-            applyDobTabWidth(getSavedDobTabWidth());
-        }
-
-        function previewDobTabWidth(value) {
-            const width = applyDobTabWidth(value);
-            const range = document.getElementById('dobTabWidthRange');
-            const label = document.getElementById('dobTabWidthValue');
-            if (range) range.value = width;
-            if (label) label.textContent = `${width}px${width === DOB_TAB_WIDTH.fallback ? ' (default)' : ''}`;
         }
 
         function saveSettings() {
-            const widthRange = document.getElementById('dobTabWidthRange');
-            if (widthRange) {
-                try {
-                    localStorage.setItem('dobTabWidth', String(normalizeDobTabWidth(widthRange.value)));
-                } catch (e) {}
-            }
-
             const allowedDefaultTabs = ['main', 'dob', 'map', 'dates', 'resources'];
             const defaultTabSelect = document.getElementById('defaultTab');
             const defaultTab = defaultTabSelect && allowedDefaultTabs.includes(defaultTabSelect.value)
@@ -37321,6 +37305,41 @@
             new MutationObserver(update).observe(panel, { attributes: true, attributeFilter: ['style', 'class'] });
             window.addEventListener('resize', update);
             update();
+        })();
+
+        function updateDobWidthControl(width) {
+            const range = document.getElementById('dobTabWidthRange');
+            const label = document.getElementById('dobTabWidthValue');
+            if (range) range.value = width;
+            if (label) label.textContent = `${width}px${width === DOB_TAB_WIDTH.fallback ? ' (default)' : ''}`;
+        }
+
+        function setDobTabWidth(value) {
+            const width = applyDobTabWidth(value);
+            try { localStorage.setItem('dobTabWidth', String(width)); } catch (e) {}
+            updateDobWidthControl(width);
+        }
+
+        function toggleDobWidthPopover(forceOpen) {
+            const popover = document.getElementById('dobWidthPopover');
+            const button = document.getElementById('dobWidthToggleBtn');
+            if (!popover || !button) return;
+            const open = typeof forceOpen === 'boolean' ? forceOpen : popover.hidden;
+            if (open) updateDobWidthControl(getSavedDobTabWidth());
+            popover.hidden = !open;
+            button.setAttribute('aria-expanded', String(open));
+        }
+
+        (function initDobWidthControl() {
+            const control = document.getElementById('dobWidthControl');
+            if (!control) return;
+            updateDobWidthControl(getSavedDobTabWidth());
+            document.addEventListener('click', (event) => {
+                if (!control.contains(event.target)) toggleDobWidthPopover(false);
+            });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') toggleDobWidthPopover(false);
+            });
         })();
     </script>
 
