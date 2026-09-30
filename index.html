@@ -1168,6 +1168,7 @@
                     .mdb-row-date { flex: 0 0 auto; min-width: 88px; font-size: 0.86em; font-weight: 700; }
                     .mdb-row-address { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.92em; }
                     .mdb-badge { flex: 0 0 auto; padding: 1px 6px; border-radius: 10px; font-size: 0.74em; font-weight: 800; color: #fff; background: #607d8b; }
+                    .mdb-group-title { position: sticky; top: 0; z-index: 1; padding: 6px 4px 4px; font-size: 0.82em; font-weight: 800; background: var(--input-bg); border-bottom: 1px solid var(--input-border); }
                     .mdb-empty { padding: 10px 4px; font-size: 0.9em; opacity: 0.6; text-align: center; }
                     .mdb-months { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 4px; align-items: end; height: 130px; }
                     .mdb-month { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
@@ -28794,6 +28795,21 @@
             flyToMapBuilding(bin, { temporarilyShowHidden: true });
         }
 
+        // Unspecified (legacy) schedule dates count toward either deadline type.
+        function getMapDeadlineScheduleStatus(bin, deadline, todayKey) {
+            const dates = getMapTypedScheduleRows(bin)
+                .filter(row => (row.type === deadline.type || row.type === 'general') && row.date >= todayKey)
+                .map(row => row.date)
+                .sort();
+            const onTime = dates.find(date => date <= deadline.date);
+            const scheduledDate = onTime || dates[0] || '';
+            return {
+                isScheduled: !!scheduledDate,
+                scheduledDate,
+                isAfterDeadline: !!scheduledDate && !onTime
+            };
+        }
+
         function getMapDashboardStats() {
             const year = new Date().getFullYear();
             const todayKey = formatLocalDateInputValue(new Date());
@@ -28875,7 +28891,8 @@
                 getMapDeadlinesForBin(bin).forEach(deadline => {
                     const state = getMapDeadlineDueState(deadline.date);
                     if (state.isMissed) stats.missedDeadlineCount++;
-                    stats.deadlines.push({ bin, address, type: deadline.type, date: deadline.date, state });
+                    const schedule = getMapDeadlineScheduleStatus(bin, deadline, todayKey);
+                    stats.deadlines.push({ bin, address, type: deadline.type, date: deadline.date, state, schedule });
                 });
             });
 
@@ -28912,7 +28929,7 @@
             </div>`;
         }
 
-        function renderMapDashboardRows(entries, emptyText, dateColorFn) {
+        function renderMapDashboardRows(entries, emptyText, dateColorFn, extraFn) {
             if (!entries.length) return `<div class="mdb-empty">${emptyText}</div>`;
             return entries.map(entry => {
                 const typeStyle = MAP_DASHBOARD_TYPE_STYLES[entry.type] || MAP_DASHBOARD_TYPE_STYLES.general;
@@ -28924,9 +28941,33 @@
                     <span class="mdb-row-date" style="color:${dateColor};">${escapeMapSuggestionHtml(formatMapDashboardShortDate(entry.date))}</span>
                     <span class="mdb-badge" style="background:${typeStyle.color};">${typeStyle.label}</span>
                     <span class="mdb-row-address">${escapeMapSuggestionHtml(entry.address)}</span>
-                    ${badge}
+                    ${badge}${extraFn ? extraFn(entry) : ''}
                 </button>`;
             }).join('');
+        }
+
+        function renderMapDashboardDeadlineScheduleBadge(entry) {
+            const schedule = entry.schedule || {};
+            if (!schedule.isScheduled) {
+                return '<span class="mdb-badge" style="background:#dc3545;" title="No upcoming test date is scheduled for this deadline">NO TEST DATE</span>';
+            }
+            const dateText = escapeMapSuggestionHtml(formatMapDashboardShortDate(schedule.scheduledDate));
+            return schedule.isAfterDeadline
+                ? `<span class="mdb-badge" style="background:#e67e22;" title="The only scheduled test date is after this deadline">📅 ${dateText} · LATE</span>`
+                : `<span class="mdb-badge" style="background:#27ae60;" title="Test date scheduled before the deadline">📅 ${dateText}</span>`;
+        }
+
+        function renderMapDashboardDeadlineGroups(deadlines) {
+            if (!deadlines.length) return '<div class="mdb-empty">No testing deadlines set</div>';
+            const orderForDisplay = entries => entries.filter(entry => entry.state.isMissed)
+                .concat(entries.filter(entry => !entry.state.isMissed).slice(0, 25));
+            const unscheduled = deadlines.filter(entry => !entry.schedule.isScheduled);
+            const scheduled = deadlines.filter(entry => entry.schedule.isScheduled);
+            const group = (label, color, entries, emptyText) => `
+                <div class="mdb-group-title" style="color:${color};">${label} (${entries.length})</div>
+                ${renderMapDashboardRows(orderForDisplay(entries), emptyText, entry => entry.state.color, renderMapDashboardDeadlineScheduleBadge)}`;
+            return group('⚠️ No test date scheduled', '#dc3545', unscheduled, 'Every deadline has a test date scheduled')
+                + group('📅 Test date scheduled', '#27ae60', scheduled, 'No deadlines have a test date scheduled yet');
         }
 
         function renderMapDashboard() {
@@ -28981,8 +29022,8 @@
                 </div>`;
             }).join('');
 
-            const openDeadlines = stats.deadlines.filter(entry => !entry.state.isMissed).slice(0, 25);
             const missedDeadlines = stats.deadlines.filter(entry => entry.state.isMissed);
+            const unscheduledDeadlineCount = stats.deadlines.filter(entry => !entry.schedule.isScheduled).length;
 
             content.innerHTML = `
                 <div class="mdb-kpis">${kpis}</div>
@@ -29008,8 +29049,8 @@
                         <div class="mdb-list">${renderMapDashboardRows(stats.pastDue, 'No past-due scheduled tests', () => '#ff6b6b')}</div>
                     </div>
                     <div class="mdb-card">
-                        <div class="mdb-card-title">⏰ Testing Deadlines <small>${missedDeadlines.length} missed · ${stats.deadlines.length - missedDeadlines.length} open</small></div>
-                        <div class="mdb-list">${renderMapDashboardRows(missedDeadlines.concat(openDeadlines), 'No testing deadlines set', entry => entry.state.color)}</div>
+                        <div class="mdb-card-title">⏰ Testing Deadlines <small>${missedDeadlines.length} missed · ${stats.deadlines.length - missedDeadlines.length} open · ${unscheduledDeadlineCount} not scheduled</small></div>
+                        <div class="mdb-list">${renderMapDashboardDeadlineGroups(stats.deadlines)}</div>
                     </div>
                     <div class="mdb-card">
                         <div class="mdb-card-title">📅 ${stats.year} Scheduled Tests by Month</div>
