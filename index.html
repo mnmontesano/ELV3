@@ -4641,6 +4641,7 @@
             if (devicesContainer.style.display === 'none') {
                 devicesContainer.style.display = 'block';
                 arrow.style.transform = 'rotate(180deg)';
+                loadUnsearchedBinDeviceCards(devicesContainer.querySelector('.bulk-unsearched-device-cards'));
             } else {
                 devicesContainer.style.display = 'none';
                 arrow.style.transform = 'rotate(0deg)';
@@ -8947,6 +8948,27 @@
             entries.push(String(deviceNumber).trim());
             return entries.join('\n');
         }
+        function isRemovedBulkDeviceStatus(status) {
+            const upper = String(status || '').toUpperCase();
+            return upper === 'REMOVED' || upper === 'DELETED';
+        }
+
+        // Same grouping as the BIN search: elevators first, other active types, then removed/deleted.
+        function groupUnsearchedDevicesForCards(devices) {
+            const active = {};
+            const removed = {};
+            (devices || []).forEach(device => {
+                const type = device.device_type || 'Unknown';
+                const target = isRemovedBulkDeviceStatus(device.device_status) ? removed : active;
+                (target[type] = target[type] || []).push(device);
+            });
+            const elevatorFirst = types => types.sort((a, b) =>
+                (b.toUpperCase() === 'ELEVATOR') - (a.toUpperCase() === 'ELEVATOR'));
+            return [
+                ...elevatorFirst(Object.keys(active)).map(type => ({ type, removed: false, devices: active[type] })),
+                ...elevatorFirst(Object.keys(removed)).map(type => ({ type, removed: true, devices: removed[type] }))
+            ];
+        }
         // end BULK unsearched BIN device helpers
 
         async function fetchUnsearchedBinDevices(binGroups, searchedBins) {
@@ -8968,27 +8990,8 @@
         function buildUnsearchedBinDevicesHtml(resultDivId, bin, devices) {
             if (!devices || devices.length === 0) return '';
             const esc = value => escapeMapSuggestionHtml(value == null ? '' : String(value));
-            const formatDate = value => value ? new Date(value).toLocaleDateString() : '—';
-            const cellStyle = 'padding: 8px; border: 1px solid var(--input-border); color: var(--text-color);';
-            const headStyle = 'padding: 8px; text-align: left; font-weight: 600; color: var(--header-color); border: 1px solid var(--input-border); white-space: nowrap;';
-            const rows = devices.map((d, index) => `
-                <tr style="background: ${index % 2 === 0 ? 'var(--input-bg)' : 'var(--panel-bg)'}; opacity: 0.85;">
-                    <td style="${cellStyle} text-align: center;">
-                        <button type="button" class="bulk-add-unsearched-device"
-                                data-result-div="${esc(resultDivId)}" data-bin="${esc(bin)}" data-device="${esc(d.device_number)}"
-                                onclick="event.stopPropagation(); addUnsearchedBulkDevice(this)"
-                                style="margin: 0; padding: 5px 12px; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 0.9em; font-weight: 600; white-space: nowrap;">
-                            + Add Device
-                        </button>
-                    </td>
-                    <td style="${cellStyle} font-weight: 600;">${esc(d.device_number)}</td>
-                    <td style="${cellStyle}">${esc(d.device_type || 'N/A')}</td>
-                    <td style="${cellStyle} text-align: center;">${esc(d.device_status || 'N/A')}</td>
-                    <td style="${cellStyle} text-align: center;">${formatDate(d.periodic_latest_inspection)}</td>
-                    <td style="${cellStyle} text-align: center;">${formatDate(d.cat1_latest_report_filed)}</td>
-                    <td style="${cellStyle} text-align: center;">${formatDate(d.cat5_latest_report_filed)}</td>
-                </tr>
-            `).join('');
+            const session = window.bulkLookupSessions[resultDivId];
+            const cached = session && composeUnsearchedDeviceCards(session, bin);
             return `
                 <div class="bulk-unsearched-devices" style="margin-top: 18px; padding: 12px; border: 1px dashed var(--input-border); border-radius: 6px;">
                     <div style="font-weight: 600; color: var(--header-color); margin-bottom: 4px;">
@@ -8997,24 +9000,124 @@
                     <div style="font-size: 0.85em; color: var(--text-color); opacity: 0.75; margin-bottom: 10px;">
                         These devices were not in your search and are not included in any counts. Use "Add Device" to include one.
                     </div>
-                    <div style="overflow-x: auto;">
-                        <table style="width: 100%; border-collapse: collapse; font-size: 0.85em;">
-                            <thead>
-                                <tr style="background: var(--panel-bg);">
-                                    <th style="${headStyle} text-align: center;"></th>
-                                    <th style="${headStyle}">Device #</th>
-                                    <th style="${headStyle}">Type</th>
-                                    <th style="${headStyle} text-align: center;">Status</th>
-                                    <th style="${headStyle} text-align: center;">PVI</th>
-                                    <th style="${headStyle} text-align: center;">CAT 1</th>
-                                    <th style="${headStyle} text-align: center;">CAT 5</th>
-                                </tr>
-                            </thead>
-                            <tbody>${rows}</tbody>
-                        </table>
+                    <div class="bulk-unsearched-device-cards" data-result-div="${esc(resultDivId)}" data-bin="${esc(bin)}" data-loaded="${cached ? 'true' : 'false'}">
+                        ${cached || `
+                            <div style="padding: 12px; text-align: center; color: var(--text-color); opacity: 0.75;">
+                                Loading details for ${devices.length} device${devices.length === 1 ? '' : 's'}...
+                            </div>
+                        `}
                     </div>
                 </div>
             `;
+        }
+
+        function buildUnsearchedAddButtonHtml(resultDivId, bin, deviceNumber) {
+            const esc = value => escapeMapSuggestionHtml(value == null ? '' : String(value));
+            return `
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: -10px -10px 12px; padding: 8px 10px; border-bottom: 1px dashed var(--input-border); border-radius: 5px 5px 0 0;">
+                    <span style="font-size: 0.85em; color: var(--text-color); opacity: 0.75;">Not in search &middot; not counted</span>
+                    <button type="button" class="bulk-add-unsearched-device"
+                            data-result-div="${esc(resultDivId)}" data-bin="${esc(bin)}" data-device="${esc(deviceNumber)}"
+                            onclick="event.stopPropagation(); addUnsearchedBulkDevice(this)"
+                            title="Add device ${esc(deviceNumber)} to the search and counts"
+                            style="margin: 0; padding: 6px 14px; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 0.9em; font-weight: 600; white-space: nowrap;">
+                        + Add ${esc(deviceNumber)}
+                    </button>
+                </div>
+            `;
+        }
+
+        // Returns the cards HTML when every pending device already has a cached card, otherwise null.
+        function composeUnsearchedDeviceCards(session, bin) {
+            const devices = session.unsearchedBinDevices[bin] || [];
+            const cardCache = (session.unsearchedCardCache || {})[bin] || {};
+            if (devices.length === 0) return '';
+            if (devices.some(d => !cardCache[normalizeBulkDeviceNumber(d.device_number)])) return null;
+
+            return groupUnsearchedDevicesForCards(devices).map(group => {
+                const headerColor = group.removed ? '#ff6b6b' : 'var(--header-color)';
+                const label = group.removed ? `Removed/Deleted ${group.type}` : group.type;
+                const cards = sortUnsearchedDevicesByTestStatus(group.devices)
+                    .map(d => cardCache[normalizeBulkDeviceNumber(d.device_number)])
+                    .join('');
+                return `
+                    <div class="bulk-unsearched-type-section" style="background: var(--panel-bg); padding: 12px; border-radius: 5px; margin-bottom: 12px; ${group.removed ? 'border-left: 4px solid #ff6b6b;' : ''}">
+                        <div style="margin-bottom: 10px; border-bottom: 1px solid var(--input-border); padding-bottom: 8px;">
+                            <strong style="color: ${headerColor};">${escapeMapSuggestionHtml(label)} (${group.devices.length}):</strong>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 10px;">${cards}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function sortUnsearchedDevicesByTestStatus(devices) {
+            const statusOrder = { 'CAT 5 Required': -1, 'Not Ready': 0, 'Ready': 1, 'Completed': 2 };
+            const rank = d => {
+                const order = statusOrder[calculateTestStatusForSorting(d)];
+                return order !== undefined ? order : 3;
+            };
+            return [...devices].sort((a, b) => rank(a) - rank(b));
+        }
+
+        // Builds the same device cards as the "Search by BIN" results, one per unsearched device.
+        async function loadUnsearchedBinDeviceCards(container) {
+            if (!container || container.dataset.loaded === 'true' || container.dataset.loading === 'true') return;
+            const resultDivId = container.getAttribute('data-result-div');
+            const bin = container.getAttribute('data-bin');
+            const session = window.bulkLookupSessions[resultDivId];
+            if (!session) return;
+            const devices = session.unsearchedBinDevices[bin] || [];
+            if (devices.length === 0) return;
+
+            container.dataset.loading = 'true';
+            try {
+                session.unsearchedCardCache = session.unsearchedCardCache || {};
+                const cardCache = session.unsearchedCardCache[bin] = session.unsearchedCardCache[bin] || {};
+                const missing = devices.filter(d => !cardCache[normalizeBulkDeviceNumber(d.device_number)]);
+
+                if (missing.length > 0) {
+                    session.binViolations = session.binViolations || {};
+                    if (!session.binViolations[bin]) {
+                        session.binViolations[bin] = await fetchViolationsForBin(bin) || {};
+                    }
+                    const violationsByDevice = session.binViolations[bin];
+                    const sectionsHtml = await Promise.all(groupUnsearchedDevicesForCards(missing).map(group =>
+                        group.removed
+                            ? generateRemovedDeviceTypeSection(group.type, group.devices, violationsByDevice)
+                            : generateDeviceTypeSection(group.type, group.devices, violationsByDevice)
+                    ));
+
+                    const template = document.createElement('template');
+                    template.innerHTML = sectionsHtml.join('');
+                    template.content.querySelectorAll('.device-item').forEach(card => {
+                        const deviceNumber = card.getAttribute('data-device-number') || '';
+                        // Keep BIN-search filters and counters from picking up these cards.
+                        card.classList.remove('device-item');
+                        card.classList.add('bulk-unsearched-device-card');
+                        (card.firstElementChild || card).insertAdjacentHTML('afterbegin', buildUnsearchedAddButtonHtml(resultDivId, bin, deviceNumber));
+                        cardCache[normalizeBulkDeviceNumber(deviceNumber)] = card.outerHTML;
+                    });
+                }
+
+                const html = composeUnsearchedDeviceCards(session, bin);
+                if (html === null) throw new Error(`Missing device cards for BIN ${bin}`);
+                container.innerHTML = html;
+                container.dataset.loaded = 'true';
+            } catch (error) {
+                console.error(`Error loading other device details for BIN ${bin}:`, error);
+                container.innerHTML = `
+                    <div style="padding: 12px; text-align: center; color: #ff6b6b;">
+                        Could not load device details.
+                        <button type="button" onclick="event.stopPropagation(); const c = this.closest('.bulk-unsearched-device-cards'); c.dataset.loaded = 'false'; loadUnsearchedBinDeviceCards(c);"
+                                style="margin: 8px auto 0; padding: 5px 12px; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 0.9em;">
+                            Retry
+                        </button>
+                    </div>
+                `;
+            } finally {
+                delete container.dataset.loading;
+            }
         }
 
         async function addUnsearchedBulkDevice(button) {
@@ -9064,7 +9167,10 @@
                 expandedBins.forEach(cardBin => {
                     const container = resultDiv.querySelector(`[id="buildingDevices_${cardBin}"]`);
                     const arrow = resultDiv.querySelector(`[id="buildingArrow_${cardBin}"]`);
-                    if (container) container.style.display = 'block';
+                    if (container) {
+                        container.style.display = 'block';
+                        loadUnsearchedBinDeviceCards(container.querySelector('.bulk-unsearched-device-cards'));
+                    }
                     if (arrow) arrow.style.transform = 'rotate(180deg)';
                 });
                 const newScroller = resultDiv.querySelector('#buildingsContainer');
@@ -9079,7 +9185,7 @@
             } catch (error) {
                 console.error(`Error adding device ${deviceNumber}:`, error);
                 button.disabled = false;
-                button.textContent = '+ Add Device';
+                button.textContent = `+ Add ${deviceNumber}`;
                 alert(`Could not add device ${deviceNumber}. Please try again.`);
             }
         }
