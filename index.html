@@ -1119,7 +1119,9 @@
                 </div>
                 <style>
                     #mapDashboardView { display: none; flex: 1; min-width: 0; min-height: 0; flex-direction: column; overflow-y: auto; padding: 14px 16px 18px; box-sizing: border-box; background: var(--card-bg); color: var(--text-color); font-size: 13px; }
-                    #mapModalContainer.map-dashboard-mode #mapCanvasWrapper { display: none; }
+                    #mapDashboardMapCard { margin-top: 10px; }
+                    #mapDashboardMapSlot #mapCanvasWrapper { flex: none !important; height: max(460px, calc(100vh - 170px)); border-radius: 6px; overflow: hidden; }
+                    #mapDashboardMapSlot #buildingMap { min-height: 0 !important; }
                     #mapModalContainer.map-dashboard-mode #mapDashboardView { display: flex; }
                     #mapModalContainer.map-dashboard-mode #mapSearchRow { display: none !important; }
                     #mapModalContainer.map-dashboard-mode #mapControlsPanel { width: clamp(320px, 34%, 500px) !important; min-width: 320px !important; }
@@ -1186,6 +1188,10 @@
                             </div>
                         </div>
                         <div id="mapDashboardContent"></div>
+                        <div id="mapDashboardMapCard" class="mdb-card">
+                            <div class="mdb-card-title">🗺️ Map <small>Click an address in the dashboard or Settings to show it here</small></div>
+                            <div id="mapDashboardMapSlot"></div>
+                        </div>
                     </div>
                     <div id="mapCanvasWrapper" style="flex: 1; min-width: 0; min-height: 400px; position: relative;">
                         <div id="buildingMap" title="Right-click the map to add a pin at that location" style="width: 100%; height: 100%; min-height: 400px;"></div>
@@ -28291,6 +28297,7 @@
         let mapDashboardSavedPanelDisplay = null;
         let mapDashboardRenderTimer = null;
         let mapDashboardObserver = null;
+        let mapDashboardResizeObserver = null;
         const MAP_DASHBOARD_UPCOMING_DAYS = 14;
         const MAP_DASHBOARD_TYPE_STYLES = {
             pvi: { label: 'PVI', color: '#1a73e8' },
@@ -28335,11 +28342,31 @@
 
             mapDashboardActive = true;
             container.classList.add('map-dashboard-mode');
+            const slot = document.getElementById('mapDashboardMapSlot');
+            const mapWrapper = document.getElementById('mapCanvasWrapper');
+            if (slot && mapWrapper) slot.appendChild(mapWrapper);
             updateMapDashboardButton();
             renderMapDashboard();
             startMapDashboardObserver();
             const view = document.getElementById('mapDashboardView');
             if (view) view.scrollTop = 0;
+            if (buildingMap) buildingMap.invalidateSize();
+        }
+
+        function restoreMapCanvasFromDashboard() {
+            const row = document.getElementById('mapContentRow');
+            const mapWrapper = document.getElementById('mapCanvasWrapper');
+            const panel = document.getElementById('mapControlsPanel');
+            if (!row || !mapWrapper || mapWrapper.parentElement === row) return;
+            if (panel && panel.parentElement === row) row.insertBefore(mapWrapper, panel);
+            else row.appendChild(mapWrapper);
+        }
+
+        function scrollMapDashboardToMap() {
+            if (!mapDashboardActive) return;
+            if (buildingMap) buildingMap.invalidateSize();
+            const card = document.getElementById('mapDashboardMapCard');
+            if (card) card.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
 
         function exitMapDashboard(options) {
@@ -28350,6 +28377,7 @@
 
             mapDashboardActive = false;
             stopMapDashboardObserver();
+            restoreMapCanvasFromDashboard();
             if (container) container.classList.remove('map-dashboard-mode');
             updateMapDashboardButton();
             if (panel && mapDashboardSavedPanelDisplay !== null) {
@@ -28390,11 +28418,18 @@
                 const el = document.getElementById(id);
                 if (el) mapDashboardObserver.observe(el, { childList: true });
             });
+            const mapWrapper = document.getElementById('mapCanvasWrapper');
+            if (mapWrapper && typeof ResizeObserver === 'function') {
+                mapDashboardResizeObserver = new ResizeObserver(requestMapResizeAfterControlsChange);
+                mapDashboardResizeObserver.observe(mapWrapper);
+            }
         }
 
         function stopMapDashboardObserver() {
             if (mapDashboardObserver) mapDashboardObserver.disconnect();
             mapDashboardObserver = null;
+            if (mapDashboardResizeObserver) mapDashboardResizeObserver.disconnect();
+            mapDashboardResizeObserver = null;
             if (mapDashboardRenderTimer) clearTimeout(mapDashboardRenderTimer);
             mapDashboardRenderTimer = null;
         }
@@ -28419,8 +28454,7 @@
         }
 
         function openMapDashboardBuilding(bin) {
-            toggleMapDashboard(false);
-            setTimeout(() => flyToMapBuilding(bin, { temporarilyShowHidden: true }), 60);
+            flyToMapBuilding(bin, { temporarilyShowHidden: true });
         }
 
         function getMapDashboardStats() {
@@ -28652,7 +28686,7 @@
                 </div>`;
         }
 
-        // Actions that need the map visible switch back from the dashboard first.
+        // Map actions triggered from the dashboard use the map embedded under the dashboard.
         [
             'flyToMapBuilding',
             'flyToAdditionalLocation',
@@ -28660,17 +28694,26 @@
             'showImmediateAttentionOnMap',
             'toggleNoTestYetShowOnMap',
             'toggleNoTestByJuneShowOnMap',
-            'toggleMapCategory5ShowOnMap',
-            'toggleMapSelectMode'
+            'toggleMapCategory5ShowOnMap'
         ].forEach(name => {
             const original = window[name];
             if (typeof original !== 'function') return;
             window[name] = function() {
-                const leavingSelectMode = name === 'toggleMapSelectMode' && arguments[0] === false;
-                if (mapDashboardActive && !leavingSelectMode) exitMapDashboard({ restorePopout: true });
-                return original.apply(this, arguments);
+                const result = original.apply(this, arguments);
+                scrollMapDashboardToMap();
+                return result;
             };
         });
+
+        // Select mode needs the full map, so it switches back from the dashboard.
+        (function() {
+            const original = window.toggleMapSelectMode;
+            if (typeof original !== 'function') return;
+            window.toggleMapSelectMode = function() {
+                if (mapDashboardActive && arguments[0] !== false) exitMapDashboard({ restorePopout: true });
+                return original.apply(this, arguments);
+            };
+        })();
 
 
         function _startPanelResize(e, direction) {
