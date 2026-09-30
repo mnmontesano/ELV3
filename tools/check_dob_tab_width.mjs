@@ -13,9 +13,9 @@ const context = vm.createContext({});
 vm.runInContext(html.slice(start, end), context);
 const normalize = context.normalizeDobTabWidth;
 
-assert.equal(normalize(null), 1100, 'No saved preference uses the 1100px default');
-assert.equal(normalize(''), 1100);
-assert.equal(normalize('wide'), 1100);
+assert.equal(normalize(null), 800, 'No saved preference uses the 800px default');
+assert.equal(normalize(''), 800);
+assert.equal(normalize('wide'), 800);
 assert.equal(normalize('1400'), 1400);
 assert.equal(normalize(1234), 1250, 'Widths snap to the 50px slider step');
 assert.equal(normalize('500'), 800, 'Never narrower than the original 800px layout');
@@ -30,7 +30,7 @@ assert.ok(sliderAt > dobTabStart && html.indexOf('id="dobWidthControl"') > dobTa
 assert.ok(!(sliderAt > settingsStart && sliderAt < settingsEnd), 'Width slider is not in the Settings modal');
 
 const css = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
-assert.match(css, /body\.dob-tab-wide\s*\{\s*max-width:\s*var\(--dob-tab-max-width,\s*1100px\)/,
+assert.match(css, /body\.dob-tab-wide\s*\{\s*max-width:\s*var\(--dob-tab-max-width,\s*800px\)/,
     'DOB tab width comes from the --dob-tab-max-width setting');
 
 console.log('DOB tab width checks passed.');
