@@ -21359,7 +21359,7 @@
                         return {
                             valid: true,
                             bypassed: true,
-                            message: `${completionMessage}. The recent-test restriction override is enabled.`,
+                            message: `${completionMessage}. The scheduling restriction override is enabled.`,
                             rules
                         };
                     }
@@ -21380,7 +21380,7 @@
                     return {
                         valid: true,
                         bypassed: true,
-                        message: `${completionMessage}. The recent-test restriction override is enabled.`,
+                        message: `${completionMessage}. The scheduling restriction override is enabled.`,
                         rules
                     };
                 }
@@ -21399,17 +21399,27 @@
             }
             if (rules.cat5Deadline && scheduledDate > rules.cat5Deadline) {
                 const devices = rules.cat5DueDevices.filter(Boolean).join(', ');
+                const deadlineMessage = `CAT 5 is due no later than ${rules.cat5Deadline.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}${devices ? ` for device${rules.cat5DueDevices.length === 1 ? '' : 's'} ${devices}` : ''}. Choose that month or earlier.`;
+                if (bypassEligibility) {
+                    return {
+                        valid: true,
+                        bypassed: true,
+                        message: `${deadlineMessage} The scheduling restriction override is enabled.`,
+                        rules
+                    };
+                }
                 return {
                     valid: false,
-                    message: `CAT 5 is due no later than ${rules.cat5Deadline.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}${devices ? ` for device${rules.cat5DueDevices.length === 1 ? '' : 's'} ${devices}` : ''}. Choose that month or earlier.`,
+                    message: deadlineMessage,
                     rules
                 };
             }
+            const sixMonthOverridden = !!(bypassEligibility && rules.earliestAllowed && scheduledDate < rules.earliestAllowed);
             return {
                 valid: true,
-                bypassed: !!(bypassEligibility && rules.earliestAllowed && scheduledDate < rules.earliestAllowed),
-                message: bypassEligibility && rules.earliestAllowed && scheduledDate < rules.earliestAllowed
-                    ? `The recent-test restriction override is enabled. The normal earliest Category date is ${rules.earliestAllowed.toLocaleDateString()}.`
+                bypassed: sixMonthOverridden,
+                message: sixMonthOverridden
+                    ? `The scheduling restriction override is enabled. The normal earliest Category date is ${rules.earliestAllowed.toLocaleDateString()}.`
                     : '',
                 rules
             };
@@ -22342,7 +22352,7 @@
                                 <summary style="cursor:pointer; color:#b56bd4; font-size:12px; line-height:1.4; font-weight:800; user-select:none;">Advanced scheduling options</summary>
                                 <label style="display:flex; align-items:flex-start; gap:9px; margin-top:10px; color:var(--text-color,#eee); font-size:12px; line-height:1.45; cursor:pointer;">
                                     <input type="checkbox" id="testDateBypassCategory" style="margin:3px 0 0; width:16px; height:16px; flex:0 0 auto;">
-                                    <span><strong style="font-size:12.5px;">Override recent-test restriction</strong><br><span style="opacity:0.9;">Schedule this Category test even when recent DOB testing would normally block the date.</span></span>
+                                    <span><strong style="font-size:12.5px;">Override scheduling restrictions</strong><br><span style="opacity:0.9;">Schedule this Category test anyway, including inside the 6-month gap, the 91-day wait, a completed year, or after the CAT 5 deadline.</span></span>
                                 </label>
                             </details>
                             <div id="categoryScheduleError" role="alert" style="display:none; margin-top:8px; color:#ff6b6b; font-size:11px; line-height:1.35;"></div>
@@ -22359,7 +22369,7 @@
                                 <summary style="cursor:pointer; color:#4a9eff; font-size:12px; line-height:1.4; font-weight:800; user-select:none;">Advanced scheduling options</summary>
                                 <label style="display:flex; align-items:flex-start; gap:9px; margin-top:10px; color:var(--text-color,#eee); font-size:12px; line-height:1.45; cursor:pointer;">
                                     <input type="checkbox" id="testDateBypassPvi" style="margin:3px 0 0; width:16px; height:16px; flex:0 0 auto;">
-                                    <span><strong style="font-size:12.5px;">Override recent-test restriction</strong><br><span style="opacity:0.9;">Schedule this PVI test even when recent DOB testing would normally block the date.</span></span>
+                                    <span><strong style="font-size:12.5px;">Override scheduling restrictions</strong><br><span style="opacity:0.9;">Schedule this PVI test anyway, including inside the 91-day wait or after the year is already complete.</span></span>
                                 </label>
                             </details>
                             <div id="pviScheduleError" role="alert" style="display:none; margin-top:8px; color:#ff6b6b; font-size:11px; line-height:1.35;"></div>
@@ -22499,7 +22509,7 @@
                 }
                 const readinessWarning = getMapScheduledReadinessWarning(bin, type, val);
                 if (readinessWarning && !bypassEligibility) {
-                    const message = `${readinessWarning.message} Open Advanced scheduling options and select “Override recent-test restriction” to schedule this date anyway.`;
+                    const message = `${readinessWarning.message} Open Advanced scheduling options and select “Override scheduling restrictions” to schedule this date anyway.`;
                     if (error) { error.textContent = message; error.style.color = '#ff9800'; error.style.display = 'block'; }
                     showMapNotification('This date is inside the 91-day waiting period', '#ff9800');
                     return;
@@ -22509,7 +22519,7 @@
                     type,
                     address,
                     bypassEligibility,
-                    source: bypassUsed ? 'Recent-test restriction override' : ''
+                    source: bypassUsed ? 'Scheduling restriction override' : ''
                 })) {
                     showMapNotification('That date is already scheduled', '#ff9800');
                     return;
@@ -22519,7 +22529,7 @@
                 const otherInspection = getMapOtherInspectionAvailability(bin, type, val);
                 const addedLabel = type === 'pvi' ? 'PVI' : 'Category';
                 const addedMessage = bypassUsed
-                    ? `${addedLabel} test date added with the recent-test restriction overridden`
+                    ? `${addedLabel} test date added with scheduling restrictions overridden`
                     : `${addedLabel} test date added`;
                 showMapNotification(
                     appendMapOtherInspectionNotice(addedMessage, otherInspection),
@@ -22547,7 +22557,7 @@
                 if (!error) return validation;
                 const readinessWarning = validation.valid ? getMapScheduledReadinessWarning(bin, type, dateStr) : null;
                 const readinessMessage = readinessWarning
-                    ? `${readinessWarning.message} ${bypassEligibility ? 'The recent-test restriction override is enabled.' : 'Open Advanced scheduling options and select “Override recent-test restriction” to schedule this date anyway.'}`
+                    ? `${readinessWarning.message} ${bypassEligibility ? 'The scheduling restriction override is enabled.' : 'Open Advanced scheduling options and select “Override scheduling restrictions” to schedule this date anyway.'}`
                     : '';
                 error.textContent = readinessMessage || validation.message;
                 error.style.color = validation.valid ? '#ff9800' : '#ff6b6b';
@@ -23107,7 +23117,7 @@
                         <summary style="cursor:pointer; color:#c77700; font-size:12px; line-height:1.4; font-weight:800; user-select:none;">Advanced scheduling options</summary>
                         <label style="display:flex; align-items:flex-start; gap:9px; margin-top:10px; color:var(--text-color,#eee); font-size:12px; line-height:1.45; cursor:pointer;">
                             <input type="checkbox" id="mapBulkBypassEligibility" style="margin:3px 0 0; width:16px; height:16px; flex:0 0 auto;">
-                            <span><strong style="font-size:12.5px;">Override recent-test restriction</strong><br><span style="opacity:0.9;">Schedule even when recent DOB testing would normally block the date for some buildings.</span></span>
+                            <span><strong style="font-size:12.5px;">Override scheduling restrictions</strong><br><span style="opacity:0.9;">Schedule anyway, even inside the 6-month gap, the 91-day wait, a completed year, or after the CAT 5 deadline.</span></span>
                         </label>
                     </details>
                     <div id="mapBulkScheduleError" role="alert" style="display:none; margin-top:8px; color:#ff6b6b; font-size:11px; line-height:1.35;"></div>
@@ -23293,7 +23303,7 @@
                         bypassEligibility,
                         quiet: true,
                         source: bypassUsed
-                            ? (conflictMode === 'replace' ? 'Bulk select replace · recent-test restriction override' : 'Bulk select · recent-test restriction override')
+                            ? (conflictMode === 'replace' ? 'Bulk select replace · scheduling restriction override' : 'Bulk select · scheduling restriction override')
                             : (conflictMode === 'replace' ? 'Bulk select replace' : 'Bulk select')
                     })) {
                         added += 1;
