@@ -13,6 +13,7 @@ const source = html.slice(start, end) + `
 this.collectUnsearchedBinDevices = collectUnsearchedBinDevices;
 this.takeUnsearchedBinDevice = takeUnsearchedBinDevice;
 this.appendDeviceNumberToLookupText = appendDeviceNumberToLookupText;
+this.groupUnsearchedDevicesForCards = groupUnsearchedDevicesForCards;
 `;
 const context = vm.createContext({});
 vm.runInContext(source, context);
@@ -54,5 +55,19 @@ assert.equal(context.appendDeviceNumberToLookupText('1P11111\n\n 1000002 \n', '1
 assert.equal(context.appendDeviceNumberToLookupText('1P11111\n1p11112', '1P11112'), '1P11111\n1p11112',
     'Device numbers already in the search box are not duplicated');
 assert.equal(context.appendDeviceNumberToLookupText('', '1P11112'), '1P11112');
+
+const groups = context.groupUnsearchedDevicesForCards([
+    { device_number: 'D1', device_type: 'Dumbwaiter', device_status: 'Active' },
+    { device_number: 'E1', device_type: 'Elevator', device_status: 'Active' },
+    { device_number: 'E2', device_type: 'Elevator', device_status: 'Removed' },
+    { device_number: 'E3', device_type: 'Elevator', device_status: 'Dismantled' },
+    { device_number: 'U1', device_status: 'Deleted' }
+]);
+assert.deepEqual(Array.from(groups, g => `${g.removed ? 'removed ' : ''}${g.type}:${numbers(g.devices).join(',')}`), [
+    'Elevator:E1,E3',
+    'Dumbwaiter:D1',
+    'removed Elevator:E2',
+    'removed Unknown:U1'
+], 'Cards group like the BIN search: elevators first, removed/deleted last, dismantled stays active');
 
 console.log('Bulk unsearched BIN device checks passed.');
