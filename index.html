@@ -9014,12 +9014,16 @@
         function buildUnsearchedAddButtonHtml(resultDivId, bin, deviceNumber) {
             const esc = value => escapeMapSuggestionHtml(value == null ? '' : String(value));
             return `
-                <button type="button" class="bulk-add-unsearched-device"
-                        data-result-div="${esc(resultDivId)}" data-bin="${esc(bin)}" data-device="${esc(deviceNumber)}"
-                        onclick="event.stopPropagation(); addUnsearchedBulkDevice(this)"
-                        style="margin: 0 0 8px auto; padding: 6px 14px; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 0.9em; font-weight: 600; white-space: nowrap;">
-                    + Add Device
-                </button>
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: -10px -10px 12px; padding: 8px 10px; border-bottom: 1px dashed var(--input-border); border-radius: 5px 5px 0 0;">
+                    <span style="font-size: 0.85em; color: var(--text-color); opacity: 0.75;">Not in search &middot; not counted</span>
+                    <button type="button" class="bulk-add-unsearched-device"
+                            data-result-div="${esc(resultDivId)}" data-bin="${esc(bin)}" data-device="${esc(deviceNumber)}"
+                            onclick="event.stopPropagation(); addUnsearchedBulkDevice(this)"
+                            title="Add device ${esc(deviceNumber)} to the search and counts"
+                            style="margin: 0; padding: 6px 14px; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer; font-size: 0.9em; font-weight: 600; white-space: nowrap;">
+                        + Add ${esc(deviceNumber)}
+                    </button>
+                </div>
             `;
         }
 
@@ -9091,9 +9095,7 @@
                         // Keep BIN-search filters and counters from picking up these cards.
                         card.classList.remove('device-item');
                         card.classList.add('bulk-unsearched-device-card');
-                        card.style.display = 'flex';
-                        card.style.flexDirection = 'column';
-                        card.insertAdjacentHTML('afterbegin', buildUnsearchedAddButtonHtml(resultDivId, bin, deviceNumber));
+                        (card.firstElementChild || card).insertAdjacentHTML('afterbegin', buildUnsearchedAddButtonHtml(resultDivId, bin, deviceNumber));
                         cardCache[normalizeBulkDeviceNumber(deviceNumber)] = card.outerHTML;
                     });
                 }
@@ -9183,7 +9185,7 @@
             } catch (error) {
                 console.error(`Error adding device ${deviceNumber}:`, error);
                 button.disabled = false;
-                button.textContent = '+ Add Device';
+                button.textContent = `+ Add ${deviceNumber}`;
                 alert(`Could not add device ${deviceNumber}. Please try again.`);
             }
         }
