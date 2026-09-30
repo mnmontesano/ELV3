@@ -39,6 +39,25 @@
                 }
             } catch (e) {}
         })();
+
+        // DOB tab width helpers (Settings preference, applied before paint so the page doesn't jump)
+        var DOB_TAB_WIDTH = { min: 800, max: 1800, step: 50, fallback: 1100 };
+        function normalizeDobTabWidth(value) {
+            var width = parseInt(value, 10);
+            if (isNaN(width)) return DOB_TAB_WIDTH.fallback;
+            width = Math.round(width / DOB_TAB_WIDTH.step) * DOB_TAB_WIDTH.step;
+            return Math.min(DOB_TAB_WIDTH.max, Math.max(DOB_TAB_WIDTH.min, width));
+        }
+        // end DOB tab width helpers
+        function getSavedDobTabWidth() {
+            try { return normalizeDobTabWidth(localStorage.getItem('dobTabWidth')); } catch (e) { return DOB_TAB_WIDTH.fallback; }
+        }
+        function applyDobTabWidth(value) {
+            var width = normalizeDobTabWidth(value);
+            document.documentElement.style.setProperty('--dob-tab-max-width', width + 'px');
+            return width;
+        }
+        applyDobTabWidth(getSavedDobTabWidth());
     </script>
     <style>
         /* Ensure only the ELV3 Lookup panel shows in popout mode, with minimal flash */
@@ -359,7 +378,17 @@
             <option value="light">Light</option>
             <option value="dark">Dark</option>
         </select>
-        <p style="margin: 0 0 8px; font-size: 0.82em; opacity: 0.75; line-height: 1.4;">Saved in this browser only. Tab choice applies on the next visit; theme applies as soon as you save. The disclaimer appears on every page load until Agree.</p>
+        <label for="dobTabWidthRange" style="display:block; margin-top: 12px;">DOB Tab Width: <strong id="dobTabWidthValue">1100px</strong></label>
+        <input type="range" id="dobTabWidthRange" min="800" max="1800" step="50" value="1100"
+               oninput="previewDobTabWidth(this.value)"
+               style="width: 100%; margin: 10px 0 4px; box-sizing: border-box;">
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8em; opacity: 0.8; margin-bottom: 10px;">
+            <span>Narrow</span>
+            <button type="button" onclick="previewDobTabWidth(DOB_TAB_WIDTH.fallback)"
+                    style="display: inline-block; margin: 0; padding: 3px 10px; font-size: 1em; border: 1px solid var(--input-border); border-radius: 4px; cursor: pointer;">Reset</button>
+            <span>Wide</span>
+        </div>
+        <p style="margin: 0 0 8px; font-size: 0.82em; opacity: 0.75; line-height: 1.4;">Saved in this browser only. Tab choice applies on the next visit; theme applies as soon as you save. DOB tab width previews as you drag and applies on screens at least 1000px wide. The disclaimer appears on every page load until Agree.</p>
         <div style="margin-top: 16px; display: flex; gap: 10px;">
             <button onclick="saveSettings()">Save</button>
             <button onclick="closeSettings()" style="background-color: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; padding: 10px 20px; font-size: 1.2em; transition: background-color 0.3s ease, color 0.3s ease;">Cancel</button>
@@ -4114,6 +4143,8 @@
                 themeSelect.value = savedTheme === 'dark' ? 'dark' : 'light';
             }
 
+            previewDobTabWidth(getSavedDobTabWidth());
+
             // Close settings when clicking outside (attach once to avoid stacking listeners)
             if (!overlay.dataset.settingsListenersAttached) {
                 overlay.dataset.settingsListenersAttached = 'true';
@@ -4135,16 +4166,34 @@
             modal.style.display = 'none';
             overlay.style.display = 'none';
             overlay.style.opacity = '0';
+            // Drop any unsaved width preview
+            applyDobTabWidth(getSavedDobTabWidth());
+        }
+
+        function previewDobTabWidth(value) {
+            const width = applyDobTabWidth(value);
+            const range = document.getElementById('dobTabWidthRange');
+            const label = document.getElementById('dobTabWidthValue');
+            if (range) range.value = width;
+            if (label) label.textContent = `${width}px${width === DOB_TAB_WIDTH.fallback ? ' (default)' : ''}`;
         }
 
         function saveSettings() {
+            const widthRange = document.getElementById('dobTabWidthRange');
+            if (widthRange) {
+                try {
+                    localStorage.setItem('dobTabWidth', String(normalizeDobTabWidth(widthRange.value)));
+                } catch (e) {}
+            }
+
             const allowedDefaultTabs = ['main', 'dob', 'map', 'dates', 'resources'];
             const defaultTabSelect = document.getElementById('defaultTab');
             const defaultTab = defaultTabSelect && allowedDefaultTabs.includes(defaultTabSelect.value)
                 ? defaultTabSelect.value
                 : 'main';
+            const defaultTabChanged = localStorage.getItem('defaultTab') !== defaultTab;
             localStorage.setItem('defaultTab', defaultTab);
-            showTab(defaultTab);
+            if (defaultTabChanged) showTab(defaultTab);
 
             const themeSelect = document.getElementById('themeSelect');
             const themeValue = themeSelect && ['light', 'dark'].includes(themeSelect.value)
