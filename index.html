@@ -794,7 +794,7 @@
         
 
         <!-- Replace the Device & BIN Lookup section -->
-        <div style="max-width: 800px; margin: 20px auto; padding: 20px; background: var(--card-bg); border-radius: 5px; box-shadow: 0 2px 8px var(--card-shadow);">
+        <div class="dob-tab-card" style="max-width: 800px; margin: 20px auto; padding: 20px; background: var(--card-bg); border-radius: 5px; box-shadow: 0 2px 8px var(--card-shadow);">
             <h3 style="text-align: center; margin-bottom: 20px; color: var(--text-color);">Device & BIN Lookup</h3>
             
             <!-- Add this right after the <h3>Device & BIN Lookup</h3> line, around line 986 -->
@@ -967,7 +967,7 @@
         </div>
 
         <!-- Replace the Bulk Device Lookup section -->
-        <div style="max-width: 800px; margin: 20px auto; padding: 20px; background: var(--card-bg); border-radius: 5px; box-shadow: 0 2px 8px var(--card-shadow);">
+        <div class="dob-tab-card" style="max-width: 800px; margin: 20px auto; padding: 20px; background: var(--card-bg); border-radius: 5px; box-shadow: 0 2px 8px var(--card-shadow);">
             <h3 style="text-align: center; margin-bottom: 20px; color: var(--text-color);">Bulk Device Lookup</h3>
             
             <div style="margin-bottom: 15px; padding: 0 5px;">
@@ -3555,6 +3555,7 @@
             if (contentElement) {
                 contentElement.classList.add('active');
             }
+            document.body.classList.toggle('dob-tab-wide', tabName === 'dob');
             document.querySelectorAll('.tab-button').forEach(button => {
                 button.style.backgroundColor = '';
             });
@@ -37255,6 +37256,24 @@
     </script>
 
     <script src="device-filter-functions.js"></script>
+    <script>
+        // The wide DOB layout reserves room beside the ELV3 Lookup panel while it is open.
+        (function trackQuickLookupPanelSpace() {
+            const panel = document.getElementById('quickLookupPanel');
+            if (!panel) return;
+            const update = () => {
+                const open = panel.style.display === 'block';
+                document.body.classList.toggle('elv3-panel-open', open);
+                if (open) {
+                    const rightGap = Math.max(0, window.innerWidth - panel.getBoundingClientRect().right);
+                    document.body.style.setProperty('--elv3-panel-space', `${Math.ceil(panel.offsetWidth + rightGap + 20)}px`);
+                }
+            };
+            new MutationObserver(update).observe(panel, { attributes: true, attributeFilter: ['style', 'class'] });
+            window.addEventListener('resize', update);
+            update();
+        })();
+    </script>
 
     <!-- Upload ELV3 Scan Modal -->
     <div id="uploadELV3ScanModal" class="elv3-scan-modal" style="display: none;">
