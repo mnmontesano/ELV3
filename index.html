@@ -1118,8 +1118,12 @@
                     </div>
                 </div>
                 <style>
-                    #mapDashboardView { display: none; flex: 1; min-width: 0; min-height: 0; flex-direction: column; overflow-y: auto; padding: 14px 16px 18px; box-sizing: border-box; background: var(--card-bg); color: var(--text-color); font-size: 13px; }
-                    #mapModalContainer.map-dashboard-mode #mapCanvasWrapper { display: none; }
+                    #mapDashboardView { display: none; flex: 1; min-width: 0; min-height: 0; flex-direction: row; gap: 12px; overflow: hidden; padding: 14px 16px 16px; box-sizing: border-box; background: var(--card-bg); color: var(--text-color); font-size: 13px; }
+                    #mapDashboardInfo { flex: 1 1 0; min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; }
+                    #mapDashboardMapCard { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+                    #mapDashboardMapSlot { flex: 1; display: flex; min-height: 0; }
+                    #mapDashboardMapSlot #mapCanvasWrapper { flex: 1 !important; min-height: 290px !important; border-radius: 6px; overflow: hidden; }
+                    #mapDashboardMapSlot #buildingMap { min-height: 0 !important; }
                     #mapModalContainer.map-dashboard-mode #mapDashboardView { display: flex; }
                     #mapModalContainer.map-dashboard-mode #mapSearchRow { display: none !important; }
                     #mapModalContainer.map-dashboard-mode #mapControlsPanel { width: clamp(320px, 34%, 500px) !important; min-width: 320px !important; }
@@ -1146,7 +1150,7 @@
                     .mdb-progress-label { display: flex; justify-content: space-between; gap: 8px; font-size: 0.9em; font-weight: 600; margin-bottom: 3px; }
                     .mdb-progress-track { height: 8px; border-radius: 4px; background: rgba(127,127,127,0.2); overflow: hidden; }
                     .mdb-progress-fill { height: 100%; border-radius: 4px; }
-                    .mdb-attention { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+                    .mdb-attention { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
                     .mdb-attention-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; margin: 0; box-sizing: border-box; padding: 8px 9px; border-radius: 6px; border: 1px solid var(--input-border); border-left: 3px solid var(--mdb-accent, #607d8b); background: var(--panel-bg); color: var(--text-color); cursor: pointer; text-align: left; font: inherit; }
                     .mdb-attention-item:hover { border-color: var(--mdb-accent, #607d8b); }
                     .mdb-attention-count { font-size: 1.35em; font-weight: 800; color: var(--mdb-accent, var(--text-color)); line-height: 1.1; }
@@ -1169,12 +1173,15 @@
                     .mdb-legend span::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; background: var(--mdb-accent); vertical-align: -1px; }
                     @media (max-width: 820px) {
                         #mapModalContainer.map-dashboard-mode #mapContentRow { flex-direction: column; overflow-y: auto; }
-                        #mapModalContainer.map-dashboard-mode #mapDashboardView { flex: none; overflow: visible; }
+                        #mapModalContainer.map-dashboard-mode #mapDashboardView { flex: none; flex-direction: column; overflow: visible; }
+                        #mapModalContainer.map-dashboard-mode #mapDashboardInfo { flex: none; overflow: visible; padding-right: 0; }
+                        #mapModalContainer.map-dashboard-mode #mapDashboardMapCard { flex: none; height: 65vh; min-height: 340px; }
                         #mapModalContainer.map-dashboard-mode #mapControlsPanel { width: 100% !important; min-width: 0 !important; height: 75vh; border-left: none !important; border-top: 1px solid var(--input-border); }
                     }
                 </style>
                 <div id="mapContentRow" style="display: flex; flex: 1; min-height: 0; overflow: hidden;">
                     <div id="mapDashboardView" role="region" aria-label="Testing dashboard">
+                        <div id="mapDashboardInfo">
                         <div class="mdb-header">
                             <div>
                                 <h2 class="mdb-title">📊 Testing Dashboard</h2>
@@ -1186,6 +1193,11 @@
                             </div>
                         </div>
                         <div id="mapDashboardContent"></div>
+                        </div>
+                        <div id="mapDashboardMapCard" class="mdb-card">
+                            <div class="mdb-card-title">🗺️ Map <small>Click an address in the dashboard or Settings to show it here</small></div>
+                            <div id="mapDashboardMapSlot"></div>
+                        </div>
                     </div>
                     <div id="mapCanvasWrapper" style="flex: 1; min-width: 0; min-height: 400px; position: relative;">
                         <div id="buildingMap" title="Right-click the map to add a pin at that location" style="width: 100%; height: 100%; min-height: 400px;"></div>
@@ -28291,6 +28303,7 @@
         let mapDashboardSavedPanelDisplay = null;
         let mapDashboardRenderTimer = null;
         let mapDashboardObserver = null;
+        let mapDashboardResizeObserver = null;
         const MAP_DASHBOARD_UPCOMING_DAYS = 14;
         const MAP_DASHBOARD_TYPE_STYLES = {
             pvi: { label: 'PVI', color: '#1a73e8' },
@@ -28335,11 +28348,33 @@
 
             mapDashboardActive = true;
             container.classList.add('map-dashboard-mode');
+            const slot = document.getElementById('mapDashboardMapSlot');
+            const mapWrapper = document.getElementById('mapCanvasWrapper');
+            if (slot && mapWrapper) slot.appendChild(mapWrapper);
             updateMapDashboardButton();
             renderMapDashboard();
             startMapDashboardObserver();
-            const view = document.getElementById('mapDashboardView');
-            if (view) view.scrollTop = 0;
+            ['mapDashboardView', 'mapDashboardInfo'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.scrollTop = 0;
+            });
+            if (buildingMap) buildingMap.invalidateSize();
+        }
+
+        function restoreMapCanvasFromDashboard() {
+            const row = document.getElementById('mapContentRow');
+            const mapWrapper = document.getElementById('mapCanvasWrapper');
+            const panel = document.getElementById('mapControlsPanel');
+            if (!row || !mapWrapper || mapWrapper.parentElement === row) return;
+            if (panel && panel.parentElement === row) row.insertBefore(mapWrapper, panel);
+            else row.appendChild(mapWrapper);
+        }
+
+        function scrollMapDashboardToMap() {
+            if (!mapDashboardActive) return;
+            if (buildingMap) buildingMap.invalidateSize();
+            const card = document.getElementById('mapDashboardMapCard');
+            if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
         function exitMapDashboard(options) {
@@ -28350,6 +28385,7 @@
 
             mapDashboardActive = false;
             stopMapDashboardObserver();
+            restoreMapCanvasFromDashboard();
             if (container) container.classList.remove('map-dashboard-mode');
             updateMapDashboardButton();
             if (panel && mapDashboardSavedPanelDisplay !== null) {
@@ -28390,11 +28426,18 @@
                 const el = document.getElementById(id);
                 if (el) mapDashboardObserver.observe(el, { childList: true });
             });
+            const mapWrapper = document.getElementById('mapCanvasWrapper');
+            if (mapWrapper && typeof ResizeObserver === 'function') {
+                mapDashboardResizeObserver = new ResizeObserver(requestMapResizeAfterControlsChange);
+                mapDashboardResizeObserver.observe(mapWrapper);
+            }
         }
 
         function stopMapDashboardObserver() {
             if (mapDashboardObserver) mapDashboardObserver.disconnect();
             mapDashboardObserver = null;
+            if (mapDashboardResizeObserver) mapDashboardResizeObserver.disconnect();
+            mapDashboardResizeObserver = null;
             if (mapDashboardRenderTimer) clearTimeout(mapDashboardRenderTimer);
             mapDashboardRenderTimer = null;
         }
@@ -28419,8 +28462,7 @@
         }
 
         function openMapDashboardBuilding(bin) {
-            toggleMapDashboard(false);
-            setTimeout(() => flyToMapBuilding(bin, { temporarilyShowHidden: true }), 60);
+            flyToMapBuilding(bin, { temporarilyShowHidden: true });
         }
 
         function getMapDashboardStats() {
@@ -28652,7 +28694,7 @@
                 </div>`;
         }
 
-        // Actions that need the map visible switch back from the dashboard first.
+        // Map actions triggered from the dashboard use the map embedded under the dashboard.
         [
             'flyToMapBuilding',
             'flyToAdditionalLocation',
@@ -28660,17 +28702,26 @@
             'showImmediateAttentionOnMap',
             'toggleNoTestYetShowOnMap',
             'toggleNoTestByJuneShowOnMap',
-            'toggleMapCategory5ShowOnMap',
-            'toggleMapSelectMode'
+            'toggleMapCategory5ShowOnMap'
         ].forEach(name => {
             const original = window[name];
             if (typeof original !== 'function') return;
             window[name] = function() {
-                const leavingSelectMode = name === 'toggleMapSelectMode' && arguments[0] === false;
-                if (mapDashboardActive && !leavingSelectMode) exitMapDashboard({ restorePopout: true });
-                return original.apply(this, arguments);
+                const result = original.apply(this, arguments);
+                scrollMapDashboardToMap();
+                return result;
             };
         });
+
+        // Select mode needs the full map, so it switches back from the dashboard.
+        (function() {
+            const original = window.toggleMapSelectMode;
+            if (typeof original !== 'function') return;
+            window.toggleMapSelectMode = function() {
+                if (mapDashboardActive && arguments[0] !== false) exitMapDashboard({ restorePopout: true });
+                return original.apply(this, arguments);
+            };
+        })();
 
 
         function _startPanelResize(e, direction) {
@@ -41734,7 +41785,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.3.7</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.4</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
