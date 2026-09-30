@@ -12653,7 +12653,7 @@
             }
         }
 
-        function showDobInfoUpdateChangesModal(changeRows, failedDevices, autoCompletedRows, monitoredNewDevices, confirmationRows) {
+        function showDobInfoUpdateChangesModal(changeRows, failedDevices, autoCompletedRows, monitoredNewDevices, confirmationRows, deadlinesMetRows) {
             const existing = document.getElementById('dobInfoUpdateChangesModal');
             if (existing) existing.remove();
 
@@ -12662,6 +12662,7 @@
             const autoCompleted = Array.isArray(autoCompletedRows) ? autoCompletedRows : [];
             const monitoredFound = Array.isArray(monitoredNewDevices) ? monitoredNewDevices : [];
             const confirmations = Array.isArray(confirmationRows) ? confirmationRows : [];
+            const deadlinesMet = Array.isArray(deadlinesMetRows) ? deadlinesMetRows : [];
             const modal = document.createElement('div');
             modal.id = 'dobInfoUpdateChangesModal';
             modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.62); z-index:10045; display:flex; align-items:center; justify-content:center; padding:18px;';
@@ -12705,6 +12706,18 @@
                     <div style="padding:0 12px 10px;">
                         <div style="margin-bottom:7px; opacity:0.9;">DOB now shows the PVI and required CAT test filings performed for ${currentYear}.</div>
                         ${autoCompleted.map(row => `<div style="margin-top:4px;">${escapeMapSuggestionHtml(row.address || ('BIN ' + row.bin))} — ${escapeMapSuggestionHtml(getMapCompletedTestLabel(row.testType))}</div>`).join('')}
+                    </div>
+                </details>`
+                : '';
+
+            const deadlinesMetHtml = deadlinesMet.length > 0
+                ? `<details open style="margin-top:10px; border-radius:8px; background:rgba(230,126,34,0.1); border:1px solid rgba(230,126,34,0.4); color:var(--text-color); font-size:0.9em; overflow:hidden;">
+                    <summary style="padding:10px 12px; cursor:pointer; font-weight:700; color:#e67e22;">
+                        ⏰ Testing Deadlines Removed (${deadlinesMet.length})
+                    </summary>
+                    <div style="padding:0 12px 10px;">
+                        <div style="margin-bottom:7px; opacity:0.85;">All testing of that type was completed on every device on or before the deadline date, so these deadlines were removed.</div>
+                        ${deadlinesMet.map(row => `<div style="margin-top:4px;"><strong>${escapeMapSuggestionHtml(row.address || ('BIN ' + row.bin))}</strong> — ${escapeMapSuggestionHtml(getMapDeadlineTypeLabel(row.type))} deadline ${escapeMapSuggestionHtml(formatMapDeadlineDateDisplay(row.date))}${row.completedOn ? ` · completed ${escapeMapSuggestionHtml(row.completedOn.toLocaleDateString())}` : ''}</div>`).join('')}
                     </div>
                 </details>`
                 : '';
@@ -12775,6 +12788,7 @@
             summaryParts.push(`${changes.length} date change${changes.length !== 1 ? 's' : ''} applied to saved device records`);
             if (monitoredFound.length) summaryParts.push(`${monitoredFound.length} new device${monitoredFound.length !== 1 ? 's' : ''} found on radar-monitored buildings`);
             if (autoCompleted.length) summaryParts.push(`${autoCompleted.length} building${autoCompleted.length !== 1 ? 's' : ''} auto-marked completed`);
+            if (deadlinesMet.length) summaryParts.push(`${deadlinesMet.length} testing deadline${deadlinesMet.length !== 1 ? 's' : ''} removed`);
             if (confirmations.length) summaryParts.push(`${confirmations.length} DOB posting delay${confirmations.length !== 1 ? 's' : ''} recorded`);
 
             modal.innerHTML = `
@@ -12798,6 +12812,7 @@
                         ${monitoredHtml}
                         ${dobConfirmationHtml}
                         ${autoCompletedHtml}
+                        ${deadlinesMetHtml}
                         ${catResultsHtml}
                         ${pviResultsHtml}
                         ${failuresHtml}
@@ -12831,7 +12846,11 @@
             const monitorNote = monitoredTargets.length > 0
                 ? ` Also checks ${monitoredTargets.length} radar-monitored BIN${monitoredTargets.length !== 1 ? 's' : ''} for new devices.`
                 : '';
-            if (!confirm(`Refresh DOB info for ${uniqueDeviceNumbers.length} device${uniqueDeviceNumbers.length !== 1 ? 's' : ''}? This updates saved device records with the latest DOB device information.${monitorNote} Save afterward to write it to your file.`)) {
+            const deadlineCount = Object.keys(getMapDeadlines()).reduce((total, bin) => total + getMapDeadlinesForBin(bin).length, 0);
+            const deadlineNote = deadlineCount > 0
+                ? `\n\nTesting deadlines: ${deadlineCount} deadline${deadlineCount !== 1 ? 's are' : ' is'} saved. A PVI or CAT testing deadline is removed automatically when DOB shows that testing completed on every device on or before that deadline date. Removed deadlines are listed after the update and in the Activity Monitor.`
+                : '';
+            if (!confirm(`Refresh DOB info for ${uniqueDeviceNumbers.length} device${uniqueDeviceNumbers.length !== 1 ? 's' : ''}? This updates saved device records with the latest DOB device information.${monitorNote} Save afterward to write it to your file.${deadlineNote}`)) {
                 return;
             }
 
@@ -12902,9 +12921,17 @@
                 await new Promise(resolve => setTimeout(resolve, 0));
 
                 let refreshFailed = false;
+                let deadlinesMetRows = [];
                 try {
                     updateMapControlsPanel();
-                    refreshMapViewAfterDobInfoUpdate();
+                    lastMapDeadlinesMet = [];
+                    suppressMapDeadlineMetNotice = true;
+                    try {
+                        refreshMapViewAfterDobInfoUpdate();
+                    } finally {
+                        suppressMapDeadlineMetNotice = false;
+                    }
+                    deadlinesMetRows = lastMapDeadlinesMet.slice();
                 } catch (error) {
                     refreshFailed = true;
                     console.error('Map refresh failed after DOB Info Update:', error);
@@ -12921,15 +12948,18 @@
                     const confirmationText = confirmationRows.length > 0
                         ? ` DOB posting delay recorded for ${confirmationRows.length} building${confirmationRows.length !== 1 ? 's' : ''}.`
                         : '';
+                    const deadlinesMetText = deadlinesMetRows.length > 0
+                        ? ` ${deadlinesMetRows.length} testing deadline${deadlinesMetRows.length !== 1 ? 's' : ''} removed — testing completed on time.`
+                        : '';
                     const monitorText = monitoredNewDevices.length > 0
                         ? ` 📡 ${monitoredNewDevices.length} new device${monitoredNewDevices.length !== 1 ? 's' : ''} on monitored buildings.`
                         : (monitoredTargets.length > 0 ? ' No new devices on monitored buildings.' : '');
                     showMapNotification(
-                        `DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${monitorText}${autoCompleteText}${confirmationText}${saveHint}`,
-                        dateUpdates > 0 || monitoredNewDevices.length > 0 || autoCompletedRows.length > 0 || confirmationRows.length > 0 ? '#27ae60' : '#17a2b8'
+                        `DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${monitorText}${autoCompleteText}${deadlinesMetText}${confirmationText}${saveHint}`,
+                        dateUpdates > 0 || monitoredNewDevices.length > 0 || autoCompletedRows.length > 0 || confirmationRows.length > 0 || deadlinesMetRows.length > 0 ? '#27ae60' : '#17a2b8'
                     );
                 }
-                setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows, monitoredNewDevices, confirmationRows), 150);
+                setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows, monitoredNewDevices, confirmationRows, deadlinesMetRows), 150);
             } catch (error) {
                 console.error('DOB Info Update failed:', error);
                 showMapNotification('DOB Info Update failed. Please try again.', '#ff6b6b');
@@ -19468,6 +19498,9 @@
             return new Date(Math.min(...candidates.map(date => date.getTime())));
         }
 
+        let lastMapDeadlinesMet = [];
+        let suppressMapDeadlineMetNotice = false;
+
         // A deadline is met once every device's test of that type is complete on or before the deadline date.
         function clearMapDeadlinesCompletedOnTime(bins) {
             const keys = Array.isArray(bins) ? bins : Object.keys(mapDeadlines);
@@ -19488,7 +19521,7 @@
                         date: entry.date,
                         details: `${label} deadline met · all ${label} testing completed ${completedOn.toLocaleDateString()}`
                     });
-                    removed.push({ bin, address, type: entry.type, date: entry.date });
+                    removed.push({ bin, address, type: entry.type, date: entry.date, completedOn });
                 });
             });
             return removed;
@@ -29177,7 +29210,8 @@
             // Keep completion status in sync with DOB-backed current-year filings.
             autoCompleteMapBuildingsFromDobData(Object.keys(binGroups || {}), 'DOB Device Data');
             const deadlinesMet = clearMapDeadlinesCompletedOnTime();
-            if (deadlinesMet.length) {
+            lastMapDeadlinesMet = lastMapDeadlinesMet.concat(deadlinesMet);
+            if (deadlinesMet.length && !suppressMapDeadlineMetNotice) {
                 const deadlineNotice = deadlinesMet.length === 1
                     ? `Testing deadline removed for ${deadlinesMet[0].address || 'BIN ' + deadlinesMet[0].bin} — all ${getMapDeadlineTypeLabel(deadlinesMet[0].type)} testing was completed by the deadline`
                     : `${deadlinesMet.length} testing deadlines removed — all testing was completed by each deadline`;
