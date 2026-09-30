@@ -1118,9 +1118,15 @@
                     </div>
                 </div>
                 <style>
-                    #mapDashboardView { display: none; flex: 1; min-width: 0; min-height: 0; flex-direction: row; gap: 12px; overflow: hidden; padding: 14px 16px 16px; box-sizing: border-box; background: var(--card-bg); color: var(--text-color); font-size: 13px; }
-                    #mapDashboardInfo { flex: 1 1 0; min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; }
+                    #mapDashboardView { display: none; flex: 1; min-width: 0; min-height: 0; flex-direction: row; overflow: hidden; padding: 14px 16px 16px; box-sizing: border-box; background: var(--card-bg); color: var(--text-color); font-size: 13px; }
+                    #mapDashboardInfo { flex: 0 0 var(--mdb-info-width, 50%); min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; box-sizing: border-box; }
                     #mapDashboardMapCard { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+                    #mapDashboardSplitter { flex: 0 0 14px; position: relative; cursor: col-resize; touch-action: none; outline: none; }
+                    #mapDashboardSplitter::before { content: ''; position: absolute; top: 0; bottom: 0; left: 6px; width: 2px; border-radius: 1px; background: var(--input-border); transition: background 0.15s; }
+                    #mapDashboardSplitter::after { content: ''; position: absolute; top: 50%; left: 3px; width: 8px; height: 36px; margin-top: -18px; border-radius: 4px; background: var(--input-border); transition: background 0.15s; }
+                    #mapDashboardSplitter:hover::before, #mapDashboardSplitter:hover::after, #mapDashboardSplitter:focus-visible::before, #mapDashboardSplitter:focus-visible::after, #mapDashboardView.mdb-resizing #mapDashboardSplitter::before, #mapDashboardView.mdb-resizing #mapDashboardSplitter::after { background: #1a73e8; }
+                    #mapDashboardView.mdb-resizing { cursor: col-resize; user-select: none; }
+                    #mapDashboardView.mdb-resizing #mapDashboardInfo, #mapDashboardView.mdb-resizing #mapDashboardMapCard { pointer-events: none; }
                     #mapDashboardMapSlot { flex: 1; display: flex; min-height: 0; }
                     #mapDashboardMapSlot #mapCanvasWrapper { flex: 1 !important; min-height: 290px !important; border-radius: 6px; overflow: hidden; }
                     #mapDashboardMapSlot #buildingMap { min-height: 0 !important; }
@@ -1174,7 +1180,8 @@
                     @media (max-width: 820px) {
                         #mapModalContainer.map-dashboard-mode #mapContentRow { flex-direction: column; overflow-y: auto; }
                         #mapModalContainer.map-dashboard-mode #mapDashboardView { flex: none; flex-direction: column; overflow: visible; }
-                        #mapModalContainer.map-dashboard-mode #mapDashboardInfo { flex: none; overflow: visible; padding-right: 0; }
+                        #mapModalContainer.map-dashboard-mode #mapDashboardInfo { flex: none; overflow: visible; padding-right: 0; margin-bottom: 12px; }
+                        #mapModalContainer.map-dashboard-mode #mapDashboardSplitter { display: none; }
                         #mapModalContainer.map-dashboard-mode #mapDashboardMapCard { flex: none; height: 65vh; min-height: 340px; }
                         #mapModalContainer.map-dashboard-mode #mapControlsPanel { width: 100% !important; min-width: 0 !important; height: 75vh; border-left: none !important; border-top: 1px solid var(--input-border); }
                     }
@@ -1194,6 +1201,7 @@
                         </div>
                         <div id="mapDashboardContent"></div>
                         </div>
+                        <div id="mapDashboardSplitter" role="separator" aria-orientation="vertical" aria-controls="mapDashboardInfo" tabindex="0" title="Drag to resize the dashboard and map · Double-click to reset" onpointerdown="startMapDashboardSplitterDrag(event)" ondblclick="setMapDashboardInfoWidth(50, true)" onkeydown="handleMapDashboardSplitterKey(event)"></div>
                         <div id="mapDashboardMapCard" class="mdb-card">
                             <div class="mdb-card-title">🗺️ Map <small>Click an address in the dashboard or Settings to show it here</small></div>
                             <div id="mapDashboardMapSlot"></div>
@@ -28304,6 +28312,8 @@
         let mapDashboardRenderTimer = null;
         let mapDashboardObserver = null;
         let mapDashboardResizeObserver = null;
+        const MAP_DASHBOARD_INFO_WIDTH_KEY = 'mapDashboardInfoWidth';
+        const MAP_DASHBOARD_MIN_PANE_WIDTH = 300;
         const MAP_DASHBOARD_UPCOMING_DAYS = 14;
         const MAP_DASHBOARD_TYPE_STYLES = {
             pvi: { label: 'PVI', color: '#1a73e8' },
@@ -28348,6 +28358,7 @@
 
             mapDashboardActive = true;
             container.classList.add('map-dashboard-mode');
+            setMapDashboardInfoWidth(getSavedMapDashboardInfoWidth(), false);
             const slot = document.getElementById('mapDashboardMapSlot');
             const mapWrapper = document.getElementById('mapCanvasWrapper');
             if (slot && mapWrapper) slot.appendChild(mapWrapper);
@@ -28368,6 +28379,81 @@
             if (!row || !mapWrapper || mapWrapper.parentElement === row) return;
             if (panel && panel.parentElement === row) row.insertBefore(mapWrapper, panel);
             else row.appendChild(mapWrapper);
+        }
+
+        function getSavedMapDashboardInfoWidth() {
+            const saved = parseFloat(localStorage.getItem(MAP_DASHBOARD_INFO_WIDTH_KEY));
+            return Number.isFinite(saved) ? saved : 50;
+        }
+
+        function clampMapDashboardInfoWidth(percent) {
+            const view = document.getElementById('mapDashboardView');
+            const style = view ? getComputedStyle(view) : null;
+            const innerWidth = view && style
+                ? view.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+                : 0;
+            if (!innerWidth) return Math.min(80, Math.max(20, percent));
+            const minPercent = (MAP_DASHBOARD_MIN_PANE_WIDTH / innerWidth) * 100;
+            const maxPercent = 100 - ((MAP_DASHBOARD_MIN_PANE_WIDTH + 14) / innerWidth) * 100;
+            if (minPercent >= maxPercent) return 50;
+            return Math.min(maxPercent, Math.max(minPercent, percent));
+        }
+
+        function setMapDashboardInfoWidth(percent, save) {
+            const view = document.getElementById('mapDashboardView');
+            if (!view) return;
+            const clamped = clampMapDashboardInfoWidth(Number(percent) || 50);
+            view.style.setProperty('--mdb-info-width', `${clamped.toFixed(2)}%`);
+            const splitter = document.getElementById('mapDashboardSplitter');
+            if (splitter) splitter.setAttribute('aria-valuenow', String(Math.round(clamped)));
+            if (save) {
+                try { localStorage.setItem(MAP_DASHBOARD_INFO_WIDTH_KEY, clamped.toFixed(2)); } catch (error) { /* ignore */ }
+            }
+            requestMapResizeAfterControlsChange();
+        }
+
+        function startMapDashboardSplitterDrag(event) {
+            if (event.button !== undefined && event.button !== 0) return;
+            const view = document.getElementById('mapDashboardView');
+            const info = document.getElementById('mapDashboardInfo');
+            const splitter = event.currentTarget;
+            if (!view || !info || !splitter) return;
+            event.preventDefault();
+            const style = getComputedStyle(view);
+            const innerLeft = view.getBoundingClientRect().left + parseFloat(style.paddingLeft);
+            const innerWidth = view.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+            const grabOffset = event.clientX - splitter.getBoundingClientRect().left;
+            let latestPercent = null;
+            view.classList.add('mdb-resizing');
+            if (splitter.setPointerCapture) splitter.setPointerCapture(event.pointerId);
+
+            const onMove = moveEvent => {
+                latestPercent = ((moveEvent.clientX - grabOffset - innerLeft) / innerWidth) * 100;
+                setMapDashboardInfoWidth(latestPercent, false);
+            };
+            const onEnd = () => {
+                splitter.removeEventListener('pointermove', onMove);
+                splitter.removeEventListener('pointerup', onEnd);
+                splitter.removeEventListener('pointercancel', onEnd);
+                view.classList.remove('mdb-resizing');
+                if (latestPercent !== null) setMapDashboardInfoWidth(latestPercent, true);
+            };
+            splitter.addEventListener('pointermove', onMove);
+            splitter.addEventListener('pointerup', onEnd);
+            splitter.addEventListener('pointercancel', onEnd);
+        }
+
+        function handleMapDashboardSplitterKey(event) {
+            const view = document.getElementById('mapDashboardView');
+            if (!view) return;
+            const current = parseFloat(view.style.getPropertyValue('--mdb-info-width')) || 50;
+            const step = event.shiftKey ? 10 : 2;
+            if (event.key === 'ArrowLeft') setMapDashboardInfoWidth(current - step, true);
+            else if (event.key === 'ArrowRight') setMapDashboardInfoWidth(current + step, true);
+            else if (event.key === 'Home') setMapDashboardInfoWidth(0, true);
+            else if (event.key === 'End') setMapDashboardInfoWidth(100, true);
+            else return;
+            event.preventDefault();
         }
 
         function scrollMapDashboardToMap() {
