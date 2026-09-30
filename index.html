@@ -19446,6 +19446,54 @@
             return true;
         }
 
+        function getMapTestCompletionDateForYear(bin, type, year) {
+            const lane = normalizeMapDeadlineType(type);
+            const facts = getMapBuildingCompletionFacts(getMapGroupForBin(bin), year, bin);
+            const candidates = [];
+            const dobComplete = lane === 'pvi'
+                ? facts.pviRequiredCount > 0 && facts.pviComplete
+                : facts.categoryRequiredCount > 0 && facts.categoryComplete;
+            if (dobComplete) {
+                const timeframe = getMapDobCompletionTimeframe(bin, lane, year);
+                const dobDate = timeframe ? parseMapInspectionDate(timeframe.endDate) : null;
+                if (dobDate) candidates.push(dobDate);
+            }
+            const saved = getMapSavedTestCompletionForYear(bin, lane === 'pvi' ? 'PVI' : 'Category', year);
+            if (saved.isComplete && saved.completionDate) {
+                const savedDate = new Date(saved.completionDate.getTime());
+                savedDate.setHours(0, 0, 0, 0);
+                candidates.push(savedDate);
+            }
+            if (!candidates.length) return null;
+            return new Date(Math.min(...candidates.map(date => date.getTime())));
+        }
+
+        // A deadline is met once every device's test of that type is complete on or before the deadline date.
+        function clearMapDeadlinesCompletedOnTime(bins) {
+            const keys = Array.isArray(bins) ? bins : Object.keys(mapDeadlines);
+            const removed = [];
+            keys.forEach(bin => {
+                getMapDeadlinesForBin(bin).forEach(entry => {
+                    const deadline = parseMapInspectionDate(entry.date);
+                    if (!deadline) return;
+                    const completedOn = getMapTestCompletionDateForYear(bin, entry.type, deadline.getFullYear());
+                    if (!completedOn || completedOn > deadline) return;
+                    if (!clearMapDeadlineForBin(bin, entry.type, { quiet: true })) return;
+                    const label = getMapDeadlineTypeLabel(entry.type);
+                    const address = getMapBuildingAddressForBin(bin) || '';
+                    addMapActivity('Removed testing deadline', {
+                        type: 'Deadline',
+                        bin,
+                        address,
+                        date: entry.date,
+                        details: `${label} deadline met · all ${label} testing completed ${completedOn.toLocaleDateString()}`
+                    });
+                    removed.push({ bin, address, type: entry.type, date: entry.date });
+                });
+            });
+            return removed;
+        }
+
         function refreshMapAfterDeadlineChange() {
             if (typeof hydrateMapBuildingPopupState === 'function') hydrateMapBuildingPopupState(document);
             if (typeof updateMapDeadlinesPanel === 'function') updateMapDeadlinesPanel();
@@ -29128,6 +29176,13 @@
 
             // Keep completion status in sync with DOB-backed current-year filings.
             autoCompleteMapBuildingsFromDobData(Object.keys(binGroups || {}), 'DOB Device Data');
+            const deadlinesMet = clearMapDeadlinesCompletedOnTime();
+            if (deadlinesMet.length) {
+                const deadlineNotice = deadlinesMet.length === 1
+                    ? `Testing deadline removed for ${deadlinesMet[0].address || 'BIN ' + deadlinesMet[0].bin} — all ${getMapDeadlineTypeLabel(deadlinesMet[0].type)} testing was completed by the deadline`
+                    : `${deadlinesMet.length} testing deadlines removed — all testing was completed by each deadline`;
+                setTimeout(() => showMapNotification(deadlineNotice, '#27ae60', 4000), 2100);
+            }
 
             // Get hidden, completed, in-process, and hold buildings
             const hidden = getMapHidden();
