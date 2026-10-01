@@ -12166,6 +12166,8 @@
             const cat5NotRequired = typeCat5NotRequired || cat5Bypassed;
             const requiresCat5 = !isNotApplicable && !cat5NotRequired && cat5Date && !isNaN(cat5Date.getTime()) && (year - cat5Date.getFullYear()) >= 5;
             const nextCat5DueYear = (!cat5NotRequired && cat5Date && !isNaN(cat5Date.getTime())) ? cat5Date.getFullYear() + 5 : null;
+            // Filing a CAT 5 resets the 5-year clock, so requiresCat5 turns false once it is done this year.
+            const countsCat5ForYear = !!requiresCat5 || (hasCat5 && !cat5NotRequired && !isNotApplicable);
             return {
                 isRemoved,
                 isNotApplicable,
@@ -12173,6 +12175,7 @@
                 requiresPVI: !isRemoved && !isNotApplicable && !isConveyor,
                 requiresCat1: !isRemoved && !isNotApplicable && !isDismantled,
                 requiresCat5,
+                countsCat5ForYear,
                 cat5NotRequired,
                 typeCat5NotRequired,
                 cat5Bypassed,
@@ -20005,7 +20008,7 @@
             const rows = deviceFacts.map(({ device, info }) => {
                 if (info.requiresPVI) { counts.pviRequired++; if (info.hasPVI) counts.pvi++; }
                 if (info.requiresCat1) { counts.cat1Required++; if (info.hasCat1) counts.cat1++; }
-                if (info.requiresCat5) { counts.cat5Required++; if (info.hasCat5) counts.cat5++; }
+                if (info.countsCat5ForYear) { counts.cat5Required++; if (info.hasCat5) counts.cat5++; }
                 const deviceNumber = escapeMapSuggestionHtml(String(device.device_number || 'Unknown').trim());
                 return `<tr style="border-top:1px solid var(--input-border,#444);">
                     <td style="padding:5px 6px; font-weight:700; white-space:nowrap;">${deviceNumber}</td>
@@ -22730,7 +22733,7 @@
                     if (info.hasCat1) summary.cat1Complete++;
                     else summary.cat1Missing++;
                 }
-                if (info.requiresCat5 || info.hasCat5) {
+                if (info.countsCat5ForYear) {
                     summary.cat5Required++;
                     if (info.hasCat5) summary.cat5Complete++;
                     else {
@@ -29708,7 +29711,7 @@
                         stats.cat1.devicesRequired++;
                         if (info.hasCat1) stats.cat1.devicesDone++;
                     }
-                    if (info.requiresCat5) {
+                    if (info.countsCat5ForYear) {
                         stats.cat5.devicesRequired++;
                         if (info.hasCat5) stats.cat5.devicesDone++;
                     }
