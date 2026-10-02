@@ -36837,19 +36837,22 @@
             const key = String(bin || '').trim();
             if (!key) return [];
             if (!binPermitListCache[key]) {
+                // Share one request across devices in the same search, then drop it
+                // so the next search of this building gets current permits.
                 binPermitListCache[key] = (async () => {
-                    const response = await fetchWithTimeout(
-                        `https://data.cityofnewyork.us/resource/kfp4-dz4h.json?bin=${encodeURIComponent(key)}&$limit=1000`,
-                        { credentials: 'omit', referrerPolicy: 'no-referrer' }
-                    );
-                    if (!response.ok) throw new Error('Permit lookup failed');
-                    const data = await response.json();
-                    if (!Array.isArray(data)) throw new Error('Permit lookup returned an unexpected response');
-                    return data;
-                })().catch(error => {
-                    delete binPermitListCache[key];
-                    throw error;
-                });
+                    try {
+                        const response = await fetchWithTimeout(
+                            `https://data.cityofnewyork.us/resource/kfp4-dz4h.json?bin=${encodeURIComponent(key)}&$limit=1000`,
+                            { credentials: 'omit', referrerPolicy: 'no-referrer' }
+                        );
+                        if (!response.ok) throw new Error('Permit lookup failed');
+                        const data = await response.json();
+                        if (!Array.isArray(data)) throw new Error('Permit lookup returned an unexpected response');
+                        return data;
+                    } finally {
+                        delete binPermitListCache[key];
+                    }
+                })();
             }
             return binPermitListCache[key];
         }
