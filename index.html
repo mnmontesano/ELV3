@@ -13916,6 +13916,7 @@
                     getMapCompletionDateLanes(completionType).forEach(lane => { completedTestDates[lane] = [values.completionDate]; });
                 }
                 const scopedCompletedTestDates = mergeMapCompletedDates({}, completedTestDates, completionType);
+                applyDobVerifiedCompletionDates(bin, scopedCompletedTestDates);
                 const latestCompletedTestDate = getMapLatestCompletedDate(scopedCompletedTestDates);
                 const completionDate = completedTestDatesChanged && !row.changedFields.has('completionDate') && latestCompletedTestDate
                     ? new Date(latestCompletedTestDate + 'T00:00:00').getTime()
@@ -19659,6 +19660,10 @@
                         ? facts.pviRequiredCount > 0 && facts.categoryRequiredCount > 0 && facts.fullyComplete
                         : false;
             if (!dobComplete) return true;
+            const lanes = getMapCompletionDateLanes(normalizedType);
+            const dobDates = lanes.flatMap(lane => getMapCompletionDobLaneDates(bin, lane, formatLocalDateInputValue(completionDate)));
+            // A date DOB already verified is kept. Do not ask to replace it with a manual date.
+            if (dobDates.length) return true;
             const testLabel = normalizedType === 'PVI' ? 'PVI' : normalizedType === 'Category' ? 'Category' : 'PVI and Category';
             const buildingLabel = getMapBuildingAddressForBin(bin) || `BIN ${bin}`;
             const displayDate = completionDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -19773,6 +19778,11 @@
 
         function getMapCompletionDefaultDates(bin, lane, existing, todayKey) {
             const today = todayKey || formatLocalDateInputValue(new Date());
+            const dobDates = getMapCompletionDobLaneDates(bin, lane, today);
+            const scheduled = getMapCompletionLaneScheduledDates(bin, lane, existing);
+            // A date DOB verified for this test is the date that stays. A manual or
+            // saved date must not take its place, and today is not added beside it.
+            if (dobDates.length) return Array.from(new Set([...dobDates, ...scheduled])).sort();
             const saved = normalizeMapCompletedDatesRecord(existing && existing.completedDates)[lane] || [];
             if (saved.length) return saved;
             // A date already on this test stays in the field. Today is only a stand-in
@@ -19784,6 +19794,27 @@
                 if (savedDate) return [savedDate];
             }
             return [today];
+        }
+
+        // DOB-verified dates always remain. A different manual date, including today, cannot replace them.
+        function applyDobVerifiedCompletionDates(bin, completedDates, todayKey) {
+            const today = todayKey || formatLocalDateInputValue(new Date());
+            let changed = false;
+            ['pvi', 'category'].forEach(lane => {
+                const dobDates = getMapCompletionDobLaneDates(bin, lane, today);
+                if (!dobDates.length) return;
+                const existing = typeof getMapCompleted === 'function' ? (getMapCompleted()[bin] || null) : null;
+                const scheduled = getMapCompletionLaneScheduledDates(bin, lane, existing);
+                const provided = Array.isArray(completedDates[lane]) ? completedDates[lane] : [];
+                const extras = provided.filter(date => date !== today || dobDates.includes(date) || scheduled.includes(date));
+                const next = Array.from(new Set([...dobDates, ...scheduled, ...extras])).sort();
+                const same = next.length === provided.length && next.every((date, index) => date === provided[index]);
+                if (!same) {
+                    completedDates[lane] = next;
+                    changed = true;
+                }
+            });
+            return changed;
         }
 
         // An untouched today prefill must not replace, or be added beside, a date this test already has.
@@ -19805,10 +19836,16 @@
         }
         // end MAP completed test date helpers
 
-        function renderMapCompletionDateRowHtml(value) {
-            return `<div data-completion-date-row style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
-                <input type="date" data-completion-date-input value="${escapeMapSuggestionHtml(value || '')}" style="display:block; flex:1; width:auto; min-width:0; margin:0; padding:9px 10px; border-radius:6px; border:1px solid var(--input-border, #555); background:var(--input-bg, #2a2a3e); color:var(--text-color, #fff); font-size:13px; box-sizing:border-box;">
-                <button type="button" data-completion-date-remove title="Remove this date" aria-label="Remove this date" style="display:block; flex-shrink:0; margin:0; padding:0; width:34px; height:36px; border-radius:6px; border:1px solid var(--input-border, #555); background:var(--input-bg, #2a2a3e); color:#ff6b6b; cursor:pointer; font-size:13px;">✕</button>
+        function renderMapCompletionDateRowHtml(value, locked) {
+            const lock = locked ? ' data-dob-locked="1"' : '';
+            const readOnly = locked ? ' readonly' : '';
+            const badge = locked
+                ? '<span title="Verified with DOB" style="flex-shrink:0; padding:2px 6px; border-radius:999px; background:rgba(39,174,96,0.14); color:#27ae60; font-size:9px; font-weight:800;">DOB</span>'
+                : '';
+            return `<div data-completion-date-row${lock} style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
+                <input type="date" data-completion-date-input value="${escapeMapSuggestionHtml(value || '')}"${readOnly} style="display:block; flex:1; width:auto; min-width:0; margin:0; padding:9px 10px; border-radius:6px; border:1px solid var(--input-border, #555); background:var(--input-bg, #2a2a3e); color:var(--text-color, #fff); font-size:13px; box-sizing:border-box;">
+                ${badge}
+                <button type="button" data-completion-date-remove title="Remove this date" aria-label="Remove this date" style="display:${locked ? 'none' : 'block'}; flex-shrink:0; margin:0; padding:0; width:34px; height:36px; border-radius:6px; border:1px solid var(--input-border, #555); background:var(--input-bg, #2a2a3e); color:#ff6b6b; cursor:pointer; font-size:13px;">✕</button>
             </div>`;
         }
 
@@ -19831,10 +19868,12 @@
             const listEl = lane => laneEl(lane).querySelector('[data-completion-date-list]');
             const noteEl = root.querySelector('[data-completion-override-note]');
 
-            function refreshRemoveButtons(lane) {
+                function refreshRemoveButtons(lane) {
                 const rows = listEl(lane).querySelectorAll('[data-completion-date-row]');
                 rows.forEach(row => {
-                    row.querySelector('[data-completion-date-remove]').style.visibility = rows.length > 1 ? 'visible' : 'hidden';
+                    const remove = row.querySelector('[data-completion-date-remove]');
+                    if (!remove) return;
+                    remove.style.visibility = row.hasAttribute('data-dob-locked') || rows.length <= 1 ? 'hidden' : 'visible';
                 });
             }
 
@@ -19880,7 +19919,8 @@
 
             ['pvi', 'category'].forEach(lane => {
                 const defaults = typeof opts.getDefaultDates === 'function' ? opts.getDefaultDates(lane) : [];
-                listEl(lane).innerHTML = (defaults && defaults.length ? defaults : ['']).map(renderMapCompletionDateRowHtml).join('');
+                const dobDates = new Set(typeof opts.getDobDates === 'function' ? opts.getDobDates(lane) : []);
+                listEl(lane).innerHTML = (defaults && defaults.length ? defaults : ['']).map(value => renderMapCompletionDateRowHtml(value, dobDates.has(value))).join('');
                 refreshRemoveButtons(lane);
                 laneEl(lane).querySelector('[data-completion-date-add]').addEventListener('click', () => {
                     listEl(lane).insertAdjacentHTML('beforeend', renderMapCompletionDateRowHtml(''));
@@ -19989,9 +20029,12 @@
                 if (keepBuildingDatesOverUneditedToday(completedDates, preservedByLane, opts.completedDates && opts.completedDates.laneEdited, todayKey)) {
                     copiedScheduledCompletionDate = true;
                 }
+                if (applyDobVerifiedCompletionDates(bin, completedDates, todayKey)) {
+                    copiedScheduledCompletionDate = true;
+                }
             }
             const datesThatReplaceSchedule = copiedScheduledCompletionDate ? completedDates : providedCompletedDates;
-            const latestProvidedDate = getMapLatestCompletedDate(providedCompletedDates);
+            const latestProvidedDate = getMapLatestCompletedDate(hasMapCompletedDates(completedDates) ? completedDates : providedCompletedDates);
             const entry = {
                 ...existing,
                 address,
@@ -20237,7 +20280,7 @@
                     </div>
                     ${renderMapCompletionDeviceTestsHtml(completionFacts, currentYear)}
                     ${renderMapCompletionDatesEditorHtml('completedDatesEditor')}
-                    <p style="margin: -4px 0 10px 0; font-size: 11px; opacity: 0.6; color: var(--text-color, #ccc);">A test that already has a date keeps that date. Today is filled in only when that test has no date yet. Change a date if testing finished on a different day.</p>
+                    <p style="margin: -4px 0 10px 0; font-size: 11px; opacity: 0.6; color: var(--text-color, #ccc);">A date verified with DOB stays on that test and is not replaced. Other tests keep a date they already have. Today is filled in only when a test has no date yet.</p>
                     <div id="completedOtherInspectionHint" role="status" style="${MAP_OTHER_INSPECTION_HINT_STYLE}"></div>
                     <div style="display: flex; gap: 8px;">
                         <button id="completedDetailsCancelBtn" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #ccc); cursor: pointer; font-size: 13px;">Cancel</button>
@@ -20258,6 +20301,7 @@
             const datesEditor = bindMapCompletionDatesEditor(document.getElementById('completedDatesEditor'), {
                 completionType: currentTestType,
                 getDefaultDates: lane => getMapCompletionDefaultDates(bin, lane, existing, todayKey),
+                getDobDates: lane => getMapCompletionDobLaneDates(bin, lane, todayKey),
                 getReplacedScheduledDates: lanes => getMapScheduledDatesReplacedByCompletion(bin, lanes, existing),
                 onChange: refreshCompletedOtherInspectionHint
             });
@@ -24863,7 +24907,7 @@
                             ${renderMapCompletedTestOptions(defaultCompletionType)}
                         </select>
                         ${renderMapCompletionDatesEditorHtml('confirmTestDatesEditor')}
-                        <p style="margin: 0; font-size: 11px; opacity: 0.55; color: var(--text-color, #ccc);">A test that already has a date keeps that date. Today is filled in only when that test has no date yet. Change a date if testing finished on a different day.</p>
+                        <p style="margin: 0; font-size: 11px; opacity: 0.55; color: var(--text-color, #ccc);">A date verified with DOB stays on that test and is not replaced. Other tests keep a date they already have. Today is filled in only when a test has no date yet.</p>
                     </div>
                     <div style="display: flex; gap: 10px;">
                         <button id="confirmTestNo" style="flex: 1; padding: 11px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #ccc); cursor: pointer; font-size: 13px;">No — Not Yet</button>
@@ -24883,11 +24927,14 @@
             const datesEditor = bindMapCompletionDatesEditor(document.getElementById('confirmTestDatesEditor'), {
                 completionType: defaultCompletionType,
                 getDefaultDates: lane => {
+                    const dobDates = getMapCompletionDobLaneDates(bin, lane, todayKey);
+                    if (dobDates.length) return getMapCompletionDefaultDates(bin, lane, existingCompletion, todayKey);
                     const ownScheduled = getMapCompletionLaneScheduledDates(bin, lane, existingCompletion);
                     if (ownScheduled.length && (normalizedScheduledType === lane || normalizedScheduledType === 'general')) return ownScheduled;
                     if (normalizedScheduledType === lane && defaultCompletionDate) return [defaultCompletionDate];
                     return getMapCompletionDefaultDates(bin, lane, existingCompletion, todayKey);
                 },
+                getDobDates: lane => getMapCompletionDobLaneDates(bin, lane, todayKey),
                 getReplacedScheduledDates: lanes => getMapScheduledDatesReplacedByCompletion(bin, lanes, null)
             });
             completionTypeInput.addEventListener('change', () => datesEditor.setCompletionType(completionTypeInput.value));
@@ -43313,7 +43360,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.4</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.5</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">

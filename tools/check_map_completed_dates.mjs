@@ -79,6 +79,11 @@ assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'pvi', null, '
     'the other test still defaults to today');
 assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'pvi', { completedDates: { pvi: ['2026-08-01', '2026-08-02'] } }, '2026-10-01')),
     ['2026-08-01', '2026-08-02'], 'saved completed dates win');
+context.getMapDobCompletedTestDateRows = (bin) => bin === 'b7' ? [{ type: 'category', date: '2026-08-12' }] : [];
+context.setTestDates({ b7: { pvi: [], category: ['2026-11-15'], general: [] } });
+assert.deepEqual(plain(context.getMapCompletionDefaultDates('b7', 'category', { completedDates: { category: ['2026-10-05'] } }, '2026-10-01')),
+    ['2026-08-12', '2026-11-15'], 'a DOB verified date is not replaced by a saved manual date');
+context.getMapDobCompletedTestDateRows = () => [];
 context.setTestDates({ b1: { pvi: ['2026-09-20', '2026-10-20'], category: [], general: ['2025-01-05'] } });
 assert.deepEqual(plain(context.getMapScheduledDatesReplacedByCompletion('b1', ['pvi'], { scheduledDates: { pvi: ['2026-09-20'] } })),
     [{ type: 'pvi', date: '2026-09-20' }, { type: 'pvi', date: '2026-10-20' }, { type: 'general', date: '2025-01-05' }]);
@@ -150,6 +155,21 @@ context.saveMapCompletedEntry('b6', {
 });
 assert.deepEqual(plain(completedStore.b6).completedDates, { pvi: [todayKey], category: [todayKey] },
     'a date the user changed to today is saved');
+
+// A date verified with DOB is kept even when the form submits today for that test.
+completedStore = {};
+context.getMapDobCompletedTestDateRows = (bin) => bin === 'b7' ? [{ type: 'category', date: '2026-08-12' }, { type: 'pvi', date: '2026-07-01' }] : [];
+context.setTestDates({ b7: { pvi: [], category: ['2026-11-15'], general: [] } });
+context.saveMapCompletedEntry('b7', {
+    testType: 'Full',
+    completedDates: { pvi: [todayKey], category: [todayKey], laneEdited: { pvi: true, category: true } },
+    source: 'Manual'
+});
+assert.deepEqual(plain(completedStore.b7.completedDates), {
+    pvi: ['2026-07-01'],
+    category: ['2026-08-12', '2026-11-15']
+}, 'DOB verified dates are not replaced by today');
+context.getMapDobCompletedTestDateRows = () => [];
 
 // DOB auto-completion without dates keeps the old behavior.
 completedStore = {};
