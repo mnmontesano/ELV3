@@ -19856,21 +19856,25 @@
 
             function refreshOverrideNote() {
                 const replaced = typeof opts.getReplacedScheduledDates === 'function' ? opts.getReplacedScheduledDates(lanes) : [];
-                if (!replaced.length) {
+                const kept = new Set();
+                lanes.forEach(lane => readLaneDates(lane).forEach(date => kept.add(`${lane}:${date}`)));
+                const dropped = replaced.filter(row => row.type === 'general' || !kept.has(`${row.type}:${row.date}`));
+                if (!dropped.length) {
                     noteEl.style.display = 'none';
                     noteEl.innerHTML = '';
                     return;
                 }
-                const items = replaced.map(row => {
+                const items = dropped.map(row => {
                     const label = row.type === 'pvi' ? 'PVI' : row.type === 'category' ? 'Category' : 'Unspecified';
                     const display = new Date(row.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
                     return `<div><strong>${label}</strong> · ${escapeMapSuggestionHtml(display)}</div>`;
                 }).join('');
-                noteEl.innerHTML = `<div style="font-weight:700; color:#ff9800; margin-bottom:2px;">Scheduled date${replaced.length !== 1 ? 's' : ''} replaced by the completed date${replaced.length !== 1 ? 's' : ''}:</div>${items}`;
+                noteEl.innerHTML = `<div style="font-weight:700; color:#ff9800; margin-bottom:2px;">Scheduled date${dropped.length !== 1 ? 's' : ''} replaced by the completed date${dropped.length !== 1 ? 's' : ''}:</div>${items}`;
                 noteEl.style.display = 'block';
             }
 
             function notifyChange() {
+                refreshOverrideNote();
                 if (typeof opts.onChange === 'function') opts.onChange();
             }
 
