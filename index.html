@@ -19742,10 +19742,15 @@
             }
             const year = today.slice(0, 4);
             const scheduled = normalizeMapScheduleRecord(mapTestDates[bin]);
-            const pastScheduled = Array.from(new Set([...(scheduled[lane] || []), ...scheduled.general]))
+            const knownDates = Array.from(new Set([...(scheduled[lane] || []), ...scheduled.general]));
+            const pastScheduled = knownDates
                 .filter(date => date <= today && date.startsWith(`${year}-`))
                 .sort();
-            return pastScheduled.length ? pastScheduled : [today];
+            if (pastScheduled.length) return pastScheduled;
+            // A future date for this test is still the building's date. Keep it attached
+            // when the other test is marked complete at the same time.
+            const upcomingScheduled = knownDates.filter(date => date >= today).sort();
+            return upcomingScheduled.length ? upcomingScheduled : [today];
         }
         // end MAP completed test date helpers
 
@@ -19903,13 +19908,24 @@
             const providedCompletedDates = normalizeMapCompletedDatesRecord(opts.completedDates);
             const hasProvidedCompletedDates = hasMapCompletedDates(providedCompletedDates);
             const completedDates = mergeMapCompletedDates(existing.completedDates, providedCompletedDates, completionType);
+            // Marking both tests complete must keep a date that was already saved for only one of them.
+            let copiedScheduledCompletionDate = false;
+            if (completionType === 'Full' && hasProvidedCompletedDates) {
+                ['pvi', 'category'].forEach(lane => {
+                    if (!completedDates[lane].length && completedSchedule[lane].length) {
+                        completedDates[lane] = completedSchedule[lane].slice();
+                        copiedScheduledCompletionDate = true;
+                    }
+                });
+            }
+            const datesThatReplaceSchedule = copiedScheduledCompletionDate ? completedDates : providedCompletedDates;
             const latestProvidedDate = getMapLatestCompletedDate(providedCompletedDates);
             const entry = {
                 ...existing,
                 address,
                 timestamp: opts.timestamp || (latestProvidedDate ? new Date(latestProvidedDate + 'T00:00:00').getTime() : Date.now()),
-                scheduledDates: hasProvidedCompletedDates
-                    ? overrideMapScheduleWithCompletedDates(completedSchedule, providedCompletedDates)
+                scheduledDates: hasMapCompletedDates(datesThatReplaceSchedule)
+                    ? overrideMapScheduleWithCompletedDates(completedSchedule, datesThatReplaceSchedule)
                     : completedSchedule,
                 completionType,
                 testType: completionType,
@@ -20705,7 +20721,9 @@
                     : '';
                 const completedBadge = row.source === 'dob'
                     ? `<span style="margin-left:auto; padding:1px 5px; border-radius:999px; background:rgba(39,174,96,0.14); color:#27ae60; font-size:8px; font-weight:800; white-space:nowrap;">${row.type === 'category' ? 'DOB FILED' : 'DOB COMPLETED'}</span>`
-                    : '';
+                    : row.source === 'completed'
+                        ? '<span style="margin-left:auto; padding:1px 5px; border-radius:999px; background:rgba(39,174,96,0.14); color:#27ae60; font-size:8px; font-weight:800; white-space:nowrap;">COMPLETED</span>'
+                        : '';
                 return `<div style="display:flex; align-items:center; flex-wrap:wrap; gap:6px; font-size:11px; padding:3px 0; color:var(--text-color);"><span style="font-size:9px; font-weight:800; color:${color}; min-width:58px;">${label}</span><span>📅 ${display}${detail}</span>${allDevicesBadge}${completedBadge}</div>`;
             });
             if (renderedRows.length <= 3) return renderedRows.join('');
@@ -20747,7 +20765,10 @@
             if (scheduleArrow) {
                 scheduleArrow.textContent = hasDates ? '▲' : '▼';
                 const scheduleTitle = scheduleArrow.parentElement ? scheduleArrow.parentElement.querySelector('span:first-child') : null;
-                if (scheduleTitle) scheduleTitle.textContent = `🗓️ Scheduled Test Dates${hasDates ? ' (' + dateCount + ')' : ''}`;
+                const hasScheduledRows = dates.some(row => row.source === 'scheduled');
+                const hasCompletedRows = dates.some(row => row.source === 'completed');
+                const scheduleLabel = hasCompletedRows && !hasScheduledRows ? '🗓️ Completed Test Dates' : '🗓️ Scheduled Test Dates';
+                if (scheduleTitle) scheduleTitle.textContent = `${scheduleLabel}${hasDates ? ' (' + dateCount + ')' : ''}`;
             }
             if (categoryStatus) categoryStatus.innerHTML = renderMapCategoryCompletionStatusHtml(bin);
             if (scheduleDateList) scheduleDateList.innerHTML = renderMapScheduleDateRows(bin);
@@ -22155,14 +22176,45 @@
             }).join('');
         }
 
+        function getMapAttachedCompletionDateRows(bin) {
+            const entry = getMapCompleted()[bin];
+            if (!entry) return [];
+            const rows = [];
+            const seen = new Set();
+            const add = (type, date) => {
+                const key = `${type}:${date}`;
+                if (!date || seen.has(key)) return;
+                seen.add(key);
+                rows.push({
+                    type,
+                    date,
+                    source: 'completed',
+                    testLabels: [],
+                    deviceNumbers: [],
+                    allDevicesCompletedSameDay: false
+                });
+            };
+            const completed = normalizeMapCompletedDatesRecord(entry.completedDates);
+            ['pvi', 'category'].forEach(type => completed[type].forEach(date => add(type, date)));
+            if (normalizeMapCompletedTestType(entry.completionType || entry.testType) === 'Full') {
+                const savedSchedule = normalizeMapScheduleRecord(entry.scheduledDates);
+                ['pvi', 'category', 'general'].forEach(type => savedSchedule[type].forEach(date => add(type, date)));
+            }
+            return rows;
+        }
+
         function getMapBuildingTestDateRows(bin, year) {
             const dobRows = getMapDobCompletedTestDateRows(bin, year);
             const dobKeys = new Set(dobRows.map(row => `${row.type}:${row.date}`));
             const scheduledRows = getMapTypedScheduleRows(bin).filter(row => !dobKeys.has(`${row.type}:${row.date}`));
+            const scheduledKeys = new Set(scheduledRows.map(row => `${row.type}:${row.date}`));
+            const completedRows = getMapAttachedCompletionDateRows(bin).filter(row =>
+                !dobKeys.has(`${row.type}:${row.date}`) && !scheduledKeys.has(`${row.type}:${row.date}`)
+            );
             const categorySummary = getMapDobCategoryCompletionSummaryRow(bin, year, dobRows);
             const displayDobRows = dobRows.filter(row => row.type !== 'category');
             if (categorySummary) displayDobRows.push(categorySummary);
-            return [...scheduledRows, ...displayDobRows].sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
+            return [...scheduledRows, ...completedRows, ...displayDobRows].sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
         }
 
         function mapDobHasCompletedTestDate(bin, type, dateStr) {
@@ -23546,6 +23598,8 @@
                             : '';
                         const action = row.source === 'dob'
                             ? '<span style="padding:2px 6px; border-radius:999px; background:rgba(39,174,96,0.14); color:#27ae60; font-size:9px; font-weight:800; white-space:nowrap;">FILED</span>'
+                            : row.source === 'completed'
+                                ? '<span style="padding:2px 6px; border-radius:999px; background:rgba(39,174,96,0.14); color:#27ae60; font-size:9px; font-weight:800; white-space:nowrap;">COMPLETED</span>'
                             : `<button data-date="${d}" data-type="${type}" style="margin:0; background:rgba(255,107,107,0.12); border:1px solid rgba(255,107,107,0.35); color:#ff6b6b; border-radius:4px; padding:2px 7px; font-size:11px; font-weight:700;">✕</button>`;
                         return `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 8px; background:var(--input-bg); border-radius:6px; border:1px solid var(--input-border); margin-bottom:5px;">
                             <span style="font-size:11px; color:var(--text-color,#fff);">${display}${allDevicesLabel}${filedTests}</span>${action}
