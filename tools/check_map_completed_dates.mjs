@@ -63,8 +63,14 @@ assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'pvi', null, '
     'defaults to past scheduled dates from this year');
 assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'category', null, '2026-10-01')), ['2026-10-01'],
     'defaults to today when no past scheduled date exists');
+context.setTestDates({ b1: { pvi: [], category: ['2026-11-15'], general: [] } });
+assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'category', null, '2026-10-01')), ['2026-11-15'],
+    'keeps the only scheduled date even when it is still upcoming');
+assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'pvi', null, '2026-10-01')), ['2026-10-01'],
+    'the other test still defaults to today');
 assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'pvi', { completedDates: { pvi: ['2026-08-01', '2026-08-02'] } }, '2026-10-01')),
     ['2026-08-01', '2026-08-02'], 'saved completed dates win');
+context.setTestDates({ b1: { pvi: ['2026-09-20', '2026-10-20'], category: [], general: ['2025-01-05'] } });
 assert.deepEqual(plain(context.getMapScheduledDatesReplacedByCompletion('b1', ['pvi'], { scheduledDates: { pvi: ['2026-09-20'] } })),
     [{ type: 'pvi', date: '2026-09-20' }, { type: 'pvi', date: '2026-10-20' }, { type: 'general', date: '2025-01-05' }]);
 
@@ -96,6 +102,21 @@ const full = plain(completedStore.b2);
 assert.equal(full.completionType, 'Full');
 assert.deepEqual(full.completedDates, { pvi: ['2026-10-01', '2026-10-03'], category: ['2026-12-02'] });
 assert.equal(context.getTestDates().b2, undefined, 'all scheduled dates are cleared once both tests are completed');
+
+// Both tests marked complete keeps the one scheduled date on the completed record.
+completedStore = {};
+context.setTestDates({ b4: { pvi: [], category: ['2026-11-15'], general: [] } });
+context.saveMapCompletedEntry('b4', {
+    testType: 'Full',
+    completedDates: { pvi: ['2026-10-05'] },
+    source: 'Manual'
+});
+const both = plain(completedStore.b4);
+assert.equal(both.completionType, 'Full');
+assert.deepEqual(both.completedDates, { pvi: ['2026-10-05'], category: ['2026-11-15'] },
+    'the existing Category date stays attached when both tests are marked complete');
+assert.deepEqual(both.scheduledDates, { pvi: [], category: [], general: [] });
+assert.equal(context.getTestDates().b4, undefined);
 
 // DOB auto-completion without dates keeps the old behavior.
 completedStore = {};
