@@ -59,10 +59,19 @@ assert.deepEqual(plain(context.overrideMapScheduleWithCompletedDates(
 )), { pvi: [], category: ['2026-12-01'], general: [] }, 'a PVI completion replaces the PVI and unspecified scheduled dates only');
 
 context.setTestDates({ b1: { pvi: ['2026-09-20', '2026-10-20'], category: [], general: ['2025-01-05'] } });
-assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'pvi', null, '2026-10-01')), ['2026-09-20'],
-    'defaults to past scheduled dates from this year');
+assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'pvi', null, '2026-10-01')), ['2026-09-20', '2026-10-20'],
+    'keeps every scheduled date for that test, including a later one');
 assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'category', null, '2026-10-01')), ['2026-10-01'],
-    'defaults to today when no past scheduled date exists');
+    'defaults to today when that test has no date of its own');
+assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'pvi', { timestamp: new Date(2026, 9, 1).getTime() }, '2026-10-01')),
+    ['2026-09-20', '2026-10-20'], 'a building timestamp does not replace scheduled dates');
+context.setTestDates({});
+assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'category', { scheduledDates: { category: ['2026-11-15'] } }, '2026-10-01')),
+    ['2026-11-15'], 'a date already saved on the building is kept when the active schedule was cleared');
+context.getMapDobCompletedTestDateRows = () => [{ type: 'category', date: '2026-08-12' }];
+assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'category', null, '2026-10-01')), ['2026-08-12'],
+    'a DOB category date is kept instead of prefilling today');
+context.getMapDobCompletedTestDateRows = () => [];
 context.setTestDates({ b1: { pvi: [], category: ['2026-11-15'], general: [] } });
 assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'category', null, '2026-10-01')), ['2026-11-15'],
     'keeps the only scheduled date even when it is still upcoming');
@@ -117,6 +126,30 @@ assert.deepEqual(both.completedDates, { pvi: ['2026-10-05'], category: ['2026-11
     'the existing Category date stays attached when both tests are marked complete');
 assert.deepEqual(both.scheduledDates, { pvi: [], category: [], general: [] });
 assert.equal(context.getTestDates().b4, undefined);
+
+// An untouched today prefill must not be added beside, or replace, a scheduled category date.
+completedStore = {};
+context.setTestDates({ b5: { pvi: [], category: ['2026-11-15'], general: [] } });
+const todayKey = context.formatLocalDateInputValue(new Date());
+context.saveMapCompletedEntry('b5', {
+    testType: 'Full',
+    completedDates: { pvi: [todayKey], category: [todayKey, '2026-11-15'], laneEdited: { pvi: false, category: false } },
+    source: 'Manual'
+});
+const kept = plain(completedStore.b5);
+assert.deepEqual(kept.completedDates, { pvi: [todayKey], category: ['2026-11-15'] },
+    'today is not added to a category date that was already scheduled');
+assert.deepEqual(kept.scheduledDates, { pvi: [], category: [], general: [] });
+
+completedStore = {};
+context.setTestDates({ b6: { pvi: [], category: ['2026-11-15'], general: [] } });
+context.saveMapCompletedEntry('b6', {
+    testType: 'Full',
+    completedDates: { pvi: [todayKey], category: [todayKey], laneEdited: { pvi: true, category: true } },
+    source: 'Manual'
+});
+assert.deepEqual(plain(completedStore.b6).completedDates, { pvi: [todayKey], category: [todayKey] },
+    'a date the user changed to today is saved');
 
 // DOB auto-completion without dates keeps the old behavior.
 completedStore = {};
