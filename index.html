@@ -1831,6 +1831,7 @@
                                 <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">
                                     Buildings marked completed that still have devices without the marked test filed for this calendar year. This is separate from the REVIEW month label. PVI-only completions are checked for missing PVI. Category-only completions are checked for missing CAT 1 or a CAT 5 that is due. Full completions, and older completions with no test type, are checked for any required test still open. Click an address to view the building on the map. Show on MAP filters to these buildings and can be clicked again to restore the previous map view.
                                 </p>
+                                <span id="mapReviewDeviceCount" hidden>0</span>
                                 <div id="mapReviewStatus" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(211,84,0,0.28); background:rgba(211,84,0,0.08); color:var(--text-color); font-size:0.9em; line-height:1.45;"></div>
                                 <input type="text" id="reviewSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or device..."
                                        oninput="filterMcpBinRowList('reviewBuildingsList', this.value)">
@@ -28547,6 +28548,10 @@
             const deviceCount = rows.reduce((sum, row) => sum + row.deviceCount, 0);
             const hasMapData = !!(window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups);
             if (countEl) countEl.textContent = String(rows.length);
+            const deviceCountEl = document.getElementById('mapReviewDeviceCount');
+            if (deviceCountEl && deviceCountEl.textContent !== String(deviceCount)) {
+                deviceCountEl.textContent = String(deviceCount);
+            }
 
             if (statusEl) {
                 if (!hasMapData) {
@@ -29952,7 +29957,7 @@
             { bodyId: 'mcpDeviceMonitors', countId: 'mapDeviceMonitorsCount', label: '📡 Monitoring', color: '#00acc1' },
             { bodyId: 'mcpFavorites', countId: 'mapFavoritesCount', label: '⭐ Favorites', color: '#9b59b6' },
             { bodyId: 'mcpCompleted', countId: 'mapCompletedCount', label: '✓ Completed', color: '#27ae60' },
-            { bodyId: 'mcpReview', countId: 'mapReviewCount', label: '🔎 Review', color: '#d35400' },
+            { bodyId: 'mcpReview', countId: 'mapReviewDeviceCount', label: '🔎 Devices to review', color: '#d35400' },
             { bodyId: 'mcpNotes', countId: 'mapNotesCount', label: '📝 With Notes', color: '#ffc107' }
         ];
 
@@ -30354,11 +30359,40 @@
                 + group('📅 Test date scheduled', '#27ae60', scheduled, 'No deadlines have a test date scheduled yet');
         }
 
+        function renderMapDashboardReviewList(rows) {
+            const devices = [];
+            (rows || []).forEach(row => {
+                (row.devices || []).forEach(device => {
+                    devices.push({
+                        bin: row.bin,
+                        address: row.address || getMapCompletionKeyDisplayLabel(row.bin),
+                        number: device.number,
+                        pending: (device.pending || []).join(' + ')
+                    });
+                });
+            });
+            if (!devices.length) return '<div class="mdb-empty">No completed buildings have devices left to check</div>';
+            const shown = devices.slice(0, 40);
+            const extra = devices.length - shown.length;
+            const html = shown.map(device => `<button type="button" class="mdb-row" title="View on map" onclick='openMapDashboardBuilding(${JSON.stringify(String(device.bin))})'>
+                    <span class="mdb-row-date" style="color:#d35400;">${escapeMapSuggestionHtml(device.number)}</span>
+                    <span class="mdb-badge" style="background:#d35400;">${escapeMapSuggestionHtml(device.pending || 'Needed')}</span>
+                    <span class="mdb-row-address">${escapeMapSuggestionHtml(device.address)}</span>
+                </button>`).join('');
+            return html + (extra > 0 ? `<div class="mdb-empty">${extra} more in Settings</div>` : '');
+        }
+
         function renderMapDashboard() {
             const content = document.getElementById('mapDashboardContent');
             const subtitle = document.getElementById('mapDashboardSubtitle');
             if (!content) return;
 
+            const reviewRows = getMapReviewBuildings();
+            const reviewDeviceCount = reviewRows.reduce((sum, row) => sum + row.deviceCount, 0);
+            const reviewDeviceCountEl = document.getElementById('mapReviewDeviceCount');
+            if (reviewDeviceCountEl && reviewDeviceCountEl.textContent !== String(reviewDeviceCount)) {
+                reviewDeviceCountEl.textContent = String(reviewDeviceCount);
+            }
             const stats = getMapDashboardStats();
             const dobUpdatedEl = document.getElementById('mapDobLastUpdated');
             const dobUpdatedText = dobUpdatedEl && dobUpdatedEl.style.display !== 'none' ? (dobUpdatedEl.textContent || '').trim() : '';
@@ -30423,6 +30457,11 @@
                     <div class="mdb-card">
                         <div class="mdb-card-title">📌 Needs Attention <small>Click to open in Settings</small></div>
                         <div class="mdb-attention">${attention || '<div class="mdb-empty">Nothing to show</div>'}</div>
+                    </div>
+                    <div class="mdb-card">
+                        <div class="mdb-card-title">🔎 Review <small>${reviewDeviceCount} device${reviewDeviceCount !== 1 ? 's' : ''} to check · ${reviewRows.length} completed building${reviewRows.length !== 1 ? 's' : ''}</small></div>
+                        <div class="mdb-list">${renderMapDashboardReviewList(reviewRows)}</div>
+                        <button type="button" class="mdb-btn" style="margin-top:8px;" onclick="openMapDashboardSettingsSection('mcpReview')">Open Review in Settings</button>
                     </div>
                     <div class="mdb-card">
                         <div class="mdb-card-title">🗓️ Upcoming Tests <small>Next ${MAP_DASHBOARD_UPCOMING_DAYS} days · ${stats.upcoming.length}</small></div>
