@@ -9,7 +9,9 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 assert.match(html, /id="mcpReview"/);
 assert.match(html, /Review - <span id="mapReviewCount">/);
 assert.match(html, /id="reviewBuildingsList"/);
-assert.match(html, /<option value="review">Review<\/option>/);
+assert.match(html, /<option value="completed-open-tests">Completed with open tests<\/option>/);
+assert.match(html, /<option value="month:REVIEW">REVIEW<\/option>/);
+assert.doesNotMatch(html, /<option value="review">/);
 assert.ok(
     html.indexOf('id="mcpCompleted"') < html.indexOf('id="mcpReview"'),
     'Review sits with the completed settings, after Completed'
