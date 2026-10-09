@@ -18,7 +18,11 @@ const context = {
     isHydraulicDevice: device => String(device.machine_type || '').toUpperCase() === 'HYDRAULIC',
     isEscalatorOrMovingWalkDevice: () => false,
     isMapDeviceCat5Bypassed: device => !!device.bypassed,
+    isMapDeviceCat1Bypassed: device => !!device.cat1Bypassed,
+    isMapDevicePviBypassed: device => !!device.pviBypassed,
     getMapDeviceCat5BypassNote: () => '',
+    getMapDeviceCat1BypassNote: () => 'cat 1 note',
+    getMapDevicePviBypassNote: () => 'pvi note',
     findMapBinForDevice: () => '',
     parseMapInspectionDate(value) {
         const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -43,6 +47,16 @@ assert.equal(info('2024-05-01').countsCat5ForYear, false, 'a CAT 5 not yet due i
 assert.equal(info('2026-06-01', { machine_type: 'HYDRAULIC' }).countsCat5ForYear, false, 'CAT 5-exempt types are not counted');
 assert.equal(info('2026-06-01', { bypassed: true }).countsCat5ForYear, false, 'bypassed devices are not counted');
 assert.equal(info('2026-06-01', { map_not_applicable: true }).countsCat5ForYear, false, 'N/A devices are not counted');
+
+const bypassedAnnual = info('2024-05-01', { cat1Bypassed: true, pviBypassed: true });
+assert.equal(bypassedAnnual.requiresCat1, false, 'a CAT 1 bypass removes the CAT 1 requirement');
+assert.equal(bypassedAnnual.requiresPVI, false, 'a PVI bypass removes the PVI requirement');
+assert.equal(bypassedAnnual.cat1Bypassed, true);
+assert.equal(bypassedAnnual.pviBypassed, true);
+assert.equal(bypassedAnnual.cat1BypassNote, 'cat 1 note');
+assert.equal(bypassedAnnual.pviBypassNote, 'pvi note');
+assert.equal(info('2024-05-01').requiresCat1, true, 'CAT 1 stays required without a bypass');
+assert.equal(info('2024-05-01').requiresPVI, true, 'PVI stays required without a bypass');
 
 const dashboardStart = html.indexOf('        function getMapDashboardStats() {');
 const dashboardSource = html.slice(dashboardStart, html.indexOf('        function formatMapDashboardPercent(', dashboardStart));
