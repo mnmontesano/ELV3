@@ -104,7 +104,7 @@
                 The creator of this webpage assumes no responsibility or liability for errors, omissions, outdated information, or any other inaccuracies that may appear. By clicking Agree, you acknowledge that you understand and accept these terms.
             </p>
             <p style="color: var(--text-color, #333); line-height: 1.7; margin: -10px 0 25px 0; font-size: 14px; text-align: left;">
-                Uploaded PDFs and spreadsheets are processed in your browser. Saved notes, CAT 5 bypasses, and display preferences remain in this browser's local storage until you clear them; other map data is kept in browser memory and in files you explicitly open, save, or export. Address searches are sent to OpenStreetMap Nominatim, and DOB lookups are sent to NYC Open Data.
+                Uploaded PDFs and spreadsheets are processed in your browser. Saved notes, CAT 1, PVI, and CAT 5 bypasses, and display preferences remain in this browser's local storage until you clear them; other map data is kept in browser memory and in files you explicitly open, save, or export. Address searches are sent to OpenStreetMap Nominatim, and DOB lookups are sent to NYC Open Data.
             </p>
             <button id="disclaimerAcceptBtn" type="button" style="padding: 14px 40px; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold;">
                 Agree
@@ -1319,6 +1319,7 @@
                             #mapControlsPanelBody.mcp-detail-mode #mapActivityLogList,
                             #mapControlsPanelBody.mcp-detail-mode #category5BuildingsList,
                             #mapControlsPanelBody.mcp-detail-mode #category5BypassedList,
+                            #mapControlsPanelBody.mcp-detail-mode #bypassedTestsList,
                             #mapControlsPanelBody.mcp-detail-mode #immediateAttentionList,
                             #mapControlsPanelBody.mcp-detail-mode #noTestByJuneList,
                             #mapControlsPanelBody.mcp-detail-mode #noTestByJuneDisregardedList,
@@ -1633,6 +1634,22 @@
                                     <div id="category5BypassedList" style="max-height: 280px; overflow-y: auto; margin-bottom: 4px;">
                                         <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No bypassed CAT 5 devices</div>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Bypassed CAT 1 and PVI -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpBypassedTests'); updateMapBypassedTestsPanel();">
+                                <span class="mcp-title"><span style="color:#4CAF50;">✓</span> Bypassed Tests - <span id="mapBypassedTestsCount">0</span></span>
+                                <span class="mcp-arrow" id="mcpBypassedTestsArrow">›</span>
+                            </div>
+                            <div class="mcp-body" id="mcpBypassedTests">
+                                <p class="mcp-desc" style="margin-bottom:6px;">Devices with CAT 1 or PVI bypassed in Device Report, grouped by building. Each bypass can include a note. CAT 5 bypasses stay in the Category 5 section.</p>
+                                <input type="text" id="bypassedTestsSearchInput" class="mcp-search-input" placeholder="🔍 Search bypassed by address, BIN, device, test, or note..."
+                                       oninput="filterMcpBinRowList('bypassedTestsList', this.value)">
+                                <div id="bypassedTestsList" style="max-height: 280px; overflow-y: auto; margin-bottom: 4px;">
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No bypassed CAT 1 or PVI tests</div>
                                 </div>
                             </div>
                         </div>
@@ -10769,7 +10786,7 @@
                     notFound: notFound
                 };
                 if (renderOpts.isNewSearch) {
-                    setMapCat5Bypasses({});
+                    resetMapTestBypassesForNewSearch();
                     setMapDobInfoUpdatedAt(null);
                 }
 
@@ -10837,9 +10854,11 @@
             return result;
         }
 
-        // Map job state is in memory and saved to MAP files. CAT 5 bypasses additionally
-        // persist in this browser so the same device remains bypassed in future years.
+        // Map job state is in memory and saved to MAP files. CAT 1, PVI, and CAT 5 bypasses
+        // additionally persist in this browser so the same device remains bypassed in future years.
         const MAP_CAT5_BYPASSES_STORAGE_KEY = 'verticalTerminal.mapCat5Bypasses.v1';
+        const MAP_CAT1_BYPASSES_STORAGE_KEY = 'verticalTerminal.mapCat1Bypasses.v1';
+        const MAP_PVI_BYPASSES_STORAGE_KEY = 'verticalTerminal.mapPviBypasses.v1';
         let mapMonthLabels = {};
         let mapFavorites = {};
         let mapHidden = {};
@@ -10850,6 +10869,8 @@
         let mapDeadlines = {};
         let mapNotes = {};
         let mapCat5Bypasses = {}; // key: "BIN::DEVICE_NUMBER" → { bypassed, note, timestamp }
+        let mapCat1Bypasses = {}; // key: "BIN::DEVICE_NUMBER" → { bypassed, note, timestamp }
+        let mapPviBypasses = {}; // key: "BIN::DEVICE_NUMBER" → { bypassed, note, timestamp }
         let mapNoTestByJuneDisregarded = {}; // key: "BIN::YEAR" → { disregarded, note, timestamp, bin, year, address }
         let mapNoTestYetDisregarded = {}; // key: "LOCATION::DEVICE::YEAR" → { disregarded, note, timestamp, locationKey, deviceNumber, year, address, bin }
         let mapActivityLog = [];
@@ -11219,6 +11240,8 @@
                 deadlines: getMapDeadlines(),
                 notes: getMapNotes(),
                 cat5Bypasses: getMapCat5Bypasses(),
+                cat1Bypasses: getMapCat1Bypasses(),
+                pviBypasses: getMapPviBypasses(),
                 noTestByJuneDisregarded: getMapNoTestByJuneDisregarded(),
                 noTestYetDisregarded: getMapNoTestYetDisregarded(),
                 activityLog: getMapActivityLog(),
@@ -12238,8 +12261,15 @@
             const hasCat1 = !!(cat1Date && !isNaN(cat1Date.getTime()) && cat1Date.getFullYear() === year);
             const hasCat5 = !!(cat5Date && !isNaN(cat5Date.getTime()) && cat5Date.getFullYear() === year);
             const typeCat5NotRequired = isDumbwaiter || isConveyor || isWheelchairLift || isHydraulic || isEscalator || isDismantled;
+            const typePviNotRequired = isConveyor;
+            const typeCat1NotRequired = isDismantled;
+            const resolvedBin = findMapBinForDevice(device, binHint);
             const cat5Bypassed = !typeCat5NotRequired && isMapDeviceCat5Bypassed(device, null, binHint);
-            const cat5BypassNote = cat5Bypassed ? getMapDeviceCat5BypassNote(findMapBinForDevice(device, binHint), device.device_number) : '';
+            const cat1Bypassed = !typeCat1NotRequired && isMapDeviceCat1Bypassed(device, null, binHint);
+            const pviBypassed = !typePviNotRequired && isMapDevicePviBypassed(device, null, binHint);
+            const cat5BypassNote = cat5Bypassed ? getMapDeviceCat5BypassNote(resolvedBin, device.device_number) : '';
+            const cat1BypassNote = cat1Bypassed ? getMapDeviceCat1BypassNote(resolvedBin, device.device_number) : '';
+            const pviBypassNote = pviBypassed ? getMapDevicePviBypassNote(resolvedBin, device.device_number) : '';
             const cat5NotRequired = typeCat5NotRequired || cat5Bypassed;
             const requiresCat5 = !isNotApplicable && !cat5NotRequired && cat5Date && !isNaN(cat5Date.getTime()) && (year - cat5Date.getFullYear()) >= 5;
             const nextCat5DueYear = (!cat5NotRequired && cat5Date && !isNaN(cat5Date.getTime())) ? cat5Date.getFullYear() + 5 : null;
@@ -12249,14 +12279,20 @@
                 isRemoved,
                 isNotApplicable,
                 isDismantled,
-                requiresPVI: !isRemoved && !isNotApplicable && !isConveyor,
-                requiresCat1: !isRemoved && !isNotApplicable && !isDismantled,
+                requiresPVI: !isRemoved && !isNotApplicable && !typePviNotRequired && !pviBypassed,
+                requiresCat1: !isRemoved && !isNotApplicable && !typeCat1NotRequired && !cat1Bypassed,
                 requiresCat5,
                 countsCat5ForYear,
                 cat5NotRequired,
                 typeCat5NotRequired,
+                typePviNotRequired,
+                typeCat1NotRequired,
                 cat5Bypassed,
                 cat5BypassNote,
+                cat1Bypassed,
+                cat1BypassNote,
+                pviBypassed,
+                pviBypassNote,
                 nextCat5DueYear,
                 pviDate: pviDate && !isNaN(pviDate.getTime()) ? pviDate : null,
                 cat1Date: cat1Date && !isNaN(cat1Date.getTime()) ? cat1Date : null,
@@ -12276,6 +12312,27 @@
                 if (testInfo.requiresCat5 && !testInfo.hasCat5) pending.push('CAT 5');
             }
             return pending;
+        }
+
+
+        function formatMapAnnualTestStatusHtml(testInfo, kind) {
+            const info = testInfo || {};
+            const done = kind === 'cat1' ? !!info.hasCat1 : !!info.hasPVI;
+            const bypassed = kind === 'cat1' ? !!info.cat1Bypassed : !!info.pviBypassed;
+            const required = kind === 'cat1' ? !!info.requiresCat1 : !!info.requiresPVI;
+            const date = kind === 'cat1' ? info.cat1Date : info.pviDate;
+            const formatted = date ? date.toLocaleDateString() : '—';
+            const bypassedNote = '<span style="font-size:10px;color:#4CAF50;font-style:italic;">Not required (bypassed)</span>';
+            if (done) {
+                return `<span style="color:#4CAF50">✓</span> ${formatted}${bypassed ? '<br>' + bypassedNote : ''}`;
+            }
+            if (bypassed) {
+                return '<span style="color:#4CAF50;font-style:italic;">Not required (bypassed)</span>';
+            }
+            if (required) {
+                return `<span style="color:#ff6b6b">✗</span> ${formatted}`;
+            }
+            return '<span style="color:#888;font-style:italic;">Not required</span>';
         }
 
         function getMapDeviceReportNextTestAvailability(testInfo, today) {
@@ -12351,12 +12408,8 @@
                 }
             }
 
-            const pviHtml = testInfo.requiresPVI
-                ? `<span style="color:${testInfo.hasPVI ? '#4CAF50' : '#ff6b6b'}">${testInfo.hasPVI ? '✓' : '✗'}</span> ${fmt(testInfo.pviDate)}`
-                : `<span style="color:#888;font-style:italic;">Not required</span>`;
-            const cat1Html = testInfo.requiresCat1
-                ? `<span style="color:${testInfo.hasCat1 ? '#4CAF50' : '#ff6b6b'}">${testInfo.hasCat1 ? '✓' : '✗'}</span> ${fmt(testInfo.cat1Date)}`
-                : `<span style="color:#888;font-style:italic;">Not required</span>`;
+            const pviHtml = formatMapAnnualTestStatusHtml(testInfo, 'pvi');
+            const cat1Html = formatMapAnnualTestStatusHtml(testInfo, 'cat1');
             const nextCat5Html = testInfo.cat5Bypassed
                 ? '<span style="font-size:10px;color:#4CAF50;font-style:italic;">Next CAT 5: Not required (bypassed)</span>'
                 : testInfo.cat5NotRequired
@@ -13818,19 +13871,7 @@
         }
 
         function syncMapTableDeviceNumber(bin, previousNumber, nextNumber) {
-            const previousKey = getMapCat5BypassKey(bin, previousNumber);
-            const nextKey = getMapCat5BypassKey(bin, nextNumber);
-            if (!previousNumber || !nextNumber || previousKey === nextKey || !mapCat5Bypasses[previousKey]) return;
-            const entry = mapCat5Bypasses[previousKey];
-            delete mapCat5Bypasses[previousKey];
-            mapCat5Bypasses[nextKey] = {
-                ...entry,
-                bin: String(bin || '').trim(),
-                deviceNumber: String(nextNumber).trim().toUpperCase(),
-                timestamp: Date.now()
-            };
-            removePersistentMapCat5Bypass(previousKey);
-            savePersistentMapCat5Bypass(nextKey, mapCat5Bypasses[nextKey]);
+            ['cat5', 'cat1', 'pvi'].forEach(kind => syncMapTestBypassDeviceNumber(kind, bin, previousNumber, nextNumber));
         }
 
         function parseMapTableDateListInput(rawValue) {
@@ -13887,10 +13928,17 @@
             if (!row || !row.manualChangedFields || row.manualChangedFields.size === 0) return;
             const deviceNumber = String(row.device && row.device.device_number || '').trim();
             if (!row.bin || !deviceNumber) return;
-            setMapDeviceCat5Bypass(row.bin, deviceNumber, {
-                bypassed: !!row.manualValues.cat5Bypassed,
-                note: row.manualValues.cat5BypassNote || ''
-            });
+            const changed = row.manualChangedFields;
+            const applyBypass = (kind, bypassedField, noteField) => {
+                if (!changed.has(bypassedField) && !changed.has(noteField)) return;
+                setMapDeviceTestBypass(kind, row.bin, deviceNumber, {
+                    bypassed: !!row.manualValues[bypassedField],
+                    note: row.manualValues[noteField] || ''
+                });
+            };
+            applyBypass('cat5', 'cat5Bypassed', 'cat5BypassNote');
+            applyBypass('cat1', 'cat1Bypassed', 'cat1BypassNote');
+            applyBypass('pvi', 'pviBypassed', 'pviBypassNote');
             row.manualChangedFields.clear();
         }
 
@@ -14008,7 +14056,10 @@
                 const devices = Array.isArray(groupRow.group.devices) ? groupRow.group.devices : [];
                 devices.forEach((device, deviceIndex) => {
                     const normalizedDevice = device && typeof device === 'object' ? device : {};
-                    const bypassEntry = getMapDeviceCat5Bypass(groupRow.bin, normalizedDevice.device_number);
+                    const cat5BypassEntry = getMapDeviceCat5Bypass(groupRow.bin, normalizedDevice.device_number);
+                    const cat1BypassEntry = getMapDeviceCat1Bypass(groupRow.bin, normalizedDevice.device_number);
+                    const pviBypassEntry = getMapDevicePviBypass(groupRow.bin, normalizedDevice.device_number);
+                    const bypassNote = entry => entry && entry.note ? String(entry.note) : '';
                     const deviceRow = {
                         bin: groupRow.bin,
                         group: groupRow.group,
@@ -14016,8 +14067,12 @@
                         deviceIndex,
                         sourceLabel: groupRow.sourceLabel,
                         manualValues: {
-                            cat5Bypassed: !!(bypassEntry && bypassEntry.bypassed),
-                            cat5BypassNote: bypassEntry && bypassEntry.note ? String(bypassEntry.note) : ''
+                            cat5Bypassed: !!(cat5BypassEntry && cat5BypassEntry.bypassed),
+                            cat5BypassNote: bypassNote(cat5BypassEntry),
+                            cat1Bypassed: !!(cat1BypassEntry && cat1BypassEntry.bypassed),
+                            cat1BypassNote: bypassNote(cat1BypassEntry),
+                            pviBypassed: !!(pviBypassEntry && pviBypassEntry.bypassed),
+                            pviBypassNote: bypassNote(pviBypassEntry)
                         },
                         manualChangedFields: new Set()
                     };
@@ -14226,6 +14281,10 @@
                         readOnlyColumn('context:source', 'Source', row => row.sourceLabel, { defaultHidden: true }),
                         deviceManualColumn('cat5_bypassed', 'CAT 5 Bypassed', 'cat5Bypassed', { inputType: 'boolean', defaultHidden: true }),
                         deviceManualColumn('cat5_bypass_note', 'CAT 5 Bypass Note', 'cat5BypassNote', { multiline: true, defaultHidden: true }),
+                        deviceManualColumn('cat1_bypassed', 'CAT 1 Bypassed', 'cat1Bypassed', { inputType: 'boolean', defaultHidden: true }),
+                        deviceManualColumn('cat1_bypass_note', 'CAT 1 Bypass Note', 'cat1BypassNote', { multiline: true, defaultHidden: true }),
+                        deviceManualColumn('pvi_bypassed', 'PVI Bypassed', 'pviBypassed', { inputType: 'boolean', defaultHidden: true }),
+                        deviceManualColumn('pvi_bypass_note', 'PVI Bypass Note', 'pviBypassNote', { multiline: true, defaultHidden: true }),
                         ...deviceKeys.map(key => fieldColumn('device', key, 'device', {
                             ...(deviceDateColumns[key] || {}),
                             defaultHidden: isHiddenTableField(key) || String(key).toLowerCase() === 'bin'
@@ -16455,6 +16514,8 @@
                     deadlines: view.deadlines || {},
                     notes: view.notes || {},
                     cat5Bypasses: view.cat5Bypasses || {},
+                    cat1Bypasses: view.cat1Bypasses || {},
+                    pviBypasses: view.pviBypasses || {},
                     noTestByJuneDisregarded: view.noTestByJuneDisregarded || {},
                     noTestYetDisregarded: view.noTestYetDisregarded || {},
                     activityLog: Array.isArray(view.activityLog) ? view.activityLog : [],
@@ -16535,19 +16596,20 @@
             throw new Error('Map view contains an unsupported value.');
         }
 
-        function normalizeImportedCat5Bypasses(rawBypasses) {
+        function normalizeImportedTestBypasses(rawBypasses, label) {
+            const testLabel = label || 'test';
             if (rawBypasses === undefined || rawBypasses === null) return {};
             if (typeof rawBypasses !== 'object' || Array.isArray(rawBypasses)) {
-                throw new Error('Map view contains invalid CAT 5 bypass data.');
+                throw new Error('Map view contains invalid ' + testLabel + ' bypass data.');
             }
 
             const normalized = {};
             Object.entries(rawBypasses).forEach(([key, entry]) => {
-                // CAT 5 bypasses are device-specific, so their keys are BIN::DEVICE_NUMBER,
+                // Test bypasses are device-specific, so their keys are BIN::DEVICE_NUMBER,
                 // unlike the map stores below which are keyed by BIN alone.
                 const keyMatch = key.match(/^(\d{6,7})::([A-Z0-9-]{1,32})$/i);
                 if (!keyMatch || !entry || typeof entry !== 'object' || Array.isArray(entry)) {
-                    throw new Error('Map view contains invalid CAT 5 bypass data.');
+                    throw new Error('Map view contains invalid ' + testLabel + ' bypass data.');
                 }
 
                 const bin = keyMatch[1];
@@ -16555,14 +16617,14 @@
                 if ((entry.bin !== undefined && String(entry.bin) !== bin) ||
                     (entry.deviceNumber !== undefined && String(entry.deviceNumber).trim().toUpperCase() !== deviceNumber) ||
                     (entry.note !== undefined && entry.note !== null && typeof entry.note !== 'string')) {
-                    throw new Error('Map view contains inconsistent CAT 5 bypass data.');
+                    throw new Error('Map view contains inconsistent ' + testLabel + ' bypass data.');
                 }
 
                 let timestamp = null;
                 if (entry.timestamp !== undefined && entry.timestamp !== null && entry.timestamp !== '') {
                     timestamp = Number(entry.timestamp);
                     if (!Number.isFinite(timestamp) || timestamp < 0) {
-                        throw new Error('Map view contains an invalid CAT 5 bypass timestamp.');
+                        throw new Error('Map view contains an invalid ' + testLabel + ' bypass timestamp.');
                     }
                 }
 
@@ -16576,6 +16638,10 @@
                 };
             });
             return normalized;
+        }
+
+        function normalizeImportedCat5Bypasses(rawBypasses) {
+            return normalizeImportedTestBypasses(rawBypasses, 'CAT 5');
         }
 
         function normalizeImportedNoTestByJuneDisregarded(rawDisregarded) {
@@ -16724,6 +16790,8 @@
                 if (invalidKey) throw new Error(`Map view contains invalid BIN keys in ${field}.`);
             });
             const normalizedCat5Bypasses = normalizeImportedCat5Bypasses(source.cat5Bypasses);
+            const normalizedCat1Bypasses = normalizeImportedTestBypasses(source.cat1Bypasses, 'CAT 1');
+            const normalizedPviBypasses = normalizeImportedTestBypasses(source.pviBypasses, 'PVI');
             const normalizedNoTestByJuneDisregarded = normalizeImportedNoTestByJuneDisregarded(source.noTestByJuneDisregarded);
             const normalizedNoTestYetDisregarded = normalizeImportedNoTestYetDisregarded(source.noTestYetDisregarded);
             if (Array.isArray(source.activityLog) && source.activityLog.length > 10000) {
@@ -16850,6 +16918,8 @@
                 deadlines: source.deadlines || {},
                 notes: source.notes || {},
                 cat5Bypasses: normalizedCat5Bypasses,
+                cat1Bypasses: normalizedCat1Bypasses,
+                pviBypasses: normalizedPviBypasses,
                 noTestByJuneDisregarded: normalizedNoTestByJuneDisregarded,
                 noTestYetDisregarded: normalizedNoTestYetDisregarded,
                 activityLog: Array.isArray(source.activityLog) ? source.activityLog : [],
@@ -16873,6 +16943,8 @@
             setMapDeadlines(view.deadlines || {});
             setMapNotes(view.notes || {});
             setMapCat5Bypasses(view.cat5Bypasses || {});
+            setMapCat1Bypasses(view.cat1Bypasses || {});
+            setMapPviBypasses(view.pviBypasses || {});
             setMapNoTestByJuneDisregarded(view.noTestByJuneDisregarded || {});
             setMapNoTestYetDisregarded(view.noTestYetDisregarded || {});
             setMapActivityLog(view.activityLog || []);
@@ -19463,6 +19535,8 @@
 
             if (activityBin) {
                 clearMapDeviceCat5Bypass(activityBin, normalizedDevice);
+                clearMapDeviceCat1Bypass(activityBin, normalizedDevice);
+                clearMapDevicePviBypass(activityBin, normalizedDevice);
             }
 
             addMapActivity('Removed device from map', {
@@ -20654,33 +20728,94 @@
             </div>`;
         }
 
-        function getMapCat5Bypasses() {
+        function getMapTestBypassConfig(kind) {
+            const configs = {
+                cat5: {
+                    kind: 'cat5',
+                    label: 'CAT 5',
+                    storageKey: MAP_CAT5_BYPASSES_STORAGE_KEY,
+                    dateField: 'cat5_latest_report_filed',
+                    lastTestLabel: 'Last CAT 5',
+                    idPrefix: 'Cat5',
+                    noteIdPrefix: 'cat5BypassNote_'
+                },
+                cat1: {
+                    kind: 'cat1',
+                    label: 'CAT 1',
+                    storageKey: MAP_CAT1_BYPASSES_STORAGE_KEY,
+                    dateField: 'cat1_latest_report_filed',
+                    lastTestLabel: 'Last CAT 1',
+                    idPrefix: 'Cat1',
+                    noteIdPrefix: 'cat1BypassNote_'
+                },
+                pvi: {
+                    kind: 'pvi',
+                    label: 'PVI',
+                    storageKey: MAP_PVI_BYPASSES_STORAGE_KEY,
+                    dateField: 'periodic_latest_inspection',
+                    lastTestLabel: 'Last PVI',
+                    idPrefix: 'Pvi',
+                    noteIdPrefix: 'pviBypassNote_'
+                }
+            };
+            return configs[kind] || configs.cat5;
+        }
+
+        function readMapTestBypassStore(kind) {
+            if (kind === 'cat1') return mapCat1Bypasses;
+            if (kind === 'pvi') return mapPviBypasses;
             return mapCat5Bypasses;
         }
 
-        function readPersistentMapCat5Bypasses() {
+        function writeMapTestBypassStore(kind, value) {
+            const store = value || {};
+            if (kind === 'cat1') mapCat1Bypasses = store;
+            else if (kind === 'pvi') mapPviBypasses = store;
+            else mapCat5Bypasses = store;
+        }
+
+        function getMapTestBypasses(kind) {
+            return readMapTestBypassStore(kind);
+        }
+
+        function getMapCat5Bypasses() {
+            return getMapTestBypasses('cat5');
+        }
+
+        function getMapCat1Bypasses() {
+            return getMapTestBypasses('cat1');
+        }
+
+        function getMapPviBypasses() {
+            return getMapTestBypasses('pvi');
+        }
+
+        function readPersistentMapTestBypasses(kind) {
+            const config = getMapTestBypassConfig(kind);
             try {
-                const raw = localStorage.getItem(MAP_CAT5_BYPASSES_STORAGE_KEY);
-                return raw ? normalizeImportedCat5Bypasses(JSON.parse(raw)) : {};
+                const raw = localStorage.getItem(config.storageKey);
+                return raw ? normalizeImportedTestBypasses(JSON.parse(raw), config.label) : {};
             } catch (error) {
-                console.warn('Could not read saved CAT 5 bypasses.');
+                console.warn('Could not read saved ' + config.label + ' bypasses.');
                 return {};
             }
         }
 
-        function writePersistentMapCat5Bypasses(bypasses) {
+        function writePersistentMapTestBypasses(kind, bypasses) {
+            const config = getMapTestBypassConfig(kind);
             try {
-                localStorage.setItem(MAP_CAT5_BYPASSES_STORAGE_KEY, JSON.stringify(bypasses || {}));
+                localStorage.setItem(config.storageKey, JSON.stringify(bypasses || {}));
                 return true;
             } catch (error) {
-                console.warn('Could not save CAT 5 bypasses in this browser.');
+                console.warn('Could not save ' + config.label + ' bypasses in this browser.');
                 return false;
             }
         }
 
-        function mergeMapCat5BypassStores(savedBypasses, incomingBypasses) {
-            const saved = normalizeImportedCat5Bypasses(savedBypasses || {});
-            const incoming = normalizeImportedCat5Bypasses(incomingBypasses || {});
+        function mergeMapTestBypassStores(kind, savedBypasses, incomingBypasses) {
+            const label = getMapTestBypassConfig(kind).label;
+            const saved = normalizeImportedTestBypasses(savedBypasses || {}, label);
+            const incoming = normalizeImportedTestBypasses(incomingBypasses || {}, label);
             const merged = { ...saved };
             Object.entries(incoming).forEach(([key, entry]) => {
                 const savedTimestamp = Number(merged[key] && merged[key].timestamp) || 0;
@@ -20690,45 +20825,94 @@
             return merged;
         }
 
-        function getCurrentMapCat5BypassKeys() {
+        function getCurrentMapTestBypassKeys() {
             const keys = new Set();
             const binGroups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
             Object.entries(binGroups).forEach(([bin, group]) => {
                 const devices = group && Array.isArray(group.devices) ? group.devices : [];
                 devices.forEach(device => {
                     const number = device && device.device_number;
-                    if (number) keys.add(getMapCat5BypassKey(bin, number));
+                    if (number) keys.add(getMapTestBypassKey(bin, number));
                 });
             });
             return keys;
         }
 
-        function setMapCat5Bypasses(bypasses) {
-            const incoming = normalizeImportedCat5Bypasses(bypasses || {});
-            const merged = mergeMapCat5BypassStores(readPersistentMapCat5Bypasses(), incoming);
-            writePersistentMapCat5Bypasses(merged);
+        function setMapTestBypasses(kind, bypasses) {
+            const incoming = normalizeImportedTestBypasses(bypasses || {}, getMapTestBypassConfig(kind).label);
+            const merged = mergeMapTestBypassStores(kind, readPersistentMapTestBypasses(kind), incoming);
+            writePersistentMapTestBypasses(kind, merged);
 
-            const currentKeys = getCurrentMapCat5BypassKeys();
-            mapCat5Bypasses = {};
+            const currentKeys = getCurrentMapTestBypassKeys();
+            const visible = {};
             Object.entries(merged).forEach(([key, entry]) => {
-                if (currentKeys.has(key)) mapCat5Bypasses[key] = entry;
+                if (currentKeys.has(key)) visible[key] = entry;
             });
+            writeMapTestBypassStore(kind, visible);
+        }
+
+        function setMapCat5Bypasses(bypasses) {
+            setMapTestBypasses('cat5', bypasses);
+        }
+
+        function setMapCat1Bypasses(bypasses) {
+            setMapTestBypasses('cat1', bypasses);
+        }
+
+        function setMapPviBypasses(bypasses) {
+            setMapTestBypasses('pvi', bypasses);
+        }
+
+        function resetMapTestBypassesForNewSearch() {
+            ['cat5', 'cat1', 'pvi'].forEach(kind => setMapTestBypasses(kind, {}));
+        }
+
+        function refreshMapTestBypassesForCurrentDevices() {
+            ['cat5', 'cat1', 'pvi'].forEach(kind => setMapTestBypasses(kind, readMapTestBypassStore(kind)));
+        }
+
+        function savePersistentMapTestBypass(kind, key, entry) {
+            const saved = readPersistentMapTestBypasses(kind);
+            saved[key] = entry;
+            return writePersistentMapTestBypasses(kind, saved);
+        }
+
+        function removePersistentMapTestBypass(kind, key) {
+            const saved = readPersistentMapTestBypasses(kind);
+            delete saved[key];
+            return writePersistentMapTestBypasses(kind, saved);
+        }
+
+        function readPersistentMapCat5Bypasses() {
+            return readPersistentMapTestBypasses('cat5');
+        }
+
+        function writePersistentMapCat5Bypasses(bypasses) {
+            return writePersistentMapTestBypasses('cat5', bypasses);
+        }
+
+        function mergeMapCat5BypassStores(savedBypasses, incomingBypasses) {
+            return mergeMapTestBypassStores('cat5', savedBypasses, incomingBypasses);
+        }
+
+        function getCurrentMapCat5BypassKeys() {
+            return getCurrentMapTestBypassKeys();
         }
 
         function savePersistentMapCat5Bypass(key, entry) {
-            const saved = readPersistentMapCat5Bypasses();
-            saved[key] = entry;
-            return writePersistentMapCat5Bypasses(saved);
+            return savePersistentMapTestBypass('cat5', key, entry);
         }
 
         function removePersistentMapCat5Bypass(key) {
-            const saved = readPersistentMapCat5Bypasses();
-            delete saved[key];
-            return writePersistentMapCat5Bypasses(saved);
+            return removePersistentMapTestBypass('cat5', key);
+        }
+
+        function getMapTestBypassKey(bin, deviceNumber) {
+            return String(bin || '').trim() + '::' + String(deviceNumber || '').trim().toUpperCase();
         }
 
         function getMapCat5BypassKey(bin, deviceNumber) {
-            return String(bin || '').trim() + '::' + String(deviceNumber || '').trim().toUpperCase();
+            return getMapTestBypassKey(bin, deviceNumber);
         }
 
         function findMapBinForDevice(device, binHint) {
@@ -20744,13 +20928,25 @@
             return '';
         }
 
-        function getMapDeviceCat5Bypass(bin, deviceNumber) {
-            const key = getMapCat5BypassKey(bin, deviceNumber);
-            const entry = mapCat5Bypasses[key];
+        function getMapDeviceTestBypass(kind, bin, deviceNumber) {
+            const key = getMapTestBypassKey(bin, deviceNumber);
+            const entry = readMapTestBypassStore(kind)[key];
             return entry && typeof entry === 'object' ? entry : null;
         }
 
-        function isMapDeviceCat5Bypassed(binOrDevice, deviceNumber, binHint) {
+        function getMapDeviceCat5Bypass(bin, deviceNumber) {
+            return getMapDeviceTestBypass('cat5', bin, deviceNumber);
+        }
+
+        function getMapDeviceCat1Bypass(bin, deviceNumber) {
+            return getMapDeviceTestBypass('cat1', bin, deviceNumber);
+        }
+
+        function getMapDevicePviBypass(bin, deviceNumber) {
+            return getMapDeviceTestBypass('pvi', bin, deviceNumber);
+        }
+
+        function isMapDeviceTestBypassed(kind, binOrDevice, deviceNumber, binHint) {
             let bin;
             let num;
             if (binOrDevice && typeof binOrDevice === 'object') {
@@ -20761,93 +20957,251 @@
                 num = deviceNumber;
             }
             if (!bin || !num) return false;
-            const entry = getMapDeviceCat5Bypass(bin, num);
+            const entry = getMapDeviceTestBypass(kind, bin, num);
             return !!(entry && entry.bypassed);
         }
 
-        function getMapDeviceCat5BypassNote(bin, deviceNumber) {
-            const entry = getMapDeviceCat5Bypass(bin, deviceNumber);
+        function isMapDeviceCat5Bypassed(binOrDevice, deviceNumber, binHint) {
+            return isMapDeviceTestBypassed('cat5', binOrDevice, deviceNumber, binHint);
+        }
+
+        function isMapDeviceCat1Bypassed(binOrDevice, deviceNumber, binHint) {
+            return isMapDeviceTestBypassed('cat1', binOrDevice, deviceNumber, binHint);
+        }
+
+        function isMapDevicePviBypassed(binOrDevice, deviceNumber, binHint) {
+            return isMapDeviceTestBypassed('pvi', binOrDevice, deviceNumber, binHint);
+        }
+
+        function getMapDeviceTestBypassNote(kind, bin, deviceNumber) {
+            const entry = getMapDeviceTestBypass(kind, bin, deviceNumber);
             return entry && entry.note ? String(entry.note) : '';
         }
 
-        function setMapDeviceCat5Bypass(bin, deviceNumber, options) {
-            const key = getMapCat5BypassKey(bin, deviceNumber);
+        function getMapDeviceCat5BypassNote(bin, deviceNumber) {
+            return getMapDeviceTestBypassNote('cat5', bin, deviceNumber);
+        }
+
+        function getMapDeviceCat1BypassNote(bin, deviceNumber) {
+            return getMapDeviceTestBypassNote('cat1', bin, deviceNumber);
+        }
+
+        function getMapDevicePviBypassNote(bin, deviceNumber) {
+            return getMapDeviceTestBypassNote('pvi', bin, deviceNumber);
+        }
+
+        function setMapDeviceTestBypass(kind, bin, deviceNumber, options) {
+            const key = getMapTestBypassKey(bin, deviceNumber);
             if (!bin || !deviceNumber || !key) return null;
             const opts = options || {};
-            const existing = getMapDeviceCat5Bypass(bin, deviceNumber) || {};
+            const existing = getMapDeviceTestBypass(kind, bin, deviceNumber) || {};
             const note = opts.note !== undefined ? String(opts.note || '').trim() : (existing.note || '');
             const bypassed = opts.bypassed !== undefined ? !!opts.bypassed : (existing.bypassed !== false);
+            const store = readMapTestBypassStore(kind);
             if (!bypassed && !note) {
-                delete mapCat5Bypasses[key];
-                removePersistentMapCat5Bypass(key);
+                delete store[key];
+                removePersistentMapTestBypass(kind, key);
                 return null;
             }
             const normalizedBin = String(bin).trim();
             const normalizedDeviceNumber = String(deviceNumber).trim().toUpperCase();
-            mapCat5Bypasses[key] = {
+            store[key] = {
                 bypassed,
                 note,
                 timestamp: Date.now(),
                 bin: normalizedBin,
                 deviceNumber: normalizedDeviceNumber
             };
-            savePersistentMapCat5Bypass(key, mapCat5Bypasses[key]);
-            return mapCat5Bypasses[key];
+            savePersistentMapTestBypass(kind, key, store[key]);
+            return store[key];
         }
 
-        function clearMapDeviceCat5Bypass(bin, deviceNumber) {
-            const key = getMapCat5BypassKey(bin, deviceNumber);
-            const existed = !!mapCat5Bypasses[key];
-            delete mapCat5Bypasses[key];
-            removePersistentMapCat5Bypass(key);
+        function setMapDeviceCat5Bypass(bin, deviceNumber, options) {
+            return setMapDeviceTestBypass('cat5', bin, deviceNumber, options);
+        }
+
+        function clearMapDeviceTestBypass(kind, bin, deviceNumber) {
+            const key = getMapTestBypassKey(bin, deviceNumber);
+            const store = readMapTestBypassStore(kind);
+            const existed = !!store[key];
+            delete store[key];
+            removePersistentMapTestBypass(kind, key);
             return existed;
         }
 
-        function refreshMapAfterCat5BypassChange() {
-            if (typeof updateMapCategory5Panel === 'function') updateMapCategory5Panel();
+        function clearMapDeviceCat5Bypass(bin, deviceNumber) {
+            return clearMapDeviceTestBypass('cat5', bin, deviceNumber);
+        }
+
+        function clearMapDeviceCat1Bypass(bin, deviceNumber) {
+            return clearMapDeviceTestBypass('cat1', bin, deviceNumber);
+        }
+
+        function clearMapDevicePviBypass(bin, deviceNumber) {
+            return clearMapDeviceTestBypass('pvi', bin, deviceNumber);
+        }
+
+        function syncMapTestBypassDeviceNumber(kind, bin, previousNumber, nextNumber) {
+            const store = readMapTestBypassStore(kind);
+            const previousKey = getMapTestBypassKey(bin, previousNumber);
+            const nextKey = getMapTestBypassKey(bin, nextNumber);
+            if (!previousNumber || !nextNumber || previousKey === nextKey || !store[previousKey]) return;
+            const entry = store[previousKey];
+            delete store[previousKey];
+            store[nextKey] = {
+                ...entry,
+                bin: String(bin || '').trim(),
+                deviceNumber: String(nextNumber).trim().toUpperCase(),
+                timestamp: Date.now()
+            };
+            removePersistentMapTestBypass(kind, previousKey);
+            savePersistentMapTestBypass(kind, nextKey, store[nextKey]);
+        }
+
+        function refreshMapAfterTestBypassChange(kind) {
+            if (kind === 'cat5') {
+                if (typeof updateMapCategory5Panel === 'function') updateMapCategory5Panel();
+            } else if (typeof updateMapBypassedTestsPanel === 'function') {
+                updateMapBypassedTestsPanel();
+            }
             if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && buildingMap) {
                 initBuildingMap(window.lastBulkSearchResults.binGroups, true);
-            } else if ((getSelectedMapViewFilter() || '').indexOf('cat5:') === 0) {
+            } else if (kind === 'cat5' && (getSelectedMapViewFilter() || '').indexOf('cat5:') === 0) {
                 applyMapViewDropdownFilter({ fitMap: false, quiet: true });
             }
         }
 
-        function toggleMapDeviceCat5Bypass(bin, deviceNumber) {
+        function refreshMapAfterCat5BypassChange() {
+            refreshMapAfterTestBypassChange('cat5');
+        }
+
+        function mapTestBypassNoteElementId(kind, bin, deviceNumber) {
+            return getMapTestBypassConfig(kind).noteIdPrefix + String(bin) + '_' + String(deviceNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
+        }
+
+        function toggleMapDeviceTestBypass(kind, bin, deviceNumber) {
+            const config = getMapTestBypassConfig(kind);
             const num = String(deviceNumber || '');
-            const currentlyBypassed = isMapDeviceCat5Bypassed(bin, num);
+            const currentlyBypassed = isMapDeviceTestBypassed(kind, bin, num);
             if (currentlyBypassed) {
-                clearMapDeviceCat5Bypass(bin, num);
-                addMapActivity('Cleared CAT 5 bypass', { type: 'CAT 5', bin, details: 'Device ' + num });
-                showMapNotification('CAT 5 bypass cleared for ' + num, '#ff9800');
+                clearMapDeviceTestBypass(kind, bin, num);
+                addMapActivity('Cleared ' + config.label + ' bypass', { type: config.label, bin, details: 'Device ' + num });
+                showMapNotification(config.label + ' bypass cleared for ' + num, '#ff9800');
             } else {
-                const noteEl = document.getElementById('cat5BypassNote_' + String(bin) + '_' + String(num).replace(/[^a-zA-Z0-9_-]/g, '_'));
-                const note = noteEl ? String(noteEl.value || '').trim() : getMapDeviceCat5BypassNote(bin, num);
-                setMapDeviceCat5Bypass(bin, num, { bypassed: true, note });
-                addMapActivity('Bypassed CAT 5 requirement', {
-                    type: 'CAT 5',
+                const noteEl = document.getElementById(mapTestBypassNoteElementId(kind, bin, num));
+                const note = noteEl ? String(noteEl.value || '').trim() : getMapDeviceTestBypassNote(kind, bin, num);
+                setMapDeviceTestBypass(kind, bin, num, { bypassed: true, note });
+                addMapActivity('Bypassed ' + config.label + ' requirement', {
+                    type: config.label,
                     bin,
                     details: 'Device ' + num + (note ? ' — ' + (note.length > 80 ? note.substring(0, 80) + '...' : note) : '')
                 });
-                showMapNotification('CAT 5 bypass saved for future years for ' + num, '#4CAF50');
+                showMapNotification(config.label + ' bypass saved for future years for ' + num, '#4CAF50');
             }
-            refreshMapAfterCat5BypassChange();
+            refreshMapAfterTestBypassChange(kind);
+            showDeviceDetailModal(bin);
+        }
+
+        function toggleMapDeviceCat5Bypass(bin, deviceNumber) {
+            toggleMapDeviceTestBypass('cat5', bin, deviceNumber);
+        }
+
+        function saveMapDeviceTestBypassNote(kind, bin, deviceNumber) {
+            const config = getMapTestBypassConfig(kind);
+            const noteEl = document.getElementById(mapTestBypassNoteElementId(kind, bin, deviceNumber));
+            const note = noteEl ? String(noteEl.value || '').trim() : '';
+            const wasBypassed = isMapDeviceTestBypassed(kind, bin, deviceNumber);
+            setMapDeviceTestBypass(kind, bin, deviceNumber, { bypassed: true, note });
+            addMapActivity(wasBypassed ? ('Updated ' + config.label + ' bypass note') : ('Bypassed ' + config.label + ' with note'), {
+                type: config.label,
+                bin,
+                details: 'Device ' + deviceNumber + (note ? ' — ' + (note.length > 80 ? note.substring(0, 80) + '...' : note) : '')
+            });
+            showMapNotification(note ? (config.label + ' bypass and note saved for future years') : (config.label + ' bypass saved for future years'), '#4CAF50');
+            refreshMapAfterTestBypassChange(kind);
             showDeviceDetailModal(bin);
         }
 
         function saveMapDeviceCat5BypassNote(bin, deviceNumber) {
-            const safeId = 'cat5BypassNote_' + String(bin) + '_' + String(deviceNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
-            const noteEl = document.getElementById(safeId);
-            const note = noteEl ? String(noteEl.value || '').trim() : '';
-            const wasBypassed = isMapDeviceCat5Bypassed(bin, deviceNumber);
-            setMapDeviceCat5Bypass(bin, deviceNumber, { bypassed: true, note });
-            addMapActivity(wasBypassed ? 'Updated CAT 5 bypass note' : 'Bypassed CAT 5 with note', {
-                type: 'CAT 5',
-                bin,
-                details: 'Device ' + deviceNumber + (note ? ' — ' + (note.length > 80 ? note.substring(0, 80) + '...' : note) : '')
-            });
-            showMapNotification(note ? 'CAT 5 bypass and note saved for future years' : 'CAT 5 bypass saved for future years', '#4CAF50');
-            refreshMapAfterCat5BypassChange();
-            showDeviceDetailModal(bin);
+            saveMapDeviceTestBypassNote('cat5', bin, deviceNumber);
+        }
+
+        function getMapDeviceTestBypassExplanation(kind, testInfo) {
+            const info = testInfo || {};
+            if (kind === 'cat5') {
+                if (info.cat5Bypassed) return 'This device is treated as not requiring CAT 5. Add a note explaining why.';
+                if (info.requiresCat5) return 'CAT 5 appears required. Bypass if this device does not need CAT 5.';
+                if (!info.cat5Date) return 'No prior CAT 5 date on file. Bypass if CAT 5 is not required for this device.';
+                return 'Bypass if this device no longer requires CAT 5 despite a prior CAT 5 date.';
+            }
+            const label = kind === 'pvi' ? 'PVI' : 'CAT 1';
+            const testName = kind === 'pvi' ? 'a PVI test' : 'CAT 1';
+            const bypassed = kind === 'pvi' ? info.pviBypassed : info.cat1Bypassed;
+            const done = kind === 'pvi' ? info.hasPVI : info.hasCat1;
+            const required = kind === 'pvi' ? info.requiresPVI : info.requiresCat1;
+            if (bypassed) return 'This device is treated as not requiring ' + label + '. Add a note explaining why.';
+            if (required && !done) return label + ' appears required. Bypass if this device does not need ' + testName + '.';
+            if (done) return label + ' is filed for this year. Bypass if this device should not require ' + testName + '.';
+            return 'Bypass if this device does not require ' + testName + '.';
+        }
+
+        function renderMapDeviceTestBypassHtml(options) {
+            const opts = options || {};
+            if (!opts.show) return '';
+            const config = getMapTestBypassConfig(opts.kind);
+            const bypassed = !!opts.bypassed;
+            const note = opts.note ? String(opts.note) : '';
+            const bin = opts.bin;
+            const deviceIndex = opts.deviceIndex;
+            const deviceNumber = opts.deviceNumber;
+            const label = config.label;
+            const headerColor = bypassed ? '#4CAF50' : '#ff9800';
+            const panelId = 'device' + config.idPrefix + 'Bypass_' + bin + '_' + deviceIndex;
+            const arrowId = 'device' + config.idPrefix + 'BypassArrow_' + bin + '_' + deviceIndex;
+            const noteId = mapTestBypassNoteElementId(opts.kind, bin, deviceNumber);
+            const binJs = String(bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const numJs = String(deviceNumber).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const kindJs = String(config.kind);
+            return `
+                        <div style="margin-top:10px;border:1px solid ${bypassed ? 'rgba(76,175,80,0.35)' : 'rgba(255,152,0,0.28)'};border-radius:6px;overflow:hidden;background:${bypassed ? 'rgba(76,175,80,0.08)' : 'rgba(255,152,0,0.06)'};">
+                            <div onclick="var body=document.getElementById('${panelId}'); var arrow=document.getElementById('${arrowId}'); if(body){var open=body.style.display!=='none'; body.style.display=open?'none':'block'; if(arrow) arrow.textContent=open?'▼':'▲';}"
+                                 style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;">
+                                <span style="font-size:13px;color:${headerColor};font-weight:700;">
+                                    ${bypassed ? '✓ ' + label + ' Bypassed' : label + ' Bypass'}
+                                    ${bypassed && note ? ' · note saved' : ''}
+                                </span>
+                                <span id="${arrowId}" style="font-size:12px;color:${headerColor};font-weight:700;">▼</span>
+                            </div>
+                            <div id="${panelId}" style="display:none;padding:0 10px 10px 10px;">
+                                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                                    <div style="min-width:0;flex:1;font-size:11px;opacity:0.75;line-height:1.35;">
+                                        ${escapeMapSuggestionHtml(opts.explanation || '')}
+                                        <div style="margin-top:5px;font-weight:600;">The bypass remains active for future years in this browser and is included in saved MAP files. Use Undo to remove it.</div>
+                                    </div>
+                                    <button type="button"
+                                            onclick="event.stopPropagation(); toggleMapDeviceTestBypass('${kindJs}', '${binJs}', '${numJs}')"
+                                            style="flex-shrink:0;padding:6px 10px;border-radius:5px;border:1px solid ${bypassed ? '#ff9800' : '#4CAF50'};background:${bypassed ? 'transparent' : '#4CAF50'};color:${bypassed ? '#ff9800' : 'white'};font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
+                                        ${bypassed ? 'Undo Bypass' : 'Bypass ' + label}
+                                    </button>
+                                </div>
+                                <label for="${noteId}" style="display:block;font-size:11px;opacity:0.7;margin-bottom:4px;">Bypass note${bypassed ? '' : ' (saved with bypass)'}</label>
+                                <textarea id="${noteId}"
+                                          rows="2"
+                                          placeholder="e.g. Device converted / no longer requires ${label}..."
+                                          onclick="event.stopPropagation()"
+                                          style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:5px;border:1px solid var(--input-border);background:var(--card-bg);color:var(--text-color);font-size:12px;resize:vertical;min-height:52px;">${escapeMapSuggestionHtml(note)}</textarea>
+                                <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px;">
+                                    <button type="button"
+                                            onclick="event.stopPropagation(); saveMapDeviceTestBypassNote('${kindJs}', '${binJs}', '${numJs}')"
+                                            style="padding:5px 10px;border-radius:5px;border:1px solid #1a73e8;background:#1a73e8;color:white;font-size:12px;font-weight:600;cursor:pointer;">
+                                        ${bypassed ? 'Save Note' : 'Bypass & Save Note'}
+                                    </button>
+                                </div>
+                                ${bypassed && note
+                                    ? `<div style="margin-top:6px;font-size:11px;color:var(--text-color);opacity:0.8;line-height:1.35;"><strong>Note:</strong> ${escapeMapSuggestionHtml(note)}</div>`
+                                    : ''}
+                            </div>
+                        </div>`;
         }
 
         function syncMapNoteDraft(bin, value) {
@@ -23151,6 +23505,8 @@
                     const status = device.device_status || 'N/A';
                     const escapedDeviceNumber = escapeMapSuggestionHtml(num);
                     const deviceNumberForCopy = String(num).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    const binJs = String(bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    const numJs = String(num).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                     const statusUp = status.toUpperCase();
                     const testInfo = getDeviceReportTestInfo(device);
                     const isRemoved = testInfo.isRemoved;
@@ -23192,12 +23548,8 @@
                     }
 
                     const fmt = d => d ? d.toLocaleDateString() : '—';
-                    const pviHtml = testInfo.requiresPVI
-                        ? `<span style="color:${hasPVI ? '#4CAF50' : '#ff6b6b'}">${hasPVI ? '✓' : '✗'}</span> ${fmt(pviDate)}`
-                        : `<span style="color:#888;font-style:italic;">Not required</span>`;
-                    const cat1Html = testInfo.requiresCat1
-                        ? `<span style="color:${hasCat1 ? '#4CAF50' : '#ff6b6b'}">${hasCat1 ? '✓' : '✗'}</span> ${fmt(cat1Date)}`
-                        : `<span style="color:#888;font-style:italic;">Not required</span>`;
+                    const pviHtml = formatMapAnnualTestStatusHtml(testInfo, 'pvi');
+                    const cat1Html = formatMapAnnualTestStatusHtml(testInfo, 'cat1');
                     const nextCat5Html = testInfo.cat5Bypassed
                         ? '<span style="font-size:10px;color:#4CAF50;font-style:italic;">Next CAT 5: Not required (bypassed)</span>'
                         : testInfo.cat5NotRequired
@@ -23226,58 +23578,39 @@
                         ? `<span style="color:#ff6b6b;font-weight:600;">⚠️ ${violCount}</span>`
                         : '<span style="opacity:0.45;">—</span>';
 
+                    const showPviBypassUi = !isRemoved && !isNotApplicable && (!testInfo.typePviNotRequired || testInfo.pviBypassed);
+                    const showCat1BypassUi = !isRemoved && !isNotApplicable && (!testInfo.typeCat1NotRequired || testInfo.cat1Bypassed);
                     const showCat5BypassUi = !isRemoved && !isNotApplicable && (!testInfo.typeCat5NotRequired || testInfo.cat5Bypassed);
-                    const bypassNoteId = 'cat5BypassNote_' + String(bin) + '_' + String(num).replace(/[^a-zA-Z0-9_-]/g, '_');
-                    const binJs = String(bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                    const numJs = String(num).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                    const existingBypassNote = testInfo.cat5BypassNote || getMapDeviceCat5BypassNote(bin, num);
-                    const cat5BypassHeaderColor = testInfo.cat5Bypassed ? '#4CAF50' : '#ff9800';
-                    const cat5BypassHtml = showCat5BypassUi ? `
-                        <div style="margin-top:10px;border:1px solid ${testInfo.cat5Bypassed ? 'rgba(76,175,80,0.35)' : 'rgba(255,152,0,0.28)'};border-radius:6px;overflow:hidden;background:${testInfo.cat5Bypassed ? 'rgba(76,175,80,0.08)' : 'rgba(255,152,0,0.06)'};">
-                            <div onclick="var body=document.getElementById('deviceCat5Bypass_${bin}_${deviceIndex}'); var arrow=document.getElementById('deviceCat5BypassArrow_${bin}_${deviceIndex}'); if(body){var open=body.style.display!=='none'; body.style.display=open?'none':'block'; if(arrow) arrow.textContent=open?'▼':'▲';}"
-                                 style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;">
-                                <span style="font-size:13px;color:${cat5BypassHeaderColor};font-weight:700;">
-                                    ${testInfo.cat5Bypassed ? '✓ CAT 5 Bypassed' : 'CAT 5 Bypass'}
-                                    ${testInfo.cat5Bypassed && existingBypassNote ? ' · note saved' : ''}
-                                </span>
-                                <span id="deviceCat5BypassArrow_${bin}_${deviceIndex}" style="font-size:12px;color:${cat5BypassHeaderColor};font-weight:700;">▼</span>
-                            </div>
-                            <div id="deviceCat5Bypass_${bin}_${deviceIndex}" style="display:none;padding:0 10px 10px 10px;">
-                                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-                                    <div style="min-width:0;flex:1;font-size:11px;opacity:0.75;line-height:1.35;">
-                                        ${testInfo.cat5Bypassed
-                                            ? 'This device is treated as not requiring CAT 5. Add a note explaining why.'
-                                            : (testInfo.requiresCat5
-                                                ? 'CAT 5 appears required. Bypass if this device does not need CAT 5.'
-                                                : (!testInfo.cat5Date
-                                                    ? 'No prior CAT 5 date on file. Bypass if CAT 5 is not required for this device.'
-                                                    : 'Bypass if this device no longer requires CAT 5 despite a prior CAT 5 date.'))}
-                                        <div style="margin-top:5px;font-weight:600;">The bypass remains active for future years in this browser and is included in saved MAP files. Use Undo to remove it.</div>
-                                    </div>
-                                    <button type="button"
-                                            onclick="event.stopPropagation(); toggleMapDeviceCat5Bypass('${binJs}', '${numJs}')"
-                                            style="flex-shrink:0;padding:6px 10px;border-radius:5px;border:1px solid ${testInfo.cat5Bypassed ? '#ff9800' : '#4CAF50'};background:${testInfo.cat5Bypassed ? 'transparent' : '#4CAF50'};color:${testInfo.cat5Bypassed ? '#ff9800' : 'white'};font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
-                                        ${testInfo.cat5Bypassed ? 'Undo Bypass' : 'Bypass CAT 5'}
-                                    </button>
-                                </div>
-                                <label for="${bypassNoteId}" style="display:block;font-size:11px;opacity:0.7;margin-bottom:4px;">Bypass note${testInfo.cat5Bypassed ? '' : ' (saved with bypass)'}</label>
-                                <textarea id="${bypassNoteId}"
-                                          rows="2"
-                                          placeholder="e.g. Device converted / no longer requires CAT 5..."
-                                          onclick="event.stopPropagation()"
-                                          style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:5px;border:1px solid var(--input-border);background:var(--card-bg);color:var(--text-color);font-size:12px;resize:vertical;min-height:52px;">${escapeMapSuggestionHtml(existingBypassNote)}</textarea>
-                                <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px;">
-                                    <button type="button"
-                                            onclick="event.stopPropagation(); saveMapDeviceCat5BypassNote('${binJs}', '${numJs}')"
-                                            style="padding:5px 10px;border-radius:5px;border:1px solid #1a73e8;background:#1a73e8;color:white;font-size:12px;font-weight:600;cursor:pointer;">
-                                        ${testInfo.cat5Bypassed ? 'Save Note' : 'Bypass & Save Note'}
-                                    </button>
-                                </div>
-                                ${testInfo.cat5Bypassed && existingBypassNote
-                                    ? `<div style="margin-top:6px;font-size:11px;color:var(--text-color);opacity:0.8;line-height:1.35;"><strong>Note:</strong> ${escapeMapSuggestionHtml(existingBypassNote)}</div>`
-                                    : ''}
-                            </div>
-                        </div>` : '';
+                    const pviBypassHtml = renderMapDeviceTestBypassHtml({
+                        kind: 'pvi',
+                        bin,
+                        deviceIndex,
+                        deviceNumber: num,
+                        show: showPviBypassUi,
+                        bypassed: !!testInfo.pviBypassed,
+                        note: testInfo.pviBypassNote || getMapDevicePviBypassNote(bin, num),
+                        explanation: getMapDeviceTestBypassExplanation('pvi', testInfo)
+                    });
+                    const cat1BypassHtml = renderMapDeviceTestBypassHtml({
+                        kind: 'cat1',
+                        bin,
+                        deviceIndex,
+                        deviceNumber: num,
+                        show: showCat1BypassUi,
+                        bypassed: !!testInfo.cat1Bypassed,
+                        note: testInfo.cat1BypassNote || getMapDeviceCat1BypassNote(bin, num),
+                        explanation: getMapDeviceTestBypassExplanation('cat1', testInfo)
+                    });
+                    const cat5BypassHtml = renderMapDeviceTestBypassHtml({
+                        kind: 'cat5',
+                        bin,
+                        deviceIndex,
+                        deviceNumber: num,
+                        show: showCat5BypassUi,
+                        bypassed: !!testInfo.cat5Bypassed,
+                        note: testInfo.cat5BypassNote || getMapDeviceCat5BypassNote(bin, num),
+                        explanation: getMapDeviceTestBypassExplanation('cat5', testInfo)
+                    });
 
                     const violationDropdownHtml = violCount > 0 ? `
                         <div style="margin-top:10px;border:1px solid rgba(255,107,107,0.28);border-radius:6px;overflow:hidden;background:rgba(255,107,107,0.05);">
@@ -23367,6 +23700,8 @@
                         <div style="font-size:13px;">
                             <span style="opacity:0.6;margin-right:4px;">Pending:</span>${pendingHtml}
                         </div>
+                        ${pviBypassHtml}
+                        ${cat1BypassHtml}
                         ${cat5BypassHtml}
                         ${violationDropdownHtml}
                     </div>`;
@@ -27653,7 +27988,7 @@
                     latitude: fullData.latitude,
                     longitude: fullData.longitude
                 };
-                setMapCat5Bypasses(mapCat5Bypasses);
+                refreshMapTestBypassesForCurrentDevices();
 
                 // Remove from additional locations
                 locations.splice(index, 1);
@@ -28197,8 +28532,9 @@
             }
         }
 
-        function getMapCategory5BypassedGroups() {
-            const bypasses = getMapCat5Bypasses() || {};
+        function getMapTestBypassedGroups(kind) {
+            const config = getMapTestBypassConfig(kind);
+            const bypasses = getMapTestBypasses(kind) || {};
             const binGroups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
             const byBin = {};
 
@@ -28229,13 +28565,16 @@
                         devices: []
                     };
                 }
-                const cat5Date = device && device.cat5_latest_report_filed ? new Date(device.cat5_latest_report_filed) : null;
+                const rawDate = device && device[config.dateField] ? new Date(device[config.dateField]) : null;
                 byBin[bin].devices.push({
                     number: deviceNumber,
                     type: (device && device.device_type) || 'Unknown',
                     note: entry.note ? String(entry.note) : '',
                     timestamp: entry.timestamp || null,
-                    lastCat5: (cat5Date && !isNaN(cat5Date.getTime())) ? cat5Date : null
+                    lastTest: (rawDate && !isNaN(rawDate.getTime())) ? rawDate : null,
+                    kind: config.kind,
+                    label: config.label,
+                    lastTestLabel: config.lastTestLabel
                 });
             });
 
@@ -28245,6 +28584,14 @@
             });
             groups.sort((a, b) => String(a.address).localeCompare(String(b.address), undefined, { sensitivity: 'base' }));
             return groups;
+        }
+
+        function getMapCategory5BypassedGroups() {
+            return getMapTestBypassedGroups('cat5').map(group => ({
+                bin: group.bin,
+                address: group.address,
+                devices: group.devices.map(device => ({ ...device, lastCat5: device.lastTest }))
+            }));
         }
 
         function updateMapCategory5BypassedButton() {
@@ -28347,6 +28694,102 @@
             addMapActivity('Cleared CAT 5 bypass', { type: 'CAT 5', bin, details: 'Device ' + num });
             showMapNotification('CAT 5 bypass cleared for ' + num, '#ff9800');
             refreshMapAfterCat5BypassChange();
+            const modal = document.getElementById('deviceDetailModal');
+            if (modal) showDeviceDetailModal(bin);
+        }
+
+
+        function getMapBypassedAnnualTestGroups() {
+            const combined = {};
+            ['cat1', 'pvi'].forEach(kind => {
+                getMapTestBypassedGroups(kind).forEach(group => {
+                    if (!combined[group.bin]) {
+                        combined[group.bin] = { bin: group.bin, address: group.address, devices: [] };
+                    }
+                    group.devices.forEach(device => combined[group.bin].devices.push(device));
+                });
+            });
+            const groups = Object.values(combined);
+            groups.forEach(group => {
+                group.devices.sort((a, b) => {
+                    const byNumber = String(a.number).localeCompare(String(b.number), undefined, { numeric: true, sensitivity: 'base' });
+                    if (byNumber !== 0) return byNumber;
+                    return String(a.label).localeCompare(String(b.label));
+                });
+            });
+            groups.sort((a, b) => String(a.address).localeCompare(String(b.address), undefined, { sensitivity: 'base' }));
+            return groups;
+        }
+
+        function updateMapBypassedTestsPanel() {
+            const listEl = document.getElementById('bypassedTestsList');
+            const groups = getMapBypassedAnnualTestGroups();
+            const deviceCount = groups.reduce((sum, group) => sum + group.devices.length, 0);
+            const countEl = document.getElementById('mapBypassedTestsCount');
+            if (countEl) countEl.textContent = String(deviceCount);
+            if (!listEl) return;
+            if (deviceCount === 0) {
+                listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No bypassed CAT 1 or PVI tests</div>';
+                return;
+            }
+
+            listEl.innerHTML = groups.map(group => {
+                const addrEsc = (group.address || '').replace(/"/g, '&quot;');
+                const binJs = String(group.bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const deviceFilterText = group.devices.map(d => d.label + ' ' + d.number + ' ' + d.type + ' ' + (d.note || '')).join(' ');
+                const deviceRows = group.devices.map(d => {
+                    const numJs = String(d.number).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    const lastText = d.lastTest ? d.lastTest.toLocaleDateString() : 'N/A';
+                    const bypassedOn = d.timestamp
+                        ? new Date(d.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : '';
+                    const noteHtml = d.note
+                        ? `<span style="display:block;color:var(--text-color);opacity:0.8;margin-top:2px;"><strong>Note:</strong> ${escapeMapSuggestionHtml(d.note)}</span>`
+                        : '<span style="display:block;opacity:0.55;font-style:italic;margin-top:2px;">No note</span>';
+                    return `
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:6px 0;border-top:1px solid rgba(76,175,80,0.18);">
+                            <span style="min-width:0;flex:1;">
+                                <span style="font-weight:700;color:var(--text-color);">${escapeMapSuggestionHtml(d.number)}</span>
+                                <span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:rgba(76,175,80,0.16);color:#4CAF50;font-size:0.75em;font-weight:800;">${escapeMapSuggestionHtml(d.label)}</span>
+                                <span style="display:block;font-size:0.82em;opacity:0.78;margin-top:1px;">${escapeMapSuggestionHtml(d.type)}</span>
+                                <span style="display:block;font-size:0.8em;color:#4CAF50;font-weight:600;margin-top:2px;">Bypassed${bypassedOn ? ' · ' + bypassedOn : ''} · ${escapeMapSuggestionHtml(d.lastTestLabel)} ${escapeMapSuggestionHtml(lastText)}</span>
+                                <span style="display:block;font-size:0.8em;line-height:1.35;">${noteHtml}</span>
+                            </span>
+                            <button type="button"
+                                    onclick="clearMapTestBypassFromPanel('${d.kind}', '${binJs}', '${numJs}')"
+                                    style="flex-shrink:0;background:#ff9800;color:white;border:none;border-radius:3px;padding:3px 8px;cursor:pointer;font-size:0.78em;margin-top:2px;">
+                                Undo
+                            </button>
+                        </div>`;
+                }).join('');
+                return `
+                    <div data-bin="${group.bin}" data-address="${addrEsc}" data-filter-text="${escapeMapSuggestionHtml(deviceFilterText)}" style="padding:8px; background:var(--input-bg); border:1px solid rgba(76,175,80,0.28); border-radius:6px; margin-bottom:6px; font-size:1em;">
+                        <div style="margin-bottom:4px;">
+                            <span style="display:block;cursor:pointer;" title="Click to view on map" onclick="flyToMapBuilding('${group.bin}')">
+                                <span style="display:flex;align-items:center;gap:4px;overflow:hidden;">
+                                    <span style="color:#4CAF50;font-weight:700;flex-shrink:0;">✓</span>
+                                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;text-decoration:underline dotted;">${escapeMapSuggestionHtml(group.address)}</span>
+                                </span>
+                                <span style="display:block;font-size:0.8em;opacity:0.55;padding-left:22px;">BIN ${group.bin} · ${group.devices.length} bypassed test${group.devices.length !== 1 ? 's' : ''}</span>
+                            </span>
+                        </div>
+                        <div style="padding-left:8px;">${deviceRows}</div>
+                    </div>`;
+            }).join('');
+
+            const searchInput = document.getElementById('bypassedTestsSearchInput');
+            if (searchInput && searchInput.value.trim()) {
+                filterMcpBinRowList('bypassedTestsList', searchInput.value);
+            }
+        }
+
+        function clearMapTestBypassFromPanel(kind, bin, deviceNumber) {
+            const config = getMapTestBypassConfig(kind);
+            const num = String(deviceNumber || '');
+            if (!clearMapDeviceTestBypass(kind, bin, num)) return;
+            addMapActivity('Cleared ' + config.label + ' bypass', { type: config.label, bin, details: 'Device ' + num });
+            showMapNotification(config.label + ' bypass cleared for ' + num, '#ff9800');
+            refreshMapAfterTestBypassChange(kind);
             const modal = document.getElementById('deviceDetailModal');
             if (modal) showDeviceDetailModal(bin);
         }
@@ -29075,6 +29518,7 @@
             }
 
             updateMapCategory5Panel();
+            if (typeof updateMapBypassedTestsPanel === 'function') updateMapBypassedTestsPanel();
 
             var mcpPanel = document.getElementById('mapControlsPanel');
             if (mcpPanel && mcpPanel.style.display !== 'none') {
@@ -35783,7 +36227,7 @@
                     binGroups: binGroups,
                     notFound: notFound
                 };
-                setMapCat5Bypasses({});
+                resetMapTestBypassesForNewSearch();
 
                 // Show the export button if we have results
                 document.getElementById('exportButton').style.display = 'block';
