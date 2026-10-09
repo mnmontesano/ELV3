@@ -101,37 +101,50 @@ assert.equal(info.requiresCat1, false);
 assert.equal(info.cat1Bypassed, true);
 assert.equal(info.cat1BypassNote, 'Converted to freight & not our CAT 1');
 assert.equal(context.getMapDeviceReportPendingTests(info).includes('CAT 1'), false);
-const cat1Html = context.renderMapDeviceTestBypassHtml({
-    kind: 'cat1',
+const menuHtml = context.renderMapDeviceBypassMenuHtml({
     bin: '1000001',
     deviceIndex: 0,
     deviceNumber: '1P1',
-    show: true,
-    bypassed: info.cat1Bypassed,
-    note: info.cat1BypassNote,
-    explanation: context.getMapDeviceTestBypassExplanation('cat1', info)
+    entries: [
+        {
+            kind: 'pvi',
+            show: true,
+            bypassed: false,
+            note: '',
+            explanation: context.getMapDeviceTestBypassExplanation('pvi', before)
+        },
+        {
+            kind: 'cat1',
+            show: true,
+            bypassed: info.cat1Bypassed,
+            note: info.cat1BypassNote,
+            explanation: context.getMapDeviceTestBypassExplanation('cat1', info)
+        },
+        {
+            kind: 'cat5',
+            show: false,
+            bypassed: false,
+            note: '',
+            explanation: 'Hidden because this device cannot bypass CAT 5.'
+        }
+    ]
 });
-assert.match(cat1Html, /CAT 1 Bypassed/);
-assert.match(cat1Html, /Undo Bypass/);
-assert.match(cat1Html, /Save Note/);
-assert.match(cat1Html, /cat1BypassNote_1000001_1P1/);
-assert.match(cat1Html, /Converted to freight &amp; not our CAT 1/);
-assert.match(cat1Html, /toggleMapDeviceTestBypass\('cat1'/);
-
-const pviHtml = context.renderMapDeviceTestBypassHtml({
-    kind: 'pvi',
-    bin: '1000001',
-    deviceIndex: 0,
-    deviceNumber: '1P1',
-    show: true,
-    bypassed: false,
-    note: '',
-    explanation: context.getMapDeviceTestBypassExplanation('pvi', before)
-});
-assert.match(pviHtml, /Bypass PVI/);
-assert.match(pviHtml, /Bypass & Save Note/);
-assert.match(pviHtml, /pviBypassNote_1000001_1P1/);
-assert.match(pviHtml, /no longer requires PVI/);
+assert.match(menuHtml, /<select /);
+assert.match(menuHtml, /<option value="pvi">PVI<\/option>/);
+assert.match(menuHtml, /<option value="cat1" selected>CAT 1 — bypassed<\/option>/);
+assert.doesNotMatch(menuHtml, /<option value="cat5"/);
+assert.match(menuHtml, /CAT 1 Bypassed/);
+assert.match(menuHtml, /Undo Bypass/);
+assert.match(menuHtml, /Save Note/);
+assert.match(menuHtml, /Bypass PVI/);
+assert.match(menuHtml, /Bypass & Save Note/);
+assert.match(menuHtml, /cat1BypassNote_1000001_1P1/);
+assert.match(menuHtml, /pviBypassNote_1000001_1P1/);
+assert.match(menuHtml, /Converted to freight &amp; not our CAT 1/);
+assert.match(menuHtml, /no longer requires PVI/);
+assert.match(menuHtml, /toggleMapDeviceTestBypass\('cat1'/);
+assert.match(menuHtml, /data-bypass-panel="pvi" style="display:none/);
+assert.match(menuHtml, /data-bypass-panel="cat1" style="display:block/);
 
 assert.equal(context.isMapDeviceCat5Bypassed('1000001', '1P1'), false);
 context.setMapDeviceCat5Bypass('1000001', '1P1', { bypassed: true, note: 'Five year waiver' });

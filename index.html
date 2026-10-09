@@ -21145,36 +21145,20 @@
             return 'Bypass if this device does not require ' + testName + '.';
         }
 
-        function renderMapDeviceTestBypassHtml(options) {
+        function renderMapDeviceTestBypassPanelHtml(options) {
             const opts = options || {};
-            if (!opts.show) return '';
             const config = getMapTestBypassConfig(opts.kind);
             const bypassed = !!opts.bypassed;
             const note = opts.note ? String(opts.note) : '';
-            const bin = opts.bin;
-            const deviceIndex = opts.deviceIndex;
-            const deviceNumber = opts.deviceNumber;
             const label = config.label;
-            const headerColor = bypassed ? '#4CAF50' : '#ff9800';
-            const panelId = 'device' + config.idPrefix + 'Bypass_' + bin + '_' + deviceIndex;
-            const arrowId = 'device' + config.idPrefix + 'BypassArrow_' + bin + '_' + deviceIndex;
-            const noteId = mapTestBypassNoteElementId(opts.kind, bin, deviceNumber);
-            const binJs = String(bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const numJs = String(deviceNumber).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const noteId = mapTestBypassNoteElementId(opts.kind, opts.bin, opts.deviceNumber);
+            const binJs = String(opts.bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const numJs = String(opts.deviceNumber).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const kindJs = String(config.kind);
             return `
-                        <div style="margin-top:10px;border:1px solid ${bypassed ? 'rgba(76,175,80,0.35)' : 'rgba(255,152,0,0.28)'};border-radius:6px;overflow:hidden;background:${bypassed ? 'rgba(76,175,80,0.08)' : 'rgba(255,152,0,0.06)'};">
-                            <div onclick="var body=document.getElementById('${panelId}'); var arrow=document.getElementById('${arrowId}'); if(body){var open=body.style.display!=='none'; body.style.display=open?'none':'block'; if(arrow) arrow.textContent=open?'▼':'▲';}"
-                                 style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;">
-                                <span style="font-size:13px;color:${headerColor};font-weight:700;">
-                                    ${bypassed ? '✓ ' + label + ' Bypassed' : label + ' Bypass'}
-                                    ${bypassed && note ? ' · note saved' : ''}
-                                </span>
-                                <span id="${arrowId}" style="font-size:12px;color:${headerColor};font-weight:700;">▼</span>
-                            </div>
-                            <div id="${panelId}" style="display:none;padding:0 10px 10px 10px;">
                                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
                                     <div style="min-width:0;flex:1;font-size:11px;opacity:0.75;line-height:1.35;">
+                                        <div style="font-size:13px;font-weight:700;color:${bypassed ? '#4CAF50' : '#ff9800'};margin-bottom:4px;">${bypassed ? '✓ ' + label + ' Bypassed' : label}</div>
                                         ${escapeMapSuggestionHtml(opts.explanation || '')}
                                         <div style="margin-top:5px;font-weight:600;">The bypass remains active for future years in this browser and is included in saved MAP files. Use Undo to remove it.</div>
                                     </div>
@@ -21199,9 +21183,70 @@
                                 </div>
                                 ${bypassed && note
                                     ? `<div style="margin-top:6px;font-size:11px;color:var(--text-color);opacity:0.8;line-height:1.35;"><strong>Note:</strong> ${escapeMapSuggestionHtml(note)}</div>`
-                                    : ''}
-                            </div>
+                                    : ''}`;
+        }
+
+        function renderMapDeviceBypassMenuHtml(options) {
+            const opts = options || {};
+            const entries = (Array.isArray(opts.entries) ? opts.entries : []).filter(entry => entry && entry.show);
+            if (!entries.length) return '';
+            const menuId = 'deviceBypassMenu_' + opts.bin + '_' + opts.deviceIndex;
+            const activeCount = entries.filter(entry => entry.bypassed).length;
+            const defaultKind = (entries.find(entry => entry.bypassed) || {}).kind || '';
+            const headerColor = activeCount ? '#4CAF50' : '#ff9800';
+            const optionHtml = entries.map(entry => {
+                const config = getMapTestBypassConfig(entry.kind);
+                const label = config.label + (entry.bypassed ? ' — bypassed' : '');
+                const selected = entry.kind === defaultKind ? ' selected' : '';
+                return `<option value="${config.kind}"${selected}>${escapeMapSuggestionHtml(label)}</option>`;
+            }).join('');
+            const panelHtml = entries.map(entry => {
+                const visible = entry.kind === defaultKind;
+                return `<div data-bypass-panel="${getMapTestBypassConfig(entry.kind).kind}" style="display:${visible ? 'block' : 'none'};margin-top:10px;">${renderMapDeviceTestBypassPanelHtml({
+                    kind: entry.kind,
+                    bin: opts.bin,
+                    deviceIndex: opts.deviceIndex,
+                    deviceNumber: opts.deviceNumber,
+                    bypassed: !!entry.bypassed,
+                    note: entry.note || '',
+                    explanation: entry.explanation || ''
+                })}</div>`;
+            }).join('');
+            const summary = activeCount === 1 ? '1 bypassed' : (activeCount > 1 ? activeCount + ' bypassed' : '');
+            return `
+                        <div data-bypass-menu="1" style="margin-top:10px;border:1px solid ${activeCount ? 'rgba(76,175,80,0.35)' : 'rgba(255,152,0,0.28)'};border-radius:6px;overflow:hidden;background:${activeCount ? 'rgba(76,175,80,0.08)' : 'rgba(255,152,0,0.06)'};padding:8px 10px 10px 10px;">
+                            <label for="${menuId}" style="display:block;font-size:13px;color:${headerColor};font-weight:700;margin-bottom:6px;">
+                                Bypass${summary ? ' · ' + summary : ''}
+                            </label>
+                            <select id="${menuId}"
+                                    onchange="showMapDeviceBypassChoice(this)"
+                                    style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:5px;border:1px solid var(--input-border);background:var(--card-bg);color:var(--text-color);font-size:13px;font-weight:600;">
+                                ${defaultKind ? '' : '<option value="">Select a bypass...</option>'}
+                                ${optionHtml}
+                            </select>
+                            ${panelHtml}
                         </div>`;
+        }
+
+        function showMapDeviceBypassChoice(select) {
+            if (!select || !select.closest) return;
+            const root = select.closest('[data-bypass-menu]');
+            if (!root) return;
+            const kind = select.value;
+            root.querySelectorAll('[data-bypass-panel]').forEach(panel => {
+                panel.style.display = panel.getAttribute('data-bypass-panel') === kind ? 'block' : 'none';
+            });
+        }
+
+        function renderMapDeviceTestBypassHtml(options) {
+            const opts = options || {};
+            if (!opts.show) return '';
+            return renderMapDeviceBypassMenuHtml({
+                bin: opts.bin,
+                deviceIndex: opts.deviceIndex,
+                deviceNumber: opts.deviceNumber,
+                entries: [opts]
+            });
         }
 
         function syncMapNoteDraft(bin, value) {
@@ -23581,35 +23626,33 @@
                     const showPviBypassUi = !isRemoved && !isNotApplicable && (!testInfo.typePviNotRequired || testInfo.pviBypassed);
                     const showCat1BypassUi = !isRemoved && !isNotApplicable && (!testInfo.typeCat1NotRequired || testInfo.cat1Bypassed);
                     const showCat5BypassUi = !isRemoved && !isNotApplicable && (!testInfo.typeCat5NotRequired || testInfo.cat5Bypassed);
-                    const pviBypassHtml = renderMapDeviceTestBypassHtml({
-                        kind: 'pvi',
+                    const bypassMenuHtml = renderMapDeviceBypassMenuHtml({
                         bin,
                         deviceIndex,
                         deviceNumber: num,
-                        show: showPviBypassUi,
-                        bypassed: !!testInfo.pviBypassed,
-                        note: testInfo.pviBypassNote || getMapDevicePviBypassNote(bin, num),
-                        explanation: getMapDeviceTestBypassExplanation('pvi', testInfo)
-                    });
-                    const cat1BypassHtml = renderMapDeviceTestBypassHtml({
-                        kind: 'cat1',
-                        bin,
-                        deviceIndex,
-                        deviceNumber: num,
-                        show: showCat1BypassUi,
-                        bypassed: !!testInfo.cat1Bypassed,
-                        note: testInfo.cat1BypassNote || getMapDeviceCat1BypassNote(bin, num),
-                        explanation: getMapDeviceTestBypassExplanation('cat1', testInfo)
-                    });
-                    const cat5BypassHtml = renderMapDeviceTestBypassHtml({
-                        kind: 'cat5',
-                        bin,
-                        deviceIndex,
-                        deviceNumber: num,
-                        show: showCat5BypassUi,
-                        bypassed: !!testInfo.cat5Bypassed,
-                        note: testInfo.cat5BypassNote || getMapDeviceCat5BypassNote(bin, num),
-                        explanation: getMapDeviceTestBypassExplanation('cat5', testInfo)
+                        entries: [
+                            {
+                                kind: 'pvi',
+                                show: showPviBypassUi,
+                                bypassed: !!testInfo.pviBypassed,
+                                note: testInfo.pviBypassNote || getMapDevicePviBypassNote(bin, num),
+                                explanation: getMapDeviceTestBypassExplanation('pvi', testInfo)
+                            },
+                            {
+                                kind: 'cat1',
+                                show: showCat1BypassUi,
+                                bypassed: !!testInfo.cat1Bypassed,
+                                note: testInfo.cat1BypassNote || getMapDeviceCat1BypassNote(bin, num),
+                                explanation: getMapDeviceTestBypassExplanation('cat1', testInfo)
+                            },
+                            {
+                                kind: 'cat5',
+                                show: showCat5BypassUi,
+                                bypassed: !!testInfo.cat5Bypassed,
+                                note: testInfo.cat5BypassNote || getMapDeviceCat5BypassNote(bin, num),
+                                explanation: getMapDeviceTestBypassExplanation('cat5', testInfo)
+                            }
+                        ]
                     });
 
                     const violationDropdownHtml = violCount > 0 ? `
@@ -23700,9 +23743,7 @@
                         <div style="font-size:13px;">
                             <span style="opacity:0.6;margin-right:4px;">Pending:</span>${pendingHtml}
                         </div>
-                        ${pviBypassHtml}
-                        ${cat1BypassHtml}
-                        ${cat5BypassHtml}
+                        ${bypassMenuHtml}
                         ${violationDropdownHtml}
                     </div>`;
                 });
