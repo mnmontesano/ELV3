@@ -1259,6 +1259,13 @@
                             </div>
                         </div>
                     </div>
+                    <aside id="mapSelectInfoPanel" aria-label="Selected building information">
+                        <div class="map-select-info-header">
+                            <span>Selected buildings</span>
+                            <span id="mapSelectInfoCount">0</span>
+                        </div>
+                        <div id="mapSelectInfoList"></div>
+                    </aside>
                     <!-- Map Controls Panel -->
                     <div id="mapControlsPanel" style="display: none; width: 280px; min-width: 280px; background: var(--panel-bg); border-left: 1px solid var(--input-border); flex-shrink: 0; flex-direction: column; overflow: hidden; position: relative; font-size: 12.5px;">
                         <div id="mapControlsDockResizeHandle" class="mcp-dock-resize" title="Drag to resize — wider panel shows larger text" onmousedown="event.stopPropagation(); _startDockedMapControlsResize(event);" ontouchstart="event.stopPropagation(); _startDockedMapControlsResize(event);"></div>
@@ -1905,6 +1912,7 @@
                                     <li>Use ✓ in popup to mark a building complete</li>
                                     <li>In Select mode, Completed opens that same completion menu for every selected building</li>
                                     <li>Stacked buildings in Select mode use the same location chooser as a normal map click. Choose the building to select</li>
+                                    <li>Selected buildings are listed on the right. If Settings is open, that list sits to the left of Settings</li>
                                     <li>Use 🔄 in popup to mark a building in process</li>
                                     <li>Use ⭐ in popup to favorite a building</li>
                                     <li>Use 👁️ in popup to hide a building</li>
@@ -2099,9 +2107,98 @@
                     .map-availability-note { margin-top: 6px; padding: 5px 7px; border-radius: 6px; background: rgba(26,115,232,0.1); border: 1px solid rgba(26,115,232,0.3); }
                     .map-availability-note-label { font-size: 10px; font-weight: 700; color: #1a73e8; margin-bottom: 2px; }
                     .map-availability-note-text { font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+                    #mapSelectInfoPanel {
+                        display: none;
+                        width: 300px;
+                        min-width: 260px;
+                        background: var(--panel-bg);
+                        color: var(--text-color);
+                        border-left: 1px solid var(--input-border);
+                        flex-shrink: 0;
+                        flex-direction: column;
+                        overflow: hidden;
+                    }
+                    #mapSelectInfoPanel.map-select-info-visible { display: flex; }
+                    #mapSelectInfoPanel .map-select-info-header {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 8px;
+                        padding: 0.55em 0.75em;
+                        background: var(--input-bg);
+                        border-bottom: 1px solid var(--input-border);
+                        font-size: 13px;
+                        font-weight: 800;
+                        color: var(--header-color, var(--text-color));
+                    }
+                    #mapSelectInfoCount {
+                        min-width: 1.4em;
+                        padding: 1px 7px;
+                        border-radius: 999px;
+                        background: #c77700;
+                        color: white;
+                        font-size: 11px;
+                        text-align: center;
+                    }
+                    #mapSelectInfoList { overflow-y: auto; flex: 1; min-height: 0; padding: 8px; }
+                    .map-select-info-card {
+                        margin: 0 0 8px;
+                        padding: 8px;
+                        border: 1px solid var(--input-border);
+                        border-left: 3px solid #c77700;
+                        border-radius: 8px;
+                        background: var(--card-bg, var(--input-bg));
+                    }
+                    .map-select-info-card:last-child { margin-bottom: 0; }
+                    .map-select-info-address {
+                        display: block;
+                        width: 100%;
+                        margin: 0;
+                        padding: 0;
+                        border: none;
+                        background: none;
+                        color: var(--text-color);
+                        font: inherit;
+                        font-size: 12.5px;
+                        font-weight: 800;
+                        line-height: 1.35;
+                        text-align: left;
+                        cursor: pointer;
+                        word-break: break-word;
+                    }
+                    .map-select-info-address:hover { color: #1a73e8; }
+                    .map-select-info-meta { margin-top: 3px; font-size: 11px; opacity: 0.78; }
+                    .map-select-info-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+                    .map-select-info-chip { padding: 1px 6px; border-radius: 999px; color: white; font-size: 10px; font-weight: 800; }
+                    .map-select-info-line { margin-top: 5px; font-size: 11px; line-height: 1.35; word-break: break-word; }
+                    .map-select-info-note {
+                        margin-top: 5px;
+                        padding: 5px 6px;
+                        border-radius: 6px;
+                        background: rgba(26,115,232,0.1);
+                        border: 1px solid rgba(26,115,232,0.28);
+                        font-size: 11px;
+                        line-height: 1.35;
+                        white-space: pre-wrap;
+                        word-break: break-word;
+                        max-height: 7.5em;
+                        overflow: auto;
+                    }
+                    .map-select-info-remove {
+                        margin: 7px 0 0;
+                        padding: 3px 8px;
+                        border-radius: 5px;
+                        border: 1px solid rgba(255,107,107,0.4);
+                        background: rgba(255,107,107,0.12);
+                        color: #ff6b6b;
+                        cursor: pointer;
+                        font-size: 11px;
+                        font-weight: 700;
+                    }
                     @media (max-width: 700px) {
                         #mapSelectToolbar { left: 8px; right: 8px; top: 8px; padding: 7px 8px; }
                         #mapSelectToolbar .map-select-actions { margin-left: 0; width: 100%; }
+                        #mapSelectInfoPanel { width: 220px; min-width: 180px; }
                     }
                 </style>
                 <!-- Resize handles (only shown in windowed mode) -->
@@ -24603,6 +24700,7 @@
 
         function toggleMapSelectMode(forceState) {
             const nextState = typeof forceState === 'boolean' ? forceState : !mapSelectMode;
+            if (nextState) exitMapDashboard();
             mapSelectMode = nextState;
             if (!mapSelectMode) {
                 const existingBulkModal = document.getElementById('mapBulkEditOverlay');
@@ -24653,6 +24751,139 @@
             if (editBtn) editBtn.disabled = selectedCount === 0;
             if (completedBtn) completedBtn.disabled = selectedCount === 0;
             if (clearBtn) clearBtn.disabled = selectedCount === 0;
+            renderMapSelectInfoPanel();
+        }
+
+        function focusMapSelectedBuilding(bin) {
+            if (!buildingMap || bin == null) return;
+            const binKey = String(bin);
+            let latLng = null;
+            if (Array.isArray(mapBuildingsData) && Array.isArray(mapMarkers)) {
+                const idx = mapBuildingsData.findIndex(item => item && String(item.bin) === binKey);
+                if (idx !== -1 && mapMarkers[idx]) {
+                    const marker = mapMarkers[idx];
+                    if (buildingMap.hasLayer && !buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                    if (marker.getLatLng) latLng = marker.getLatLng();
+                }
+            }
+            if (!latLng && Array.isArray(mapBuildingsData)) {
+                const building = mapBuildingsData.find(item => item && String(item.bin) === binKey);
+                const lat = building ? Number(building.latitude) : NaN;
+                const lng = building ? Number(building.longitude) : NaN;
+                if (Number.isFinite(lat) && Number.isFinite(lng)) latLng = { lat, lng };
+            }
+            if (!latLng) return;
+            const zoom = buildingMap.getZoom ? buildingMap.getZoom() : 16;
+            buildingMap.setView([latLng.lat, latLng.lng], Math.max(zoom, 17));
+            if (buildingMap.closePopup) buildingMap.closePopup();
+        }
+
+        function getMapSelectInfoDeviceNumbers(summary, building) {
+            const fromSummary = ((summary && summary.deviceNumbers) || []).filter(Boolean);
+            if (fromSummary.length) return fromSummary;
+            if (!building) return [];
+            const numbers = [];
+            ['readyDevices', 'notReadyDevices', 'completedDevices', 'notApplicableDevices', 'removedDeletedDevices'].forEach(key => {
+                (building[key] || []).forEach(device => {
+                    const number = String(device && (device.number || device.device_number) || '').trim();
+                    if (number) numbers.push(number);
+                });
+            });
+            return Array.from(new Set(numbers));
+        }
+
+        function renderMapSelectInfoPanel() {
+            const panel = document.getElementById('mapSelectInfoPanel');
+            const list = document.getElementById('mapSelectInfoList');
+            const countEl = document.getElementById('mapSelectInfoCount');
+            if (!panel || !list) return;
+            const show = !!(mapSelectMode && mapSelectedBins && mapSelectedBins.size);
+            const wasVisible = panel.classList.contains('map-select-info-visible');
+            panel.classList.toggle('map-select-info-visible', show);
+            if (wasVisible !== show && typeof requestMapResizeAfterControlsChange === 'function') {
+                requestMapResizeAfterControlsChange();
+            }
+            if (!show) {
+                list.innerHTML = '';
+                if (countEl) countEl.textContent = '0';
+                return;
+            }
+
+            const summaries = getMapSelectedBuildingSummaries();
+            if (countEl) countEl.textContent = String(summaries.length);
+            const favorites = getMapFavorites() || {};
+            const inProcess = getMapInProcess() || {};
+            const hold = getMapHold() || {};
+            const completed = getMapCompleted() || {};
+            const scrollTop = list.scrollTop;
+            list.innerHTML = summaries.map(summary => {
+                const bin = String(summary.bin);
+                const building = Array.isArray(mapBuildingsData)
+                    ? mapBuildingsData.find(item => item && String(item.bin) === bin)
+                    : null;
+                const address = escapeMapSuggestionHtml(summary.address || ('BIN ' + bin));
+                const deviceNumbers = getMapSelectInfoDeviceNumbers(summary, building);
+                const shownDevices = deviceNumbers.slice(0, 4);
+                const extraDevices = Math.max(0, deviceNumbers.length - shownDevices.length);
+                const deviceText = shownDevices.length
+                    ? escapeMapSuggestionHtml(shownDevices.join(', ') + (extraDevices ? ` +${extraDevices}` : ''))
+                    : '';
+                const deviceCount = Number(summary.deviceCount) || 0;
+                const completedEntry = completed[bin] || null;
+                const isCompleted = !!(completedEntry || (building && building.isCompleted));
+                const completionType = isCompleted
+                    ? (normalizeMapCompletedTestType((completedEntry && (completedEntry.completionType || completedEntry.testType)) || (building && building.completionType)) || 'Legacy')
+                    : '';
+                const chips = [];
+                if (isCompleted) {
+                    chips.push(`<span class="map-select-info-chip" style="background:${getMapCompletionColor(completionType)};">${escapeMapSuggestionHtml(getMapCompletedTestLabel(completionType))}</span>`);
+                } else {
+                    chips.push('<span class="map-select-info-chip" style="background:#6c757d;">Not completed</span>');
+                }
+                const inProcessEntry = inProcess[bin] || (building && building.isInProcess ? { date: building.inProcessDate } : null);
+                if (inProcessEntry) {
+                    const dateText = inProcessEntry.date ? ` ${new Date(inProcessEntry.date + 'T00:00:00').toLocaleDateString()}` : '';
+                    chips.push(`<span class="map-select-info-chip" style="background:#e67e22;">In process${escapeMapSuggestionHtml(dateText)}</span>`);
+                }
+                if (hold[bin] || (building && building.isHold)) {
+                    chips.push('<span class="map-select-info-chip" style="background:#607d8b;">On hold</span>');
+                }
+                if (favorites[bin]) {
+                    chips.push('<span class="map-select-info-chip" style="background:#9b59b6;">Favorite</span>');
+                }
+                const month = getMonthLabel(bin);
+                if (month) chips.push(`<span class="map-select-info-chip" style="background:#17a2b8;">${escapeMapSuggestionHtml(month)}</span>`);
+
+                const lines = [];
+                const schedule = getMapBulkSchedulePreviewText(bin);
+                if (schedule) lines.push(`<div class="map-select-info-line">${escapeMapSuggestionHtml(schedule)}</div>`);
+                if (completedEntry) {
+                    const completedDates = formatMapCompletedDatesSummary(completedEntry.completedDates);
+                    if (completedDates) lines.push(`<div class="map-select-info-line">Completed ${escapeMapSuggestionHtml(completedDates)}</div>`);
+                }
+                if (building) {
+                    const readyCount = Array.isArray(building.readyDevices) ? building.readyDevices.length : 0;
+                    const notReadyCount = Array.isArray(building.notReadyDevices) ? building.notReadyDevices.length : 0;
+                    const violationCount = Number(building.violations) || 0;
+                    const counts = [];
+                    if (readyCount) counts.push(`${readyCount} ready`);
+                    if (notReadyCount) counts.push(`${notReadyCount} not ready`);
+                    if (violationCount) counts.push(`${violationCount} violation${violationCount === 1 ? '' : 's'}`);
+                    if (counts.length) lines.push(`<div class="map-select-info-line">${escapeMapSuggestionHtml(counts.join(' · '))}</div>`);
+                }
+                const note = String(getMapNote(bin) || '').trim();
+                const noteHtml = note ? `<div class="map-select-info-note">${escapeMapSuggestionHtml(note)}</div>` : '';
+                const safeBin = escapeMapSuggestionHtml(bin);
+                return `<article class="map-select-info-card" data-bin="${safeBin}">
+                    <button type="button" class="map-select-info-address" onclick="focusMapSelectedBuilding('${safeBin}')">${address}</button>
+                    <div class="map-select-info-meta">BIN ${safeBin} · ${deviceCount} device${deviceCount === 1 ? '' : 's'}${deviceText ? ' · ' + deviceText : ''}</div>
+                    <div class="map-select-info-chips">${chips.join('')}</div>
+                    ${lines.join('')}
+                    ${noteHtml}
+                    <button type="button" class="map-select-info-remove" onclick="toggleMapBuildingSelection('${safeBin}')">Remove</button>
+                </article>`;
+            }).join('');
+            list.scrollTop = scrollTop;
         }
 
         function pruneMapBuildingSelection() {
@@ -30713,8 +30944,12 @@
             const row = document.getElementById('mapContentRow');
             const mapWrapper = document.getElementById('mapCanvasWrapper');
             const panel = document.getElementById('mapControlsPanel');
+            const infoPanel = document.getElementById('mapSelectInfoPanel');
             if (!row || !mapWrapper || mapWrapper.parentElement === row) return;
-            if (panel && panel.parentElement === row) row.insertBefore(mapWrapper, panel);
+            const anchor = (infoPanel && infoPanel.parentElement === row)
+                ? infoPanel
+                : ((panel && panel.parentElement === row) ? panel : null);
+            if (anchor) row.insertBefore(mapWrapper, anchor);
             else row.appendChild(mapWrapper);
         }
 
