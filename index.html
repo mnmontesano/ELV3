@@ -11092,7 +11092,10 @@
         }
 
         function shouldHideCompletedAdditionalLocation(location) {
-            return isHideCompletedActive() && isAdditionalLocationCompleted(location);
+            if (!isHideCompletedActive() || !isAdditionalLocationCompleted(location)) return false;
+            const devices = location && Array.isArray(location.devices) ? location.devices : [];
+            const binHint = location && (location.bin || getAdditionalLocationCompletionKey(location));
+            return !mapDevicesStillMissingUnbypassedTest(devices, binHint);
         }
 
         function getMapCompletionKeyDisplayLabel(key) {
@@ -13092,6 +13095,22 @@
             return (!info.requiresPVI || info.hasPVI)
                 && (!info.requiresCat1 || info.hasCat1)
                 && (!info.requiresCat5 || info.hasCat5);
+        }
+
+        // A bypass clears only the test it covers. Any other missing required test stays open.
+        function mapDevicesStillMissingUnbypassedTest(devices, binHint, year) {
+            const list = Array.isArray(devices) ? devices : [];
+            if (!list.length) return false;
+            const reviewYear = Number(year) || new Date().getFullYear();
+            return list.some(device => !mapDobDeviceHasRequiredCurrentYearCompletion(device, reviewYear, binHint));
+        }
+
+        function mapCompletedBuildingStillMissingUnbypassedTest(building) {
+            if (!building) return false;
+            const bin = String(building.bin || '');
+            const group = getMapGroupForBin(bin);
+            const devices = group && Array.isArray(group.devices) ? group.devices : [];
+            return mapDevicesStillMissingUnbypassedTest(devices, bin);
         }
 
         function getMapNextRequiredTestLabel(device, year, binHint) {
@@ -15721,9 +15740,15 @@
 
             const binGroups = (view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups) || {};
             Object.keys(binGroups).forEach(bin => {
+                const group = binGroups[bin];
+                const completedEntry = view.completed && view.completed[bin];
+                const keepCompletedVisible = !!(completedEntry && (
+                    mapDevicesStillMissingUnbypassedTest(group && group.devices, bin)
+                    || mapBinStillNeedsCat5InCurrentView(bin)
+                ));
                 const hiddenBySettings = !!(
                     (view.hidden && view.hidden[bin]) ||
-                    (isHideCompletedActive() && view.completed && view.completed[bin]) ||
+                    (isHideCompletedActive() && completedEntry && !keepCompletedVisible) ||
                     (isHideInProcessActive() && view.inProcess && view.inProcess[bin]) ||
                     (isHideHoldActive() && view.hold && view.hold[bin])
                 );
@@ -15941,8 +15966,15 @@
             if (filterValue === 'hide-pvi-completed') {
                 return new Set(allBins.filter(bin => !mapViewHasCompletedTest(view, bin, null, 'PVI')));
             }
-            // Legacy saved filter: hide every completed marker (partial + full).
-            if (filterValue === 'hide-completed') return new Set(allBins.filter(bin => !(view.completed && view.completed[bin])));
+            // Legacy saved filter: hide completed markers, except ones that still owe an unbypassed test.
+            if (filterValue === 'hide-completed') {
+                return new Set(allBins.filter(bin => {
+                    if (!(view.completed && view.completed[bin])) return true;
+                    const group = binGroups[bin];
+                    return mapDevicesStillMissingUnbypassedTest(group && group.devices, bin)
+                        || mapBinStillNeedsCat5InCurrentView(bin);
+                }));
+            }
             if (filterValue === 'completed-open-tests') {
                 return new Set(getMapReviewBuildings().map(item => String(item.bin)));
             }
@@ -18978,7 +19010,7 @@
             mapMarkers.forEach((marker, index) => {
                 const building = mapBuildingsData[index];
                 if (!building) return;
-                const completedHiddenByDefault = !hasActiveSearch && activeMonthFilters.size === 0 && hideCompleted && building.isCompleted;
+                const completedHiddenByDefault = !hasActiveSearch && activeMonthFilters.size === 0 && hideCompleted && mapCompletedBuildingHiddenWhileHideCompleted(building);
                 if ((hide && labels[building.bin]) || completedHiddenByDefault) {
                     if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
                 } else {
@@ -19285,20 +19317,32 @@
             return group.devices.some(device => mapDobDeviceCat5DueForSelectedYear(device, year, bin));
         }
 
-        // In Category 5 map view, manually completed buildings that still need CAT 5 stay visible.
-        function mapCompletedBuildingStillNeedsCat5InCurrentView(building) {
-            if (!building || !building.isCompleted) return false;
+        function mapBinStillNeedsCat5InCurrentView(bin) {
             const filterValue = getSelectedMapViewFilter();
             if (!filterValue || filterValue.indexOf('cat5:') !== 0) return false;
             const year = parseInt(filterValue.replace('cat5:', ''), 10);
             if (!year || isNaN(year)) return false;
-            return mapBuildingHasCat5DueForYear(building.bin, year);
+            return mapBuildingHasCat5DueForYear(bin, year);
+        }
+
+        // In Category 5 map view, manually completed buildings that still need CAT 5 stay visible.
+        function mapCompletedBuildingStillNeedsCat5InCurrentView(building) {
+            if (!building || !building.isCompleted) return false;
+            return mapBinStillNeedsCat5InCurrentView(building.bin);
+        }
+
+        // Hide Completed removes a marked building only when every missing required test is bypassed.
+        function mapCompletedBuildingHiddenWhileHideCompleted(building) {
+            if (!building || !building.isCompleted) return false;
+            if (mapCompletedBuildingStillNeedsCat5InCurrentView(building)) return false;
+            if (mapCompletedBuildingStillMissingUnbypassedTest(building)) return false;
+            return true;
         }
 
         function isBuildingHiddenByMapSettings(building) {
             if (!building) return true;
             if (building.isHidden) return true;
-            if (isHideCompletedActive() && building.isCompleted && !mapCompletedBuildingStillNeedsCat5InCurrentView(building)) {
+            if (isHideCompletedActive() && mapCompletedBuildingHiddenWhileHideCompleted(building)) {
                 return true;
             }
             if (isHideInProcessActive() && building.isInProcess) return true;
@@ -31810,8 +31854,12 @@
                     countedHiddenForBin = true;
                 }
 
-                // Keep completed buildings searchable/filterable even when hidden by default.
-                if (hideCompleted && completed[bin]) {
+                // Completed buildings with an unbypassed missing test stay on the map.
+                const completedStaysVisible = !!(completed[bin] && (
+                    mapDevicesStillMissingUnbypassedTest(group && group.devices, bin)
+                    || mapBinStillNeedsCat5InCurrentView(bin)
+                ));
+                if (hideCompleted && completed[bin] && !completedStaysVisible) {
                     if (!countedHiddenForBin) hiddenCount++;
                     countedHiddenForBin = true;
                 }
