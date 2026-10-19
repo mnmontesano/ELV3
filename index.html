@@ -4853,14 +4853,19 @@
                     return aIsRemoved ? 1 : -1;
                 }
                 
-                // Secondary sort: By ready status (not ready first)
+                const aMissingYearTest = a.completionStatus && a.completionStatus !== 'Complete' && a.completionStatus !== 'N/A';
+                const bMissingYearTest = b.completionStatus && b.completionStatus !== 'Complete' && b.completionStatus !== 'N/A';
+                if (aMissingYearTest !== bMissingYearTest) {
+                    return aMissingYearTest ? -1 : 1;
+                }
+
+                // Then not-ready devices, then devices with more violations.
                 if (a.isReady !== b.isReady) {
                     if (a.isReady === 'N/A') return 1;
                     if (b.isReady === 'N/A') return -1;
                     return a.isReady === 'Yes' ? 1 : -1;
                 }
                 
-                // Tertiary sort: By violations
                 return (b.violationCount || 0) - (a.violationCount || 0);
             }) : [];
             
@@ -10464,7 +10469,7 @@
                             <div id="buildingDevices_${bin}" style="display: none; margin-top: 15px;">
                     `;
 
-                    // Sort devices: Active devices first (removed/deleted at bottom), then not ready first, then by violations
+                    // Sort devices: removed/deleted last, then devices missing a required test this year, then not ready, then violations.
                     const todayForSort = new Date();
                     todayForSort.setHours(0, 0, 0, 0);
                     
@@ -10528,12 +10533,17 @@
                             return aIsRemoved ? 1 : -1; // Removed devices last
                         }
                         
-                        // Secondary sort: Not ready devices first (aIsReady=false should come before aIsReady=true)
+                        const aMissingYearTest = !aIsRemoved && !mapDobDeviceHasRequiredCurrentYearCompletion(a, currentYear, bin);
+                        const bMissingYearTest = !bIsRemoved && !mapDobDeviceHasRequiredCurrentYearCompletion(b, currentYear, bin);
+                        if (aMissingYearTest !== bMissingYearTest) {
+                            return aMissingYearTest ? -1 : 1;
+                        }
+
+                        // Not ready devices first, then devices with more violations.
                         if (aIsReady !== bIsReady) {
-                            return aIsReady ? 1 : -1; // Not ready (false) comes first
+                            return aIsReady ? 1 : -1;
                         }
                         
-                        // Tertiary sort by violations
                         const aViolations = a.violations ? a.violations.length : 0;
                         const bViolations = b.violations ? b.violations.length : 0;
                         return bViolations - aViolations;
@@ -12413,6 +12423,29 @@
                 if (testInfo.requiresCat5 && !testInfo.hasCat5) pending.push('CAT 5');
             }
             return pending;
+        }
+
+        // Missing a required test for this year outranks violations. A device that already
+        // has every required test filed, and only then has violations, comes after.
+        function getMapDeviceReportSortRank(device, year, binHint) {
+            const testInfo = getMapDeviceReportTestInfo(device, year, binHint);
+            if (testInfo.isNotApplicable) return 5;
+            if (testInfo.isRemoved) return 4;
+            if (getMapDeviceReportPendingTests(testInfo).length > 0) return 0;
+
+            const violationCount = Array.isArray(device.violations) ? device.violations.length : 0;
+            if (violationCount > 0) return 1;
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const mostRecent = testInfo.isDismantled
+                ? testInfo.pviDate
+                : [testInfo.pviDate, testInfo.cat1Date, testInfo.cat5Date].filter(Boolean).reduce((latest, date) => !latest || date > latest ? date : latest, null);
+            if (!mostRecent) return 3;
+            const eligible = new Date(mostRecent);
+            eligible.setDate(eligible.getDate() + 91);
+            eligible.setHours(0, 0, 0, 0);
+            return eligible > today ? 2 : 3;
         }
 
 
@@ -23857,26 +23890,7 @@
                 };
 
                 const getDeviceReportSortRank = function(device) {
-                    const testInfo = getDeviceReportTestInfo(device);
-                    if (testInfo.isNotApplicable) return 5;
-                    if (testInfo.isRemoved) return 4;
-
-                    // Devices with no tests filed in the current calendar year come first.
-                    const hasAnyTestThisYear = !!(testInfo.hasPVI || testInfo.hasCat1 || testInfo.hasCat5);
-                    if (!hasAnyTestThisYear) return 0;
-
-                    const violationCount = Array.isArray(device.violations) ? device.violations.length : 0;
-                    if (violationCount > 0) return 1;
-
-                    const mostRecent = testInfo.isDismantled
-                        ? testInfo.pviDate
-                        : [testInfo.pviDate, testInfo.cat1Date, testInfo.cat5Date].filter(Boolean).reduce((latest, date) => !latest || date > latest ? date : latest, null);
-
-                    if (!mostRecent) return 3;
-                    const eligible = new Date(mostRecent);
-                    eligible.setDate(eligible.getDate() + 91);
-                    eligible.setHours(0,0,0,0);
-                    return eligible > today ? 2 : 3;
+                    return getMapDeviceReportSortRank(device, currentYear, reportBin);
                 };
 
                 const sortedDevices = devices.slice().sort(function(a, b) {
