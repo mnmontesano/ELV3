@@ -36,5 +36,9 @@ assert.match(picker, /renderMapCompletionDatesEditorHtml\('completedDatesEditor'
 assert.match(picker, /isBulk \? bulkBins : bin/);
 assert.match(picker, /DOB status is checked on each building when you save/);
 assert.match(picker, /readMapCompletionDatesFromEditor\(datesEditor, bin, testType\)/);
+assert.match(picker, /getMapSelectCompletionDefaultDates\(selectCompletionBins, lane, todayKey\)/);
+assert.doesNotMatch(picker, /isBulk \? \[todayKey\]/);
+assert.match(html, /function getMapSelectCompletionDefaultDates\(bins, lane, todayKey\)/);
+assert.match(html, /The completed date starts as the scheduled date/);
 
 console.log('Select mode Completed opens the building completion menu.');

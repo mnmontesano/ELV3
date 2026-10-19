@@ -20073,6 +20073,42 @@
             });
             return changed;
         }
+
+        function mapSelectCompletionDatesAreToday(dates, today) {
+            return Array.isArray(dates) && dates.length === 1 && dates[0] === today;
+        }
+
+        // One date box is shared by every selected building. Use the scheduled date when
+        // the selection agrees, and leave the box empty when the scheduled dates differ.
+        function getMapSelectCompletionDefaultDates(bins, lane, todayKey) {
+            const today = todayKey || formatLocalDateInputValue(new Date());
+            const keys = (Array.isArray(bins) ? bins : [bins]).map(value => String(value || '').trim()).filter(Boolean);
+            if (!keys.length) return [today];
+            const perBuilding = keys.map(bin => {
+                const existing = typeof getMapCompleted === 'function' ? (getMapCompleted()[bin] || {}) : {};
+                const dates = getMapCompletionDefaultDates(bin, lane, existing, today);
+                return Array.isArray(dates) && dates.length ? dates.slice() : [today];
+            });
+            const signature = dates => dates.join('|');
+            const unique = Array.from(new Set(perBuilding.map(signature)));
+            if (unique.length === 1) return perBuilding[0];
+            const scheduled = perBuilding.filter(dates => dates[0] !== '' && !mapSelectCompletionDatesAreToday(dates, today));
+            const scheduledUnique = Array.from(new Set(scheduled.map(signature)));
+            if (scheduledUnique.length === 1) return scheduled[0].slice();
+            return [''];
+        }
+
+        function getMapSelectCompletionPrefillNote(bins, todayKey) {
+            const today = todayKey || formatLocalDateInputValue(new Date());
+            const lanes = ['pvi', 'category'].map(lane => getMapSelectCompletionDefaultDates(bins, lane, today));
+            if (lanes.some(dates => dates.length === 1 && dates[0] === '')) {
+                return 'These buildings have different scheduled dates. Enter the completed date to save on each one.';
+            }
+            if (lanes.some(dates => !mapSelectCompletionDatesAreToday(dates, today))) {
+                return 'The completed date starts as the scheduled date. Today is filled in only when that test has no scheduled date.';
+            }
+            return 'Today is filled in because these tests have no scheduled date yet.';
+        }
         // end MAP completed test date helpers
 
         function renderMapCompletionDateRowHtml(value, locked) {
@@ -20532,7 +20568,7 @@
                     ${dobStatusHtml}
                     ${isBulk ? '<p style="margin: -4px 0 14px 0; font-size: 12px; line-height: 1.45; color: var(--text-color, #ccc);">DOB status is checked on each building when you save. A date already on a building stays unless you change it here.</p>' : ''}
                     ${renderMapCompletionDatesEditorHtml('completedDatesEditor')}
-                    <p style="margin: -4px 0 10px 0; font-size: 11px; opacity: 0.6; color: var(--text-color, #ccc);">A date verified with DOB stays on that test and is not replaced. Other tests keep a date they already have. Today is filled in only when a test has no date yet.</p>
+                    <p id="completedDatePrefillNote" style="margin: -4px 0 10px 0; font-size: 11px; opacity: 0.6; color: var(--text-color, #ccc);">A date verified with DOB stays on that test and is not replaced. Other tests keep a date they already have. Today is filled in only when a test has no date yet.</p>
                     <div id="completedOtherInspectionHint" role="status" style="${MAP_OTHER_INSPECTION_HINT_STYLE}"></div>
                     <div style="display: flex; gap: 8px;">
                         <button id="completedDetailsCancelBtn" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #ccc); cursor: pointer; font-size: 13px;">Cancel</button>
@@ -20550,13 +20586,23 @@
             overlay.addEventListener('click', (e) => { if (e.target === overlay) cancelCompletedDetailsPicker(); });
 
             const typeInput = document.getElementById('completedTestTypeInput');
+            const selectCompletionBins = (isBulk || opts.fromMapSelect) ? (isBulk ? bulkBins : [String(bin)]) : null;
             const datesEditor = bindMapCompletionDatesEditor(document.getElementById('completedDatesEditor'), {
                 completionType: currentTestType,
-                getDefaultDates: lane => isBulk ? [todayKey] : getMapCompletionDefaultDates(bin, lane, existing, todayKey),
+                getDefaultDates: lane => selectCompletionBins
+                    ? getMapSelectCompletionDefaultDates(selectCompletionBins, lane, todayKey)
+                    : getMapCompletionDefaultDates(bin, lane, existing, todayKey),
                 getDobDates: lane => isBulk ? [] : getMapCompletionDobLaneDates(bin, lane, todayKey),
                 getReplacedScheduledDates: lanes => isBulk ? [] : getMapScheduledDatesReplacedByCompletion(bin, lanes, existing),
                 onChange: refreshCompletedOtherInspectionHint
             });
+            if (selectCompletionBins) {
+                const prefillNote = document.getElementById('completedDatePrefillNote');
+                if (prefillNote) {
+                    prefillNote.textContent = getMapSelectCompletionPrefillNote(selectCompletionBins, todayKey)
+                        + ' A date verified with DOB stays on that building.';
+                }
+            }
 
             function refreshCompletedOtherInspectionHint() {
                 return refreshMapOtherInspectionHint(
