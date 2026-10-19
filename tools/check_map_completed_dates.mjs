@@ -77,6 +77,24 @@ assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'category', nu
     'keeps the only scheduled date even when it is still upcoming');
 assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'pvi', null, '2026-10-01')), ['2026-10-01'],
     'the other test still defaults to today');
+context.setTestDates({
+    b1: { pvi: ['2026-11-02'], category: [], general: [] },
+    b2: { pvi: ['2026-11-02'], category: [], general: [] },
+    b3: { pvi: [], category: [], general: [] }
+});
+assert.deepEqual(plain(context.getMapSelectCompletionDefaultDates(['b1', 'b2'], 'pvi', '2026-10-01')), ['2026-11-02'],
+    'select mode prefills the shared scheduled date instead of today');
+assert.deepEqual(plain(context.getMapSelectCompletionDefaultDates(['b1', 'b2'], 'category', '2026-10-01')), ['2026-10-01'],
+    'a test with no scheduled date still starts as today');
+assert.deepEqual(plain(context.getMapSelectCompletionDefaultDates(['b1', 'b3'], 'pvi', '2026-10-01')), ['2026-11-02'],
+    'a shared scheduled date is used when another selected building has no date');
+context.setTestDates({
+    b1: { pvi: ['2026-11-02'], category: [], general: [] },
+    b2: { pvi: ['2026-12-04'], category: [], general: [] }
+});
+assert.deepEqual(plain(context.getMapSelectCompletionDefaultDates(['b1', 'b2'], 'pvi', '2026-10-01')), [''],
+    'different scheduled dates are not replaced with today');
+assert.match(context.getMapSelectCompletionPrefillNote(['b1', 'b2'], '2026-10-01'), /different scheduled dates/);
 assert.deepEqual(plain(context.getMapCompletionDefaultDates('b1', 'pvi', { completedDates: { pvi: ['2026-08-01', '2026-08-02'] } }, '2026-10-01')),
     ['2026-08-01', '2026-08-02'], 'saved completed dates win');
 context.getMapDobCompletedTestDateRows = (bin) => bin === 'b7' ? [{ type: 'category', date: '2026-08-12' }] : [];

@@ -1259,6 +1259,13 @@
                             </div>
                         </div>
                     </div>
+                    <aside id="mapSelectInfoPanel" aria-label="Selected building information">
+                        <div class="map-select-info-header">
+                            <span>Selected buildings</span>
+                            <span id="mapSelectInfoCount">0</span>
+                        </div>
+                        <div id="mapSelectInfoList"></div>
+                    </aside>
                     <!-- Map Controls Panel -->
                     <div id="mapControlsPanel" style="display: none; width: 280px; min-width: 280px; background: var(--panel-bg); border-left: 1px solid var(--input-border); flex-shrink: 0; flex-direction: column; overflow: hidden; position: relative; font-size: 12.5px;">
                         <div id="mapControlsDockResizeHandle" class="mcp-dock-resize" title="Drag to resize — wider panel shows larger text" onmousedown="event.stopPropagation(); _startDockedMapControlsResize(event);" ontouchstart="event.stopPropagation(); _startDockedMapControlsResize(event);"></div>
@@ -1905,6 +1912,7 @@
                                     <li>Use ✓ in popup to mark a building complete</li>
                                     <li>In Select mode, Completed opens that same completion menu for every selected building</li>
                                     <li>Stacked buildings in Select mode use the same location chooser as a normal map click. Choose the building to select</li>
+                                    <li>Selected buildings are listed on the right. If Settings is open, that list sits to the left of Settings</li>
                                     <li>Use 🔄 in popup to mark a building in process</li>
                                     <li>Use ⭐ in popup to favorite a building</li>
                                     <li>Use 👁️ in popup to hide a building</li>
@@ -2099,9 +2107,98 @@
                     .map-availability-note { margin-top: 6px; padding: 5px 7px; border-radius: 6px; background: rgba(26,115,232,0.1); border: 1px solid rgba(26,115,232,0.3); }
                     .map-availability-note-label { font-size: 10px; font-weight: 700; color: #1a73e8; margin-bottom: 2px; }
                     .map-availability-note-text { font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+                    #mapSelectInfoPanel {
+                        display: none;
+                        width: 300px;
+                        min-width: 260px;
+                        background: var(--panel-bg);
+                        color: var(--text-color);
+                        border-left: 1px solid var(--input-border);
+                        flex-shrink: 0;
+                        flex-direction: column;
+                        overflow: hidden;
+                    }
+                    #mapSelectInfoPanel.map-select-info-visible { display: flex; }
+                    #mapSelectInfoPanel .map-select-info-header {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 8px;
+                        padding: 0.55em 0.75em;
+                        background: var(--input-bg);
+                        border-bottom: 1px solid var(--input-border);
+                        font-size: 13px;
+                        font-weight: 800;
+                        color: var(--header-color, var(--text-color));
+                    }
+                    #mapSelectInfoCount {
+                        min-width: 1.4em;
+                        padding: 1px 7px;
+                        border-radius: 999px;
+                        background: #c77700;
+                        color: white;
+                        font-size: 11px;
+                        text-align: center;
+                    }
+                    #mapSelectInfoList { overflow-y: auto; flex: 1; min-height: 0; padding: 8px; }
+                    .map-select-info-card {
+                        margin: 0 0 8px;
+                        padding: 8px;
+                        border: 1px solid var(--input-border);
+                        border-left: 3px solid #c77700;
+                        border-radius: 8px;
+                        background: var(--card-bg, var(--input-bg));
+                    }
+                    .map-select-info-card:last-child { margin-bottom: 0; }
+                    .map-select-info-address {
+                        display: block;
+                        width: 100%;
+                        margin: 0;
+                        padding: 0;
+                        border: none;
+                        background: none;
+                        color: var(--text-color);
+                        font: inherit;
+                        font-size: 12.5px;
+                        font-weight: 800;
+                        line-height: 1.35;
+                        text-align: left;
+                        cursor: pointer;
+                        word-break: break-word;
+                    }
+                    .map-select-info-address:hover { color: #1a73e8; }
+                    .map-select-info-meta { margin-top: 3px; font-size: 11px; opacity: 0.78; }
+                    .map-select-info-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+                    .map-select-info-chip { padding: 1px 6px; border-radius: 999px; color: white; font-size: 10px; font-weight: 800; }
+                    .map-select-info-line { margin-top: 5px; font-size: 11px; line-height: 1.35; word-break: break-word; }
+                    .map-select-info-note {
+                        margin-top: 5px;
+                        padding: 5px 6px;
+                        border-radius: 6px;
+                        background: rgba(26,115,232,0.1);
+                        border: 1px solid rgba(26,115,232,0.28);
+                        font-size: 11px;
+                        line-height: 1.35;
+                        white-space: pre-wrap;
+                        word-break: break-word;
+                        max-height: 7.5em;
+                        overflow: auto;
+                    }
+                    .map-select-info-remove {
+                        margin: 7px 0 0;
+                        padding: 3px 8px;
+                        border-radius: 5px;
+                        border: 1px solid rgba(255,107,107,0.4);
+                        background: rgba(255,107,107,0.12);
+                        color: #ff6b6b;
+                        cursor: pointer;
+                        font-size: 11px;
+                        font-weight: 700;
+                    }
                     @media (max-width: 700px) {
                         #mapSelectToolbar { left: 8px; right: 8px; top: 8px; padding: 7px 8px; }
                         #mapSelectToolbar .map-select-actions { margin-left: 0; width: 100%; }
+                        #mapSelectInfoPanel { width: 220px; min-width: 180px; }
                     }
                 </style>
                 <!-- Resize handles (only shown in windowed mode) -->
@@ -4756,14 +4853,19 @@
                     return aIsRemoved ? 1 : -1;
                 }
                 
-                // Secondary sort: By ready status (not ready first)
+                const aMissingYearTest = a.completionStatus && a.completionStatus !== 'Complete' && a.completionStatus !== 'N/A';
+                const bMissingYearTest = b.completionStatus && b.completionStatus !== 'Complete' && b.completionStatus !== 'N/A';
+                if (aMissingYearTest !== bMissingYearTest) {
+                    return aMissingYearTest ? -1 : 1;
+                }
+
+                // Then not-ready devices, then devices with more violations.
                 if (a.isReady !== b.isReady) {
                     if (a.isReady === 'N/A') return 1;
                     if (b.isReady === 'N/A') return -1;
                     return a.isReady === 'Yes' ? 1 : -1;
                 }
                 
-                // Tertiary sort: By violations
                 return (b.violationCount || 0) - (a.violationCount || 0);
             }) : [];
             
@@ -10367,7 +10469,7 @@
                             <div id="buildingDevices_${bin}" style="display: none; margin-top: 15px;">
                     `;
 
-                    // Sort devices: Active devices first (removed/deleted at bottom), then not ready first, then by violations
+                    // Sort devices: removed/deleted last, then devices missing a required test this year, then not ready, then violations.
                     const todayForSort = new Date();
                     todayForSort.setHours(0, 0, 0, 0);
                     
@@ -10431,12 +10533,17 @@
                             return aIsRemoved ? 1 : -1; // Removed devices last
                         }
                         
-                        // Secondary sort: Not ready devices first (aIsReady=false should come before aIsReady=true)
+                        const aMissingYearTest = !aIsRemoved && !mapDobDeviceHasRequiredCurrentYearCompletion(a, currentYear, bin);
+                        const bMissingYearTest = !bIsRemoved && !mapDobDeviceHasRequiredCurrentYearCompletion(b, currentYear, bin);
+                        if (aMissingYearTest !== bMissingYearTest) {
+                            return aMissingYearTest ? -1 : 1;
+                        }
+
+                        // Not ready devices first, then devices with more violations.
                         if (aIsReady !== bIsReady) {
-                            return aIsReady ? 1 : -1; // Not ready (false) comes first
+                            return aIsReady ? 1 : -1;
                         }
                         
-                        // Tertiary sort by violations
                         const aViolations = a.violations ? a.violations.length : 0;
                         const bViolations = b.violations ? b.violations.length : 0;
                         return bViolations - aViolations;
@@ -12316,6 +12423,29 @@
                 if (testInfo.requiresCat5 && !testInfo.hasCat5) pending.push('CAT 5');
             }
             return pending;
+        }
+
+        // Missing a required test for this year outranks violations. A device that already
+        // has every required test filed, and only then has violations, comes after.
+        function getMapDeviceReportSortRank(device, year, binHint) {
+            const testInfo = getMapDeviceReportTestInfo(device, year, binHint);
+            if (testInfo.isNotApplicable) return 5;
+            if (testInfo.isRemoved) return 4;
+            if (getMapDeviceReportPendingTests(testInfo).length > 0) return 0;
+
+            const violationCount = Array.isArray(device.violations) ? device.violations.length : 0;
+            if (violationCount > 0) return 1;
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const mostRecent = testInfo.isDismantled
+                ? testInfo.pviDate
+                : [testInfo.pviDate, testInfo.cat1Date, testInfo.cat5Date].filter(Boolean).reduce((latest, date) => !latest || date > latest ? date : latest, null);
+            if (!mostRecent) return 3;
+            const eligible = new Date(mostRecent);
+            eligible.setDate(eligible.getDate() + 91);
+            eligible.setHours(0, 0, 0, 0);
+            return eligible > today ? 2 : 3;
         }
 
 
@@ -19976,6 +20106,42 @@
             });
             return changed;
         }
+
+        function mapSelectCompletionDatesAreToday(dates, today) {
+            return Array.isArray(dates) && dates.length === 1 && dates[0] === today;
+        }
+
+        // One date box is shared by every selected building. Use the scheduled date when
+        // the selection agrees, and leave the box empty when the scheduled dates differ.
+        function getMapSelectCompletionDefaultDates(bins, lane, todayKey) {
+            const today = todayKey || formatLocalDateInputValue(new Date());
+            const keys = (Array.isArray(bins) ? bins : [bins]).map(value => String(value || '').trim()).filter(Boolean);
+            if (!keys.length) return [today];
+            const perBuilding = keys.map(bin => {
+                const existing = typeof getMapCompleted === 'function' ? (getMapCompleted()[bin] || {}) : {};
+                const dates = getMapCompletionDefaultDates(bin, lane, existing, today);
+                return Array.isArray(dates) && dates.length ? dates.slice() : [today];
+            });
+            const signature = dates => dates.join('|');
+            const unique = Array.from(new Set(perBuilding.map(signature)));
+            if (unique.length === 1) return perBuilding[0];
+            const scheduled = perBuilding.filter(dates => dates[0] !== '' && !mapSelectCompletionDatesAreToday(dates, today));
+            const scheduledUnique = Array.from(new Set(scheduled.map(signature)));
+            if (scheduledUnique.length === 1) return scheduled[0].slice();
+            return [''];
+        }
+
+        function getMapSelectCompletionPrefillNote(bins, todayKey) {
+            const today = todayKey || formatLocalDateInputValue(new Date());
+            const lanes = ['pvi', 'category'].map(lane => getMapSelectCompletionDefaultDates(bins, lane, today));
+            if (lanes.some(dates => dates.length === 1 && dates[0] === '')) {
+                return 'These buildings have different scheduled dates. Enter the completed date to save on each one.';
+            }
+            if (lanes.some(dates => !mapSelectCompletionDatesAreToday(dates, today))) {
+                return 'The completed date starts as the scheduled date. Today is filled in only when that test has no scheduled date.';
+            }
+            return 'Today is filled in because these tests have no scheduled date yet.';
+        }
         // end MAP completed test date helpers
 
         function renderMapCompletionDateRowHtml(value, locked) {
@@ -20435,7 +20601,7 @@
                     ${dobStatusHtml}
                     ${isBulk ? '<p style="margin: -4px 0 14px 0; font-size: 12px; line-height: 1.45; color: var(--text-color, #ccc);">DOB status is checked on each building when you save. A date already on a building stays unless you change it here.</p>' : ''}
                     ${renderMapCompletionDatesEditorHtml('completedDatesEditor')}
-                    <p style="margin: -4px 0 10px 0; font-size: 11px; opacity: 0.6; color: var(--text-color, #ccc);">A date verified with DOB stays on that test and is not replaced. Other tests keep a date they already have. Today is filled in only when a test has no date yet.</p>
+                    <p id="completedDatePrefillNote" style="margin: -4px 0 10px 0; font-size: 11px; opacity: 0.6; color: var(--text-color, #ccc);">A date verified with DOB stays on that test and is not replaced. Other tests keep a date they already have. Today is filled in only when a test has no date yet.</p>
                     <div id="completedOtherInspectionHint" role="status" style="${MAP_OTHER_INSPECTION_HINT_STYLE}"></div>
                     <div style="display: flex; gap: 8px;">
                         <button id="completedDetailsCancelBtn" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #ccc); cursor: pointer; font-size: 13px;">Cancel</button>
@@ -20453,13 +20619,23 @@
             overlay.addEventListener('click', (e) => { if (e.target === overlay) cancelCompletedDetailsPicker(); });
 
             const typeInput = document.getElementById('completedTestTypeInput');
+            const selectCompletionBins = (isBulk || opts.fromMapSelect) ? (isBulk ? bulkBins : [String(bin)]) : null;
             const datesEditor = bindMapCompletionDatesEditor(document.getElementById('completedDatesEditor'), {
                 completionType: currentTestType,
-                getDefaultDates: lane => isBulk ? [todayKey] : getMapCompletionDefaultDates(bin, lane, existing, todayKey),
+                getDefaultDates: lane => selectCompletionBins
+                    ? getMapSelectCompletionDefaultDates(selectCompletionBins, lane, todayKey)
+                    : getMapCompletionDefaultDates(bin, lane, existing, todayKey),
                 getDobDates: lane => isBulk ? [] : getMapCompletionDobLaneDates(bin, lane, todayKey),
                 getReplacedScheduledDates: lanes => isBulk ? [] : getMapScheduledDatesReplacedByCompletion(bin, lanes, existing),
                 onChange: refreshCompletedOtherInspectionHint
             });
+            if (selectCompletionBins) {
+                const prefillNote = document.getElementById('completedDatePrefillNote');
+                if (prefillNote) {
+                    prefillNote.textContent = getMapSelectCompletionPrefillNote(selectCompletionBins, todayKey)
+                        + ' A date verified with DOB stays on that building.';
+                }
+            }
 
             function refreshCompletedOtherInspectionHint() {
                 return refreshMapOtherInspectionHint(
@@ -23714,26 +23890,7 @@
                 };
 
                 const getDeviceReportSortRank = function(device) {
-                    const testInfo = getDeviceReportTestInfo(device);
-                    if (testInfo.isNotApplicable) return 5;
-                    if (testInfo.isRemoved) return 4;
-
-                    // Devices with no tests filed in the current calendar year come first.
-                    const hasAnyTestThisYear = !!(testInfo.hasPVI || testInfo.hasCat1 || testInfo.hasCat5);
-                    if (!hasAnyTestThisYear) return 0;
-
-                    const violationCount = Array.isArray(device.violations) ? device.violations.length : 0;
-                    if (violationCount > 0) return 1;
-
-                    const mostRecent = testInfo.isDismantled
-                        ? testInfo.pviDate
-                        : [testInfo.pviDate, testInfo.cat1Date, testInfo.cat5Date].filter(Boolean).reduce((latest, date) => !latest || date > latest ? date : latest, null);
-
-                    if (!mostRecent) return 3;
-                    const eligible = new Date(mostRecent);
-                    eligible.setDate(eligible.getDate() + 91);
-                    eligible.setHours(0,0,0,0);
-                    return eligible > today ? 2 : 3;
+                    return getMapDeviceReportSortRank(device, currentYear, reportBin);
                 };
 
                 const sortedDevices = devices.slice().sort(function(a, b) {
@@ -24603,6 +24760,7 @@
 
         function toggleMapSelectMode(forceState) {
             const nextState = typeof forceState === 'boolean' ? forceState : !mapSelectMode;
+            if (nextState) exitMapDashboard();
             mapSelectMode = nextState;
             if (!mapSelectMode) {
                 const existingBulkModal = document.getElementById('mapBulkEditOverlay');
@@ -24653,6 +24811,139 @@
             if (editBtn) editBtn.disabled = selectedCount === 0;
             if (completedBtn) completedBtn.disabled = selectedCount === 0;
             if (clearBtn) clearBtn.disabled = selectedCount === 0;
+            renderMapSelectInfoPanel();
+        }
+
+        function focusMapSelectedBuilding(bin) {
+            if (!buildingMap || bin == null) return;
+            const binKey = String(bin);
+            let latLng = null;
+            if (Array.isArray(mapBuildingsData) && Array.isArray(mapMarkers)) {
+                const idx = mapBuildingsData.findIndex(item => item && String(item.bin) === binKey);
+                if (idx !== -1 && mapMarkers[idx]) {
+                    const marker = mapMarkers[idx];
+                    if (buildingMap.hasLayer && !buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                    if (marker.getLatLng) latLng = marker.getLatLng();
+                }
+            }
+            if (!latLng && Array.isArray(mapBuildingsData)) {
+                const building = mapBuildingsData.find(item => item && String(item.bin) === binKey);
+                const lat = building ? Number(building.latitude) : NaN;
+                const lng = building ? Number(building.longitude) : NaN;
+                if (Number.isFinite(lat) && Number.isFinite(lng)) latLng = { lat, lng };
+            }
+            if (!latLng) return;
+            const zoom = buildingMap.getZoom ? buildingMap.getZoom() : 16;
+            buildingMap.setView([latLng.lat, latLng.lng], Math.max(zoom, 17));
+            if (buildingMap.closePopup) buildingMap.closePopup();
+        }
+
+        function getMapSelectInfoDeviceNumbers(summary, building) {
+            const fromSummary = ((summary && summary.deviceNumbers) || []).filter(Boolean);
+            if (fromSummary.length) return fromSummary;
+            if (!building) return [];
+            const numbers = [];
+            ['readyDevices', 'notReadyDevices', 'completedDevices', 'notApplicableDevices', 'removedDeletedDevices'].forEach(key => {
+                (building[key] || []).forEach(device => {
+                    const number = String(device && (device.number || device.device_number) || '').trim();
+                    if (number) numbers.push(number);
+                });
+            });
+            return Array.from(new Set(numbers));
+        }
+
+        function renderMapSelectInfoPanel() {
+            const panel = document.getElementById('mapSelectInfoPanel');
+            const list = document.getElementById('mapSelectInfoList');
+            const countEl = document.getElementById('mapSelectInfoCount');
+            if (!panel || !list) return;
+            const show = !!(mapSelectMode && mapSelectedBins && mapSelectedBins.size);
+            const wasVisible = panel.classList.contains('map-select-info-visible');
+            panel.classList.toggle('map-select-info-visible', show);
+            if (wasVisible !== show && typeof requestMapResizeAfterControlsChange === 'function') {
+                requestMapResizeAfterControlsChange();
+            }
+            if (!show) {
+                list.innerHTML = '';
+                if (countEl) countEl.textContent = '0';
+                return;
+            }
+
+            const summaries = getMapSelectedBuildingSummaries();
+            if (countEl) countEl.textContent = String(summaries.length);
+            const favorites = getMapFavorites() || {};
+            const inProcess = getMapInProcess() || {};
+            const hold = getMapHold() || {};
+            const completed = getMapCompleted() || {};
+            const scrollTop = list.scrollTop;
+            list.innerHTML = summaries.map(summary => {
+                const bin = String(summary.bin);
+                const building = Array.isArray(mapBuildingsData)
+                    ? mapBuildingsData.find(item => item && String(item.bin) === bin)
+                    : null;
+                const address = escapeMapSuggestionHtml(summary.address || ('BIN ' + bin));
+                const deviceNumbers = getMapSelectInfoDeviceNumbers(summary, building);
+                const shownDevices = deviceNumbers.slice(0, 4);
+                const extraDevices = Math.max(0, deviceNumbers.length - shownDevices.length);
+                const deviceText = shownDevices.length
+                    ? escapeMapSuggestionHtml(shownDevices.join(', ') + (extraDevices ? ` +${extraDevices}` : ''))
+                    : '';
+                const deviceCount = Number(summary.deviceCount) || 0;
+                const completedEntry = completed[bin] || null;
+                const isCompleted = !!(completedEntry || (building && building.isCompleted));
+                const completionType = isCompleted
+                    ? (normalizeMapCompletedTestType((completedEntry && (completedEntry.completionType || completedEntry.testType)) || (building && building.completionType)) || 'Legacy')
+                    : '';
+                const chips = [];
+                if (isCompleted) {
+                    chips.push(`<span class="map-select-info-chip" style="background:${getMapCompletionColor(completionType)};">${escapeMapSuggestionHtml(getMapCompletedTestLabel(completionType))}</span>`);
+                } else {
+                    chips.push('<span class="map-select-info-chip" style="background:#6c757d;">Not completed</span>');
+                }
+                const inProcessEntry = inProcess[bin] || (building && building.isInProcess ? { date: building.inProcessDate } : null);
+                if (inProcessEntry) {
+                    const dateText = inProcessEntry.date ? ` ${new Date(inProcessEntry.date + 'T00:00:00').toLocaleDateString()}` : '';
+                    chips.push(`<span class="map-select-info-chip" style="background:#e67e22;">In process${escapeMapSuggestionHtml(dateText)}</span>`);
+                }
+                if (hold[bin] || (building && building.isHold)) {
+                    chips.push('<span class="map-select-info-chip" style="background:#607d8b;">On hold</span>');
+                }
+                if (favorites[bin]) {
+                    chips.push('<span class="map-select-info-chip" style="background:#9b59b6;">Favorite</span>');
+                }
+                const month = getMonthLabel(bin);
+                if (month) chips.push(`<span class="map-select-info-chip" style="background:#17a2b8;">${escapeMapSuggestionHtml(month)}</span>`);
+
+                const lines = [];
+                const schedule = getMapBulkSchedulePreviewText(bin);
+                if (schedule) lines.push(`<div class="map-select-info-line">${escapeMapSuggestionHtml(schedule)}</div>`);
+                if (completedEntry) {
+                    const completedDates = formatMapCompletedDatesSummary(completedEntry.completedDates);
+                    if (completedDates) lines.push(`<div class="map-select-info-line">Completed ${escapeMapSuggestionHtml(completedDates)}</div>`);
+                }
+                if (building) {
+                    const readyCount = Array.isArray(building.readyDevices) ? building.readyDevices.length : 0;
+                    const notReadyCount = Array.isArray(building.notReadyDevices) ? building.notReadyDevices.length : 0;
+                    const violationCount = Number(building.violations) || 0;
+                    const counts = [];
+                    if (readyCount) counts.push(`${readyCount} ready`);
+                    if (notReadyCount) counts.push(`${notReadyCount} not ready`);
+                    if (violationCount) counts.push(`${violationCount} violation${violationCount === 1 ? '' : 's'}`);
+                    if (counts.length) lines.push(`<div class="map-select-info-line">${escapeMapSuggestionHtml(counts.join(' · '))}</div>`);
+                }
+                const note = String(getMapNote(bin) || '').trim();
+                const noteHtml = note ? `<div class="map-select-info-note">${escapeMapSuggestionHtml(note)}</div>` : '';
+                const safeBin = escapeMapSuggestionHtml(bin);
+                return `<article class="map-select-info-card" data-bin="${safeBin}">
+                    <button type="button" class="map-select-info-address" onclick="focusMapSelectedBuilding('${safeBin}')">${address}</button>
+                    <div class="map-select-info-meta">BIN ${safeBin} · ${deviceCount} device${deviceCount === 1 ? '' : 's'}${deviceText ? ' · ' + deviceText : ''}</div>
+                    <div class="map-select-info-chips">${chips.join('')}</div>
+                    ${lines.join('')}
+                    ${noteHtml}
+                    <button type="button" class="map-select-info-remove" onclick="toggleMapBuildingSelection('${safeBin}')">Remove</button>
+                </article>`;
+            }).join('');
+            list.scrollTop = scrollTop;
         }
 
         function pruneMapBuildingSelection() {
@@ -30713,8 +31004,12 @@
             const row = document.getElementById('mapContentRow');
             const mapWrapper = document.getElementById('mapCanvasWrapper');
             const panel = document.getElementById('mapControlsPanel');
+            const infoPanel = document.getElementById('mapSelectInfoPanel');
             if (!row || !mapWrapper || mapWrapper.parentElement === row) return;
-            if (panel && panel.parentElement === row) row.insertBefore(mapWrapper, panel);
+            const anchor = (infoPanel && infoPanel.parentElement === row)
+                ? infoPanel
+                : ((panel && panel.parentElement === row) ? panel : null);
+            if (anchor) row.insertBefore(mapWrapper, anchor);
             else row.appendChild(mapWrapper);
         }
 
