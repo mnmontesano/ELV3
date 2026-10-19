@@ -32,26 +32,26 @@ const visibleBins = sliceBetween(
     '        function getMapViewVisibleBins(view) {',
     '        function mapViewHasScheduledDates(view, bin, building) {'
 );
-assert.match(visibleBins, /mapDevicesStillMissingUnbypassedTest\(group && group\.devices, bin\)/);
+assert.match(visibleBins, /mapCompletedTestsKeepVisible\(bin, group && group\.devices, completedEntry\)/);
 
 const hideCompletedFilter = sliceBetween(
     "            if (filterValue === 'hide-completed') {",
     "            if (filterValue === 'completed-open-tests') {"
 );
-assert.match(hideCompletedFilter, /mapDevicesStillMissingUnbypassedTest\(group && group\.devices, bin\)/);
+assert.match(hideCompletedFilter, /mapCompletedTestsKeepVisible\(bin, group && group\.devices, completedEntry\)/);
 
 const additional = sliceBetween(
     '        function shouldHideCompletedAdditionalLocation(location) {',
     '        function getMapCompletionKeyDisplayLabel(key) {'
 );
-assert.match(additional, /mapDevicesStillMissingUnbypassedTest\(devices, binHint\)/);
+assert.match(additional, /mapCompletedTestsKeepVisible\(binHint, devices, entry\)/);
 assert.doesNotMatch(additional, /return isHideCompletedActive\(\) && isAdditionalLocationCompleted\(location\)/);
 
 const hiddenCount = sliceBetween(
-    '                // Completed buildings with an unbypassed missing test stay on the map.',
+    '                // After 14 days, a completed building with an unbypassed missing test stays on the map.',
     '                // Keep in-process buildings searchable even when hidden by this setting.'
 );
-assert.match(hiddenCount, /mapDevicesStillMissingUnbypassedTest\(group && group\.devices, bin\)/);
+assert.match(hiddenCount, /mapCompletedTestsKeepVisible\(bin, group && group\.devices, completedEntry\)/);
 assert.match(hiddenCount, /!completedStaysVisible/);
 
 const storage = new Map();
@@ -71,6 +71,7 @@ const context = {
     mapCat1Bypasses: {},
     mapPviBypasses: {},
     groups: {},
+    completedStore: {},
     hideCompleted: true,
     cat5ViewBin: '',
     isNotApplicableMapDevice: device => !!device.map_not_applicable,
@@ -84,6 +85,7 @@ const context = {
         return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : null;
     },
     getMapGroupForBin(bin) { return context.groups[String(bin)] || null; },
+    getMapCompleted() { return context.completedStore; },
     isHideCompletedActive() { return context.hideCompleted; },
     isHideInProcessActive() { return false; },
     isHideHoldActive() { return false; },
@@ -177,6 +179,26 @@ context.clearMapDeviceTestBypass('cat1', '1000001', '1P1');
 assert.equal(context.mapCompletedBuildingStillMissingUnbypassedTest(openBuilding), true);
 assert.equal(context.isBuildingHiddenByMapSettings(openBuilding), false, 'an unbypassed missing test stays on the map');
 
+const dayMs = 24 * 60 * 60 * 1000;
+const markedNow = Date.now();
+context.completedStore['1000001'] = { status: 'Completed', markedCompletedAt: markedNow - (13 * dayMs) };
+assert.equal(context.mapCompletedEntryPastOpenTestGrace(context.completedStore['1000001'], markedNow), false);
+assert.equal(context.mapCompletedBuildingStillMissingUnbypassedTest(openBuilding, markedNow), false);
+assert.equal(context.isBuildingHiddenByMapSettings(openBuilding), true, 'within 14 days a completed building stays hidden');
+
+context.completedStore['1000001'] = { status: 'Completed', markedCompletedAt: markedNow - (14 * dayMs) };
+assert.equal(context.mapCompletedEntryPastOpenTestGrace(context.completedStore['1000001'], markedNow), true);
+assert.equal(context.mapCompletedBuildingStillMissingUnbypassedTest(openBuilding, markedNow), true);
+assert.equal(context.isBuildingHiddenByMapSettings(openBuilding), false, 'after 14 days an unbypassed missing test stays on the map');
+
+context.setMapDeviceTestBypass('cat1', '1000001', '1P1', { bypassed: true, note: 'Not our car' });
+assert.equal(context.isBuildingHiddenByMapSettings(openBuilding), true, 'after 14 days a bypassed device lets the building hide');
+context.clearMapDeviceTestBypass('cat1', '1000001', '1P1');
+
+context.completedStore['1000001'] = { status: 'Completed', timestamp: markedNow - (20 * dayMs) };
+assert.equal(context.isBuildingHiddenByMapSettings(openBuilding), false, 'older completions use the saved timestamp when no marked time exists');
+delete context.completedStore['1000001'];
+
 context.hideCompleted = false;
 assert.equal(context.isBuildingHiddenByMapSettings(doneBuilding), false);
 context.hideCompleted = true;
@@ -192,8 +214,12 @@ const customLocation = {
     devices: [device({ device_number: '9P9', cat1_latest_report_filed: '2025-01-01' })]
 };
 assert.equal(context.shouldHideCompletedAdditionalLocation(customLocation), false);
+context.completedStore[customLocation.key] = { status: 'Completed', markedCompletedAt: markedNow - (3 * dayMs) };
+assert.equal(context.shouldHideCompletedAdditionalLocation(customLocation), true, 'a custom pin stays hidden during the first 14 days');
+context.completedStore[customLocation.key] = { status: 'Completed', markedCompletedAt: markedNow - (14 * dayMs) };
+assert.equal(context.shouldHideCompletedAdditionalLocation(customLocation), false, 'a custom pin returns after 14 days while a test is open');
 context.setMapDeviceTestBypass('cat1', customLocation.key, '9P9', { bypassed: true });
 assert.equal(context.shouldHideCompletedAdditionalLocation(customLocation), true);
 assert.equal(context.shouldHideCompletedAdditionalLocation({ completed: true, key: 'custom:1,1', devices: [] }), true);
 
-console.log('Completed buildings with an unbypassed missing test stay on the map.');
+console.log('Completed buildings return to the map after 14 days when an unbypassed test is still open.');
