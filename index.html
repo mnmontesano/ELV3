@@ -1835,7 +1835,7 @@
                                 <span class="mcp-arrow" id="mcpCompletedArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpCompleted">
-                                <p class="mcp-desc">Buildings manually marked as completed. The completed date replaces the scheduled date for that test, and you can enter more than one completed date per test.</p>
+                                <p class="mcp-desc">Buildings manually marked as completed. The completed date replaces the scheduled date for that test, and you can enter more than one completed date per test. Hide Completed keeps a building on the map after 14 days when a device still needs a required test, until that device is bypassed.</p>
                                 <input type="text" id="completedSearchInput" class="mcp-search-input" placeholder="🔍 Search by address or BIN..."
                                        oninput="filterCompletedList(this.value)">
                                 <div id="completedBuildingsList" style="max-height: 320px; overflow-y: auto; margin-bottom: 8px;">
@@ -1854,7 +1854,7 @@
                             </div>
                             <div class="mcp-body" id="mcpReview">
                                 <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">
-                                    Buildings marked completed that still have devices without the marked test filed for this calendar year. This is separate from the REVIEW month label. PVI-only completions are checked for missing PVI. Category-only completions are checked for missing CAT 1 or a CAT 5 that is due. Full completions, and older completions with no test type, are checked for any required test still open. Click an address to view the building on the map. Show on MAP filters to these buildings and can be clicked again to restore the previous map view.
+                                    Buildings marked completed that still have devices without the marked test filed for this calendar year. This is separate from the REVIEW month label. PVI-only completions are checked for missing PVI. Category-only completions are checked for missing CAT 1 or a CAT 5 that is due. Full completions, and older completions with no test type, are checked for any required test still open. Fourteen days after the job was marked completed, Hide Completed leaves it on the map while a device still needs a required test. Bypassing that device removes it. Click an address to view the building on the map. Show on MAP filters to these buildings and can be clicked again to restore the previous map view.
                                 </p>
                                 <span id="mapReviewDeviceCount" hidden>0</span>
                                 <div id="mapReviewStatus" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(211,84,0,0.28); background:rgba(211,84,0,0.08); color:var(--text-color); font-size:0.9em; line-height:1.45;"></div>
@@ -11094,8 +11094,10 @@
         function shouldHideCompletedAdditionalLocation(location) {
             if (!isHideCompletedActive() || !isAdditionalLocationCompleted(location)) return false;
             const devices = location && Array.isArray(location.devices) ? location.devices : [];
-            const binHint = location && (location.bin || getAdditionalLocationCompletionKey(location));
-            return !mapDevicesStillMissingUnbypassedTest(devices, binHint);
+            const key = getAdditionalLocationCompletionKey(location);
+            const binHint = (location && location.bin) || key;
+            const entry = getMapCompletedEntryForKey(key) || getMapCompletedEntryForKey(binHint);
+            return !mapCompletedTestsKeepVisible(binHint, devices, entry);
         }
 
         function getMapCompletionKeyDisplayLabel(key) {
@@ -13098,6 +13100,50 @@
         }
 
         // A bypass clears only the test it covers. Any other missing required test stays open.
+        const MAP_COMPLETED_OPEN_TEST_GRACE_DAYS = 14;
+        const MAP_COMPLETED_OPEN_TEST_GRACE_MS = MAP_COMPLETED_OPEN_TEST_GRACE_DAYS * 24 * 60 * 60 * 1000;
+
+        function normalizeMapEpochMs(value) {
+            if (value instanceof Date) {
+                const ms = value.getTime();
+                return Number.isFinite(ms) && ms > 0 ? ms : null;
+            }
+            if (typeof value === 'string' && value.trim() && !/^\d+(\.\d+)?$/.test(value.trim())) {
+                const parsed = Date.parse(value);
+                return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+            }
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric) || numeric <= 0) return null;
+            return numeric < 100000000000 ? numeric * 1000 : numeric;
+        }
+
+        function getMapCompletedEntryForKey(key) {
+            const normalized = String(key || '');
+            if (!normalized || typeof getMapCompleted !== 'function') return null;
+            const completed = getMapCompleted();
+            if (!completed || typeof completed !== 'object') return null;
+            return completed[normalized] || null;
+        }
+
+        // markedCompletedAt is when the user marked the job. Older saves only have the completion date.
+        function getMapCompletedMarkedAtMs(entry) {
+            if (!entry || typeof entry !== 'object') return null;
+            return normalizeMapEpochMs(entry.markedCompletedAt) || normalizeMapEpochMs(entry.timestamp);
+        }
+
+        function mapCompletedEntryPastOpenTestGrace(entry, nowMs) {
+            const markedAt = getMapCompletedMarkedAtMs(entry);
+            if (!markedAt) return true;
+            const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+            return now - markedAt >= MAP_COMPLETED_OPEN_TEST_GRACE_MS;
+        }
+
+        // Hide Completed can drop a job for the first 14 days. After that, an unbypassed required test keeps it on the map.
+        function mapCompletedTestsKeepVisible(bin, devices, entry, nowMs) {
+            if (entry && !mapCompletedEntryPastOpenTestGrace(entry, nowMs)) return false;
+            return mapDevicesStillMissingUnbypassedTest(devices, bin);
+        }
+
         function mapDevicesStillMissingUnbypassedTest(devices, binHint, year) {
             const list = Array.isArray(devices) ? devices : [];
             if (!list.length) return false;
@@ -13105,12 +13151,12 @@
             return list.some(device => !mapDobDeviceHasRequiredCurrentYearCompletion(device, reviewYear, binHint));
         }
 
-        function mapCompletedBuildingStillMissingUnbypassedTest(building) {
+        function mapCompletedBuildingStillMissingUnbypassedTest(building, nowMs) {
             if (!building) return false;
             const bin = String(building.bin || '');
             const group = getMapGroupForBin(bin);
             const devices = group && Array.isArray(group.devices) ? group.devices : [];
-            return mapDevicesStillMissingUnbypassedTest(devices, bin);
+            return mapCompletedTestsKeepVisible(bin, devices, getMapCompletedEntryForKey(bin), nowMs);
         }
 
         function getMapNextRequiredTestLabel(device, year, binHint) {
@@ -15743,7 +15789,7 @@
                 const group = binGroups[bin];
                 const completedEntry = view.completed && view.completed[bin];
                 const keepCompletedVisible = !!(completedEntry && (
-                    mapDevicesStillMissingUnbypassedTest(group && group.devices, bin)
+                    mapCompletedTestsKeepVisible(bin, group && group.devices, completedEntry)
                     || mapBinStillNeedsCat5InCurrentView(bin)
                 ));
                 const hiddenBySettings = !!(
@@ -15966,12 +16012,13 @@
             if (filterValue === 'hide-pvi-completed') {
                 return new Set(allBins.filter(bin => !mapViewHasCompletedTest(view, bin, null, 'PVI')));
             }
-            // Legacy saved filter: hide completed markers, except ones that still owe an unbypassed test.
+            // Legacy saved filter: hide completed markers, except ones past 14 days that still owe an unbypassed test.
             if (filterValue === 'hide-completed') {
                 return new Set(allBins.filter(bin => {
                     if (!(view.completed && view.completed[bin])) return true;
                     const group = binGroups[bin];
-                    return mapDevicesStillMissingUnbypassedTest(group && group.devices, bin)
+                    const completedEntry = view.completed[bin];
+                    return mapCompletedTestsKeepVisible(bin, group && group.devices, completedEntry)
                         || mapBinStillNeedsCat5InCurrentView(bin);
                 }));
             }
@@ -19331,7 +19378,7 @@
             return mapBinStillNeedsCat5InCurrentView(building.bin);
         }
 
-        // Hide Completed removes a marked building only when every missing required test is bypassed.
+        // Hide Completed removes a marked building during the first 14 days, and after that only when every missing required test is bypassed.
         function mapCompletedBuildingHiddenWhileHideCompleted(building) {
             if (!building || !building.isCompleted) return false;
             if (mapCompletedBuildingStillNeedsCat5InCurrentView(building)) return false;
@@ -31854,9 +31901,10 @@
                     countedHiddenForBin = true;
                 }
 
-                // Completed buildings with an unbypassed missing test stay on the map.
-                const completedStaysVisible = !!(completed[bin] && (
-                    mapDevicesStillMissingUnbypassedTest(group && group.devices, bin)
+                // After 14 days, a completed building with an unbypassed missing test stays on the map.
+                const completedEntry = completed[bin];
+                const completedStaysVisible = !!(completedEntry && (
+                    mapCompletedTestsKeepVisible(bin, group && group.devices, completedEntry)
                     || mapBinStillNeedsCat5InCurrentView(bin)
                 ));
                 if (hideCompleted && completed[bin] && !completedStaysVisible) {
