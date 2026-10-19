@@ -2104,6 +2104,9 @@
                     .map-availability-row span:first-child { font-weight: 600; }
                     .map-availability-row span:last-child { text-align: right; font-weight: 600; }
                     .map-availability-more { font-size: 10px; opacity: 0.72; margin-top: 3px; }
+                    .map-availability-schedule { margin: 0 0 6px; padding: 5px 7px; border-radius: 6px; background: rgba(26,115,232,0.1); border: 1px solid rgba(26,115,232,0.3); }
+                    .map-availability-schedule-label { font-size: 10px; font-weight: 700; color: #1a73e8; margin-bottom: 2px; }
+                    .map-availability-schedule .map-availability-row { border-top-color: rgba(26,115,232,0.18); }
                     .map-availability-note { margin-top: 6px; padding: 5px 7px; border-radius: 6px; background: rgba(26,115,232,0.1); border: 1px solid rgba(26,115,232,0.3); }
                     .map-availability-note-label { font-size: 10px; font-weight: 700; color: #1a73e8; margin-bottom: 2px; }
                     .map-availability-note-text { font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
@@ -21805,7 +21808,7 @@
             showMapOverlapChooser(entries, clickedMarker.getLatLng());
         }
 
-        const MAP_AVAILABILITY_TOOLTIP_MAX_ROWS = 8;
+        const MAP_AVAILABILITY_TOOLTIP_MAX_ROWS = 3;
 
         function formatMapAvailabilityDate(date) {
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -21859,23 +21862,57 @@
                 ${shown}${more}`;
         }
 
-        function buildMapTestingAvailabilityTooltipHtml(title, devicesHtml, noteBin) {
+        function mapAvailabilityScheduleTypeLabel(type) {
+            if (type === 'pvi') return 'PVI';
+            if (type === 'category') return 'CATEGORY';
+            return 'UNSPECIFIED';
+        }
+
+        function mapAvailabilityScheduleTypeColor(type) {
+            if (type === 'pvi') return '#1a73e8';
+            if (type === 'category') return '#9b59b6';
+            return '#607d8b';
+        }
+
+        function buildMapScheduledTestDatesTooltipHtml(bin) {
+            if (!bin || typeof getMapTypedScheduleRows !== 'function') return '';
+            const rows = getMapTypedScheduleRows(bin)
+                .filter(row => row && row.date)
+                .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.type || '').localeCompare(String(b.type || '')));
+            if (!rows.length) return '';
+            const heading = rows.length === 1 ? 'Scheduled test date' : 'Scheduled test dates';
+            const lines = rows.map(row => {
+                const display = typeof formatMapTestDateRange === 'function'
+                    ? formatMapTestDateRange(row.date, row.endDate)
+                    : String(row.date);
+                return `<div class="map-availability-row"><span style="color:${mapAvailabilityScheduleTypeColor(row.type)};">${mapAvailabilityScheduleTypeLabel(row.type)}</span><span>${escapeMapSuggestionHtml(display)}</span></div>`;
+            }).join('');
+            return `<div class="map-availability-schedule"><div class="map-availability-schedule-label">🗓️ ${heading}</div>${lines}</div>`;
+        }
+
+        function buildMapTestingAvailabilityTooltipHtml(title, devicesHtml, noteBin, scheduleKey) {
             const note = noteBin ? String(getMapNote(noteBin) || '').trim() : '';
-            if (!devicesHtml && !note) return '';
+            const scheduleHtml = buildMapScheduledTestDatesTooltipHtml(scheduleKey || noteBin);
+            if (!devicesHtml && !note && !scheduleHtml) return '';
             const noteHtml = note
                 ? `<div class="map-availability-note"><div class="map-availability-note-label">📝 Notes</div><div class="map-availability-note-text">${escapeMapSuggestionHtml(note)}</div></div>`
                 : '';
+            const deviceSection = devicesHtml || (scheduleHtml
+                ? ''
+                : '<div class="map-availability-summary" style="opacity:0.75;">No device testing dates on file</div>');
             return `<div class="map-availability-title">${escapeMapSuggestionHtml(title)}</div>
-                ${devicesHtml || '<div class="map-availability-summary" style="opacity:0.75;">No device testing dates on file</div>'}${noteHtml}`;
+                ${scheduleHtml}${deviceSection}${noteHtml}`;
         }
 
         // Hover-only: on touch screens a tap already opens the full popup.
-        // Content is built on each hover so note edits show without rebuilding the map.
-        function attachMapTestingAvailabilityTooltip(marker, title, devices, year, noteBin) {
+        // Content is built on each hover so note edits and scheduled dates show without rebuilding the map.
+        function attachMapTestingAvailabilityTooltip(marker, title, devices, year, noteBin, scheduleKey) {
             if (!marker || !window.matchMedia || !window.matchMedia('(hover: hover)').matches) return;
             const devicesHtml = buildMapTestingAvailabilityDevicesHtml(devices, year);
-            if (!devicesHtml && !noteBin) return;
-            marker.bindTooltip(() => buildMapTestingAvailabilityTooltipHtml(title, devicesHtml, noteBin), {
+            const lookupKey = scheduleKey || noteBin;
+            if (!devicesHtml && !noteBin && !lookupKey) return;
+            const tooltipHtml = () => buildMapTestingAvailabilityTooltipHtml(title, devicesHtml, noteBin, lookupKey);
+            marker.bindTooltip(tooltipHtml, {
                 direction: 'top',
                 offset: [0, -14],
                 opacity: 1,
@@ -21887,7 +21924,7 @@
                     marker.closeTooltip();
                     return;
                 }
-                if (!buildMapTestingAvailabilityTooltipHtml(title, devicesHtml, noteBin)) marker.closeTooltip();
+                if (!tooltipHtml()) marker.closeTooltip();
             });
         }
 
@@ -33048,7 +33085,7 @@
                 `;
 
                 additionalMarker.bindPopup(additionalPopupContent, { maxWidth: 480, minWidth: 380 });
-                attachMapTestingAvailabilityTooltip(additionalMarker, additionalMarker._mapMarkerMeta.title, { readyDevices, notReadyDevices, completedDevices }, new Date().getFullYear(), location.bin ? String(location.bin) : '');
+                attachMapTestingAvailabilityTooltip(additionalMarker, additionalMarker._mapMarkerMeta.title, { readyDevices, notReadyDevices, completedDevices }, new Date().getFullYear(), location.bin ? String(location.bin) : '', location.bin ? String(location.bin) : getAdditionalLocationCompletionKey(location));
                 attachMapMarkerPopupClickHandler(additionalMarker);
                 additionalLocationMarkers.push(additionalMarker);
                 if (!shouldHideCompletedAdditionalLocation(location)) {
