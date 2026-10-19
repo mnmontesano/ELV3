@@ -1904,6 +1904,7 @@
                                     <li>Click a marker to see building details</li>
                                     <li>Use ✓ in popup to mark a building complete</li>
                                     <li>In Select mode, Completed opens that same completion menu for every selected building</li>
+                                    <li>Stacked buildings in Select mode use the same location chooser as a normal map click. Choose the building to select</li>
                                     <li>Use 🔄 in popup to mark a building in process</li>
                                     <li>Use ⭐ in popup to favorite a building</li>
                                     <li>Use 👁️ in popup to hide a building</li>
@@ -2084,6 +2085,7 @@
                     .map-overlap-chooser-btn { display: block; width: 100%; text-align: left; margin: 0 0 6px; padding: 8px 10px; border: 1px solid var(--input-border, #555); border-radius: 6px; background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); cursor: pointer; }
                     .map-overlap-chooser-btn:last-child { margin-bottom: 0; }
                     .map-overlap-chooser-btn:hover { background: rgba(26,115,232,0.14); border-color: #1a73e8; }
+                    .map-overlap-chooser-btn.map-overlap-chooser-btn-selected { border-color: #27ae60; box-shadow: inset 0 0 0 1px #27ae60; }
                     .map-overlap-chooser-btn .map-overlap-chooser-label { font-weight: 600; font-size: 12px; line-height: 1.35; word-break: break-word; }
                     .map-overlap-chooser-btn .map-overlap-chooser-sub { font-size: 11px; opacity: 0.72; margin-top: 2px; }
                     .leaflet-tooltip.map-availability-tooltip { background: var(--panel-bg, #1e1e2e); color: var(--text-color, #fff); border: 1px solid var(--input-border, #555); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.35); padding: 8px 10px; min-width: 220px; max-width: 320px; white-space: normal; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -21432,6 +21434,7 @@
                 entries.push({
                     marker,
                     kind: 'building',
+                    bin: building && building.bin != null ? String(building.bin) : '',
                     title: meta.title || (building && building.address) || (building && building.bin ? ('BIN ' + building.bin) : 'Building'),
                     subtitle: meta.subtitle || (building && building.bin ? ('BIN ' + building.bin) : '')
                 });
@@ -21487,6 +21490,11 @@
             return false;
         }
 
+        function mapOverlapEntryIsSelected(entry) {
+            if (!mapSelectMode || !entry || entry.kind !== 'building' || !entry.bin) return false;
+            return !!(mapSelectedBins && mapSelectedBins.has(String(entry.bin)));
+        }
+
         function chooseOverlappingMapMarker(index) {
             const entry = mapOverlapChooserEntries[index];
             if (!entry || !entry.marker) return;
@@ -21498,6 +21506,14 @@
             if (buildingMap && typeof buildingMap.hasLayer === 'function' && !buildingMap.hasLayer(entry.marker)) {
                 buildingMap.addLayer(entry.marker);
             }
+            if (mapSelectMode) {
+                if (entry.kind === 'building' && entry.bin) {
+                    toggleMapBuildingSelection(entry.bin);
+                    return;
+                }
+                showMapNotification('Choose a building to add it to the selection', '#ff9800');
+                return;
+            }
             openMapMarkerPopup(entry.marker);
         }
 
@@ -21506,14 +21522,18 @@
             mapOverlapChooserEntries = entries.slice();
             const buttons = entries.map((entry, index) => {
                 const title = escapeMapSuggestionHtml(entry.title || 'Location');
-                const subtitle = escapeMapSuggestionHtml(entry.subtitle || '');
-                return `<button type="button" class="map-overlap-chooser-btn" data-overlap-index="${index}">
+                const selected = mapOverlapEntryIsSelected(entry);
+                const subtitle = escapeMapSuggestionHtml([entry.subtitle || '', selected ? 'Selected' : ''].filter(Boolean).join(' · '));
+                return `<button type="button" class="map-overlap-chooser-btn${selected ? ' map-overlap-chooser-btn-selected' : ''}" data-overlap-index="${index}">
                     <div class="map-overlap-chooser-label">${title}</div>
                     ${subtitle ? `<div class="map-overlap-chooser-sub">${subtitle}</div>` : ''}
                 </button>`;
             }).join('');
+            const chooserTitle = mapSelectMode
+                ? `${entries.length} locations here — choose one to select`
+                : `${entries.length} locations here — choose one`;
             const html = `<div class="map-overlap-chooser">
-                <div class="map-overlap-chooser-title">${entries.length} locations here — choose one</div>
+                <div class="map-overlap-chooser-title">${chooserTitle}</div>
                 ${buttons}
             </div>`;
             const popup = L.popup({
@@ -21530,7 +21550,10 @@
                     btn.addEventListener('click', function(ev) {
                         ev.preventDefault();
                         ev.stopPropagation();
-                        chooseOverlappingMapMarker(Number(btn.getAttribute('data-overlap-index')));
+                        const index = Number(btn.getAttribute('data-overlap-index'));
+                        // Close after this click finishes. Removing the popup mid-click
+                        // lets the click land on the marker underneath and reopen the chooser.
+                        setTimeout(function() { chooseOverlappingMapMarker(index); }, 0);
                     });
                 });
             });
@@ -21655,8 +21678,15 @@
                 marker.off('click', marker._openPopup);
             }
             marker.on('click', function(e) {
-                if (mapSelectMode) return;
                 const overlapping = getOverlappingVisibleMapMarkers(marker);
+                if (mapSelectMode) {
+                    if (overlapping.length > 1) {
+                        if (e && window.L && L.DomEvent) L.DomEvent.stop(e);
+                        if (typeof marker.closePopup === 'function') marker.closePopup();
+                        handleOverlappingMapMarkerClick(overlapping, marker);
+                    }
+                    return;
+                }
                 if (overlapping.length > 1) {
                     if (e && window.L && L.DomEvent) L.DomEvent.stop(e);
                     if (typeof marker.closePopup === 'function') marker.closePopup();
@@ -24547,6 +24577,8 @@
                         marker.closePopup();
                     }
                 }, 0);
+                const overlapping = getOverlappingVisibleMapMarkers(marker);
+                if (overlapping.length > 1) return;
                 toggleMapBuildingSelection(binKey);
             });
         }
