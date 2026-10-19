@@ -1253,6 +1253,7 @@
                             <div class="map-select-actions">
                                 <button type="button" onclick="openMapSelectByDevicesModal()" style="background:#0d6efd;" title="Select buildings by entering device numbers">By Device #s</button>
                                 <button type="button" id="mapSelectEditButton" onclick="openMapBulkEditModal()" style="background:#1a73e8;" disabled title="Edit information for selected buildings">Edit Selected</button>
+                                <button type="button" id="mapSelectCompletedButton" onclick="openMapSelectCompletedMenu()" style="background:#27ae60;" disabled title="Open the completion menu for the selected buildings">Completed</button>
                                 <button type="button" id="mapSelectClearButton" onclick="clearMapBuildingSelection()" style="background:#6c757d;" disabled title="Clear current selection">Clear</button>
                                 <button type="button" onclick="toggleMapSelectMode(false)" style="background:#c77700;" title="Exit select mode">Done</button>
                             </div>
@@ -1902,6 +1903,7 @@
                                 <ul id="mcpTipsList" style="font-size: 0.9em; opacity: 0.8; margin: 0; padding-left: 16px; line-height: 1.7;">
                                     <li>Click a marker to see building details</li>
                                     <li>Use ✓ in popup to mark a building complete</li>
+                                    <li>In Select mode, Completed opens that same completion menu for every selected building</li>
                                     <li>Use 🔄 in popup to mark a building in process</li>
                                     <li>Use ⭐ in popup to favorite a building</li>
                                     <li>Use 👁️ in popup to hide a building</li>
@@ -19748,31 +19750,40 @@
             return null;
         }
 
-        function confirmMapCompletionRequirements(bin, completionType) {
+        function getMapCompletionRequirementStatus(bin, completionType) {
             const group = getMapGroupForBin(bin);
-            if (!group) return true;
             const currentYear = new Date().getFullYear();
             const normalizedType = normalizeMapCompletedTestType(completionType) || 'Full';
-            const facts = getMapBuildingCompletionFacts(group, currentYear, bin);
-            const requirementsMet = normalizedType === 'PVI'
+            const facts = group ? getMapBuildingCompletionFacts(group, currentYear, bin) : null;
+            const requirementsMet = !facts || (normalizedType === 'PVI'
                 ? facts.pviComplete
                 : normalizedType === 'Category'
                     ? facts.categoryComplete
-                    : facts.fullyComplete;
-            if (requirementsMet) return true;
-            const label = group.address || getMapBuildingAddressForBin(bin) || `BIN ${bin}`;
+                    : facts.fullyComplete);
             const missingLabel = normalizedType === 'PVI'
                 ? 'all required PVI inspections'
                 : normalizedType === 'Category'
                     ? 'all required Category inspections (CAT 1 and any CAT 5 due)'
                     : 'all required PVI and Category inspections';
-            return confirm(`${label} does not show ${missingLabel} filed with DOB for ${currentYear}. Continue with this manual completion status?`);
+            return {
+                met: !!requirementsMet,
+                year: currentYear,
+                missingLabel,
+                normalizedType,
+                label: (group && group.address) || getMapBuildingAddressForBin(bin) || `BIN ${bin}`
+            };
         }
 
-        function confirmMapManualDateForDobCompletedTest(bin, completionType, dateValue) {
+        function confirmMapCompletionRequirements(bin, completionType) {
+            const status = getMapCompletionRequirementStatus(bin, completionType);
+            if (status.met) return true;
+            return confirm(`${status.label} does not show ${status.missingLabel} filed with DOB for ${status.year}. Continue with this manual completion status?`);
+        }
+
+        function mapManualCompletionDateConflictsWithDob(bin, completionType, dateValue) {
             const normalizedType = normalizeMapCompletedTestType(completionType);
             const completionDate = parseMapInspectionDate(dateValue);
-            if (!completionDate || !normalizedType) return true;
+            if (!completionDate || !normalizedType) return false;
             const year = completionDate.getFullYear();
             const facts = getMapBuildingCompletionFacts(getMapGroupForBin(bin), year, bin);
             const dobComplete = normalizedType === 'PVI'
@@ -19782,16 +19793,22 @@
                     : normalizedType === 'Full'
                         ? facts.pviRequiredCount > 0 && facts.categoryRequiredCount > 0 && facts.fullyComplete
                         : false;
-            if (!dobComplete) return true;
+            if (!dobComplete) return false;
             const lanes = getMapCompletionDateLanes(normalizedType);
             const dobDates = lanes.flatMap(lane => getMapCompletionDobLaneDates(bin, lane, formatLocalDateInputValue(completionDate)));
             // A date DOB already verified is kept. Do not ask to replace it with a manual date.
-            if (dobDates.length) return true;
+            return dobDates.length === 0;
+        }
+
+        function confirmMapManualDateForDobCompletedTest(bin, completionType, dateValue) {
+            if (!mapManualCompletionDateConflictsWithDob(bin, completionType, dateValue)) return true;
+            const normalizedType = normalizeMapCompletedTestType(completionType);
+            const completionDate = parseMapInspectionDate(dateValue);
             const testLabel = normalizedType === 'PVI' ? 'PVI' : normalizedType === 'Category' ? 'Category' : 'PVI and Category';
             const buildingLabel = getMapBuildingAddressForBin(bin) || `BIN ${bin}`;
             const displayDate = completionDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
             return confirm(
-                `DOB already confirms that every device requiring ${testLabel} testing at ${buildingLabel} is complete for ${year}.\n\n` +
+                `DOB already confirms that every device requiring ${testLabel} testing at ${buildingLabel} is complete for ${completionDate.getFullYear()}.\n\n` +
                 `You entered ${displayDate} as a manual completion date. Save this manual date anyway?`
             );
         }
@@ -20360,20 +20377,42 @@
 
         function showMapCompletedDetailsPicker(bin, options) {
             const opts = options || {};
-            const existing = getMapCompleted()[bin] || {};
-            const address = opts.address || existing.address || getMapBuildingAddressForBin(bin);
+            const bulkBins = Array.isArray(opts.bulkBins) ? opts.bulkBins.map(value => String(value || '').trim()).filter(Boolean) : [];
+            const isBulk = bulkBins.length > 1;
+            const existingOverlay = document.getElementById('completedDetailsOverlay');
+            if (existingOverlay) existingOverlay.remove();
+            const existing = isBulk ? {} : (getMapCompleted()[bin] || {});
+            const address = isBulk ? '' : (opts.address || existing.address || getMapBuildingAddressForBin(bin));
             const todayKey = formatLocalDateInputValue(new Date());
             const currentYear = new Date().getFullYear();
-            const completionFacts = getMapBuildingCompletionFacts(getMapGroupForBin(bin), currentYear, bin);
-            const currentTestType = normalizeMapCompletedTestType(opts.testType || existing.completionType || existing.testType)
-                || getMapDobSuggestedCompletionType(completionFacts);
-            const pviCompletionTimeframe = getMapDobCompletionTimeframe(bin, 'pvi', currentYear);
-            const categoryCompletionTimeframe = getMapDobCompletionTimeframe(bin, 'category', currentYear);
+            const completionFacts = isBulk ? null : getMapBuildingCompletionFacts(getMapGroupForBin(bin), currentYear, bin);
+            const currentTestType = isBulk
+                ? ''
+                : (normalizeMapCompletedTestType(opts.testType || existing.completionType || existing.testType)
+                    || getMapDobSuggestedCompletionType(completionFacts));
+            const pviCompletionTimeframe = isBulk ? null : getMapDobCompletionTimeframe(bin, 'pvi', currentYear);
+            const categoryCompletionTimeframe = isBulk ? null : getMapDobCompletionTimeframe(bin, 'category', currentYear);
             const renderCompletionTimeframe = timeframe => timeframe
                 ? `<span style="display:block; margin-top:4px; font-size:10px; line-height:1.35; opacity:0.82;"><strong>${timeframe.dateCount === 1 ? 'All devices completed' : 'Completion timeframe'}:</strong> ${timeframe.display}</span>`
                 : '';
+            const subtitle = isBulk
+                ? `${bulkBins.length} buildings selected — this completion is saved on each one`
+                : (address || getMapCompletionKeyDisplayLabel(bin));
+            const dobStatusHtml = isBulk ? '' : `
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:8px; margin:-4px 0 14px;">
+                        <div style="padding:8px 10px; border-radius:7px; background:${completionFacts.categoryComplete ? 'rgba(39,174,96,0.11)' : 'rgba(255,152,0,0.1)'}; border:1px solid ${completionFacts.categoryComplete ? 'rgba(39,174,96,0.32)' : 'rgba(255,152,0,0.32)'}; font-size:11px; color:var(--text-color);">
+                            <strong>Category</strong><br>${completionFacts.categoryComplete ? '✓ DOB complete' : '⚠ Not confirmed'}
+                            ${completionFacts.categoryComplete ? renderCompletionTimeframe(categoryCompletionTimeframe) : ''}
+                        </div>
+                        <div style="padding:8px 10px; border-radius:7px; background:${completionFacts.pviComplete ? 'rgba(39,174,96,0.11)' : 'rgba(255,152,0,0.1)'}; border:1px solid ${completionFacts.pviComplete ? 'rgba(39,174,96,0.32)' : 'rgba(255,152,0,0.32)'}; font-size:11px; color:var(--text-color);">
+                            <strong>PVI</strong><br>${completionFacts.pviComplete ? '✓ DOB complete' : '⚠ Not confirmed'}
+                            ${completionFacts.pviComplete ? renderCompletionTimeframe(pviCompletionTimeframe) : ''}
+                        </div>
+                    </div>
+                    ${renderMapCompletionDeviceTestsHtml(completionFacts, currentYear)}`;
             const overlay = document.createElement('div');
             overlay.id = 'completedDetailsOverlay';
+            if (opts.fromMapSelect) overlay.dataset.fromMapSelect = '1';
             overlay.style.cssText = `
                 position: fixed; top: 0; left: 0; width: 100%; height: 100%;
                 background: rgba(0,0,0,0.5); z-index: 10010;
@@ -20386,22 +20425,13 @@
                         <h3 style="margin: 0; color: var(--text-color, #fff); font-size: 16px;">${isMapCustomLocationStoreKey(bin) ? '✓ Location Completion' : '✓ Building Completion'}</h3>
                         <button type="button" id="completedDetailsDobNowBtn" onclick="openDobNowPortal()" title="Open DOB Now in a separate window" style="background:#27ae60; border:none; border-radius:6px; padding:7px 12px; cursor:pointer; color:white; font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px; white-space:nowrap; flex-shrink:0;">↗ DOB Now</button>
                     </div>
-                    <p style="margin: 0 0 16px 0; font-size: 12px; opacity: 0.7; color: var(--text-color, #ccc);">${address || getMapCompletionKeyDisplayLabel(bin)}</p>
+                    <p style="margin: 0 0 16px 0; font-size: 12px; opacity: 0.7; color: var(--text-color, #ccc);">${escapeMapSuggestionHtml(subtitle)}</p>
                     <label style="font-size: 13px; color: var(--text-color, #ccc); display: block; margin-bottom: 6px;">What was completed?</label>
                     <select id="completedTestTypeInput" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); font-size: 14px; box-sizing: border-box; margin-bottom: 14px;">
                         ${renderMapCompletedTestOptions(currentTestType)}
                     </select>
-                    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:8px; margin:-4px 0 14px;">
-                        <div style="padding:8px 10px; border-radius:7px; background:${completionFacts.categoryComplete ? 'rgba(39,174,96,0.11)' : 'rgba(255,152,0,0.1)'}; border:1px solid ${completionFacts.categoryComplete ? 'rgba(39,174,96,0.32)' : 'rgba(255,152,0,0.32)'}; font-size:11px; color:var(--text-color);">
-                            <strong>Category</strong><br>${completionFacts.categoryComplete ? '✓ DOB complete' : '⚠ Not confirmed'}
-                            ${completionFacts.categoryComplete ? renderCompletionTimeframe(categoryCompletionTimeframe) : ''}
-                        </div>
-                        <div style="padding:8px 10px; border-radius:7px; background:${completionFacts.pviComplete ? 'rgba(39,174,96,0.11)' : 'rgba(255,152,0,0.1)'}; border:1px solid ${completionFacts.pviComplete ? 'rgba(39,174,96,0.32)' : 'rgba(255,152,0,0.32)'}; font-size:11px; color:var(--text-color);">
-                            <strong>PVI</strong><br>${completionFacts.pviComplete ? '✓ DOB complete' : '⚠ Not confirmed'}
-                            ${completionFacts.pviComplete ? renderCompletionTimeframe(pviCompletionTimeframe) : ''}
-                        </div>
-                    </div>
-                    ${renderMapCompletionDeviceTestsHtml(completionFacts, currentYear)}
+                    ${dobStatusHtml}
+                    ${isBulk ? '<p style="margin: -4px 0 14px 0; font-size: 12px; line-height: 1.45; color: var(--text-color, #ccc);">DOB status is checked on each building when you save. A date already on a building stays unless you change it here.</p>' : ''}
                     ${renderMapCompletionDatesEditorHtml('completedDatesEditor')}
                     <p style="margin: -4px 0 10px 0; font-size: 11px; opacity: 0.6; color: var(--text-color, #ccc);">A date verified with DOB stays on that test and is not replaced. Other tests keep a date they already have. Today is filled in only when a test has no date yet.</p>
                     <div id="completedOtherInspectionHint" role="status" style="${MAP_OTHER_INSPECTION_HINT_STYLE}"></div>
@@ -20423,16 +20453,16 @@
             const typeInput = document.getElementById('completedTestTypeInput');
             const datesEditor = bindMapCompletionDatesEditor(document.getElementById('completedDatesEditor'), {
                 completionType: currentTestType,
-                getDefaultDates: lane => getMapCompletionDefaultDates(bin, lane, existing, todayKey),
-                getDobDates: lane => getMapCompletionDobLaneDates(bin, lane, todayKey),
-                getReplacedScheduledDates: lanes => getMapScheduledDatesReplacedByCompletion(bin, lanes, existing),
+                getDefaultDates: lane => isBulk ? [todayKey] : getMapCompletionDefaultDates(bin, lane, existing, todayKey),
+                getDobDates: lane => isBulk ? [] : getMapCompletionDobLaneDates(bin, lane, todayKey),
+                getReplacedScheduledDates: lanes => isBulk ? [] : getMapScheduledDatesReplacedByCompletion(bin, lanes, existing),
                 onChange: refreshCompletedOtherInspectionHint
             });
 
             function refreshCompletedOtherInspectionHint() {
                 return refreshMapOtherInspectionHint(
                     'completedOtherInspectionHint',
-                    bin,
+                    isBulk ? bulkBins : bin,
                     typeInput ? typeInput.value : '',
                     getMapLatestCompletedDate(datesEditor.getDates())
                 );
@@ -20446,6 +20476,24 @@
             document.getElementById('completedDetailsConfirmBtn').addEventListener('click', () => {
                 const testType = normalizeMapCompletedTestType(typeInput.value);
                 if (!testType) { showMapNotification('Please select the completed test', '#ff6b6b'); return; }
+                if (isBulk) {
+                    const completedDates = datesEditor.getDates();
+                    for (const lane of getMapCompletionDateLanes(testType)) {
+                        if (!completedDates[lane] || !completedDates[lane].length) {
+                            showMapNotification(`Please enter at least one ${lane === 'pvi' ? 'PVI' : 'Category'} completed date`, '#ff6b6b');
+                            return;
+                        }
+                    }
+                    const latestDate = getMapLatestCompletedDate(completedDates);
+                    const timestamp = new Date(latestDate + 'T00:00:00').getTime();
+                    const hint = document.getElementById('completedOtherInspectionHint');
+                    const otherInspectionNotice = hint && hint.style.display !== 'none' ? hint.textContent : '';
+                    overlay.remove();
+                    if (typeof opts.onConfirm === 'function') {
+                        opts.onConfirm({ testType, timestamp, completedDates, address: '', otherInspection: null, otherInspectionNotice });
+                    }
+                    return;
+                }
                 const completedDates = readMapCompletionDatesFromEditor(datesEditor, bin, testType);
                 if (!completedDates) return;
                 const latestDate = getMapLatestCompletedDate(completedDates);
@@ -21737,6 +21785,136 @@
                     }
                 });
             }
+        }
+
+        function mapSelectCompletionDateWasEdited(completedDates, completionType) {
+            const edited = completedDates && completedDates.laneEdited;
+            if (!edited) return false;
+            return getMapCompletionDateLanes(completionType).some(lane => !!edited[lane]);
+        }
+
+        function applyMapSelectBulkCompleted(selected, payload) {
+            const buildings = Array.isArray(selected) ? selected : [];
+            const testType = payload && payload.testType;
+            const completedDates = payload && payload.completedDates;
+            if (!buildings.length || !testType || !completedDates) return;
+            const latestDate = getMapLatestCompletedDate(completedDates);
+            if (mapSelectCompletionDateWasEdited(completedDates, testType)) {
+                const dateConflicts = buildings.filter(item => mapManualCompletionDateConflictsWithDob(item.bin, testType, latestDate));
+                if (dateConflicts.length) {
+                    const normalizedType = normalizeMapCompletedTestType(testType);
+                    const testLabel = normalizedType === 'PVI' ? 'PVI' : normalizedType === 'Category' ? 'Category' : 'PVI and Category';
+                    const completionDate = parseMapInspectionDate(latestDate);
+                    const displayDate = completionDate
+                        ? completionDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                        : latestDate;
+                    const year = completionDate ? completionDate.getFullYear() : '';
+                    const preview = dateConflicts.slice(0, 6).map(item => item.address || ('BIN ' + item.bin)).join('\n');
+                    const more = dateConflicts.length > 6 ? `\n+${dateConflicts.length - 6} more` : '';
+                    const buildingWord = dateConflicts.length === 1 ? 'building' : 'buildings';
+                    if (!confirm(
+                        `DOB already confirms that every device requiring ${testLabel} testing is complete for ${year} at ${dateConflicts.length} selected ${buildingWord}.\n\n` +
+                        `You entered ${displayDate} as a manual completion date. Save this manual date anyway?\n\n${preview}${more}`
+                    )) return;
+                }
+            }
+            const unmet = buildings
+                .map(item => ({ item, status: getMapCompletionRequirementStatus(item.bin, testType) }))
+                .filter(entry => !entry.status.met);
+            if (unmet.length) {
+                const missingLabel = unmet[0].status.missingLabel;
+                const year = unmet[0].status.year;
+                const preview = unmet.slice(0, 6).map(entry => entry.status.label).join('\n');
+                const more = unmet.length > 6 ? `\n+${unmet.length - 6} more` : '';
+                const buildingWord = unmet.length === 1 ? 'building does' : 'buildings do';
+                if (!confirm(
+                    `${unmet.length} selected ${buildingWord} not show ${missingLabel} filed with DOB for ${year}. Continue with this manual completion status?\n\n${preview}${more}`
+                )) return;
+            }
+            let saved = 0;
+            const otherMatches = buildings
+                .map(item => getMapOtherInspectionAvailability(item.bin, testType, latestDate))
+                .filter(Boolean);
+            buildings.forEach(item => {
+                const existing = getMapCompleted()[item.bin];
+                const result = saveMapCompletedEntry(item.bin, {
+                    testType,
+                    timestamp: payload.timestamp,
+                    completedDates,
+                    address: item.address,
+                    source: existing && existing.source ? existing.source : 'Manual'
+                });
+                saved += 1;
+                const savedEntry = getMapCompleted()[item.bin] || {};
+                addMapActivity(existing ? 'Updated completed details' : 'Marked completed', {
+                    type: 'Completed',
+                    bin: item.bin,
+                    address: result.address,
+                    details: `Select mode · ${getMapCompletedTestLabel(testType)}; completed ${formatMapCompletedDatesSummary(savedEntry.completedDates || completedDates)}`
+                });
+            });
+            const summary = `${saved} building${saved === 1 ? '' : 's'} marked as completed ✓`;
+            let notice = '';
+            if (otherMatches.length === 1 && buildings.length === 1) notice = otherMatches[0].shortNotice;
+            else if (otherMatches.length) {
+                const scope = otherMatches.length === buildings.length
+                    ? `${otherMatches.length} selected buildings have no inspections completed yet.`
+                    : `${otherMatches.length} of ${buildings.length} selected buildings have no inspections completed yet.`;
+                notice = `${scope} ${otherMatches[0].shortNotice}`;
+            }
+            showMapNotification(notice ? `${summary}. ${notice}` : summary, '#27ae60', notice ? 7000 : 0);
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+            syncMapSelectModeUi();
+        }
+
+        function openMapSelectCompletedMenu() {
+            if (!mapSelectMode) toggleMapSelectMode(true);
+            pruneMapBuildingSelection();
+            const selected = getMapSelectedBuildingSummaries();
+            if (!selected.length) {
+                showMapNotification('Select at least one building first', '#ff9800');
+                syncMapSelectModeUi();
+                return;
+            }
+            if (selected.length === 1) {
+                const item = selected[0];
+                showMapCompletedDetailsPicker(item.bin, {
+                    address: item.address,
+                    fromMapSelect: true,
+                    onConfirm: ({ testType, timestamp, completedDates, address, otherInspection }) => {
+                        if (!confirmMapCompletionRequirements(item.bin, testType)) return;
+                        const existing = getMapCompleted()[item.bin];
+                        const result = saveMapCompletedEntry(item.bin, {
+                            testType,
+                            timestamp,
+                            completedDates,
+                            address: address || item.address,
+                            source: existing && existing.source ? existing.source : 'Manual'
+                        });
+                        addMapActivity(existing ? 'Updated completed details' : 'Marked completed', {
+                            type: 'Completed',
+                            bin: item.bin,
+                            address: result.address,
+                            details: `${getMapCompletedTestLabel(testType)}; completed ${formatMapCompletedDatesSummary(completedDates)}${!existing && result.savedDates.length ? `; replaced ${result.savedDates.length} scheduled date${result.savedDates.length !== 1 ? 's' : ''}` : ''}`
+                        });
+                        const message = existing
+                            ? 'Completed details updated'
+                            : `${result.address || item.bin} marked as completed ✓`;
+                        showMapNotification(appendMapOtherInspectionNotice(message, otherInspection), '#27ae60', otherInspection ? 7000 : 0);
+                        if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+                            initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+                        }
+                    }
+                });
+                return;
+            }
+            showMapCompletedDetailsPicker(selected[0].bin, {
+                bulkBins: selected.map(item => item.bin),
+                fromMapSelect: true,
+                onConfirm: payload => applyMapSelectBulkCompleted(getMapSelectedBuildingSummaries(), payload)
+            });
         }
 
         function changeMapCompletedDate(bin) {
@@ -24373,6 +24551,11 @@
             });
         }
 
+        function closeMapSelectCompletedMenu() {
+            const overlay = document.getElementById('completedDetailsOverlay');
+            if (overlay && overlay.dataset.fromMapSelect === '1') overlay.remove();
+        }
+
         function resetMapSelectMode(clearSelection) {
             mapSelectMode = false;
             if (clearSelection) mapSelectedBins = new Set();
@@ -24382,6 +24565,7 @@
             if (existingBulkModal) existingBulkModal.remove();
             const existingConflictModal = document.getElementById('mapBulkDateConflictOverlay');
             if (existingConflictModal) existingConflictModal.remove();
+            closeMapSelectCompletedMenu();
             syncMapSelectModeUi();
         }
 
@@ -24395,6 +24579,7 @@
                 if (existingDeviceModal) existingDeviceModal.remove();
                 const existingConflictModal = document.getElementById('mapBulkDateConflictOverlay');
                 if (existingConflictModal) existingConflictModal.remove();
+                closeMapSelectCompletedMenu();
             } else if (buildingMap && buildingMap.closePopup) {
                 buildingMap.closePopup();
             }
@@ -24411,6 +24596,7 @@
             const mapEl = document.getElementById('buildingMap');
             const countEl = document.getElementById('mapSelectCount');
             const editBtn = document.getElementById('mapSelectEditButton');
+            const completedBtn = document.getElementById('mapSelectCompletedButton');
             const clearBtn = document.getElementById('mapSelectClearButton');
             const selectedCount = mapSelectedBins ? mapSelectedBins.size : 0;
 
@@ -24433,6 +24619,7 @@
                     : `${selectedCount} buildings selected`;
             }
             if (editBtn) editBtn.disabled = selectedCount === 0;
+            if (completedBtn) completedBtn.disabled = selectedCount === 0;
             if (clearBtn) clearBtn.disabled = selectedCount === 0;
         }
 
@@ -29752,6 +29939,13 @@
                 const devicesOverlay = document.getElementById('mapSelectDevicesOverlay');
                 if (devicesOverlay) {
                     devicesOverlay.remove();
+                    return;
+                }
+                const completedOverlay = document.getElementById('completedDetailsOverlay');
+                if (completedOverlay) {
+                    const cancelBtn = document.getElementById('completedDetailsCancelBtn');
+                    if (cancelBtn) cancelBtn.click();
+                    else completedOverlay.remove();
                     return;
                 }
                 const missingDevicesPicker = document.getElementById('mapMissingDevicesPickerOverlay');
