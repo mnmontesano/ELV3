@@ -1390,6 +1390,27 @@
                             .mcp-rh-br     { bottom: 0; right: 0; width: 12px; height: 12px; cursor: nwse-resize; }
                         </style>
 
+                        <!-- Act As Date -->
+                        <div class="mcp-section" id="mcpActAsDateSection">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpActAsDate')">
+                                <span class="mcp-title"><span style="color:#1a73e8;">🕒</span> <span id="mapActAsDateTitleLabel">Act As Date</span></span>
+                                <span class="mcp-arrow" id="mcpActAsDateArrow">›</span>
+                            </div>
+                            <div class="mcp-body" id="mcpActAsDate">
+                                <p class="mcp-desc">Pretend today is another date. The map keeps only buildings that have a device ready to test on that date: a required test is still open, and the 91-day wait since the last inspection has passed. Buildings that are not ready yet stay hidden until you clear the date.</p>
+                                <label for="mapActAsDateInput" style="display:block; font-size:0.92em; font-weight:700; color:var(--text-color); margin-bottom:5px;">Simulate date</label>
+                                <input type="date" id="mapActAsDateInput" onchange="setMapActAsDate(this.value)" style="width:100%; padding:7px 9px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:1em; font-weight:600; box-sizing:border-box; margin-bottom:8px;">
+                                <div style="display:flex; gap:6px; margin-bottom:8px;">
+                                    <button type="button" onclick="setMapActAsDateToToday()" class="mcp-btn" style="margin:0; color:#1a73e8; font-weight:700;">Today</button>
+                                    <button type="button" onclick="clearMapActAsDate()" class="mcp-btn" style="margin:0; color:var(--text-color); font-weight:700;">Clear</button>
+                                </div>
+                                <div id="mapActAsDateStatus" style="padding:8px 10px; margin-bottom:8px; border-radius:6px; border:1px solid rgba(26,115,232,0.28); background:rgba(26,115,232,0.08); color:var(--text-color); font-size:0.9em; line-height:1.45;">Using today's date. Pick a date to show only buildings that will be ready then.</div>
+                                <input type="text" id="actAsDateSearchInput" class="mcp-search-input" placeholder="🔍 Search ready buildings by address or BIN..."
+                                       oninput="filterMcpBinRowList('actAsDateBuildingsList', this.value)" style="display:none;">
+                                <div id="actAsDateBuildingsList" style="max-height:260px; overflow-y:auto;"></div>
+                            </div>
+                        </div>
+
                         <!-- Favorites -->
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpFavorites')">
@@ -1929,6 +1950,7 @@
                                     <li>No Test Yet lists devices with no Category or PVI this year and counts down days left to finish both tests 91 days apart</li>
                                     <li>Disregard in No Test Yet hides only that device from the list and map highlight; other devices at the same building stay visible</li>
                                     <li>Copy on a No Test Yet building copies that building's devices; Copy All Devices copies every remaining device across all buildings</li>
+                                    <li>Act As Date pretends today is the date you pick and shows only buildings with a device ready to test that day</li>
                                     <li>Starting June 1, buildings with no test yet this year show as deep red markers</li>
                                     <li>Disregard in No Test by June hides a building from that list and deep-red highlighting for the current year; add a note and undo later</li>
                                     <li>In-process buildings turn orange</li>
@@ -3069,6 +3091,8 @@
         let mapHideCompleted = localStorage.getItem('mapHideCompleted') === 'true';
         let mapHideInProcess = localStorage.getItem('mapHideInProcess') === 'true';
         let mapHideHold = localStorage.getItem('mapHideHold') === 'true';
+        let mapActAsDate = null;
+        let mapActAsDateRefreshQueued = false;
 
         function numberToWord(input) {
             // Convert input to lowercase for case-insensitive comparison
@@ -12435,7 +12459,7 @@
 
         // Missing a required test for this year outranks violations. A device that already
         // has every required test filed, and only then has violations, comes after.
-        function getMapDeviceReportSortRank(device, year, binHint) {
+        function getMapDeviceReportSortRank(device, year, binHint, asOfDate) {
             const testInfo = getMapDeviceReportTestInfo(device, year, binHint);
             if (testInfo.isNotApplicable) return 5;
             if (testInfo.isRemoved) return 4;
@@ -12444,7 +12468,7 @@
             const violationCount = Array.isArray(device.violations) ? device.violations.length : 0;
             if (violationCount > 0) return 1;
 
-            const today = new Date();
+            const today = asOfDate instanceof Date ? new Date(asOfDate.getTime()) : new Date();
             today.setHours(0, 0, 0, 0);
             const mostRecent = testInfo.isDismantled
                 ? testInfo.pviDate
@@ -12538,7 +12562,7 @@
                     ? `<span style="font-size:11px;opacity:0.65;margin-left:4px;">(+${pending.length - 1} more after)</span>`
                     : '';
                 if (nextTestAvailability.isAvailableNow) {
-                    nextTestHtml = `<span style="font-weight:700;color:var(--header-color);">${nextTestLabel}</span>${morePending} · <span style="color:#4CAF50;font-weight:600;">Available now</span>`;
+                    nextTestHtml = `<span style="font-weight:700;color:var(--header-color);">${nextTestLabel}</span>${morePending} · <span style="color:#4CAF50;font-weight:600;">${mapActAsAvailableNowLabel()}</span>`;
                 } else {
                     const dateStr = nextTestAvailability.availableDate
                         ? nextTestAvailability.availableDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -12660,7 +12684,7 @@
                     device_type: row.deviceType,
                     device_status: row.deviceStatus
                 };
-                const detailBody = renderMapDeviceReportBodyHtml(device, { idPrefix });
+                const detailBody = renderMapDeviceReportBodyHtml(device, { idPrefix, today: getMapReferenceDate(), currentYear: getMapReferenceDate().getFullYear() });
                 const violCount = Array.isArray(device.violations) ? device.violations.length : 0;
                 const detailsLabel = violCount > 0
                     ? `Device details · ${violCount} violation${violCount !== 1 ? 's' : ''}`
@@ -16261,7 +16285,7 @@
                 if (!building) return;
                 const matchesFilter = buildingMatchesMapViewFilter(building, filterValue, payload.view || {}, bins, monthLabels);
                 const hiddenBySettings = respectHideSettings && isBuildingHiddenByMapSettings(building);
-                if (matchesFilter && !hiddenBySettings) {
+                if (matchesFilter && !hiddenBySettings && mapBuildingReadyForActAsDate(building)) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     bounds.extend(marker.getLatLng());
                     if (viewport.contains(marker.getLatLng())) shownInViewport = true;
@@ -16274,6 +16298,10 @@
             const additionalLocations = getAdditionalLocations();
             additionalLocationMarkers.forEach((marker, index) => {
                 const location = additionalLocations[index];
+                if (!additionalMarkerReadyForActAsDate(marker)) {
+                    if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
+                    return;
+                }
                 if (filterValue !== 'completed-open-tests' && shouldHideCompletedAdditionalLocation(location)) {
                     if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
                     return;
@@ -19061,7 +19089,7 @@
                 const building = mapBuildingsData[index];
                 if (!building) return;
                 const completedHiddenByDefault = !hasActiveSearch && activeMonthFilters.size === 0 && hideCompleted && mapCompletedBuildingHiddenWhileHideCompleted(building);
-                if ((hide && labels[building.bin]) || completedHiddenByDefault) {
+                if ((hide && labels[building.bin]) || completedHiddenByDefault || !mapBuildingReadyForActAsDate(building)) {
                     if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
                 } else {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
@@ -19171,7 +19199,14 @@
             const hideHoldToggle = document.getElementById('mapHideHoldToggle');
             if (hideHoldToggle) hideHoldToggle.checked = false;
 
-            if (togglesChanged && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
+            const hadActAsDate = !!getMapActAsDate();
+            if (hadActAsDate) {
+                mapActAsDate = null;
+                try { localStorage.removeItem('mapActAsDate'); } catch (error) { /* already clear */ }
+                refreshMapActAsDateControls();
+            }
+
+            if ((togglesChanged || hadActAsDate) && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) {
                 initBuildingMap(window.lastBulkSearchResults.binGroups, true);
             } else if (buildingMap && Array.isArray(mapMarkers) && Array.isArray(mapBuildingsData)) {
                 restoreMapVisibilityForCurrentFilters({ fitMap: false });
@@ -19216,7 +19251,7 @@
             const counts = {};
             ALL_MONTHS.forEach(m => counts[m] = 0);
             (mapBuildingsData || []).forEach(building => {
-                if (isBuildingHiddenByMapSettings(building)) return;
+                if (isBuildingHiddenByMapSettings(building) || !mapBuildingReadyForActAsDate(building)) return;
                 const month = labels[building.bin];
                 if (counts[month] !== undefined) {
                     counts[month] += getFilterDeviceCountForBuilding(building, month);
@@ -19264,7 +19299,8 @@
             const hideHold = isHideHoldActive();
             const mapViewFilter = getSelectedMapViewFilter();
             const hasMapViewFilter = !!(mapViewFilter && mapViewFilter !== 'all');
-            if (activeMonthFilters.size === 0 && !hideMonthLabeled && !hideCompleted && !hideInProcess && !hideHold && !hasMapViewFilter) {
+            const actAsDate = getMapActAsDate();
+            if (activeMonthFilters.size === 0 && !hideMonthLabeled && !hideCompleted && !hideInProcess && !hideHold && !hasMapViewFilter && !actAsDate) {
                 statusEl.style.display = 'none';
                 statusEl.open = false;
                 detailsEl.textContent = '';
@@ -19276,7 +19312,7 @@
             const favorites = getMapFavorites();
             const binGroups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
             const activeMonths = [...activeMonthFilters];
-            const visibleFilterBuildings = (mapBuildingsData || []).filter(b => !isBuildingHiddenByMapSettings(b));
+            const visibleFilterBuildings = (mapBuildingsData || []).filter(b => !isBuildingHiddenByMapSettings(b) && mapBuildingReadyForActAsDate(b));
             const matches = visibleFilterBuildings.filter(b => activeMonthFilters.has(labels[b.bin]));
             const favoritedCount = visibleFilterBuildings.filter(b => favorites[b.bin] && !activeMonthFilters.has(labels[b.bin])).length;
             const filterDevices = matches.reduce((sum, b) => sum + getFilterDeviceCountForBuilding(b, labels[b.bin]), 0);
@@ -19348,6 +19384,14 @@
                 notices.push(`Filter active: hold hidden (${count})`);
             }
 
+            if (actAsDate) {
+                const readyBuildings = (mapBuildingsData || []).filter(building => !isBuildingHiddenByMapSettings(building) && mapBuildingReadyForActAsDate(building));
+                const readyDeviceCount = readyBuildings.reduce((sum, building) => sum + ((building.readyDevices && building.readyDevices.length) || 0), 0);
+                const dateLabel = formatMapActAsDateShort(actAsDate);
+                notices.push(`Act As Date: ${dateLabel} — showing ${readyBuildings.length} building${readyBuildings.length === 1 ? '' : 's'} ready to test (${readyDeviceCount} device${readyDeviceCount === 1 ? '' : 's'})`);
+                compactParts.push(`${readyBuildings.length} ready — ${dateLabel}`);
+            }
+
             detailsEl.replaceChildren(...notices.map(notice => {
                 const row = document.createElement('div');
                 row.style.cssText = 'padding: 2px 0; border-top: 1px solid rgba(255,255,255,0.18); font-weight: 600;';
@@ -19389,6 +19433,210 @@
             return true;
         }
 
+        function parseMapActAsDateInput(value) {
+            const text = String(value || '').trim();
+            const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!match) return null;
+            const year = Number(match[1]);
+            const month = Number(match[2]);
+            const day = Number(match[3]);
+            const date = new Date(year, month - 1, day);
+            if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+            date.setHours(0, 0, 0, 0);
+            return date;
+        }
+
+        function mapDeviceEligibleDate(mostRecentTest) {
+            if (!mostRecentTest) return null;
+            const eligibleDate = new Date(mostRecentTest.getTime());
+            if (isNaN(eligibleDate.getTime())) return null;
+            eligibleDate.setDate(eligibleDate.getDate() + 91);
+            eligibleDate.setHours(0, 0, 0, 0);
+            return eligibleDate;
+        }
+
+        function readStoredMapActAsDate() {
+            try {
+                return parseMapActAsDateInput(localStorage.getItem('mapActAsDate'));
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function getMapActAsDate() {
+            if (!mapActAsDate) return null;
+            return new Date(mapActAsDate.getTime());
+        }
+
+        function getMapReferenceDate() {
+            const simulated = getMapActAsDate();
+            const date = simulated ? new Date(simulated.getTime()) : new Date();
+            date.setHours(0, 0, 0, 0);
+            return date;
+        }
+
+        function formatMapActAsDateLabel(date) {
+            return date.toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric'
+            });
+        }
+
+        function formatMapActAsDateShort(date) {
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function mapActAsAvailableNowLabel() {
+            const simulated = getMapActAsDate();
+            return simulated ? `Available ${formatMapActAsDateShort(simulated)}` : 'Available now';
+        }
+
+        function mapBuildingReadyForActAsDate(building) {
+            if (!getMapActAsDate()) return true;
+            return !!(building && Array.isArray(building.readyDevices) && building.readyDevices.length > 0);
+        }
+
+        function additionalMarkerReadyForActAsDate(marker) {
+            if (!getMapActAsDate()) return true;
+            return !!(marker && Number(marker._actAsReadyCount) > 0);
+        }
+
+        function refreshMapActAsDateControls() {
+            const simulated = getMapActAsDate();
+            const input = document.getElementById('mapActAsDateInput');
+            const status = document.getElementById('mapActAsDateStatus');
+            const title = document.getElementById('mapActAsDateTitleLabel');
+            const search = document.getElementById('actAsDateSearchInput');
+            const list = document.getElementById('actAsDateBuildingsList');
+            if (input) input.value = simulated ? formatLocalDateInputValue(simulated) : '';
+            if (title) {
+                title.textContent = simulated ? `Act As Date — ${formatMapActAsDateShort(simulated)}` : 'Act As Date';
+            }
+            if (search) search.style.display = simulated ? '' : 'none';
+
+            const readyBuildings = simulated
+                ? (mapBuildingsData || []).filter(building => building && !isBuildingHiddenByMapSettings(building) && mapBuildingReadyForActAsDate(building))
+                : [];
+            const readyDeviceCount = readyBuildings.reduce((sum, building) => sum + building.readyDevices.length, 0);
+
+            if (status) {
+                if (!simulated) {
+                    status.textContent = "Using today's date. Pick a date to show only buildings that will be ready then.";
+                } else if (!mapBuildingsData || mapBuildingsData.length === 0) {
+                    status.textContent = `Acting as ${formatMapActAsDateLabel(simulated)}. Open a map to see which buildings are ready.`;
+                } else if (readyBuildings.length === 0) {
+                    status.textContent = `Acting as ${formatMapActAsDateLabel(simulated)}. No buildings are ready to test on this date.`;
+                } else {
+                    status.textContent = `Acting as ${formatMapActAsDateLabel(simulated)}. Showing ${readyBuildings.length} building${readyBuildings.length === 1 ? '' : 's'} · ${readyDeviceCount} device${readyDeviceCount === 1 ? '' : 's'} ready to test.`;
+                }
+            }
+
+            if (list) {
+                if (!simulated) {
+                    list.innerHTML = '';
+                } else if (readyBuildings.length === 0) {
+                    list.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No buildings are ready on this date</div>';
+                } else {
+                    const rows = readyBuildings.slice().sort((a, b) => String(a.address || a.bin).localeCompare(String(b.address || b.bin), undefined, { numeric: true }));
+                    list.innerHTML = rows.map(building => {
+                        const binJs = String(building.bin).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        const address = escapeMapSuggestionHtml(building.address || ('BIN ' + building.bin));
+                        const readyCount = building.readyDevices.length;
+                        const deviceNumbers = building.readyDevices.map(device => device.number).filter(Boolean).join(' ');
+                        return `<div data-bin="${escapeMapSuggestionHtml(building.bin)}" data-address="${address}" data-filter-text="${escapeMapSuggestionHtml(deviceNumbers)}" style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; padding:6px 2px; border-bottom:1px solid var(--input-border);">
+                            <button type="button" onclick="focusMapActAsDateBuilding('${binJs}')" style="flex:1; min-width:0; padding:0; border:none; background:transparent; color:var(--header-color); font-weight:700; text-align:left; cursor:pointer; font-size:0.95em; line-height:1.35;">${address}</button>
+                            <span style="flex-shrink:0; font-size:0.82em; font-weight:700; color:#1a73e8;">${readyCount} ready</span>
+                        </div>`;
+                    }).join('');
+                    if (search && search.value.trim()) filterMcpBinRowList('actAsDateBuildingsList', search.value);
+                }
+            }
+        }
+
+        function fitMapToCurrentlyVisibleMarkers() {
+            if (!buildingMap || typeof buildingMap.fitBounds !== 'function') return;
+            const bounds = L.latLngBounds();
+            (mapMarkers || []).forEach(marker => {
+                if (marker && buildingMap.hasLayer(marker) && marker.getLatLng) bounds.extend(marker.getLatLng());
+            });
+            (additionalLocationMarkers || []).forEach(marker => {
+                if (marker && buildingMap.hasLayer(marker) && marker.getLatLng) bounds.extend(marker.getLatLng());
+            });
+            if (bounds.isValid()) buildingMap.fitBounds(bounds, { padding: [40, 40] });
+        }
+
+        function applyMapActAsDateToMap() {
+            if (initBuildingMapInProgress) {
+                mapActAsDateRefreshQueued = true;
+                refreshMapActAsDateControls();
+                updateMonthFilterStatus();
+                return;
+            }
+            refreshMapActAsDateControls();
+            updateMonthFilterStatus();
+            if (!(window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups)) return;
+            initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            fitMapToCurrentlyVisibleMarkers();
+            refreshMapActAsDateControls();
+            updateMonthFilterStatus();
+        }
+
+        function setMapActAsDate(value) {
+            const next = parseMapActAsDateInput(value);
+            if (!next) {
+                clearMapActAsDate();
+                return;
+            }
+            const previous = mapActAsDate ? formatLocalDateInputValue(mapActAsDate) : '';
+            const nextValue = formatLocalDateInputValue(next);
+            if (previous === nextValue) {
+                refreshMapActAsDateControls();
+                return;
+            }
+            mapActAsDate = next;
+            try { localStorage.setItem('mapActAsDate', nextValue); } catch (error) { /* keep the in-memory date */ }
+            applyMapActAsDateToMap();
+            const readyCount = (mapBuildingsData || []).filter(building => mapBuildingReadyForActAsDate(building) && !isBuildingHiddenByMapSettings(building)).length;
+            showMapNotification(`Acting as ${formatMapActAsDateShort(next)} — ${readyCount} building${readyCount === 1 ? '' : 's'} ready`, '#1a73e8');
+        }
+
+        function setMapActAsDateToToday() {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            setMapActAsDate(formatLocalDateInputValue(today));
+        }
+
+        function clearMapActAsDate(options) {
+            const opts = options || {};
+            const hadDate = !!mapActAsDate;
+            mapActAsDate = null;
+            try { localStorage.removeItem('mapActAsDate'); } catch (error) { /* already clear */ }
+            refreshMapActAsDateControls();
+            if (!hadDate || opts.skipMapRefresh) {
+                updateMonthFilterStatus();
+                return;
+            }
+            applyMapActAsDateToMap();
+            if (!opts.quiet) showMapNotification('Act As Date cleared. The map is using today again.', '#17a2b8');
+        }
+
+        function focusMapActAsDateBuilding(bin) {
+            if (!buildingMap || bin == null || !Array.isArray(mapBuildingsData) || !Array.isArray(mapMarkers)) return;
+            const index = mapBuildingsData.findIndex(building => building && String(building.bin) === String(bin));
+            if (index === -1 || !mapMarkers[index]) return;
+            const marker = mapMarkers[index];
+            if (buildingMap.hasLayer && !buildingMap.hasLayer(marker)) return;
+            const latLng = marker.getLatLng ? marker.getLatLng() : null;
+            if (!latLng) return;
+            const zoom = buildingMap.getZoom ? buildingMap.getZoom() : 16;
+            buildingMap.setView([latLng.lat, latLng.lng], Math.max(zoom, 17));
+            if (typeof openMapMarkerPopup === 'function') openMapMarkerPopup(marker);
+        }
+
+        mapActAsDate = readStoredMapActAsDate();
+
         function isBuildingHiddenByMapSettings(building) {
             if (!building) return true;
             if (building.isHidden) return true;
@@ -19402,6 +19650,7 @@
 
         function isBuildingVisibleInCurrentMapFilters(building) {
             if (!building || isBuildingHiddenByMapSettings(building)) return false;
+            if (!mapBuildingReadyForActAsDate(building)) return false;
 
             const labels = getMapMonthLabels();
             const favorites = getMapFavorites();
@@ -19447,7 +19696,7 @@
                 return;
             }
 
-            const visibleFilterBuildings = mapBuildingsData.filter(b => !isBuildingHiddenByMapSettings(b));
+            const visibleFilterBuildings = mapBuildingsData.filter(b => !isBuildingHiddenByMapSettings(b) && mapBuildingReadyForActAsDate(b));
             const matches = visibleFilterBuildings.filter(b => activeMonthFilters.has(labels[b.bin]));
             const favoritedCount = visibleFilterBuildings.filter(b => favorites[b.bin] && !activeMonthFilters.has(labels[b.bin])).length;
 
@@ -19467,7 +19716,7 @@
                 if (!building) return;
                 const matchesFilter = activeMonthFilters.has(labels[building.bin]);
                 const isFavorited = !!favorites[building.bin];
-                if ((matchesFilter || isFavorited) && !isBuildingHiddenByMapSettings(building)) {
+                if ((matchesFilter || isFavorited) && !isBuildingHiddenByMapSettings(building) && mapBuildingReadyForActAsDate(building)) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     bounds.extend(marker.getLatLng());
                     if (monthViewport && monthViewport.contains(marker.getLatLng())) monthShownInViewport = true;
@@ -21871,15 +22120,19 @@
 
             let summary;
             let summaryColor;
+            const actingAsDate = typeof getMapActAsDate === 'function' ? getMapActAsDate() : null;
+            const availableNowText = actingAsDate ? `Available ${formatMapAvailabilityDate(actingAsDate)}` : 'Available now';
             if (notReady.length > 0) {
                 const lastDate = notReady.reduce((latest, d) => (d.eligibleDate && (!latest || d.eligibleDate > latest) ? d.eligibleDate : latest), null);
                 summary = lastDate
                     ? `All devices available for testing ${formatMapAvailabilityDate(lastDate)}`
                     : 'Some devices are not available for testing yet';
-                if (ready.length > 0) summary += ` · ${ready.length} available now`;
+                if (ready.length > 0) summary += ` · ${ready.length} ${availableNowText.toLowerCase()}`;
                 summaryColor = '#ff9800';
             } else if (ready.length > 0) {
-                summary = `Testing available now for ${ready.length === 1 ? 'the device' : `all ${ready.length} devices`}${completed.length ? ' that still need testing' : ''}`;
+                summary = actingAsDate
+                    ? `Testing available ${formatMapAvailabilityDate(actingAsDate)} for ${ready.length === 1 ? 'the device' : `all ${ready.length} devices`}${completed.length ? ' that still need testing' : ''}`
+                    : `Testing available now for ${ready.length === 1 ? 'the device' : `all ${ready.length} devices`}${completed.length ? ' that still need testing' : ''}`;
                 summaryColor = '#27ae60';
             } else {
                 summary = `All required testing completed for ${year}`;
@@ -21898,7 +22151,7 @@
                     const days = d.daysUntil > 0 ? ` · ${d.daysUntil} day${d.daysUntil === 1 ? '' : 's'}` : '';
                     return row(d, `Available ${formatMapAvailabilityDate(d.eligibleDate)}${days}`, '#ff9800');
                 }),
-                ...ready.map(d => row(d, 'Available now', '#27ae60')),
+                ...ready.map(d => row(d, availableNowText, '#27ae60')),
                 ...completed.map(d => row(d, `Completed for ${year}`, '#8e9aaf'))
             ];
             const shown = rows.slice(0, MAP_AVAILABILITY_TOOLTIP_MAX_ROWS).join('');
@@ -23859,8 +24112,9 @@
             const address = group.address || group.label || reportBin || 'Custom location';
             const devices = group.devices || [];
             const activeDeviceCount = countMapJobDevices(devices);
-            const currentYear = new Date().getFullYear();
-            const today = new Date(); today.setHours(0,0,0,0);
+            const referenceDate = getMapReferenceDate();
+            const currentYear = referenceDate.getFullYear();
+            const today = referenceDate;
             const binLabel = reportBin ? (`BIN ${reportBin}`) : 'Additional location';
             const binForJs = String(reportBin || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
@@ -24018,7 +24272,7 @@
                 };
 
                 const getDeviceReportSortRank = function(device) {
-                    return getMapDeviceReportSortRank(device, currentYear, reportBin);
+                    return getMapDeviceReportSortRank(device, currentYear, reportBin, today);
                 };
 
                 const sortedDevices = devices.slice().sort(function(a, b) {
@@ -24073,7 +24327,7 @@
                             ? `<span style="font-size:11px;opacity:0.65;margin-left:4px;">(+${pending.length - 1} more after)</span>`
                             : '';
                         if (nextTestAvailability.isAvailableNow) {
-                            nextTestHtml = `<span style="font-weight:700;color:var(--header-color);">${nextTestLabel}</span>${morePending} · <span style="color:#4CAF50;font-weight:600;">Available now</span>`;
+                            nextTestHtml = `<span style="font-weight:700;color:var(--header-color);">${nextTestLabel}</span>${morePending} · <span style="color:#4CAF50;font-weight:600;">${mapActAsAvailableNowLabel()}</span>`;
                         } else {
                             const dateStr = nextTestAvailability.availableDate
                                 ? nextTestAvailability.availableDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -31806,7 +32060,7 @@
                 markerColor = '#e67e22'; // Orange - in process
             } else if (isHold) {
                 markerColor = '#607d8b'; // Blue-gray - on hold
-            } else if (building.missedJuneTestDeadline && mapIsNoTestByJuneHighlightActive() && !isMapNoTestByJuneDisregarded(building.bin, building.calendarYear || new Date().getFullYear())) {
+            } else if (building.missedJuneTestDeadline && mapIsNoTestByJuneHighlightActive(getMapReferenceDate()) && !isMapNoTestByJuneDisregarded(building.bin, building.calendarYear || getMapReferenceDate().getFullYear())) {
                 markerColor = MAP_NO_TEST_BY_JUNE_COLOR; // Deep red - no test by June
             } else if (isFavorited) {
                 markerColor = '#9b59b6'; // Purple - favorited building
@@ -31925,7 +32179,9 @@
             // Update controls panel
             updateMapControlsPanel();
 
-            // Get all buildings with valid coordinates
+            // Get all buildings with valid coordinates.
+            // Act As Date pretends this reference date is today for readiness and the calendar year.
+            const mapReferenceDate = getMapReferenceDate();
             const buildingsWithCoords = [];
             let hiddenCount = 0;
             
@@ -31966,10 +32222,9 @@
                     const lng = parseFloat(group.longitude);
                     if (!isNaN(lat) && !isNaN(lng)) {
                         // Calculate completion stats and testing eligibility for this building
-                        const currentYear = new Date().getFullYear();
+                        const currentYear = mapReferenceDate.getFullYear();
                         const allRequiredTestsCompletedForYear = mapDobGroupHasCurrentYearCompletion(group, currentYear, bin);
-                        const today = new Date();
-                        today.setHours(0, 0, 0, 0);
+                        const today = mapReferenceDate;
                         
                         let complete = 0, incomplete = 0;
                         const readyDevices = [];
@@ -32031,11 +32286,9 @@
                             let daysUntil = null;
                             
                             if (mostRecentTest) {
-                                eligibleDate = new Date(mostRecentTest);
-                                eligibleDate.setDate(eligibleDate.getDate() + 91);
-                                eligibleDate.setHours(0, 0, 0, 0);
-                                daysUntil = Math.ceil((eligibleDate - today) / (1000 * 60 * 60 * 24));
-                                isReady = daysUntil <= 0;
+                                eligibleDate = mapDeviceEligibleDate(mostRecentTest);
+                                daysUntil = eligibleDate ? Math.ceil((eligibleDate - today) / (1000 * 60 * 60 * 24)) : null;
+                                isReady = daysUntil !== null && daysUntil <= 0;
                             }
                             
                             const deviceInfo = {
@@ -32105,7 +32358,7 @@
                             noTestYetDevices,
                             allRequiredTestsCompletedForYear,
                             calendarYear: currentYear,
-                            missedJuneTestDeadline: mapBuildingMissedJuneTestDeadline(bin, new Date(), group),
+                            missedJuneTestDeadline: mapBuildingMissedJuneTestDeadline(bin, mapReferenceDate, group),
                             isHidden: !!hidden[bin],
                             isCompleted: !!completed[bin],
                             completionType: completed[bin] ? normalizeMapCompletedTestType(completed[bin].completionType || completed[bin].testType) : '',
@@ -32123,7 +32376,13 @@
             const visibleDevices = visibleBuildingsWithCoords.reduce((sum, building) => sum + building.deviceCount, 0);
             const hiddenText = hiddenCount > 0 ? ` (${hiddenCount} hidden)` : '';
             if (countDisplay) {
-                countDisplay.textContent = `${visibleBuildingsWithCoords.length} buildings with ${visibleDevices} devices${hiddenText}`;
+                if (getMapActAsDate()) {
+                    const readyBuildings = visibleBuildingsWithCoords.filter(building => building.readyDevices.length > 0);
+                    const readyDeviceCount = readyBuildings.reduce((sum, building) => sum + building.readyDevices.length, 0);
+                    countDisplay.textContent = `${readyBuildings.length} buildings ready on ${formatMapActAsDateShort(mapReferenceDate)} · ${readyDeviceCount} devices${hiddenText}`;
+                } else {
+                    countDisplay.textContent = `${visibleBuildingsWithCoords.length} buildings with ${visibleDevices} devices${hiddenText}`;
+                }
             }
 
             if (buildingsWithCoords.length === 0) {
@@ -32219,7 +32478,7 @@
                     title: building.address || ('BIN ' + building.bin),
                     subtitle: 'BIN ' + building.bin + (building.deviceCount ? (' · ' + building.deviceCount + ' device' + (building.deviceCount === 1 ? '' : 's')) : '')
                 };
-                const hiddenByCurrentSettings = isBuildingHiddenByMapSettings(building);
+                const hiddenByCurrentSettings = isBuildingHiddenByMapSettings(building) || !mapBuildingReadyForActAsDate(building);
 
                 // Create popup content with detailed device testing info
                 const readyList = building.readyDevices.slice(0, 3).map(d =>
@@ -32600,7 +32859,7 @@
                 `;
 
                 marker.bindPopup(popupContent, { maxWidth: 480, minWidth: 380 });
-                attachMapTestingAvailabilityTooltip(marker, building.address || ('BIN ' + building.bin), building, new Date().getFullYear(), building.bin);
+                attachMapTestingAvailabilityTooltip(marker, building.address || ('BIN ' + building.bin), building, mapReferenceDate.getFullYear(), building.bin);
                 attachMapMarkerPopupClickHandler(marker);
                 attachMapMarkerSelectHandler(marker, building.bin);
                 mapMarkers.push(marker);
@@ -32633,14 +32892,13 @@
                 const notApplicableDevices = [];
                 const violationDetails = [];
                 let allRequiredTestsCompletedForYear = false;
-                let calendarYear = new Date().getFullYear();
+                let calendarYear = mapReferenceDate.getFullYear();
                 let noTestYetDevices = [];
                 
                 if (location.devices && location.devices.length > 0) {
-                    const currentYear = new Date().getFullYear();
+                    const currentYear = mapReferenceDate.getFullYear();
                     calendarYear = currentYear;
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
+                    const today = mapReferenceDate;
                     
                     location.devices.forEach(device => {
                         const deviceStatus = (device.device_status || '').toUpperCase();
@@ -32694,11 +32952,9 @@
                         let daysUntil = null;
                         
                         if (mostRecentTest) {
-                            eligibleDate = new Date(mostRecentTest);
-                            eligibleDate.setDate(eligibleDate.getDate() + 91);
-                            eligibleDate.setHours(0, 0, 0, 0);
-                            daysUntil = Math.ceil((eligibleDate - today) / (1000 * 60 * 60 * 24));
-                            isReady = daysUntil <= 0;
+                            eligibleDate = mapDeviceEligibleDate(mostRecentTest);
+                            daysUntil = eligibleDate ? Math.ceil((eligibleDate - today) / (1000 * 60 * 60 * 24)) : null;
+                            isReady = daysUntil !== null && daysUntil <= 0;
                         }
                         
                         const deviceInfo = {
@@ -32828,7 +33084,8 @@
                         (!location.bin && !location.isHouse && !location.isTransportation) ? 'Custom pin' : ''
                     ].filter(Boolean).join(' · ')
                 };
-                if (shouldHideCompletedAdditionalLocation(location)) {
+                additionalMarker._actAsReadyCount = readyDevices.length;
+                if (shouldHideCompletedAdditionalLocation(location) || !additionalMarkerReadyForActAsDate(additionalMarker)) {
                     buildingMap.removeLayer(additionalMarker);
                 }
 
@@ -33133,10 +33390,10 @@
                 `;
 
                 additionalMarker.bindPopup(additionalPopupContent, { maxWidth: 480, minWidth: 380 });
-                attachMapTestingAvailabilityTooltip(additionalMarker, additionalMarker._mapMarkerMeta.title, { readyDevices, notReadyDevices, completedDevices }, new Date().getFullYear(), location.bin ? String(location.bin) : '', location.bin ? String(location.bin) : getAdditionalLocationCompletionKey(location));
+                attachMapTestingAvailabilityTooltip(additionalMarker, additionalMarker._mapMarkerMeta.title, { readyDevices, notReadyDevices, completedDevices }, mapReferenceDate.getFullYear(), location.bin ? String(location.bin) : '', location.bin ? String(location.bin) : getAdditionalLocationCompletionKey(location));
                 attachMapMarkerPopupClickHandler(additionalMarker);
                 additionalLocationMarkers.push(additionalMarker);
-                if (!shouldHideCompletedAdditionalLocation(location)) {
+                if (!shouldHideCompletedAdditionalLocation(location) && additionalMarkerReadyForActAsDate(additionalMarker)) {
                     bounds.extend([location.latitude, location.longitude]);
                 }
             });
@@ -33257,8 +33514,13 @@
             scheduleMapLiveTableRefresh();
             pruneMapBuildingSelection();
             syncMapSelectModeUi();
+            refreshMapActAsDateControls();
             } finally {
                 initBuildingMapInProgress = false;
+                if (mapActAsDateRefreshQueued) {
+                    mapActAsDateRefreshQueued = false;
+                    setTimeout(applyMapActAsDateToMap, 0);
+                }
             }
         }
         
@@ -33276,6 +33538,7 @@
         
         // Store buildings data for search functionality
         let mapBuildingsData = [];
+        refreshMapActAsDateControls();
 
         function restoreMapVisibilityForCurrentFilters(options) {
             if (!buildingMap) return;
@@ -33299,7 +33562,7 @@
             const additionalLocations = getAdditionalLocations();
             additionalLocationMarkers.forEach((marker, index) => {
                 const location = additionalLocations[index];
-                if (shouldHideCompletedAdditionalLocation(location)) {
+                if (shouldHideCompletedAdditionalLocation(location) || !additionalMarkerReadyForActAsDate(marker)) {
                     if (buildingMap.hasLayer(marker)) buildingMap.removeLayer(marker);
                     return;
                 }
@@ -33560,7 +33823,8 @@
                 mapMarkers.forEach((marker, index) => {
                     const building = mapBuildingsData[index];
                     if (!building) return;
-                    const visibleInCurrentView = buildingMatchesMapViewFilter(building, mapViewFilter, mapView, mapViewBins, monthLabels);
+                    const visibleInCurrentView = buildingMatchesMapViewFilter(building, mapViewFilter, mapView, mapViewBins, monthLabels)
+                        && mapBuildingReadyForActAsDate(building);
                     if (visibleInCurrentView || matchedBuildingBins.has(building.bin)) {
                         if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
                     } else if (buildingMap.hasLayer(marker)) {
@@ -33571,6 +33835,7 @@
                 additionalLocationMarkers.forEach((marker, index) => {
                     const location = additionalLocations[index];
                     const shouldShowAdditional = matchedAdditionalIndexes.has(index) || (
+                        additionalMarkerReadyForActAsDate(marker) &&
                         !shouldHideCompletedAdditionalLocation(location) &&
                         ((location && (location.isHouse || location.isTransportation || location.type === 'pinned')) || !hasMapViewFilter)
                     );

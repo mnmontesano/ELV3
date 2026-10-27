@@ -5,7 +5,7 @@ import fs from 'node:fs';
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
-const rankStart = html.indexOf('function getMapDeviceReportSortRank(device, year, binHint) {');
+const rankStart = html.indexOf('function getMapDeviceReportSortRank(device, year, binHint, asOfDate) {');
 const rankEnd = html.indexOf('function formatMapAnnualTestStatusHtml(testInfo, kind) {', rankStart);
 assert.ok(rankStart > 0 && rankEnd > rankStart);
 const rank = html.slice(rankStart, rankEnd);
@@ -13,7 +13,7 @@ assert.match(rank, /getMapDeviceReportPendingTests\(testInfo\)\.length > 0\) ret
 const pendingReturn = rank.indexOf('return 0');
 const violationReturn = rank.indexOf('violationCount > 0) return 1');
 assert.ok(pendingReturn > 0 && violationReturn > pendingReturn, 'a missing year test sorts ahead of violations');
-assert.match(html, /return getMapDeviceReportSortRank\(device, currentYear, reportBin\)/);
+assert.match(html, /return getMapDeviceReportSortRank\(device, currentYear, reportBin, today\)/);
 assert.doesNotMatch(html, /Devices with no tests filed in the current calendar year come first/);
 
 const jobSortStart = html.indexOf('const sortedDevices = [...group.devices].sort((a, b) => {');
