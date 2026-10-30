@@ -67,7 +67,7 @@ vm.createContext(context);
 vm.runInContext(`let mapAddressAliases = [];\n${html.slice(start, end)}\nthis.api = {
     parseMapAliasDeviceNumbers, normalizeMapAddressAliases, setMapAddressAliases, getMapAddressAliases,
     resolveMapAddressAliasDevices, getMapAddressAliasesForBin, getMapAddressAliasBinsMatching,
-    parseMapAddressAliasBulkText, planMapAddressAliasBulk
+    parseMapAddressAliasBulkText, planMapAddressAliasBulk, collapseMapAddressAliases
 };`, context);
 const api = context.api;
 
@@ -159,5 +159,45 @@ const addressRow = api.parseMapAddressAliasBulkText('Address\t1P1001');
 assert.equal(addressRow.headerSkipped, false);
 assert.equal(addressRow.rows[0].name, 'Address');
 assert.deepEqual([...addressRow.rows[0].devices], ['1P1001']);
+
+api.setMapAddressAliases([
+    { id: 's1', name: 'Side Door', devices: ['1P1001'], createdAt: 5 },
+    { id: 's2', name: 'side door', devices: ['1P1002'], createdAt: 2 },
+    { id: 's3', name: 'Side Door', devices: ['1P2001'], createdAt: 9 }
+]);
+assert.deepEqual([...api.getMapAddressAliasesForBin('1000001').map(alias => alias.id)], ['s1']);
+assert.deepEqual([...api.getMapAddressAliasesForBin('1000002').map(alias => alias.id)], ['s3']);
+const collapsed = api.collapseMapAddressAliases(api.getMapAddressAliases());
+assert.equal(collapsed.changed, true);
+assert.equal(collapsed.aliases.length, 2);
+assert.equal(collapsed.aliases[0].id, 's1');
+assert.equal(collapsed.aliases[0].createdAt, 2);
+assert.deepEqual([...collapsed.aliases[0].devices], ['1P1001', '1P1002']);
+assert.equal(collapsed.aliases[1].name, 'Side Door');
+assert.deepEqual([...collapsed.aliases[1].devices], ['1P2001']);
+assert.equal(api.collapseMapAddressAliases(collapsed.aliases).changed, false);
+
+const combinedPlan = api.planMapAddressAliasBulk([
+    'Side Door\t1P1001',
+    'Side Door\t1P1002',
+    'Side Door\t1P1001',
+    'Side Door\t1P2001'
+].join('\n'), []);
+assert.equal(combinedPlan.ready.length, 2);
+assert.deepEqual([...combinedPlan.ready[0].devices], ['1P1001', '1P1002']);
+assert.deepEqual([...combinedPlan.ready[1].devices], ['1P2001']);
+assert.equal(combinedPlan.repeated.length, 1);
+assert.equal(combinedPlan.combined, 1);
+
+const updatePlan = api.planMapAddressAliasBulk('Side Door\t1P1002', [
+    { id: 's1', name: 'Side Door', devices: ['1P1001'] }
+]);
+assert.equal(updatePlan.ready.length, 1);
+assert.equal(updatePlan.ready[0].mergeIntoId, 's1');
+assert.deepEqual([...updatePlan.ready[0].devices], ['1P1001', '1P1002']);
+assert.equal(updatePlan.combined, 1);
+
+const withoutMap = api.planMapAddressAliasBulk('Side Door\t1P1001\nSide Door\t1P1002', [], {});
+assert.equal(withoutMap.ready.length, 2);
 
 console.log('check_map_address_aliases: ok');
