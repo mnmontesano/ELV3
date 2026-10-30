@@ -1322,6 +1322,7 @@
                             #mapControlsPanelBody.mcp-detail-mode #housesLocationsList,
                             #mapControlsPanelBody.mcp-detail-mode #transportationLocationsList,
                             #mapControlsPanelBody.mcp-detail-mode #customNamesList,
+                            #mapControlsPanelBody.mcp-detail-mode #mapAddressAliasesList,
                             #mapControlsPanelBody.mcp-detail-mode #completedBuildingsList,
                             #mapControlsPanelBody.mcp-detail-mode #reviewBuildingsList,
                             #mapControlsPanelBody.mcp-detail-mode #monthLabelsList,
@@ -1345,6 +1346,7 @@
                             #housesLocationsList,
                             #transportationLocationsList,
                             #customNamesList,
+                            #mapAddressAliasesList,
                             #completedBuildingsList,
                             #reviewBuildingsList,
                             #monthLabelsList,
@@ -1366,6 +1368,7 @@
                             #mapControlsPanel.mcp-popped-out #housesLocationsList,
                             #mapControlsPanel.mcp-popped-out #transportationLocationsList,
                             #mapControlsPanel.mcp-popped-out #customNamesList,
+                            #mapControlsPanel.mcp-popped-out #mapAddressAliasesList,
                             #mapControlsPanel.mcp-popped-out #completedBuildingsList,
                             #mapControlsPanel.mcp-popped-out #reviewBuildingsList,
                             #mapControlsPanel.mcp-popped-out #monthLabelsList,
@@ -1788,6 +1791,36 @@
                                     <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No custom labels assigned</div>
                                 </div>
                                 <button onclick="clearAllCustomNames()" class="mcp-btn" style="color:#e64a19;">Clear All Custom Labels</button>
+                            </div>
+                        </div>
+
+                        <!-- Alternate Addresses (user's name for a building, matched by device numbers) -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpAddressAliases')">
+                                <span class="mcp-title"><span style="color:#e64a19;">🔁</span> Alternate Addresses - <span id="mapAddressAliasesCount">0</span></span>
+                                <span class="mcp-arrow" id="mcpAddressAliasesArrow">›</span>
+                            </div>
+                            <div class="mcp-body" id="mcpAddressAliases">
+                                <p class="mcp-desc">When DOB lists a building under a different address than the one you use, add your address here with one or more of that building's device numbers. It is an extra name — the DOB address stays as the building's main name — and the MAP search finds the building by either one. The name follows the devices, so it attaches to whichever building DOB files them under.</p>
+                                <div id="mapAliasForm" style="background: var(--input-bg); padding: 8px; border-radius: 6px; border: 1px solid rgba(230,74,25,0.35); margin-bottom: 10px;">
+                                    <label for="mapAliasNameInput" style="display: block; font-size: 0.82em; font-weight: 700; margin-bottom: 3px;">Your address or name</label>
+                                    <input type="text" id="mapAliasNameInput" class="mcp-search-input" maxlength="200" placeholder="e.g. 123 Main St"
+                                           oninput="previewMapAddressAliasForm()"
+                                           onkeydown="if (event.key === 'Enter') { event.preventDefault(); addMapAddressAliasFromForm(); }">
+                                    <label for="mapAliasDevicesInput" style="display: block; font-size: 0.82em; font-weight: 700; margin-bottom: 3px;">Device numbers in that building</label>
+                                    <input type="text" id="mapAliasDevicesInput" class="mcp-search-input" maxlength="2000" placeholder="e.g. 1P1234, 1P5678"
+                                           autocapitalize="characters" autocomplete="off" spellcheck="false"
+                                           oninput="previewMapAddressAliasForm()"
+                                           onkeydown="if (event.key === 'Enter') { event.preventDefault(); addMapAddressAliasFromForm(); }">
+                                    <div id="mapAliasPreview" style="font-size: 0.82em; line-height: 1.4; margin-bottom: 4px; display: none;"></div>
+                                    <button type="button" id="mapAliasAddBtn" onclick="addMapAddressAliasFromForm()" class="mcp-btn" style="color:#e64a19; font-weight:700; margin-top: 2px;">＋ Add Alternate Address</button>
+                                </div>
+                                <input type="text" id="mapAddressAliasesSearchInput" class="mcp-search-input" placeholder="🔍 Search alternate address, DOB address, BIN, device..."
+                                       oninput="filterMapAddressAliasesList(this.value)">
+                                <div id="mapAddressAliasesList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No alternate addresses</div>
+                                </div>
+                                <button onclick="clearAllMapAddressAliases()" class="mcp-btn" style="color:#e64a19;">Clear All Alternate Addresses</button>
                             </div>
                         </div>
 
@@ -10993,6 +11026,7 @@
         let mapActivityLog = [];
         let mapAdditionalLocations = [];
         let mapDeviceMonitors = {};
+        let mapAddressAliases = []; // [{ id, name, devices: ['1P1234', ...], createdAt }] — matched to buildings by device number
         let mapHideMonthLabeled = false;
         let activeMonthFilters = new Set();
         let pendingMapHideScheduledMonthPrompt = false;
@@ -11361,6 +11395,7 @@
                 testDates: getMapTestDates(),
                 deadlines: getMapDeadlines(),
                 notes: getMapNotes(),
+                addressAliases: getMapAddressAliases(),
                 cat5Bypasses: getMapCat5Bypasses(),
                 cat1Bypasses: getMapCat1Bypasses(),
                 pviBypasses: getMapPviBypasses(),
@@ -16464,6 +16499,7 @@
                     ['Scheduled Date Buildings', Object.keys(view.testDates || {}).length],
                     ['Deadline Buildings', Object.keys(view.deadlines || {}).length],
                     ['Note Buildings', Object.keys(view.notes || {}).length],
+                    ['Alternate Addresses', Array.isArray(view.addressAliases) ? view.addressAliases.length : 0],
                     ['No Test Disregarded', Object.keys(view.noTestByJuneDisregarded || {}).length],
                     ['No Test Yet Disregarded', Object.keys(view.noTestYetDisregarded || {}).length],
                     ['Activity Entries', Array.isArray(view.activityLog) ? view.activityLog.length : 0],
@@ -16617,6 +16653,21 @@
                     appendMapExcelSheet(workbook, usedSheetNames, 'Notes', ['BIN', 'Address', 'Note'], noteRows);
                 }
 
+                const aliasDeviceIndex = buildMapAliasDeviceBinIndex(binGroups);
+                const aliasRows = (Array.isArray(view.addressAliases) ? view.addressAliases : []).map(alias => {
+                    const resolved = resolveMapAddressAliasDevices(alias.devices || [], aliasDeviceIndex, binGroups);
+                    return [
+                        alias.name || '',
+                        (alias.devices || []).join(', '),
+                        resolved.bins.join(', '),
+                        resolved.buildings.map(building => building.address).filter(Boolean).join(' | '),
+                        resolved.missingDevices.join(', ')
+                    ];
+                });
+                if (aliasRows.length) {
+                    appendMapExcelSheet(workbook, usedSheetNames, 'Alternate Addresses', ['Alternate Address', 'Devices', 'BIN', 'DOB Address', 'Devices Not On Map'], aliasRows);
+                }
+
                 if (exportOptions.includeActivityLog) {
                     const activityRows = (Array.isArray(view.activityLog) ? view.activityLog : []).map(entry => [
                         mapExcelTimestamp(entry.timestamp),
@@ -16654,6 +16705,7 @@
                     ...splitMapExcelSectionRows('testDates', view.testDates || {}),
                     ...splitMapExcelSectionRows('deadlines', view.deadlines || {}),
                     ...splitMapExcelSectionRows('notes', view.notes || {}),
+                    ...splitMapExcelSectionRows('addressAliases', view.addressAliases || []),
                     ...splitMapExcelSectionRows('noTestByJuneDisregarded', view.noTestByJuneDisregarded || {}),
                     ...splitMapExcelSectionRows('noTestYetDisregarded', view.noTestYetDisregarded || {}),
                     ...splitMapExcelSectionRows('activityLog', view.activityLog || []),
@@ -16732,6 +16784,7 @@
                     testDates: view.testDates || {},
                     deadlines: view.deadlines || {},
                     notes: view.notes || {},
+                    addressAliases: Array.isArray(view.addressAliases) ? view.addressAliases : [],
                     cat5Bypasses: view.cat5Bypasses || {},
                     cat1Bypasses: view.cat1Bypasses || {},
                     pviBypasses: view.pviBypasses || {},
@@ -17022,6 +17075,12 @@
                     throw new Error('Map view contains an invalid activity entry.');
                 }
             });
+            if (source.addressAliases != null && !Array.isArray(source.addressAliases)) {
+                throw new Error('Map view contains invalid alternate addresses.');
+            }
+            if (Array.isArray(source.addressAliases) && source.addressAliases.length > MAP_ADDRESS_ALIAS_MAX) {
+                throw new Error('Map view contains too many alternate addresses.');
+            }
             if (Array.isArray(source.additionalLocations) && source.additionalLocations.length > 5000) {
                 throw new Error('Map view contains too many additional locations.');
             }
@@ -17136,6 +17195,7 @@
                 testDates: testDates,
                 deadlines: source.deadlines || {},
                 notes: source.notes || {},
+                addressAliases: normalizeMapAddressAliases(source.addressAliases),
                 cat5Bypasses: normalizedCat5Bypasses,
                 cat1Bypasses: normalizedCat1Bypasses,
                 pviBypasses: normalizedPviBypasses,
@@ -17161,6 +17221,7 @@
             setMapTestDates(view.testDates || {});
             setMapDeadlines(view.deadlines || {});
             setMapNotes(view.notes || {});
+            setMapAddressAliases(view.addressAliases || []);
             setMapCat5Bypasses(view.cat5Bypasses || {});
             setMapCat1Bypasses(view.cat1Bypasses || {});
             setMapPviBypasses(view.pviBypasses || {});
@@ -20794,6 +20855,376 @@
             return mapNotes[bin] || '';
         }
 
+        const MAP_ADDRESS_ALIAS_MAX = 5000;
+        const MAP_ADDRESS_ALIAS_NAME_MAX = 200;
+        const MAP_ADDRESS_ALIAS_DEVICES_MAX = 50;
+
+        function normalizeMapAliasDeviceNumber(value) {
+            return String(value == null ? '' : value).replace(/\s+/g, '').toUpperCase();
+        }
+
+        function parseMapAliasDeviceNumbers(value) {
+            const parts = Array.isArray(value) ? value : String(value == null ? '' : value).split(/[\s,;]+/);
+            const seen = new Set();
+            const numbers = [];
+            parts.forEach(part => {
+                const number = normalizeMapAliasDeviceNumber(part);
+                if (!/^[A-Z0-9-]{1,32}$/.test(number) || seen.has(number)) return;
+                seen.add(number);
+                numbers.push(number);
+            });
+            return numbers;
+        }
+
+        function createMapAddressAliasId() {
+            return `alias_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+        }
+
+        function normalizeMapAddressAliases(value) {
+            if (!Array.isArray(value)) return [];
+            const usedIds = new Set();
+            const aliases = [];
+            value.slice(0, MAP_ADDRESS_ALIAS_MAX).forEach(entry => {
+                if (!entry || typeof entry !== 'object') return;
+                const name = String(entry.name == null ? '' : entry.name).replace(/\s+/g, ' ').trim().slice(0, MAP_ADDRESS_ALIAS_NAME_MAX);
+                const devices = parseMapAliasDeviceNumbers(Array.isArray(entry.devices) ? entry.devices : []).slice(0, MAP_ADDRESS_ALIAS_DEVICES_MAX);
+                if (!name || !devices.length) return;
+                let id = /^[A-Za-z0-9_-]{1,64}$/.test(String(entry.id || '')) ? String(entry.id) : createMapAddressAliasId();
+                while (usedIds.has(id)) id = createMapAddressAliasId();
+                usedIds.add(id);
+                const createdAt = Number(entry.createdAt);
+                aliases.push({ id, name, devices, createdAt: Number.isFinite(createdAt) && createdAt > 0 ? createdAt : Date.now() });
+            });
+            return aliases;
+        }
+
+        function getMapAddressAliases() {
+            return mapAddressAliases;
+        }
+
+        function setMapAddressAliases(aliases) {
+            mapAddressAliases = normalizeMapAddressAliases(aliases);
+        }
+
+        function getMapAliasBinGroups(binGroups) {
+            return binGroups || (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+        }
+
+        function getMapAliasGroupDeviceNumbers(group) {
+            return (group && Array.isArray(group.devices) ? group.devices : [])
+                .map(device => normalizeMapAliasDeviceNumber(device && device.device_number))
+                .filter(Boolean);
+        }
+
+        // Device number → BIN for the buildings currently loaded on the map.
+        function buildMapAliasDeviceBinIndex(binGroups) {
+            const groups = getMapAliasBinGroups(binGroups);
+            const index = new Map();
+            Object.keys(groups).forEach(bin => {
+                getMapAliasGroupDeviceNumbers(groups[bin]).forEach(number => {
+                    if (!index.has(number)) index.set(number, bin);
+                });
+            });
+            return index;
+        }
+
+        function resolveMapAddressAliasDevices(devices, deviceIndex, binGroups) {
+            const groups = getMapAliasBinGroups(binGroups);
+            const index = deviceIndex || buildMapAliasDeviceBinIndex(groups);
+            const bins = [];
+            const missingDevices = [];
+            (devices || []).forEach(number => {
+                const bin = index.get(number);
+                if (!bin) {
+                    missingDevices.push(number);
+                    return;
+                }
+                if (!bins.includes(bin)) bins.push(bin);
+            });
+            return {
+                bins,
+                buildings: bins.map(bin => ({ bin, address: (groups[bin] && groups[bin].address) || '' })),
+                missingDevices
+            };
+        }
+
+        function getMapAddressAliasesForBin(bin, binGroups) {
+            if (!bin || !mapAddressAliases.length) return [];
+            const groups = getMapAliasBinGroups(binGroups);
+            const numbers = new Set(getMapAliasGroupDeviceNumbers(groups[bin]));
+            if (!numbers.size) return [];
+            return mapAddressAliases.filter(alias => alias.devices.some(number => numbers.has(number)));
+        }
+
+        // BINs whose alternate address contains the (upper-cased) search term.
+        function getMapAddressAliasBinsMatching(searchTerm) {
+            const bins = new Set();
+            if (!searchTerm || !mapAddressAliases.length) return bins;
+            const matching = mapAddressAliases.filter(alias => alias.name.toUpperCase().includes(searchTerm));
+            if (!matching.length) return bins;
+            const index = buildMapAliasDeviceBinIndex();
+            matching.forEach(alias => alias.devices.forEach(number => {
+                const bin = index.get(number);
+                if (bin) bins.add(String(bin));
+            }));
+            return bins;
+        }
+
+        function refreshMapAddressAliasViews() {
+            updateMapAddressAliasesPanel();
+            hydrateMapAddressAliasBoxes(document);
+        }
+
+        function previewMapAddressAliasForm() {
+            const preview = document.getElementById('mapAliasPreview');
+            const devicesInput = document.getElementById('mapAliasDevicesInput');
+            if (!preview || !devicesInput) return;
+            const devices = parseMapAliasDeviceNumbers(devicesInput.value);
+            if (!devices.length) {
+                preview.style.display = 'none';
+                preview.innerHTML = '';
+                return;
+            }
+            const resolved = resolveMapAddressAliasDevices(devices);
+            const lines = resolved.buildings.map(building =>
+                `<div style="color:#27ae60; font-weight:600;">✓ DOB: ${escapeMapSuggestionHtml(building.address || 'Unknown address')} · BIN ${escapeMapSuggestionHtml(building.bin)}</div>`
+            );
+            if (resolved.missingDevices.length) {
+                lines.push(`<div style="color:#ff9800;">Not on this map: ${escapeMapSuggestionHtml(resolved.missingDevices.join(', '))}</div>`);
+            }
+            if (resolved.buildings.length > 1) {
+                lines.push('<div style="opacity:0.75;">These devices are in more than one building — the name will show on each.</div>');
+            }
+            preview.innerHTML = lines.join('');
+            preview.style.display = 'block';
+        }
+
+        function addMapAddressAliasFromForm() {
+            const nameInput = document.getElementById('mapAliasNameInput');
+            const devicesInput = document.getElementById('mapAliasDevicesInput');
+            if (!nameInput || !devicesInput) return;
+            const name = nameInput.value.replace(/\s+/g, ' ').trim().slice(0, MAP_ADDRESS_ALIAS_NAME_MAX);
+            const devices = parseMapAliasDeviceNumbers(devicesInput.value).slice(0, MAP_ADDRESS_ALIAS_DEVICES_MAX);
+            if (!name) {
+                showMapNotification('Enter the address or name you use for this building', '#ff9800');
+                nameInput.focus();
+                return;
+            }
+            if (!devices.length) {
+                showMapNotification('Enter at least one device number from the building', '#ff9800');
+                devicesInput.focus();
+                return;
+            }
+            if (mapAddressAliases.length >= MAP_ADDRESS_ALIAS_MAX) {
+                showMapNotification('Alternate address limit reached', '#ff6b6b');
+                return;
+            }
+            const resolved = resolveMapAddressAliasDevices(devices);
+            if (!resolved.bins.length &&
+                !confirm('None of these device numbers are on the current map. Save the alternate address anyway?')) {
+                return;
+            }
+            const duplicate = mapAddressAliases.find(alias =>
+                alias.name.toUpperCase() === name.toUpperCase() &&
+                alias.devices.length === devices.length &&
+                alias.devices.every(number => devices.includes(number))
+            );
+            if (duplicate) {
+                showMapNotification('That alternate address is already saved', '#ff9800');
+                return;
+            }
+            mapAddressAliases.push({ id: createMapAddressAliasId(), name, devices, createdAt: Date.now() });
+            addMapActivity('Added alternate address', {
+                type: 'Alternate Address',
+                bin: resolved.bins[0] || '',
+                details: `${name} — devices ${devices.join(', ')}`
+            });
+            nameInput.value = '';
+            devicesInput.value = '';
+            previewMapAddressAliasForm();
+            refreshMapAddressAliasViews();
+            showMapNotification(resolved.bins.length
+                ? `Alternate address saved for ${resolved.bins.length} building${resolved.bins.length !== 1 ? 's' : ''}`
+                : 'Alternate address saved', '#e64a19');
+        }
+
+        function renameMapAddressAlias(id, value) {
+            const alias = mapAddressAliases.find(item => item.id === id);
+            if (!alias) return;
+            const name = String(value == null ? '' : value).replace(/\s+/g, ' ').trim().slice(0, MAP_ADDRESS_ALIAS_NAME_MAX);
+            if (!name) {
+                updateMapAddressAliasesPanel();
+                showMapNotification('Alternate address cannot be blank — use ✕ to remove it', '#ff9800');
+                return;
+            }
+            if (name === alias.name) return;
+            const previous = alias.name;
+            alias.name = name;
+            addMapActivity('Renamed alternate address', { type: 'Alternate Address', details: `${previous} → ${name}` });
+            refreshMapAddressAliasViews();
+        }
+
+        function setMapAddressAliasDevices(id, value) {
+            const alias = mapAddressAliases.find(item => item.id === id);
+            if (!alias) return;
+            const devices = parseMapAliasDeviceNumbers(value).slice(0, MAP_ADDRESS_ALIAS_DEVICES_MAX);
+            if (!devices.length) {
+                updateMapAddressAliasesPanel();
+                showMapNotification('Keep at least one device number — use ✕ to remove it', '#ff9800');
+                return;
+            }
+            alias.devices = devices;
+            addMapActivity('Updated alternate address devices', { type: 'Alternate Address', details: `${alias.name} — devices ${devices.join(', ')}` });
+            refreshMapAddressAliasViews();
+        }
+
+        function removeMapAddressAlias(id) {
+            const index = mapAddressAliases.findIndex(item => item.id === id);
+            if (index === -1) return;
+            const [removed] = mapAddressAliases.splice(index, 1);
+            addMapActivity('Removed alternate address', { type: 'Alternate Address', details: removed.name });
+            refreshMapAddressAliasViews();
+            showMapNotification('Alternate address removed', '#ff9800');
+        }
+
+        function clearAllMapAddressAliases() {
+            if (!mapAddressAliases.length) return;
+            if (!confirm('Clear all alternate addresses?')) return;
+            const count = mapAddressAliases.length;
+            mapAddressAliases = [];
+            addMapActivity('Cleared all alternate addresses', { type: 'Alternate Address', details: `${count} cleared` });
+            refreshMapAddressAliasViews();
+        }
+
+        function flyToMapAddressAlias(id) {
+            const alias = mapAddressAliases.find(item => item.id === id);
+            if (!alias) return;
+            const resolved = resolveMapAddressAliasDevices(alias.devices);
+            if (!resolved.bins.length) {
+                showMapNotification('None of these devices are on the current map', '#ff6b6b');
+                return;
+            }
+            flyToMapBuilding(resolved.bins[0]);
+        }
+
+        function openMapAddressAliasFormForBin(bin) {
+            const groups = getMapAliasBinGroups();
+            const devices = getMapAliasGroupDeviceNumbers(groups[bin]).slice(0, MAP_ADDRESS_ALIAS_DEVICES_MAX);
+            showMapControlsPanel();
+            openMcpSection('mcpAddressAliases');
+            const nameInput = document.getElementById('mapAliasNameInput');
+            const devicesInput = document.getElementById('mapAliasDevicesInput');
+            if (devicesInput) devicesInput.value = devices.join(', ');
+            previewMapAddressAliasForm();
+            if (nameInput) {
+                nameInput.value = '';
+                // The phone keyboard would cover the form before the Settings sheet settles.
+                if (!isMapPhoneLayout()) nameInput.focus();
+            }
+        }
+
+        function updateMapAddressAliasesPanel() {
+            const countEl = document.getElementById('mapAddressAliasesCount');
+            const listEl = document.getElementById('mapAddressAliasesList');
+            if (countEl) countEl.textContent = mapAddressAliases.length;
+            refreshMcpDetailBackTitle();
+            if (!listEl) return;
+            if (!mapAddressAliases.length) {
+                listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No alternate addresses</div>';
+                return;
+            }
+            const groups = getMapAliasBinGroups();
+            const deviceIndex = buildMapAliasDeviceBinIndex(groups);
+            listEl.innerHTML = mapAddressAliases.map(alias => {
+                const resolved = resolveMapAddressAliasDevices(alias.devices, deviceIndex, groups);
+                const idJs = escapeMapSuggestionHtml(alias.id);
+                const nameHtml = escapeMapSuggestionHtml(alias.name);
+                const dobAddresses = resolved.buildings.map(building => `${building.address || 'Unknown address'} · BIN ${building.bin}`);
+                const searchText = [alias.name, ...dobAddresses, ...alias.devices].join(' ');
+                const locationHtml = resolved.buildings.length
+                    ? resolved.buildings.map(building =>
+                        `<div style="font-size: 0.8em; opacity: 0.7; word-break: break-word;">DOB: ${escapeMapSuggestionHtml(building.address || 'Unknown address')} · BIN ${escapeMapSuggestionHtml(building.bin)}</div>`
+                    ).join('')
+                    : '<div style="font-size: 0.8em; color: #ff9800;">Not on the current map</div>';
+                const missingHtml = resolved.buildings.length && resolved.missingDevices.length
+                    ? `<div style="font-size: 0.76em; color: #ff9800;">Not on this map: ${escapeMapSuggestionHtml(resolved.missingDevices.join(', '))}</div>`
+                    : '';
+                return `
+                <div data-map-alias-row="1" data-search="${escapeMapSuggestionHtml(searchText)}" style="background: var(--input-bg); padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid rgba(230,74,25,0.35);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; margin-bottom: 4px;">
+                        <div style="flex: 1; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToMapAddressAlias('${idJs}')">
+                            <div style="font-size: 0.9em; font-weight: 700; color: #e64a19; margin-bottom: 1px; word-break: break-word; text-decoration: underline dotted;">🔁 ${nameHtml}</div>
+                            ${locationHtml}
+                            ${missingHtml}
+                        </div>
+                        <button type="button" onclick="removeMapAddressAlias('${idJs}')" title="Remove alternate address" aria-label="Remove alternate address"
+                                style="flex-shrink:0; margin:0; background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.4); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 0.88em;">✕</button>
+                    </div>
+                    <input type="text" value="${nameHtml}" maxlength="${MAP_ADDRESS_ALIAS_NAME_MAX}" placeholder="Alternate address..." aria-label="Alternate address"
+                           onchange="renameMapAddressAlias('${idJs}', this.value)"
+                           style="width: 100%; margin: 0 0 4px 0; padding: 4px 7px; border-radius: 4px; border: 1px solid rgba(230,74,25,0.5); background: var(--input-bg); color: var(--text-color); font-size: 0.88em; box-sizing: border-box; outline: none;">
+                    <input type="text" value="${escapeMapSuggestionHtml(alias.devices.join(', '))}" maxlength="2000" placeholder="Device numbers..." aria-label="Device numbers"
+                           autocapitalize="characters" autocomplete="off" spellcheck="false"
+                           onchange="setMapAddressAliasDevices('${idJs}', this.value)"
+                           style="width: 100%; margin: 0; padding: 4px 7px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 0.82em; box-sizing: border-box; outline: none;">
+                </div>`;
+            }).join('');
+            const searchInput = document.getElementById('mapAddressAliasesSearchInput');
+            if (searchInput && searchInput.value.trim()) filterMapAddressAliasesList(searchInput.value);
+        }
+
+        function filterMapAddressAliasesList(query) {
+            const list = document.getElementById('mapAddressAliasesList');
+            if (!list) return;
+            const q = String(query || '').toLowerCase().trim();
+            const items = list.querySelectorAll(':scope > div[data-map-alias-row]');
+            let anyVisible = false;
+            items.forEach(el => {
+                const match = !q || String(el.dataset.search || '').toLowerCase().includes(q);
+                el.style.display = match ? '' : 'none';
+                if (match) anyVisible = true;
+            });
+            const noResultsId = 'mapAddressAliasesNoFilterMatch';
+            let noResults = document.getElementById(noResultsId);
+            if (!anyVisible && q && items.length > 0) {
+                if (!noResults) {
+                    noResults = document.createElement('div');
+                    noResults.id = noResultsId;
+                    noResults.style.cssText = 'font-size:1em;opacity:0.6;text-align:center;padding:8px;';
+                    list.appendChild(noResults);
+                }
+                noResults.textContent = 'No matches for "' + query + '"';
+                noResults.style.display = '';
+            } else if (noResults) {
+                noResults.style.display = 'none';
+            }
+        }
+
+        function renderMapAddressAliasBoxHtml(bin) {
+            const aliases = getMapAddressAliasesForBin(bin);
+            const binJs = escapeMapSuggestionHtml(String(bin).replace(/[^0-9A-Za-z_-]/g, ''));
+            const buttonStyle = 'margin:0; padding:2px 8px; border-radius:4px; border:1px solid rgba(230,74,25,0.45); background:rgba(230,74,25,0.08); color:#e64a19; cursor:pointer; font-size:11px; font-weight:600;';
+            if (!aliases.length) {
+                return `<button type="button" onclick="openMapAddressAliasFormForBin('${binJs}')" title="Add the address you use for this building" style="${buttonStyle}">🔁 Add alternate address</button>`;
+            }
+            const names = aliases.map(alias => `<div style="font-size:13px; font-weight:700; color:#e64a19; word-break:break-word;">🔁 ${escapeMapSuggestionHtml(alias.name)}</div>`).join('');
+            return `<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px;">
+                    <div style="min-width:0;">
+                        <div style="font-size:10px; font-weight:700; opacity:0.7; text-transform:uppercase; letter-spacing:0.03em;">Also known as</div>
+                        ${names}
+                    </div>
+                    <button type="button" onclick="openMapAddressAliasFormForBin('${binJs}')" title="Add another alternate address" style="${buttonStyle} flex-shrink:0;">＋</button>
+                </div>`;
+        }
+
+        function hydrateMapAddressAliasBoxes(root) {
+            const scope = root || document;
+            if (!scope.querySelectorAll) return;
+            scope.querySelectorAll('[data-map-alias-bin]').forEach(box => {
+                box.innerHTML = renderMapAddressAliasBoxHtml(box.getAttribute('data-map-alias-bin'));
+            });
+        }
+
         function getMapDeadlines() {
             return mapDeadlines;
         }
@@ -21677,6 +22108,7 @@
             if (!popup || typeof popup.getElement !== 'function') return;
             const popupRoot = popup.getElement();
             if (!popupRoot) return;
+            hydrateMapAddressAliasBoxes(popupRoot);
             hydrateMapBuildingPopupState(popupRoot);
             const untrackedContainer = popupRoot.querySelector
                 ? popupRoot.querySelector('[id^="mapUntrackedDevices_"]')
@@ -21974,7 +22406,11 @@
         function buildMapTestingAvailabilityTooltipHtml(title, devicesHtml, noteBin, scheduleKey) {
             const note = noteBin ? String(getMapNote(noteBin) || '').trim() : '';
             const scheduleHtml = buildMapScheduledTestDatesTooltipHtml(scheduleKey || noteBin);
-            if (!devicesHtml && !note && !scheduleHtml) return '';
+            const aliasNames = noteBin ? getMapAddressAliasesForBin(noteBin).map(alias => alias.name) : [];
+            if (!devicesHtml && !note && !scheduleHtml && !aliasNames.length) return '';
+            const aliasHtml = aliasNames.length
+                ? `<div class="map-availability-alias" style="color:#e64a19; font-weight:700; margin:-2px 0 4px 0;">🔁 ${escapeMapSuggestionHtml(aliasNames.join(' · '))}</div>`
+                : '';
             const noteHtml = note
                 ? `<div class="map-availability-note"><div class="map-availability-note-label">📝 Notes</div><div class="map-availability-note-text">${escapeMapSuggestionHtml(note)}</div></div>`
                 : '';
@@ -21982,7 +22418,7 @@
                 ? ''
                 : '<div class="map-availability-summary" style="opacity:0.75;">No device testing dates on file</div>');
             return `<div class="map-availability-title">${escapeMapSuggestionHtml(title)}</div>
-                ${scheduleHtml}${deviceSection}${noteHtml}`;
+                ${aliasHtml}${scheduleHtml}${deviceSection}${noteHtml}`;
         }
 
         // Hover-only: on touch screens a tap already opens the full popup.
@@ -29869,6 +30305,7 @@
 
         function updateMapControlsPanel() {
             ensureMapControlsNotesSection();
+            updateMapAddressAliasesPanel();
             const favorites = getMapFavorites();
             const deviceMonitors = getMapDeviceMonitors();
             const hidden = getMapHidden();
@@ -32338,6 +32775,7 @@
                     <div class="map-popup-content" style="min-width: 380px; max-width: 460px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                         <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isCompleted ? completionColor : isInProcess ? '#e67e22' : isHold ? '#607d8b' : isFavorited ? '#9b59b6' : '#1a73e8'};">
                             <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${building.address}</div>
+                            <div class="map-popup-aliases" data-map-alias-bin="${building.bin}" style="margin: -4px 0 8px 0;"></div>
                             <div style="display: flex; gap: 6px; justify-content: space-between;">
                                 <button onclick="toggleMapCompleted('${building.bin}')" 
                                         title="${isCompleted ? 'Unmark as completed' : 'Mark as completed'}"
@@ -33453,6 +33891,27 @@
                 });
             });
 
+            if (getMapAddressAliases().length) {
+                const groups = getMapAliasBinGroups();
+                const deviceIndex = buildMapAliasDeviceBinIndex(groups);
+                getMapAddressAliases().forEach(alias => {
+                    const resolved = resolveMapAddressAliasDevices(alias.devices, deviceIndex, groups);
+                    if (!resolved.buildings.length) return;
+                    const key = `alias:${alias.id}`;
+                    if (seen.has(key)) return;
+                    seen.add(key);
+                    const building = resolved.buildings[0];
+                    candidates.push({
+                        type: 'Alternate Address',
+                        label: alias.name,
+                        details: `DOB: ${building.address || 'Unknown address'} · BIN ${building.bin}`,
+                        devicePreview: `Devices: ${alias.devices.slice(0, 6).join(', ')}${alias.devices.length > 6 ? ' +' + (alias.devices.length - 6) + ' more' : ''}`,
+                        value: alias.name,
+                        score: mapSearchSimilarityScore(query, alias.name)
+                    });
+                });
+            }
+
             getAdditionalLocations().forEach((location, index) => {
                 const label = location.customName || location.label || location.address || '';
                 if (!label) return;
@@ -33551,8 +34010,10 @@
             const deviceListMatches = devices => (devices || []).some(device =>
                 mapSearchFieldIncludes(device && device.number, searchTerm)
             );
+            const aliasMatchedBins = hasBulkData ? getMapAddressAliasBinsMatching(searchTerm) : new Set();
             const buildingMatches = hasBulkData ? mapBuildingsData.filter(building => {
                 if (!building) return false;
+                if (aliasMatchedBins.has(String(building.bin))) return true;
                 const addressMatch = mapSearchFieldIncludes(building.address, searchTerm);
                 const binMatch = mapSearchFieldIncludes(building.bin, searchTerm);
                 const deviceMatch = deviceListMatches(building.readyDevices) ||

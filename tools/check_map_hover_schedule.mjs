@@ -24,10 +24,13 @@ assert.match(
 
 const schedules = {};
 const notes = {};
+const aliases = {};
 const context = {
     console,
     schedules,
     notes,
+    aliases,
+    getMapAddressAliasesForBin(bin) { return context.aliases[bin] || []; },
     escapeMapSuggestionHtml(value) {
         return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     },
@@ -104,6 +107,15 @@ const noteOnly = context.buildMapTestingAvailabilityTooltipHtml('1 Main St', '',
 assert.match(noteOnly, /Call the super/);
 assert.match(noteOnly, /No device testing dates on file/);
 assert.doesNotMatch(noteOnly, /map-availability-schedule/);
+
+context.aliases['1000001'] = [{ name: '123 Main St' }, { name: 'Old <Name>' }];
+const withAlias = context.buildMapTestingAvailabilityTooltipHtml('1 Main St', '', '1000001');
+assert.match(withAlias, /map-availability-alias[^>]*>🔁 123 Main St · Old &lt;Name&gt;</);
+assert.ok(withAlias.indexOf('map-availability-alias') < withAlias.indexOf('Call the super'));
+delete context.aliases['1000001'];
+context.aliases['999'] = [{ name: 'Alias only' }];
+assert.match(context.buildMapTestingAvailabilityTooltipHtml('1 Main St', '', '999'), /Alias only/);
+delete context.aliases['999'];
 
 assert.equal(context.buildMapScheduledTestDatesTooltipHtml(''), '');
 assert.equal(context.buildMapTestingAvailabilityTooltipHtml('1 Main St', '', '999'), '');
