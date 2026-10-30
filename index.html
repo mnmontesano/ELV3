@@ -17199,10 +17199,11 @@
             if (typeof refreshMapMissingDevicesFileCount === 'function') refreshMapMissingDevicesFileCount();
 
             pendingLoadedMapViewState = view.mapState ? { ...view.mapState } : {};
-            // Always show Settings when loading a MAP file so filters and controls
-            // are visible. (Older saves often recorded closed because load used to
-            // force-hide the panel on narrow layouts.)
-            pendingLoadedMapViewState.controlsPanelVisible = true;
+            // Show Settings when a MAP file loads on a wide layout so filters are visible.
+            // (Older saves often recorded closed because load used to force-hide the panel
+            // on narrow layouts.) On a phone the panel covers the map, so leave it closed
+            // until the user opens Controls.
+            pendingLoadedMapViewState.controlsPanelVisible = !isMapPhoneLayout();
             // Clear leftover session filters before applying the file's saved mapState.
             activeMonthFilters.clear();
             pendingMapHideScheduledMonthPrompt = false;
@@ -21689,6 +21690,10 @@
         // Keep in sync with the MAP phone media query in styles.css.
         const MAP_PHONE_LAYOUT_QUERY = '(max-width: 768px), (pointer: coarse) and (max-height: 500px)';
         const MAP_POPUP_PHONE_PAN_DELAY_MS = 320;
+
+        function isMapPhoneLayout() {
+            return !!(window.matchMedia && window.matchMedia(MAP_PHONE_LAYOUT_QUERY).matches);
+        }
 
         // Popups grow upward after hydration, past Leaflet's open-time auto-pan; on short
         // phone maps that hides the popup's close button under the MAP header.
@@ -33189,9 +33194,9 @@
                 const searchInput = document.getElementById('mapSearchInput');
 
                 if (controlsPanel) {
-                    // Respect the saved preference. Do not force Settings closed just because
-                    // the layout is currently narrow — users can still collapse it manually.
-                    const restoreControlsPanelVisible = loadedState.controlsPanelVisible !== false;
+                    // Respect the saved preference on wide layouts. On a phone, Settings
+                    // covers the map, so opening a MAP file leaves the panel closed.
+                    const restoreControlsPanelVisible = !isMapPhoneLayout() && loadedState.controlsPanelVisible !== false;
                     controlsPanel.style.display = restoreControlsPanelVisible ? 'flex' : 'none';
                     if (restoreControlsPanelVisible && !mapControlsPanelIsPopped) {
                         setDockedMapControlsToDefaultWidth(controlsPanel);
@@ -33361,9 +33366,25 @@
                 .trim();
         }
 
+        function mapSearchFieldIncludes(value, searchTerm) {
+            return String(value == null ? '' : value).toUpperCase().includes(searchTerm);
+        }
+
+        function mapSearchLatLng(latitude, longitude) {
+            const lat = Number(latitude);
+            const lng = Number(longitude);
+            return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null;
+        }
+
+        // Full edit distance on a long pasted address, checked against every building,
+        // freezes a phone. Compare a short prefix, and skip pairs that cannot be close.
         function mapSearchEditDistance(a, b) {
-            const left = normalizeMapSearchText(a);
-            const right = normalizeMapSearchText(b);
+            const MAX_COMPARE_LENGTH = 48;
+            let left = normalizeMapSearchText(a);
+            let right = normalizeMapSearchText(b);
+            if (left.length > MAX_COMPARE_LENGTH) left = left.slice(0, MAX_COMPARE_LENGTH);
+            if (right.length > MAX_COMPARE_LENGTH) right = right.slice(0, MAX_COMPARE_LENGTH);
+            if (Math.abs(left.length - right.length) > 24) return 1;
             const maxLen = Math.max(left.length, right.length);
             if (maxLen === 0) return 0;
             if (left === right) return 0;
@@ -33524,14 +33545,21 @@
                 return;
             }
             
-            // Search through bulk search buildings for matching address, BIN, or device numbers
+            // Search through bulk search buildings for matching address, BIN, or device numbers.
+            // Device numbers are sometimes missing; reading them without a guard throws and
+            // aborts the search.
+            const deviceListMatches = devices => (devices || []).some(device =>
+                mapSearchFieldIncludes(device && device.number, searchTerm)
+            );
             const buildingMatches = hasBulkData ? mapBuildingsData.filter(building => {
-                const addressMatch = building.address.toUpperCase().includes(searchTerm);
-                const binMatch = building.bin.toString().includes(searchTerm);
-                const deviceMatch = building.readyDevices.some(d => d.number.toUpperCase().includes(searchTerm)) ||
-                                   building.notReadyDevices.some(d => d.number.toUpperCase().includes(searchTerm)) ||
-                                   ((building.completedDevices || []).some(d => d.number.toUpperCase().includes(searchTerm))) ||
-                                   (building.removedDeletedDevices && building.removedDeletedDevices.some(d => d.number.toUpperCase().includes(searchTerm)));
+                if (!building) return false;
+                const addressMatch = mapSearchFieldIncludes(building.address, searchTerm);
+                const binMatch = mapSearchFieldIncludes(building.bin, searchTerm);
+                const deviceMatch = deviceListMatches(building.readyDevices) ||
+                                   deviceListMatches(building.notReadyDevices) ||
+                                   deviceListMatches(building.completedDevices) ||
+                                   deviceListMatches(building.removedDeletedDevices) ||
+                                   deviceListMatches(building.notApplicableDevices);
                 return addressMatch || binMatch || deviceMatch;
             }) : [];
             
@@ -33617,34 +33645,47 @@
             resultCount.style.display = 'inline';
             resultCount.style.color = '#4CAF50';
             
-            // Find the markers for matching buildings and zoom to them
+            // Find the markers for matching buildings and zoom to them.
+            // On a phone, skip the zoom animation. Opening a popup while that animation
+            // is running is what makes an address search fail intermittently there.
+            const phoneLayout = isMapPhoneLayout();
+            if (phoneLayout && searchInput) searchInput.blur();
             if (allMatches.length === 1) {
                 // Single match - zoom to it and open popup
                 const match = allMatches[0];
+                const point = mapSearchLatLng(match.latitude, match.longitude);
                 let marker = null;
                 if (match.isAdditional && additionalLocationMarkers[match.additionalIndex]) {
                     marker = additionalLocationMarkers[match.additionalIndex];
-                } else if (!match.isAdditional) {
+                } else if (!match.isAdditional && point) {
                     marker = mapMarkers.find(m => {
                         const latLng = m.getLatLng();
-                        return Math.abs(latLng.lat - match.latitude) < 0.0001 && 
-                               Math.abs(latLng.lng - match.longitude) < 0.0001;
+                        return Math.abs(latLng.lat - point[0]) < 0.0001 &&
+                               Math.abs(latLng.lng - point[1]) < 0.0001;
                     });
                 }
-                
-                if (marker && buildingMap && shouldFitMap) {
-                    buildingMap.setView([match.latitude, match.longitude], 17);
+
+                if (marker && buildingMap && shouldFitMap && point) {
+                    buildingMap.setView(point, 17, { animate: !phoneLayout });
                     if (shouldOpenPopup) openMapMarkerPopup(marker);
                 }
-            } else {
+            } else if (buildingMap && shouldFitMap) {
                 // Multiple matches - fit bounds to show all
                 const bounds = L.latLngBounds();
                 allMatches.forEach(match => {
-                    bounds.extend([match.latitude, match.longitude]);
+                    const point = mapSearchLatLng(match.latitude, match.longitude);
+                    if (point) bounds.extend(point);
                 });
-                
-                if (buildingMap && shouldFitMap) {
-                    buildingMap.fitBounds(bounds, { padding: [50, 50] });
+                if (!bounds.isValid()) return;
+
+                const size = buildingMap.getSize();
+                const room = Math.min(size.x, size.y);
+                if (room < 40) return;
+                const pad = phoneLayout ? Math.max(8, Math.min(24, Math.floor(room / 6))) : 50;
+                try {
+                    buildingMap.fitBounds(bounds, { padding: [pad, pad], animate: !phoneLayout });
+                } catch (error) {
+                    console.warn('Map search could not fit the matching buildings', error);
                 }
             }
         }
