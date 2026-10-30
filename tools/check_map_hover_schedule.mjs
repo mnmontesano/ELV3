@@ -19,7 +19,7 @@ assert.doesNotMatch(html, /MAP_AVAILABILITY_TOOLTIP_MAX_ROWS = 8/);
 assert.match(html, /buildMapScheduledTestDatesTooltipHtml\(scheduleKey \|\| noteBin\)/);
 assert.match(
     html,
-    /attachMapTestingAvailabilityTooltip\(additionalMarker, additionalMarker\._mapMarkerMeta\.title, \{ readyDevices, notReadyDevices, completedDevices \}, new Date\(\)\.getFullYear\(\), location\.bin \? String\(location\.bin\) : '', location\.bin \? String\(location\.bin\) : getAdditionalLocationCompletionKey\(location\)\)/
+    /attachMapTestingAvailabilityTooltip\(additionalMarker, additionalMarker\._mapMarkerMeta\.title, \{ readyDevices, notReadyDevices, completedDevices \}, mapReferenceDate\.getFullYear\(\), location\.bin \? String\(location\.bin\) : '', location\.bin \? String\(location\.bin\) : getAdditionalLocationCompletionKey\(location\)\)/
 );
 
 const schedules = {};
