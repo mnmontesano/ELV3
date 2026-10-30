@@ -1274,6 +1274,9 @@
                             <div style="display: flex; gap: 4px; align-items: center;">
                                 <button id="mapControlsPopOutBtn" onclick="popOutControlsPanel()" title="Pop out to a floating, resizable window" style="background: var(--panel-bg); border: 1px solid var(--input-border); border-radius: 4px; padding: 3px 8px; cursor: pointer; color: var(--text-color); font-size: 0.88em; display: flex; align-items: center; gap: 4px; white-space: nowrap;">↗ Pop Out</button>
                                 <button id="mapControlsDockBtn" onclick="dockControlsPanel()" title="Dock back to sidebar" style="background: var(--panel-bg); border: 1px solid var(--input-border); border-radius: 4px; padding: 3px 8px; cursor: pointer; color: var(--text-color); font-size: 0.88em; align-items: center; gap: 4px; white-space: nowrap; display: none;">↙ Dock</button>
+                                <button id="mapControlsMobileCloseBtn" type="button" class="map-modal-close-btn" onclick="toggleMapControlsPanel()" title="Close Settings" aria-label="Close Settings">
+                                    <span class="map-modal-close-x" aria-hidden="true">&times;</span>
+                                </button>
                             </div>
                         </div>
                         <div id="mapControlsPanelBody" style="padding: 0.65em 0.75em; overflow-y: auto; flex: 1; min-height: 0;">
@@ -21683,6 +21686,32 @@
             }
         }
 
+        // Keep in sync with the MAP phone media query in styles.css.
+        const MAP_PHONE_LAYOUT_QUERY = '(max-width: 768px), (pointer: coarse) and (max-height: 500px)';
+        const MAP_POPUP_PHONE_PAN_DELAY_MS = 320;
+
+        // Popups grow upward after hydration, past Leaflet's open-time auto-pan; on short
+        // phone maps that hides the popup's close button under the MAP header.
+        function keepMapPopupInViewOnPhone(popup) {
+            if (!buildingMap || !popup || !window.matchMedia || !window.matchMedia(MAP_PHONE_LAYOUT_QUERY).matches) return;
+            setTimeout(() => {
+                if (!buildingMap || typeof popup.isOpen !== 'function' || !popup.isOpen()) return;
+                const popupEl = popup.getElement();
+                const mapEl = buildingMap.getContainer();
+                if (!popupEl || !mapEl) return;
+                const p = popupEl.getBoundingClientRect();
+                const m = mapEl.getBoundingClientRect();
+                const pad = 12;
+                let dx = 0;
+                let dy = 0;
+                if (p.top < m.top + pad || p.height > m.height - pad * 2) dy = p.top - (m.top + pad);
+                else if (p.bottom > m.bottom - pad) dy = p.bottom - (m.bottom - pad);
+                if (p.left < m.left + pad) dx = p.left - (m.left + pad);
+                else if (p.right > m.right - pad) dx = p.right - (m.right - pad);
+                if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) buildingMap.panBy([Math.round(dx), Math.round(dy)]);
+            }, MAP_POPUP_PHONE_PAN_DELAY_MS);
+        }
+
         function openMapMarkerPopup(marker) {
             if (!marker || typeof marker.openPopup !== 'function') return;
             if (typeof marker.isPopupOpen === 'function' && marker.isPopupOpen()) {
@@ -32185,6 +32214,7 @@
 
             buildingMap.on('popupopen', function (e) {
                 hydrateOpenMapPopup(e.popup);
+                keepMapPopupInViewOnPhone(e.popup);
             });
 
             // Safari can calculate hidden/flex modal dimensions late; reflow map sizing safely.
