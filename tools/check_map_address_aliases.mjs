@@ -67,7 +67,8 @@ vm.createContext(context);
 vm.runInContext(`let mapAddressAliases = [];\n${html.slice(start, end)}\nthis.api = {
     parseMapAliasDeviceNumbers, normalizeMapAddressAliases, setMapAddressAliases, getMapAddressAliases,
     resolveMapAddressAliasDevices, getMapAddressAliasesForBin, getMapAddressAliasBinsMatching,
-    parseMapAddressAliasBulkText, planMapAddressAliasBulk, collapseMapAddressAliases
+    parseMapAddressAliasBulkText, planMapAddressAliasBulk, collapseMapAddressAliases,
+    mapAddressAliasNameKey, uniqueMapAddressAliasesByName
 };`, context);
 const api = context.api;
 
@@ -199,5 +200,19 @@ assert.equal(updatePlan.combined, 1);
 
 const withoutMap = api.planMapAddressAliasBulk('Side Door\t1P1001\nSide Door\t1P1002', [], {});
 assert.equal(withoutMap.ready.length, 2);
+
+api.setMapAddressAliases([
+    { id: 'p1', name: '15 Park Row', devices: ['1P1001'], createdAt: 1 },
+    { id: 'p2', name: '15 PARK ROW.', devices: ['1P1002'], createdAt: 2 },
+    { id: 'p3', name: '15  park   row', devices: ['1P1001'], createdAt: 3 },
+    { id: 'p4', name: '15 Park Row', devices: ['1P2001'], createdAt: 4 }
+]);
+assert.equal(api.mapAddressAliasNameKey('15 PARK ROW.'), '15 PARK ROW');
+assert.deepEqual([...api.getMapAddressAliasesForBin('1000001').map(alias => alias.id)], ['p1']);
+assert.deepEqual([...api.uniqueMapAddressAliasesByName(api.getMapAddressAliasesForBin('1000001')).map(alias => alias.name)], ['15 Park Row']);
+const parkRow = api.collapseMapAddressAliases(api.getMapAddressAliases());
+assert.equal(parkRow.aliases.length, 2);
+assert.deepEqual([...parkRow.aliases[0].devices], ['1P1001', '1P1002']);
+assert.deepEqual([...parkRow.aliases[1].devices], ['1P2001']);
 
 console.log('check_map_address_aliases: ok');
