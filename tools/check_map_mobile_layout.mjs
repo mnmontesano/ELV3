@@ -71,4 +71,22 @@ assert.match(pan, /popup\.isOpen\(\)/);
 assert.match(pan, /buildingMap\.panBy\(/);
 assert.match(html, /buildingMap\.on\('popupopen', function \(e\) \{\s*hydrateOpenMapPopup\(e\.popup\);\s*keepMapPopupInViewOnPhone\(e\.popup\);/);
 
+// A loaded MAP file opens Settings on a wide screen and leaves it closed on a phone.
+assert.match(html, /function isMapPhoneLayout\(\)/);
+assert.match(html, /pendingLoadedMapViewState\.controlsPanelVisible = !isMapPhoneLayout\(\)/);
+assert.match(html, /const restoreControlsPanelVisible = !isMapPhoneLayout\(\) && loadedState\.controlsPanelVisible !== false/);
+
+// Address search must not throw when a device number is missing, and must not
+// animate the zoom on a phone (that race is what drops the search).
+const searchStart = html.indexOf('function searchMapBuildings(options) {');
+const searchEnd = html.indexOf('function clearMapSearch() {', searchStart);
+assert.ok(searchStart > 0 && searchEnd > searchStart);
+const search = html.slice(searchStart, searchEnd);
+assert.match(search, /mapSearchFieldIncludes\(device && device\.number, searchTerm\)/);
+assert.doesNotMatch(search, /\.number\.toUpperCase\(\)/);
+assert.match(search, /setView\(point, 17, \{ animate: !phoneLayout \}\)/);
+assert.match(search, /fitBounds\(bounds, \{ padding: \[pad, pad\], animate: !phoneLayout \}\)/);
+assert.match(html, /function mapSearchLatLng\(latitude, longitude\)/);
+assert.match(html, /if \(left\.length > MAX_COMPARE_LENGTH\) left = left\.slice\(0, MAX_COMPARE_LENGTH\)/);
+
 console.log('MAP phone layout rules are scoped to phone media queries.');
