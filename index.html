@@ -20963,18 +20963,28 @@
             const groups = getMapAliasBinGroups(binGroups);
             const numbers = new Set(getMapAliasGroupDeviceNumbers(groups[bin]));
             if (!numbers.size) return [];
-            const seenNames = new Set();
-            return mapAddressAliases.filter(alias => {
-                if (!alias.devices.some(number => numbers.has(number))) return false;
-                const key = mapAddressAliasNameKey(alias.name);
-                if (seenNames.has(key)) return false;
-                seenNames.add(key);
-                return true;
-            });
+            return uniqueMapAddressAliasesByName(mapAddressAliases.filter(alias =>
+                alias.devices.some(number => numbers.has(number))
+            ));
         }
 
         function mapAddressAliasNameKey(name) {
-            return String(name || '').toUpperCase();
+            return String(name || '')
+                .replace(/[\u200B-\u200D\uFEFF]/g, '')
+                .toUpperCase()
+                .replace(/[^A-Z0-9]+/g, ' ')
+                .trim()
+                .replace(/\s+/g, ' ');
+        }
+
+        function uniqueMapAddressAliasesByName(aliases) {
+            const seen = new Set();
+            return (aliases || []).filter(alias => {
+                const key = mapAddressAliasNameKey(alias && alias.name);
+                if (!key || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
         }
 
         function unionMapAliasDevices(current, extra) {
@@ -21640,7 +21650,9 @@
             if (!aliases.length) {
                 return `<button type="button" onclick="openMapAddressAliasFormForBin('${binJs}')" title="Add the address you use for this building" style="${buttonStyle}">🔁 Add alternate address</button>`;
             }
-            const names = aliases.map(alias => `<div style="font-size:13px; font-weight:700; color:#e64a19; word-break:break-word;">🔁 ${escapeMapSuggestionHtml(alias.name)}</div>`).join('');
+            const names = uniqueMapAddressAliasesByName(aliases).map(alias =>
+                `<div style="font-size:13px; font-weight:700; color:#e64a19; word-break:break-word;">🔁 ${escapeMapSuggestionHtml(alias.name)}</div>`
+            ).join('');
             return `<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px;">
                     <div style="min-width:0;">
                         <div style="font-size:10px; font-weight:700; opacity:0.7; text-transform:uppercase; letter-spacing:0.03em;">Also known as</div>
@@ -21651,6 +21663,7 @@
         }
 
         function hydrateMapAddressAliasBoxes(root) {
+            collapseSameBuildingMapAddressAliases();
             const scope = root || document;
             if (!scope.querySelectorAll) return;
             scope.querySelectorAll('[data-map-alias-bin]').forEach(box => {
