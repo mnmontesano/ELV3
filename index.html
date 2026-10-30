@@ -1817,7 +1817,7 @@
                                 </div>
                                 <div id="mapAliasBulkBox" style="background: var(--input-bg); padding: 8px; border-radius: 6px; border: 1px dashed rgba(230,74,25,0.45); margin-bottom: 10px;">
                                     <label for="mapAliasBulkInput" style="display: block; font-size: 0.82em; font-weight: 700; margin-bottom: 3px;">Add a lot of buildings at once</label>
-                                    <p class="mcp-desc" style="margin-bottom: 6px;">Paste from Excel, one building per row. The first column is your address and the next column is the device numbers. A header row is skipped. You can also type <span style="font-family: ui-monospace, monospace;">address | device numbers</span> on each line.</p>
+                                    <p class="mcp-desc" style="margin-bottom: 6px;">Paste from Excel, one building per row. The first column is your address and the next column is the device numbers. A header row is skipped. You can also type <span style="font-family: ui-monospace, monospace;">address | device numbers</span> on each line. The same address is kept once under each DOB building, and extra device numbers are added to that one.</p>
                                     <textarea id="mapAliasBulkInput" class="mcp-search-input" rows="5" spellcheck="false" autocomplete="off"
                                               placeholder="123 Main St | 1P1234, 1P5678&#10;45 Oak Ave | 1P9999"
                                               oninput="previewMapAddressAliasBulkForm()"
@@ -20963,7 +20963,87 @@
             const groups = getMapAliasBinGroups(binGroups);
             const numbers = new Set(getMapAliasGroupDeviceNumbers(groups[bin]));
             if (!numbers.size) return [];
-            return mapAddressAliases.filter(alias => alias.devices.some(number => numbers.has(number)));
+            const seenNames = new Set();
+            return mapAddressAliases.filter(alias => {
+                if (!alias.devices.some(number => numbers.has(number))) return false;
+                const key = mapAddressAliasNameKey(alias.name);
+                if (seenNames.has(key)) return false;
+                seenNames.add(key);
+                return true;
+            });
+        }
+
+        function mapAddressAliasNameKey(name) {
+            return String(name || '').toUpperCase();
+        }
+
+        function unionMapAliasDevices(current, extra) {
+            const seen = new Set(current || []);
+            const devices = (current || []).slice();
+            let truncated = false;
+            (extra || []).forEach(number => {
+                if (seen.has(number)) return;
+                if (devices.length >= MAP_ADDRESS_ALIAS_DEVICES_MAX) {
+                    truncated = true;
+                    return;
+                }
+                seen.add(number);
+                devices.push(number);
+            });
+            return { devices, truncated };
+        }
+
+        // The same alternate name is one entry under a DOB building. A second copy is the same
+        // building when the device numbers land on one BIN, overlap, or are both missing from the map.
+        function mapAddressAliasesShareBuilding(aDevices, bDevices, deviceIndex, binGroups) {
+            const groups = getMapAliasBinGroups(binGroups);
+            const hasMap = !!groups && Object.keys(groups).length > 0;
+            const index = deviceIndex || buildMapAliasDeviceBinIndex(groups);
+            const a = resolveMapAddressAliasDevices(aDevices, index, groups);
+            const b = resolveMapAddressAliasDevices(bDevices, index, groups);
+            if (a.bins.some(bin => b.bins.includes(bin))) return true;
+            const known = new Set(aDevices || []);
+            if ((bDevices || []).some(number => known.has(number))) return true;
+            return hasMap && !a.bins.length && !b.bins.length;
+        }
+
+        function collapseMapAddressAliases(aliases, binGroups) {
+            const source = Array.isArray(aliases) ? aliases : [];
+            const groups = binGroups || getMapAliasBinGroups();
+            const deviceIndex = buildMapAliasDeviceBinIndex(groups);
+            const kept = [];
+            let changed = false;
+            source.forEach(alias => {
+                if (!alias || !alias.name || !Array.isArray(alias.devices) || !alias.devices.length) return;
+                const match = kept.find(existing =>
+                    mapAddressAliasNameKey(existing.name) === mapAddressAliasNameKey(alias.name) &&
+                    mapAddressAliasesShareBuilding(existing.devices, alias.devices, deviceIndex, groups)
+                );
+                if (!match) {
+                    kept.push({
+                        id: alias.id,
+                        name: alias.name,
+                        devices: alias.devices.slice(),
+                        createdAt: alias.createdAt
+                    });
+                    return;
+                }
+                changed = true;
+                const merged = unionMapAliasDevices(match.devices, alias.devices);
+                match.devices = merged.devices;
+                if (Number(alias.createdAt) > 0 && (!(Number(match.createdAt) > 0) || Number(alias.createdAt) < Number(match.createdAt))) {
+                    match.createdAt = alias.createdAt;
+                }
+            });
+            if (kept.length !== source.length) changed = true;
+            return { aliases: changed ? kept : source, changed };
+        }
+
+        function collapseSameBuildingMapAddressAliases() {
+            const result = collapseMapAddressAliases(mapAddressAliases);
+            if (!result.changed) return false;
+            mapAddressAliases = result.aliases;
+            return true;
         }
 
         // BINs whose alternate address contains the (upper-cased) search term.
@@ -21111,37 +21191,62 @@
             return { rows, skipped, headerSkipped };
         }
 
-        function mapAddressAliasIdentityKey(name, devices) {
-            const list = Array.isArray(devices) ? devices : [];
-            return `${String(name || '').toUpperCase()}\u0000${list.slice().sort().join('\u0001')}`;
-        }
-
-        function planMapAddressAliasBulk(text, existingAliases) {
+        function planMapAddressAliasBulk(text, existingAliases, binGroups) {
             const existing = Array.isArray(existingAliases) ? existingAliases : mapAddressAliases;
             const parsed = parseMapAddressAliasBulkText(text);
-            const existingKeys = new Set(existing.map(alias => mapAddressAliasIdentityKey(alias && alias.name, alias && alias.devices)));
-            const seen = new Set();
+            const groups = binGroups || getMapAliasBinGroups();
+            const deviceIndex = buildMapAliasDeviceBinIndex(groups);
             const ready = [];
             const alreadySaved = [];
             const repeated = [];
             const overLimit = [];
+            let combined = 0;
             const room = Math.max(0, MAP_ADDRESS_ALIAS_MAX - existing.length);
+            const sameBuilding = (alias, row) => alias &&
+                mapAddressAliasNameKey(alias.name) === mapAddressAliasNameKey(row.name) &&
+                mapAddressAliasesShareBuilding(alias.devices, row.devices, deviceIndex, groups);
             parsed.rows.forEach(row => {
-                const key = mapAddressAliasIdentityKey(row.name, row.devices);
-                if (existingKeys.has(key)) {
+                const inReady = ready.find(alias => sameBuilding(alias, row));
+                if (inReady) {
+                    const merged = unionMapAliasDevices(inReady.devices, row.devices);
+                    if (row.devices.every(number => inReady.devices.includes(number))) {
+                        repeated.push(row);
+                        return;
+                    }
+                    inReady.devices = merged.devices;
+                    inReady.truncatedDevices = !!(inReady.truncatedDevices || row.truncatedDevices || merged.truncated);
+                    combined++;
+                    return;
+                }
+                const saved = existing.find(alias => sameBuilding(alias, row));
+                if (saved && row.devices.every(number => saved.devices.includes(number))) {
                     alreadySaved.push(row);
                     return;
                 }
-                if (seen.has(key)) {
-                    repeated.push(row);
+                if (saved) {
+                    const merged = unionMapAliasDevices(saved.devices, row.devices);
+                    ready.push({
+                        lineNumber: row.lineNumber,
+                        name: saved.name || row.name,
+                        devices: merged.devices,
+                        truncatedDevices: !!(row.truncatedDevices || merged.truncated),
+                        mergeIntoId: saved.id || ''
+                    });
+                    combined++;
                     return;
                 }
-                if (ready.length >= room) {
+                const newCount = ready.reduce((count, alias) => count + (alias.mergeIntoId ? 0 : 1), 0);
+                if (newCount >= room) {
                     overLimit.push(row);
                     return;
                 }
-                seen.add(key);
-                ready.push(row);
+                ready.push({
+                    lineNumber: row.lineNumber,
+                    name: row.name,
+                    devices: row.devices.slice(),
+                    truncatedDevices: !!row.truncatedDevices,
+                    mergeIntoId: ''
+                });
             });
             return {
                 headerSkipped: parsed.headerSkipped,
@@ -21149,6 +21254,7 @@
                 alreadySaved,
                 repeated,
                 overLimit,
+                combined,
                 skipped: parsed.skipped
             };
         }
@@ -21198,22 +21304,36 @@
                 devicesInput.focus();
                 return;
             }
+            const resolved = resolveMapAddressAliasDevices(devices);
+            const existing = mapAddressAliases.find(alias =>
+                mapAddressAliasNameKey(alias.name) === mapAddressAliasNameKey(name) &&
+                mapAddressAliasesShareBuilding(alias.devices, devices)
+            );
+            if (existing) {
+                if (devices.every(number => existing.devices.includes(number))) {
+                    showMapNotification('That alternate address is already saved', '#ff9800');
+                    return;
+                }
+                const merged = unionMapAliasDevices(existing.devices, devices);
+                existing.devices = merged.devices;
+                addMapActivity('Updated alternate address', {
+                    type: 'Alternate Address',
+                    bin: resolved.bins[0] || '',
+                    details: `${existing.name} — devices ${existing.devices.join(', ')}`
+                });
+                nameInput.value = '';
+                devicesInput.value = '';
+                previewMapAddressAliasForm();
+                refreshMapAddressAliasViews();
+                showMapNotification('Alternate address updated under the DOB address', '#e64a19');
+                return;
+            }
             if (mapAddressAliases.length >= MAP_ADDRESS_ALIAS_MAX) {
                 showMapNotification('Alternate address limit reached', '#ff6b6b');
                 return;
             }
-            const resolved = resolveMapAddressAliasDevices(devices);
             if (!resolved.bins.length &&
                 !confirm('None of these device numbers are on the current map. Save the alternate address anyway?')) {
-                return;
-            }
-            const duplicate = mapAddressAliases.find(alias =>
-                alias.name.toUpperCase() === name.toUpperCase() &&
-                alias.devices.length === devices.length &&
-                alias.devices.every(number => devices.includes(number))
-            );
-            if (duplicate) {
-                showMapNotification('That alternate address is already saved', '#ff9800');
                 return;
             }
             mapAddressAliases.push({ id: createMapAddressAliasId(), name, devices, createdAt: Date.now() });
@@ -21277,6 +21397,7 @@
             if (plan.alreadySaved.length) notes.push(`${plan.alreadySaved.length} already saved`);
             if (plan.repeated.length) notes.push(`${plan.repeated.length} repeated in the paste`);
             if (plan.skipped.length) notes.push(`${plan.skipped.length} skipped`);
+            if (plan.combined) notes.push(`${plan.combined} combined under the same DOB address`);
             if (plan.overLimit.length) notes.push(`${plan.overLimit.length} over the ${MAP_ADDRESS_ALIAS_MAX.toLocaleString()} limit`);
             if (notes.length) lines.push(`<div style="opacity:0.8;">${notes.join(' · ')}</div>`);
             plan.skipped.slice(0, 3).forEach(row => {
@@ -21311,35 +21432,50 @@
             const usedIds = new Set(mapAddressAliases.map(alias => alias.id));
             const createdAt = Date.now();
             let sequence = 0;
+            let createdCount = 0;
+            let updatedCount = 0;
             plan.ready.forEach(row => {
+                const existing = (row.mergeIntoId && mapAddressAliases.find(alias => alias.id === row.mergeIntoId))
+                    || mapAddressAliases.find(alias =>
+                        mapAddressAliasNameKey(alias.name) === mapAddressAliasNameKey(row.name) &&
+                        mapAddressAliasesShareBuilding(alias.devices, row.devices, deviceIndex)
+                    );
+                if (existing) {
+                    existing.devices = row.devices.slice();
+                    updatedCount++;
+                    return;
+                }
                 let id = '';
                 do {
                     id = `alias_${createdAt}_${sequence++}_${Math.floor(Math.random() * 1000000)}`;
                 } while (usedIds.has(id));
                 usedIds.add(id);
                 mapAddressAliases.push({ id, name: row.name, devices: row.devices.slice(), createdAt });
+                createdCount++;
             });
             const firstResolved = resolveMapAddressAliasDevices(plan.ready[0].devices, deviceIndex);
-            const more = plan.ready.length - 1;
-            addMapActivity('Added alternate addresses', {
+            const savedCount = createdCount + updatedCount;
+            addMapActivity(createdCount ? 'Added alternate addresses' : 'Updated alternate addresses', {
                 type: 'Alternate Address',
                 bin: firstResolved.bins[0] || '',
-                details: more > 0
-                    ? `${plan.ready.length} added — ${plan.ready[0].name} and ${more} more`
-                    : `1 added — ${plan.ready[0].name}`
+                details: savedCount === 1
+                    ? `1 saved — ${plan.ready[0].name}`
+                    : `${savedCount} saved — ${plan.ready[0].name} and ${savedCount - 1} more`
             });
             input.value = '';
             previewMapAddressAliasBulkForm();
             refreshMapAddressAliasViews();
             const extra = [];
+            if (updatedCount && createdCount) extra.push(`${updatedCount} updated`);
             if (unmatched.length && unmatched.length < plan.ready.length) extra.push(`${unmatched.length} not on this map yet`);
             if (plan.alreadySaved.length) extra.push(`${plan.alreadySaved.length} already saved`);
             if (plan.repeated.length) extra.push(`${plan.repeated.length} repeated`);
             if (plan.skipped.length) extra.push(`${plan.skipped.length} skipped`);
             if (plan.overLimit.length) extra.push(`${plan.overLimit.length} over the limit`);
-            const count = plan.ready.length;
+            const count = createdCount || updatedCount;
+            const verb = createdCount ? 'Added' : 'Updated';
             showMapNotification(
-                `Added ${count} alternate address${count === 1 ? '' : 'es'}` + (extra.length ? ` (${extra.join(', ')})` : ''),
+                `${verb} ${count} alternate address${count === 1 ? '' : 'es'}` + (extra.length ? ` (${extra.join(', ')})` : ''),
                 '#e64a19'
             );
         }
@@ -21420,6 +21556,7 @@
         }
 
         function updateMapAddressAliasesPanel() {
+            collapseSameBuildingMapAddressAliases();
             const countEl = document.getElementById('mapAddressAliasesCount');
             const listEl = document.getElementById('mapAddressAliasesList');
             if (countEl) countEl.textContent = mapAddressAliases.length;
