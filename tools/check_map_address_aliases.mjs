@@ -34,6 +34,14 @@ assert.match(html, /source\.addressAliases\.length > MAP_ADDRESS_ALIAS_MAX/);
 
 // Phone: inputs at 16px so iOS doesn't zoom on focus
 assert.match(css, /#mcpAddressAliases input\[type="text"\] \{\s*font-size: 16px !important;/);
+const phoneStart = css.indexOf('@media (max-width: 768px), (pointer: coarse) and (max-height: 500px) {');
+const zoomRule = css.indexOf('#buildingMap:has(.leaflet-popup) .leaflet-control-zoom');
+assert.ok(phoneStart >= 0 && zoomRule > phoneStart, 'zoom buttons are only hidden behind popups in the phone layout');
+
+// The alternate name is shown in addition to the DOB address, never instead of it.
+assert.match(html, /\$\{building\.address\}<\/div>\s*<div class="map-popup-aliases" data-map-alias-bin=/);
+assert.match(html, />Also known as<\/div>/);
+assert.match(html, /const addressMatch = mapSearchFieldIncludes\(building\.address, searchTerm\);/);
 
 // Run the pure helpers against a small fixture.
 const start = html.indexOf('        const MAP_ADDRESS_ALIAS_MAX = ');
