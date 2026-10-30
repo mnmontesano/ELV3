@@ -12,6 +12,10 @@ assert.match(html, /toggleMcpSection\('mcpAddressAliases'\)/);
 assert.match(html, /id="mcpAddressAliases"/);
 assert.match(html, /id="mapAliasNameInput"/);
 assert.match(html, /id="mapAliasDevicesInput"/);
+assert.match(html, /id="mapAliasBulkInput"/);
+assert.match(html, /id="mapAliasBulkAddBtn"/);
+assert.match(html, /oninput="previewMapAddressAliasBulkForm\(\)"/);
+assert.match(html, /onclick="addMapAddressAliasesFromBulk\(\)"/);
 assert.match(html, /id="mapAddressAliasesList"/);
 assert.match(html, /#mapControlsPanelBody\.mcp-detail-mode #mapAddressAliasesList,/);
 assert.match(html, /#mapControlsPanel\.mcp-popped-out #mapAddressAliasesList,/);
@@ -34,6 +38,7 @@ assert.match(html, /source\.addressAliases\.length > MAP_ADDRESS_ALIAS_MAX/);
 
 // Phone: inputs at 16px so iOS doesn't zoom on focus
 assert.match(css, /#mcpAddressAliases input\[type="text"\] \{\s*font-size: 16px !important;/);
+assert.match(css, /#mcpAddressAliases textarea \{\s*font-size: 16px !important;/);
 const phoneStart = css.indexOf('@media (max-width: 768px), (pointer: coarse) and (max-height: 500px) {');
 const zoomRule = css.indexOf('#buildingMap:has(.leaflet-popup) .leaflet-control-zoom');
 assert.ok(phoneStart >= 0 && zoomRule > phoneStart, 'zoom buttons are only hidden behind popups in the phone layout');
@@ -61,7 +66,8 @@ const context = {
 vm.createContext(context);
 vm.runInContext(`let mapAddressAliases = [];\n${html.slice(start, end)}\nthis.api = {
     parseMapAliasDeviceNumbers, normalizeMapAddressAliases, setMapAddressAliases, getMapAddressAliases,
-    resolveMapAddressAliasDevices, getMapAddressAliasesForBin, getMapAddressAliasBinsMatching
+    resolveMapAddressAliasDevices, getMapAddressAliasesForBin, getMapAddressAliasBinsMatching,
+    parseMapAddressAliasBulkText, planMapAddressAliasBulk
 };`, context);
 const api = context.api;
 
@@ -98,5 +104,60 @@ assert.deepEqual(api.getMapAddressAliasesForBin('9999999').length, 0);
 assert.deepEqual([...api.getMapAddressAliasBinsMatching('EMPIRE')], ['1000001']);
 assert.deepEqual([...api.getMapAddressAliasBinsMatching('TWO')].sort(), ['1000001', '1000002']);
 assert.equal(api.getMapAddressAliasBinsMatching('NOTHING').size, 0);
+
+const bulk = api.parseMapAddressAliasBulkText([
+    'Address\tDevice numbers',
+    '  Empire   State \t1p1001, 1P1001;1p1002',
+    '20 W 34 Street\t1P2001',
+    '20 W 34 Street\t1P2001',
+    'just a name',
+    '',
+    '350 5 Avenue, Lobby | 1P1001, 9Z9999',
+    '"Say ""Hi"" Building","1P1002"',
+    '123 Main St, Brooklyn, 1P1001, 1P2001',
+    '1P1001, 1P2001'
+].join('\n'));
+assert.equal(bulk.headerSkipped, true);
+assert.equal(bulk.rows.length, 6);
+assert.equal(bulk.rows[0].name, 'Empire State');
+assert.deepEqual([...bulk.rows[0].devices], ['1P1001', '1P1002']);
+assert.equal(bulk.rows[1].name, '20 W 34 Street');
+assert.equal(bulk.rows[3].name, '350 5 Avenue, Lobby');
+assert.deepEqual([...bulk.rows[3].devices], ['1P1001', '9Z9999']);
+assert.equal(bulk.rows[4].name, 'Say "Hi" Building');
+assert.deepEqual([...bulk.rows[4].devices], ['1P1002']);
+assert.equal(bulk.rows[5].name, '123 Main St, Brooklyn');
+assert.deepEqual([...bulk.rows[5].devices], ['1P1001', '1P2001']);
+assert.equal(bulk.skipped.length, 2);
+assert.match(bulk.skipped[0].reason, /tab or a \|/);
+assert.equal(bulk.skipped[1].reason, 'Enter the address');
+
+const planned = api.planMapAddressAliasBulk([
+    'Address\tDevices',
+    'Empire State Bldg\t1P1002',
+    'New Name\t1P1001',
+    'New Name\t1P1001',
+    'Too Many\t' + Array.from({ length: 51 }, (_, i) => `1P${1000 + i}`).join(', ')
+].join('\n'), [
+    { name: 'Empire State Bldg', devices: ['1P1002'] }
+]);
+assert.equal(planned.headerSkipped, true);
+assert.equal(planned.alreadySaved.length, 1);
+assert.equal(planned.repeated.length, 1);
+assert.equal(planned.ready.length, 2);
+assert.equal(planned.ready[0].name, 'New Name');
+assert.equal(planned.ready[1].truncatedDevices, true);
+assert.equal(planned.ready[1].devices.length, 50);
+assert.deepEqual([...api.resolveMapAddressAliasDevices(planned.ready[0].devices).bins], ['1000001']);
+
+const filled = Array.from({ length: 5000 }, (_, i) => ({ name: `Saved ${i}`, devices: [`9Z${i}`] }));
+const capped = api.planMapAddressAliasBulk('One More\t1P1001', filled);
+assert.equal(capped.ready.length, 0);
+assert.equal(capped.overLimit.length, 1);
+
+const addressRow = api.parseMapAddressAliasBulkText('Address\t1P1001');
+assert.equal(addressRow.headerSkipped, false);
+assert.equal(addressRow.rows[0].name, 'Address');
+assert.deepEqual([...addressRow.rows[0].devices], ['1P1001']);
 
 console.log('check_map_address_aliases: ok');

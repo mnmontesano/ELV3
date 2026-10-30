@@ -1815,6 +1815,16 @@
                                     <div id="mapAliasPreview" style="font-size: 0.82em; line-height: 1.4; margin-bottom: 4px; display: none;"></div>
                                     <button type="button" id="mapAliasAddBtn" onclick="addMapAddressAliasFromForm()" class="mcp-btn" style="color:#e64a19; font-weight:700; margin-top: 2px;">＋ Add Alternate Address</button>
                                 </div>
+                                <div id="mapAliasBulkBox" style="background: var(--input-bg); padding: 8px; border-radius: 6px; border: 1px dashed rgba(230,74,25,0.45); margin-bottom: 10px;">
+                                    <label for="mapAliasBulkInput" style="display: block; font-size: 0.82em; font-weight: 700; margin-bottom: 3px;">Add a lot of buildings at once</label>
+                                    <p class="mcp-desc" style="margin-bottom: 6px;">Paste from Excel, one building per row. The first column is your address and the next column is the device numbers. A header row is skipped. You can also type <span style="font-family: ui-monospace, monospace;">address | device numbers</span> on each line.</p>
+                                    <textarea id="mapAliasBulkInput" class="mcp-search-input" rows="5" spellcheck="false" autocomplete="off"
+                                              placeholder="123 Main St | 1P1234, 1P5678&#10;45 Oak Ave | 1P9999"
+                                              oninput="previewMapAddressAliasBulkForm()"
+                                              style="min-height: 96px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre;"></textarea>
+                                    <div id="mapAliasBulkPreview" style="font-size: 0.82em; line-height: 1.4; margin-bottom: 4px; display: none; max-height: 180px; overflow-y: auto;"></div>
+                                    <button type="button" id="mapAliasBulkAddBtn" onclick="addMapAddressAliasesFromBulk()" class="mcp-btn" disabled style="color:#e64a19; font-weight:700; margin-top: 2px; opacity: 0.5;">Add Alternate Addresses</button>
+                                </div>
                                 <input type="text" id="mapAddressAliasesSearchInput" class="mcp-search-input" placeholder="🔍 Search alternate address, DOB address, BIN, device..."
                                        oninput="filterMapAddressAliasesList(this.value)">
                                 <div id="mapAddressAliasesList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
@@ -20970,6 +20980,179 @@
             return bins;
         }
 
+        function stripMapAliasBulkCell(cell) {
+            const trimmed = String(cell == null ? '' : cell).trim();
+            if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+                return trimmed.slice(1, -1).replace(/""/g, '"').trim();
+            }
+            return trimmed;
+        }
+
+        function parseQuotedMapAliasCells(line) {
+            const cells = [];
+            let current = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                const ch = line[i];
+                if (inQuotes) {
+                    if (ch === '"') {
+                        if (line[i + 1] === '"') {
+                            current += '"';
+                            i++;
+                        } else {
+                            inQuotes = false;
+                        }
+                    } else {
+                        current += ch;
+                    }
+                } else if (ch === '"') {
+                    inQuotes = true;
+                } else if (ch === ',') {
+                    cells.push(current.trim());
+                    current = '';
+                } else {
+                    current += ch;
+                }
+            }
+            cells.push(current.trim());
+            return cells;
+        }
+
+        // A device token has to contain both a digit and a letter, so street words are not treated as devices.
+        function isMapAliasDeviceLikeToken(value) {
+            return /^[0-9]+[A-Z][A-Z0-9-]{0,20}$/.test(normalizeMapAliasDeviceNumber(value));
+        }
+
+        function isMapAliasDeviceCell(cell) {
+            const tokens = String(cell == null ? '' : cell).trim().split(/[\s,;]+/).filter(Boolean);
+            return tokens.length > 0 && tokens.every(isMapAliasDeviceLikeToken);
+        }
+
+        function splitMapAddressAliasBulkLine(line) {
+            const trimmed = String(line == null ? '' : line).replace(/^\uFEFF/, '').trim();
+            if (!trimmed) return null;
+            let cells = null;
+            if (trimmed.includes('\t')) {
+                cells = trimmed.split('\t').map(stripMapAliasBulkCell);
+            } else if (trimmed.includes('|')) {
+                cells = trimmed.split('|').map(stripMapAliasBulkCell);
+            } else if (trimmed.includes('"')) {
+                cells = parseQuotedMapAliasCells(trimmed);
+            } else {
+                const parts = trimmed.split(/[,;]/).map(part => part.trim()).filter(Boolean);
+                const deviceParts = [];
+                while (parts.length > 1 && isMapAliasDeviceCell(parts[parts.length - 1])) deviceParts.unshift(parts.pop());
+                if (deviceParts.length && parts.length) {
+                    if (isMapAliasDeviceCell(parts.join(' '))) return { error: 'missing-address', deviceText: deviceParts.join(',') };
+                    cells = [parts.join(', '), deviceParts.join(',')];
+                }
+            }
+            if (!cells) return { error: 'separate-columns' };
+            const name = cells[0].replace(/\s+/g, ' ').trim().slice(0, MAP_ADDRESS_ALIAS_NAME_MAX);
+            const deviceCells = cells.slice(1).map(cell => cell.trim()).filter(Boolean);
+            if (!deviceCells.length) return { error: name ? 'missing-devices' : 'separate-columns', name };
+            return { name, deviceText: deviceCells.join(',') };
+        }
+
+        function isMapAddressAliasBulkHeader(name, deviceText) {
+            const label = String(name || '').trim().toLowerCase();
+            const deviceLabel = String(deviceText || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            const nameIsHeader = /^(your address( or name)?|address( or name)?|alternate address|aka|also known as|name|building( name| address)?|location)$/.test(label);
+            const deviceIsHeader = /^(devices?|device numbers?|device #s?|device nos?\.?|numbers?|elevators?|elevator numbers?)$/.test(deviceLabel);
+            return nameIsHeader && deviceIsHeader;
+        }
+
+        function mapAddressAliasBulkSkipReason(error) {
+            if (error === 'missing-devices') return 'Enter at least one device number';
+            return 'Separate the address and the device numbers with a tab or a |';
+        }
+
+        function parseMapAddressAliasBulkText(text) {
+            const lines = String(text == null ? '' : text).split(/\r\n|\n|\r/);
+            const rows = [];
+            const skipped = [];
+            let headerSkipped = false;
+            let seenContent = false;
+            lines.forEach((line, index) => {
+                if (!String(line).trim()) return;
+                const lineNumber = index + 1;
+                const split = splitMapAddressAliasBulkLine(line);
+                if (!split) return;
+                if (!seenContent && !split.error && isMapAddressAliasBulkHeader(split.name, split.deviceText)) {
+                    headerSkipped = true;
+                    seenContent = true;
+                    return;
+                }
+                seenContent = true;
+                if (split.error || !split.name) {
+                    let reason = 'Enter the address';
+                    if (split.error === 'missing-devices') reason = 'Enter at least one device number';
+                    else if (split.error === 'separate-columns') reason = mapAddressAliasBulkSkipReason(split.error);
+                    skipped.push({
+                        lineNumber,
+                        text: String(line).trim().slice(0, 180),
+                        reason
+                    });
+                    return;
+                }
+                const parsedDevices = parseMapAliasDeviceNumbers(split.deviceText);
+                const devices = parsedDevices.slice(0, MAP_ADDRESS_ALIAS_DEVICES_MAX);
+                if (!devices.length) {
+                    skipped.push({ lineNumber, text: split.name, reason: 'Enter at least one device number' });
+                    return;
+                }
+                rows.push({
+                    lineNumber,
+                    name: split.name,
+                    devices,
+                    truncatedDevices: parsedDevices.length > devices.length
+                });
+            });
+            return { rows, skipped, headerSkipped };
+        }
+
+        function mapAddressAliasIdentityKey(name, devices) {
+            const list = Array.isArray(devices) ? devices : [];
+            return `${String(name || '').toUpperCase()}\u0000${list.slice().sort().join('\u0001')}`;
+        }
+
+        function planMapAddressAliasBulk(text, existingAliases) {
+            const existing = Array.isArray(existingAliases) ? existingAliases : mapAddressAliases;
+            const parsed = parseMapAddressAliasBulkText(text);
+            const existingKeys = new Set(existing.map(alias => mapAddressAliasIdentityKey(alias && alias.name, alias && alias.devices)));
+            const seen = new Set();
+            const ready = [];
+            const alreadySaved = [];
+            const repeated = [];
+            const overLimit = [];
+            const room = Math.max(0, MAP_ADDRESS_ALIAS_MAX - existing.length);
+            parsed.rows.forEach(row => {
+                const key = mapAddressAliasIdentityKey(row.name, row.devices);
+                if (existingKeys.has(key)) {
+                    alreadySaved.push(row);
+                    return;
+                }
+                if (seen.has(key)) {
+                    repeated.push(row);
+                    return;
+                }
+                if (ready.length >= room) {
+                    overLimit.push(row);
+                    return;
+                }
+                seen.add(key);
+                ready.push(row);
+            });
+            return {
+                headerSkipped: parsed.headerSkipped,
+                ready,
+                alreadySaved,
+                repeated,
+                overLimit,
+                skipped: parsed.skipped
+            };
+        }
+
         function refreshMapAddressAliasViews() {
             updateMapAddressAliasesPanel();
             hydrateMapAddressAliasBoxes(document);
@@ -21046,6 +21229,119 @@
             showMapNotification(resolved.bins.length
                 ? `Alternate address saved for ${resolved.bins.length} building${resolved.bins.length !== 1 ? 's' : ''}`
                 : 'Alternate address saved', '#e64a19');
+        }
+
+        function previewMapAddressAliasBulkForm() {
+            const input = document.getElementById('mapAliasBulkInput');
+            const preview = document.getElementById('mapAliasBulkPreview');
+            const button = document.getElementById('mapAliasBulkAddBtn');
+            if (!input || !preview || !button) return;
+            if (!input.value.trim()) {
+                preview.style.display = 'none';
+                preview.innerHTML = '';
+                button.disabled = true;
+                button.style.opacity = '0.5';
+                button.textContent = 'Add Alternate Addresses';
+                return;
+            }
+            const plan = planMapAddressAliasBulk(input.value);
+            const groups = getMapAliasBinGroups();
+            const deviceIndex = buildMapAliasDeviceBinIndex(groups);
+            const lines = [];
+            const previewCount = Math.min(plan.ready.length, 8);
+            let unmatchedCount = 0;
+            plan.ready.forEach((row, index) => {
+                const resolved = resolveMapAddressAliasDevices(row.devices, deviceIndex, groups);
+                if (!resolved.bins.length) unmatchedCount++;
+                if (index >= previewCount) return;
+                const nameHtml = escapeMapSuggestionHtml(row.name);
+                if (resolved.buildings.length) {
+                    const where = resolved.buildings.map(building =>
+                        `${building.address || 'Unknown address'} · BIN ${building.bin}`
+                    ).join('; ');
+                    lines.push(`<div style="color:#27ae60; font-weight:600;">✓ ${nameHtml} → DOB: ${escapeMapSuggestionHtml(where)}</div>`);
+                    if (resolved.missingDevices.length) {
+                        lines.push(`<div style="color:#ff9800; padding-left:14px;">Not on this map: ${escapeMapSuggestionHtml(resolved.missingDevices.join(', '))}</div>`);
+                    }
+                } else {
+                    lines.push(`<div style="color:#ff9800;">${nameHtml} — devices not on this map</div>`);
+                }
+                if (row.truncatedDevices) {
+                    lines.push(`<div style="opacity:0.75; padding-left:14px;">Using the first ${MAP_ADDRESS_ALIAS_DEVICES_MAX} device numbers</div>`);
+                }
+            });
+            if (plan.ready.length > previewCount) {
+                lines.push(`<div style="opacity:0.75;">${plan.ready.length - previewCount} more ready to add</div>`);
+            }
+            const notes = [];
+            if (plan.alreadySaved.length) notes.push(`${plan.alreadySaved.length} already saved`);
+            if (plan.repeated.length) notes.push(`${plan.repeated.length} repeated in the paste`);
+            if (plan.skipped.length) notes.push(`${plan.skipped.length} skipped`);
+            if (plan.overLimit.length) notes.push(`${plan.overLimit.length} over the ${MAP_ADDRESS_ALIAS_MAX.toLocaleString()} limit`);
+            if (notes.length) lines.push(`<div style="opacity:0.8;">${notes.join(' · ')}</div>`);
+            plan.skipped.slice(0, 3).forEach(row => {
+                lines.push(`<div style="color:#ff9800;">Line ${row.lineNumber}: ${escapeMapSuggestionHtml(row.reason)}</div>`);
+            });
+            preview.innerHTML = lines.join('') || '<div style="opacity:0.75;">Nothing to add yet</div>';
+            preview.style.display = 'block';
+            preview.dataset.unmatchedCount = String(unmatchedCount);
+            const count = plan.ready.length;
+            button.disabled = count === 0;
+            button.style.opacity = count ? '1' : '0.5';
+            button.textContent = count
+                ? `Add ${count} Alternate Address${count === 1 ? '' : 'es'}`
+                : 'Add Alternate Addresses';
+        }
+
+        function addMapAddressAliasesFromBulk() {
+            const input = document.getElementById('mapAliasBulkInput');
+            if (!input) return;
+            const plan = planMapAddressAliasBulk(input.value);
+            if (!plan.ready.length) {
+                showMapNotification(plan.skipped.length ? 'Nothing to add — check the skipped rows' : 'Paste addresses and device numbers first', '#ff9800');
+                previewMapAddressAliasBulkForm();
+                return;
+            }
+            const deviceIndex = buildMapAliasDeviceBinIndex();
+            const unmatched = plan.ready.filter(row => !resolveMapAddressAliasDevices(row.devices, deviceIndex).bins.length);
+            if (unmatched.length === plan.ready.length &&
+                !confirm('None of these device numbers are on the current map. Save these alternate addresses anyway?')) {
+                return;
+            }
+            const usedIds = new Set(mapAddressAliases.map(alias => alias.id));
+            const createdAt = Date.now();
+            let sequence = 0;
+            plan.ready.forEach(row => {
+                let id = '';
+                do {
+                    id = `alias_${createdAt}_${sequence++}_${Math.floor(Math.random() * 1000000)}`;
+                } while (usedIds.has(id));
+                usedIds.add(id);
+                mapAddressAliases.push({ id, name: row.name, devices: row.devices.slice(), createdAt });
+            });
+            const firstResolved = resolveMapAddressAliasDevices(plan.ready[0].devices, deviceIndex);
+            const more = plan.ready.length - 1;
+            addMapActivity('Added alternate addresses', {
+                type: 'Alternate Address',
+                bin: firstResolved.bins[0] || '',
+                details: more > 0
+                    ? `${plan.ready.length} added — ${plan.ready[0].name} and ${more} more`
+                    : `1 added — ${plan.ready[0].name}`
+            });
+            input.value = '';
+            previewMapAddressAliasBulkForm();
+            refreshMapAddressAliasViews();
+            const extra = [];
+            if (unmatched.length && unmatched.length < plan.ready.length) extra.push(`${unmatched.length} not on this map yet`);
+            if (plan.alreadySaved.length) extra.push(`${plan.alreadySaved.length} already saved`);
+            if (plan.repeated.length) extra.push(`${plan.repeated.length} repeated`);
+            if (plan.skipped.length) extra.push(`${plan.skipped.length} skipped`);
+            if (plan.overLimit.length) extra.push(`${plan.overLimit.length} over the limit`);
+            const count = plan.ready.length;
+            showMapNotification(
+                `Added ${count} alternate address${count === 1 ? '' : 'es'}` + (extra.length ? ` (${extra.join(', ')})` : ''),
+                '#e64a19'
+            );
         }
 
         function renameMapAddressAlias(id, value) {
