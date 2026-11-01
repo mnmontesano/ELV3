@@ -15,7 +15,7 @@
     </script>
     <title>Vertical Terminal</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="styles.css?v=20261101-map-dob-legend">
+    <link rel="stylesheet" href="styles.css?v=20261101-map-view-menu">
     <!-- Pinned, locally hosted libraries for user-supplied document parsing. -->
     <script src="vendor/pdf-lib/pdf-lib.min.js?v=1.17.1"></script>
     
@@ -1089,12 +1089,20 @@
                                 <span>📄</span> <span>Save As</span>
                             </button>
                             <div class="map-modal-dob-group" style="display: flex; align-items: center; gap: 5px; flex-wrap: wrap;">
-                                <button id="mapDashboardButton" type="button" onclick="toggleMapDashboard()" aria-pressed="false" title="Switch between the map and a testing dashboard" style="background: #b8860b; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
-                                    <span id="mapDashboardButtonIcon">📊</span> <span id="mapDashboardButtonLabel">Dashboard</span>
-                                </button>
-                                <button id="mapTableViewButton" onclick="openMapTableView()" title="View, filter, and edit the data loaded into this map" style="background: #198754; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
-                                    <span>▦</span> <span>Table View</span>
-                                </button>
+                                <div id="mapViewMenu" class="map-dob-menu">
+                                    <button type="button" id="mapViewMenuButton" onclick="toggleMapViewMenu(event)" aria-expanded="false" aria-pressed="false" aria-controls="mapViewMenuPanel" title="Dashboard and Table View" style="background: #b8860b; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 4px; white-space: nowrap;">
+                                        <span>View</span>
+                                        <span aria-hidden="true">▾</span>
+                                    </button>
+                                    <div id="mapViewMenuPanel" class="map-dob-menu-panel" hidden>
+                                        <button type="button" id="mapDashboardButton" onclick="closeMapViewMenu(); toggleMapDashboard()" aria-pressed="false" title="Switch between the map and a testing dashboard">
+                                            <span id="mapDashboardButtonIcon">📊</span> <span id="mapDashboardButtonLabel">Dashboard</span>
+                                        </button>
+                                        <button type="button" id="mapTableViewButton" onclick="closeMapViewMenu(); openMapTableView()" title="View, filter, and edit the data loaded into this map">
+                                            <span>▦</span> <span>Table View</span>
+                                        </button>
+                                    </div>
+                                </div>
                                 <button id="mapSelectButton" onclick="toggleMapSelectMode()" aria-pressed="false" title="Select multiple buildings on the map to edit them at once" style="background: #c77700; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
                                     <span>✓</span> <span>Select</span>
                                 </button>
@@ -1177,7 +1185,8 @@
                     #mapModalContainer.map-dashboard-mode #mapSearchRow { display: none !important; }
                     #mapModalContainer.map-dashboard-mode #mapControlsPanel { width: clamp(320px, 34%, 500px) !important; min-width: 320px !important; }
                     #mapModalContainer.map-dashboard-mode .mcp-dock-resize { display: none !important; }
-                    #mapDashboardButton[aria-pressed="true"] { background: #1a73e8 !important; }
+                    #mapDashboardButton[aria-pressed="true"],
+                    #mapViewMenuButton[aria-pressed="true"] { background: #1a73e8 !important; }
                     .mdb-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
                     .mdb-title { margin: 0; font-size: 1.35em; color: var(--header-color); }
                     .mdb-subtitle { margin-top: 3px; font-size: 0.92em; opacity: 0.7; }
@@ -11371,16 +11380,29 @@
             }
         }
 
-        function closeMapDobMenu() {
-            const panel = document.getElementById('mapDobMenuPanel');
-            const button = document.getElementById('mapDobMenuButton');
+        function closeMapHeaderMenu(buttonId, panelId) {
+            const panel = document.getElementById(panelId);
+            const button = document.getElementById(buttonId);
             if (panel) panel.hidden = true;
             if (button) button.setAttribute('aria-expanded', 'false');
         }
 
-        function positionMapDobMenuPanel() {
-            const button = document.getElementById('mapDobMenuButton');
-            const panel = document.getElementById('mapDobMenuPanel');
+        function closeMapDobMenu() {
+            closeMapHeaderMenu('mapDobMenuButton', 'mapDobMenuPanel');
+        }
+
+        function closeMapViewMenu() {
+            closeMapHeaderMenu('mapViewMenuButton', 'mapViewMenuPanel');
+        }
+
+        function closeMapHeaderMenus() {
+            closeMapDobMenu();
+            closeMapViewMenu();
+        }
+
+        function positionMapHeaderMenu(buttonId, panelId) {
+            const button = document.getElementById(buttonId);
+            const panel = document.getElementById(panelId);
             if (!button || !panel || panel.hidden) return;
             const rect = button.getBoundingClientRect();
             const width = Math.max(230, panel.offsetWidth || 0, rect.width);
@@ -11391,32 +11413,38 @@
             panel.style.left = Math.round(left) + 'px';
         }
 
-        function toggleMapDobMenu(event) {
+        function toggleMapHeaderMenu(event, buttonId, panelId) {
             if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-            const panel = document.getElementById('mapDobMenuPanel');
-            const button = document.getElementById('mapDobMenuButton');
+            const panel = document.getElementById(panelId);
+            const button = document.getElementById(buttonId);
             if (!panel || !button) return;
             const willOpen = panel.hidden;
-            if (!willOpen) {
-                closeMapDobMenu();
-                return;
-            }
+            closeMapHeaderMenus();
+            if (!willOpen) return;
             panel.hidden = false;
             button.setAttribute('aria-expanded', 'true');
-            positionMapDobMenuPanel();
+            positionMapHeaderMenu(buttonId, panelId);
+        }
+
+        function toggleMapDobMenu(event) {
+            toggleMapHeaderMenu(event, 'mapDobMenuButton', 'mapDobMenuPanel');
+        }
+
+        function toggleMapViewMenu(event) {
+            toggleMapHeaderMenu(event, 'mapViewMenuButton', 'mapViewMenuPanel');
         }
 
         function bindMapDobMenuDismiss() {
             if (window._mapDobMenuDismissBound) return;
             window._mapDobMenuDismissBound = true;
             document.addEventListener('click', function(event) {
-                const menu = document.getElementById('mapDobMenu');
-                if (!menu || menu.contains(event.target)) return;
-                closeMapDobMenu();
+                const menus = [document.getElementById('mapDobMenu'), document.getElementById('mapViewMenu')];
+                if (menus.some(menu => menu && menu.contains(event.target))) return;
+                closeMapHeaderMenus();
             });
-            window.addEventListener('resize', closeMapDobMenu);
+            window.addEventListener('resize', closeMapHeaderMenus);
             const actions = document.querySelector('#buildingMapModal .map-modal-file-actions');
-            if (actions) actions.addEventListener('scroll', closeMapDobMenu, { passive: true });
+            if (actions) actions.addEventListener('scroll', closeMapHeaderMenus, { passive: true });
         }
         bindMapDobMenuDismiss();
 
@@ -31494,13 +31522,14 @@
                     toggleMapSelectMode(false);
                     return;
                 }
-                if (mapDashboardActive) {
-                    toggleMapDashboard(false);
+                const dobMenuPanel = document.getElementById('mapDobMenuPanel');
+                const viewMenuPanel = document.getElementById('mapViewMenuPanel');
+                if ((dobMenuPanel && !dobMenuPanel.hidden) || (viewMenuPanel && !viewMenuPanel.hidden)) {
+                    closeMapHeaderMenus();
                     return;
                 }
-                const dobMenuPanel = document.getElementById('mapDobMenuPanel');
-                if (dobMenuPanel && !dobMenuPanel.hidden) {
-                    closeMapDobMenu();
+                if (mapDashboardActive) {
+                    toggleMapDashboard(false);
                     return;
                 }
                 closeBuildingMap();
@@ -31515,7 +31544,7 @@
         }
 
         function closeBuildingMap() {
-            closeMapDobMenu();
+            closeMapHeaderMenus();
             exitMapDashboard({ restorePopout: false });
             resetMapLiveTable();
 
@@ -31898,7 +31927,7 @@
         let _mapIsMinimized = false;
 
         function minimizeMap() {
-            closeMapDobMenu();
+            closeMapHeaderMenus();
             if (_mapFullscreen) return; // minimize only available in windowed mode
             const modal = document.getElementById('buildingMapModal');
             const pill  = document.getElementById('mapRestorePill');
@@ -32351,6 +32380,13 @@
             }
             if (icon) icon.textContent = mapDashboardActive ? '🗺️' : '📊';
             if (label) label.textContent = mapDashboardActive ? 'Map' : 'Dashboard';
+            const menuButton = document.getElementById('mapViewMenuButton');
+            if (menuButton) {
+                menuButton.setAttribute('aria-pressed', mapDashboardActive ? 'true' : 'false');
+                menuButton.title = mapDashboardActive
+                    ? 'Dashboard is open. Choose Map to return, or open Table View'
+                    : 'Dashboard and Table View';
+            }
         }
 
         function startMapDashboardObserver() {
