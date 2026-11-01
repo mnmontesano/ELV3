@@ -11381,6 +11381,8 @@
             }
         }
 
+        let mapHeaderMenuOpenedAt = 0;
+
         function closeMapHeaderMenu(buttonId, panelId) {
             const panel = document.getElementById(panelId);
             const button = document.getElementById(buttonId);
@@ -11414,6 +11416,11 @@
             panel.style.left = Math.round(left) + 'px';
         }
 
+        function hoistMapHeaderMenu(panel) {
+            if (!panel || panel.parentElement === document.body) return;
+            document.body.appendChild(panel);
+        }
+
         function toggleMapHeaderMenu(event, buttonId, panelId) {
             if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
             const panel = document.getElementById(panelId);
@@ -11422,8 +11429,12 @@
             const willOpen = panel.hidden;
             closeMapHeaderMenus();
             if (!willOpen) return;
+            // The button row scrolls on phones and clips anything inside it, including
+            // a fixed menu. Park the panel on the body so it can open over the map.
+            hoistMapHeaderMenu(panel);
             panel.hidden = false;
             button.setAttribute('aria-expanded', 'true');
+            mapHeaderMenuOpenedAt = Date.now();
             positionMapHeaderMenu(buttonId, panelId);
         }
 
@@ -11439,13 +11450,25 @@
             if (window._mapDobMenuDismissBound) return;
             window._mapDobMenuDismissBound = true;
             document.addEventListener('click', function(event) {
-                const menus = [document.getElementById('mapDobMenu'), document.getElementById('mapViewMenu')];
+                const menus = [
+                    document.getElementById('mapDobMenu'),
+                    document.getElementById('mapViewMenu'),
+                    document.getElementById('mapDobMenuPanel'),
+                    document.getElementById('mapViewMenuPanel')
+                ];
                 if (menus.some(menu => menu && menu.contains(event.target))) return;
                 closeMapHeaderMenus();
             });
             window.addEventListener('resize', closeMapHeaderMenus);
             const actions = document.querySelector('#buildingMapModal .map-modal-file-actions');
-            if (actions) actions.addEventListener('scroll', closeMapHeaderMenus, { passive: true });
+            if (actions) {
+                actions.addEventListener('scroll', function() {
+                    // A tap in this scroller fires scroll on iOS and was closing the menu
+                    // in the same gesture that tried to open it.
+                    if (Date.now() - mapHeaderMenuOpenedAt < 500) return;
+                    closeMapHeaderMenus();
+                }, { passive: true });
+            }
         }
         bindMapDobMenuDismiss();
 
