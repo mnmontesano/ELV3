@@ -15,7 +15,7 @@
     </script>
     <title>Vertical Terminal</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="styles.css?v=20261101-map-view-menu">
+    <link rel="stylesheet" href="styles.css?v=20261101-dob-update-click">
     <!-- Pinned, locally hosted libraries for user-supplied document parsing. -->
     <script src="vendor/pdf-lib/pdf-lib.min.js?v=1.17.1"></script>
     
@@ -91,24 +91,24 @@
 </head>
 <body data-active-tab="main">
     <!-- Disclaimer modal — shown on every page load until Agree is clicked -->
-    <div id="disclaimerModal" role="dialog" aria-modal="true" aria-labelledby="disclaimerTitle" style="display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 10000; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;">
-        <div style="background: var(--card-bg, #fff); border-radius: 12px; padding: 30px; max-width: 520px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.3); text-align: center;">
-            <h2 id="disclaimerTitle" style="color: #d9534f; margin: 0 0 20px 0; font-size: 24px;">Disclaimer</h2>
-            <p style="color: var(--text-color, #333); line-height: 1.7; margin: 0 0 14px 0; font-size: 14px; text-align: left;">
-                DOB records shown on this webpage are sourced from NYC Open Data. User-entered notes, planning details, imported files, and address-search results are not DOB records. Vertical Terminal is a convenience tool only and is not an official DOB source.
-            </p>
-            <p style="color: var(--text-color, #333); line-height: 1.7; margin: 0 0 14px 0; font-size: 14px; text-align: left;">
-                You are responsible for reviewing all information presented here and verifying it against the official DOB records before relying on it for any filing, decision, or action.
-            </p>
-            <p style="color: var(--text-color, #333); line-height: 1.7; margin: 0 0 25px 0; font-size: 14px; text-align: left;">
-                The creator of this webpage assumes no responsibility or liability for errors, omissions, outdated information, or any other inaccuracies that may appear. By clicking Agree, you acknowledge that you understand and accept these terms.
-            </p>
-            <p style="color: var(--text-color, #333); line-height: 1.7; margin: -10px 0 25px 0; font-size: 14px; text-align: left;">
-                Uploaded PDFs and spreadsheets are processed in your browser. Saved notes, CAT 1, PVI, and CAT 5 bypasses, and display preferences remain in this browser's local storage until you clear them; other map data is kept in browser memory and in files you explicitly open, save, or export. Address searches are sent to OpenStreetMap Nominatim, and DOB lookups are sent to NYC Open Data.
-            </p>
-            <button id="disclaimerAcceptBtn" type="button" style="padding: 14px 40px; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold;">
-                Agree
-            </button>
+    <div id="disclaimerModal" class="disclaimer-modal" role="dialog" aria-modal="true" aria-labelledby="disclaimerTitle" style="display: flex;">
+        <div class="disclaimer-card">
+            <h2 id="disclaimerTitle">Disclaimer</h2>
+            <div class="disclaimer-body">
+                <p>
+                    DOB records shown on this webpage are sourced from NYC Open Data. User-entered notes, planning details, imported files, and address-search results are not DOB records. Vertical Terminal is a convenience tool only and is not an official DOB source.
+                </p>
+                <p>
+                    You are responsible for reviewing all information presented here and verifying it against the official DOB records before relying on it for any filing, decision, or action.
+                </p>
+                <p>
+                    The creator of this webpage assumes no responsibility or liability for errors, omissions, outdated information, or any other inaccuracies that may appear. By clicking Agree, you acknowledge that you understand and accept these terms.
+                </p>
+                <p>
+                    Uploaded PDFs and spreadsheets are processed in your browser. Saved notes, CAT 1, PVI, and CAT 5 bypasses, and display preferences remain in this browser's local storage until you clear them; other map data is kept in browser memory and in files you explicitly open, save, or export. Address searches are sent to OpenStreetMap Nominatim, and DOB lookups are sent to NYC Open Data.
+                </p>
+            </div>
+            <button id="disclaimerAcceptBtn" type="button">Agree</button>
         </div>
     </div>
     <script>
@@ -1062,6 +1062,7 @@
                     <div id="mapModalTitleBar" class="map-modal-title-bar">
                         <h3 class="map-modal-heading">📍 Building Locations</h3>
                         <div class="map-modal-window-controls">
+                            <button type="button" id="mapDobLastUpdated" class="map-dob-last-updated" style="display: none;" onclick="updateMapViewDobInfo()" title="Run DOB Info Update"></button>
                             <button id="mapOpenTerminalBtn" type="button" onclick="popoutVerticalTerminal()" title="Open Vertical Terminal in a separate window" aria-label="Open Vertical Terminal in a separate window" style="background: #1a73e8; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap;">
                                 <span aria-hidden="true">↗</span>
                                 <span>Terminal</span>
@@ -1121,7 +1122,6 @@
                                         <button type="button" id="mapDobUpdateButton" onclick="closeMapDobMenu(); updateMapViewDobInfo()" title="Refresh saved device test dates from DOB">
                                             <span>🔄</span> <span id="mapDobUpdateButtonLabel">DOB Info Update</span>
                                         </button>
-                                        <div id="mapDobLastUpdated" class="map-dob-last-updated" style="display: none;"></div>
                                     </div>
                                 </div>
                             </div>
@@ -11361,16 +11361,17 @@
             if (!el) return;
             const formatted = formatMapDobInfoUpdatedAt(mapDobInfoUpdatedAt);
             el.replaceChildren();
-            const label = document.createElement('div');
+            const label = document.createElement('span');
             label.className = 'map-dob-last-label';
-            label.textContent = 'Last DOB Update';
-            const value = document.createElement('div');
+            label.textContent = 'Last DOB Update:';
+            const value = document.createElement('span');
             value.className = 'map-dob-last-value';
             value.textContent = formatted || 'None yet';
             el.append(label, value);
             el.title = formatted
-                ? `Last DOB Info Update: ${new Date(mapDobInfoUpdatedAt).toLocaleString()}`
-                : 'DOB Info Update has not been run for this map';
+                ? `Run DOB Info Update. Last update: ${new Date(mapDobInfoUpdatedAt).toLocaleString()}`
+                : 'Run DOB Info Update. None yet for this map';
+            el.setAttribute('aria-disabled', 'false');
             el.style.display = 'flex';
             const menuBtn = document.getElementById('mapDobMenuButton');
             if (menuBtn && menuBtn.dataset.updating !== 'true') {
@@ -13506,6 +13507,12 @@
                 menuBtn.title = isUpdating ? (text || 'DOB Info Update in progress') : menuBtn.title;
             }
             if (menuLabel) menuLabel.textContent = isUpdating ? (text || 'DOB') : 'DOB';
+            const status = document.getElementById('mapDobLastUpdated');
+            if (status) {
+                status.setAttribute('aria-disabled', isUpdating ? 'true' : 'false');
+                status.style.pointerEvents = isUpdating ? 'none' : '';
+                if (isUpdating) status.title = text || 'DOB Info Update in progress';
+            }
             if (!isUpdating) updateMapDobInfoUpdatedDisplay();
         }
 
@@ -13903,6 +13910,8 @@
         }
 
         async function updateMapViewDobInfo() {
+            const updateButton = document.getElementById('mapDobUpdateButton');
+            if (updateButton && updateButton.disabled) return;
             if (!window.lastBulkSearchResults || !window.lastBulkSearchResults.binGroups) {
                 alert('No map data loaded. Load a map view file or run a bulk lookup first.');
                 return;
