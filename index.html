@@ -15,7 +15,7 @@
     </script>
     <title>Vertical Terminal</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="styles.css?v=20261101-landscape-ipad">
+    <link rel="stylesheet" href="styles.css?v=20261101-map-dob-legend">
     <!-- Pinned, locally hosted libraries for user-supplied document parsing. -->
     <script src="vendor/pdf-lib/pdf-lib.min.js?v=1.17.1"></script>
     
@@ -1101,13 +1101,21 @@
                                 <button id="mapLiveTableButton" hidden onclick="toggleMapLiveTable()" aria-pressed="false" title="Open a floating table containing only the currently displayed locations" style="background: #0f766e; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
                                     <span>▤</span> <span>Live Table</span>
                                 </button>
-                                <button id="mapDobNowButton" onclick="openDobNowPortal()" title="Open DOB Now in a separate window" style="background: #27ae60; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
-                                    <span>↗</span> <span>DOB Now</span>
-                                </button>
-                                <button id="mapDobUpdateButton" onclick="updateMapViewDobInfo()" title="Refresh saved device test dates from DOB" style="background: #0d6efd; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
-                                    <span>🔄</span> <span id="mapDobUpdateButtonLabel">DOB Info Update</span>
-                                </button>
-                                <span id="mapDobLastUpdated" style="display: none; color: var(--text-color); opacity: 0.68; font-size: 0.68em; white-space: nowrap;"></span>
+                                <div id="mapDobMenu" class="map-dob-menu">
+                                    <button type="button" id="mapDobMenuButton" onclick="toggleMapDobMenu(event)" aria-expanded="false" aria-controls="mapDobMenuPanel" title="DOB Now and DOB Info Update" style="background: #0d6efd; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 4px; white-space: nowrap;">
+                                        <span id="mapDobMenuButtonLabel">DOB</span>
+                                        <span aria-hidden="true">▾</span>
+                                    </button>
+                                    <div id="mapDobMenuPanel" class="map-dob-menu-panel" hidden>
+                                        <button type="button" id="mapDobNowButton" onclick="closeMapDobMenu(); openDobNowPortal()" title="Open DOB Now in a separate window">
+                                            <span>↗</span> <span>DOB Now</span>
+                                        </button>
+                                        <button type="button" id="mapDobUpdateButton" onclick="closeMapDobMenu(); updateMapViewDobInfo()" title="Refresh saved device test dates from DOB">
+                                            <span>🔄</span> <span id="mapDobUpdateButtonLabel">DOB Info Update</span>
+                                        </button>
+                                        <div id="mapDobLastUpdated" class="map-dob-last-updated" style="display: none;"></div>
+                                    </div>
+                                </div>
                             </div>
                             <button onclick="triggerMapViewLoad()" title="Load map view from file" style="background: #17a2b8; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap;">
                                 <span>📂</span> <span>Load</span>
@@ -11343,16 +11351,74 @@
             const el = document.getElementById('mapDobLastUpdated');
             if (!el) return;
             const formatted = formatMapDobInfoUpdatedAt(mapDobInfoUpdatedAt);
-            if (formatted) {
-                el.textContent = `Last DOB update: ${formatted}`;
-                el.title = `Last DOB Info Update: ${new Date(mapDobInfoUpdatedAt).toLocaleString()}`;
-                el.style.display = 'inline-block';
-            } else {
-                el.textContent = '';
-                el.title = '';
-                el.style.display = 'none';
+            el.replaceChildren();
+            const label = document.createElement('div');
+            label.className = 'map-dob-last-label';
+            label.textContent = 'Last DOB Update';
+            const value = document.createElement('div');
+            value.className = 'map-dob-last-value';
+            value.textContent = formatted || 'None yet';
+            el.append(label, value);
+            el.title = formatted
+                ? `Last DOB Info Update: ${new Date(mapDobInfoUpdatedAt).toLocaleString()}`
+                : 'DOB Info Update has not been run for this map';
+            el.style.display = 'flex';
+            const menuBtn = document.getElementById('mapDobMenuButton');
+            if (menuBtn && menuBtn.dataset.updating !== 'true') {
+                menuBtn.title = formatted
+                    ? `DOB Now and DOB Info Update. Last DOB Update: ${formatted}`
+                    : 'DOB Now and DOB Info Update. No DOB Info Update yet';
             }
         }
+
+        function closeMapDobMenu() {
+            const panel = document.getElementById('mapDobMenuPanel');
+            const button = document.getElementById('mapDobMenuButton');
+            if (panel) panel.hidden = true;
+            if (button) button.setAttribute('aria-expanded', 'false');
+        }
+
+        function positionMapDobMenuPanel() {
+            const button = document.getElementById('mapDobMenuButton');
+            const panel = document.getElementById('mapDobMenuPanel');
+            if (!button || !panel || panel.hidden) return;
+            const rect = button.getBoundingClientRect();
+            const width = Math.max(230, panel.offsetWidth || 0, rect.width);
+            let left = rect.left;
+            if (left + width > window.innerWidth - 8) left = window.innerWidth - 8 - width;
+            if (left < 8) left = 8;
+            panel.style.top = Math.round(rect.bottom + 4) + 'px';
+            panel.style.left = Math.round(left) + 'px';
+        }
+
+        function toggleMapDobMenu(event) {
+            if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+            const panel = document.getElementById('mapDobMenuPanel');
+            const button = document.getElementById('mapDobMenuButton');
+            if (!panel || !button) return;
+            const willOpen = panel.hidden;
+            if (!willOpen) {
+                closeMapDobMenu();
+                return;
+            }
+            panel.hidden = false;
+            button.setAttribute('aria-expanded', 'true');
+            positionMapDobMenuPanel();
+        }
+
+        function bindMapDobMenuDismiss() {
+            if (window._mapDobMenuDismissBound) return;
+            window._mapDobMenuDismissBound = true;
+            document.addEventListener('click', function(event) {
+                const menu = document.getElementById('mapDobMenu');
+                if (!menu || menu.contains(event.target)) return;
+                closeMapDobMenu();
+            });
+            window.addEventListener('resize', closeMapDobMenu);
+            const actions = document.querySelector('#buildingMapModal .map-modal-file-actions');
+            if (actions) actions.addEventListener('scroll', closeMapDobMenu, { passive: true });
+        }
+        bindMapDobMenuDismiss();
 
         function setMapDobInfoUpdatedAt(timestamp) {
             mapDobInfoUpdatedAt = parseMapTimestamp(timestamp);
@@ -13394,18 +13460,25 @@
         function updateDobInfoButtonState(isUpdating, text, progressPercent) {
             const btn = document.getElementById('mapDobUpdateButton');
             const label = document.getElementById('mapDobUpdateButtonLabel');
+            const menuBtn = document.getElementById('mapDobMenuButton');
+            const menuLabel = document.getElementById('mapDobMenuButtonLabel');
+            const percent = Math.max(0, Math.min(100, Number(progressPercent) || 0));
+            const progressBackground = `linear-gradient(90deg, #198754 ${percent}%, #0d6efd ${percent}%)`;
             if (btn) {
                 btn.disabled = !!isUpdating;
-                btn.style.opacity = isUpdating ? '0.7' : '1';
+                btn.style.opacity = isUpdating ? '0.85' : '1';
                 btn.style.cursor = isUpdating ? 'wait' : 'pointer';
-                if (isUpdating) {
-                    const percent = Math.max(0, Math.min(100, Number(progressPercent) || 0));
-                    btn.style.background = `linear-gradient(90deg, #198754 ${percent}%, #0d6efd ${percent}%)`;
-                } else {
-                    btn.style.background = '#0d6efd';
-                }
+                btn.style.background = isUpdating ? progressBackground : '#0d6efd';
             }
             if (label) label.textContent = text || 'DOB Info Update';
+            if (menuBtn) {
+                menuBtn.dataset.updating = isUpdating ? 'true' : '';
+                menuBtn.style.background = isUpdating ? progressBackground : '#0d6efd';
+                menuBtn.style.cursor = isUpdating ? 'progress' : 'pointer';
+                menuBtn.title = isUpdating ? (text || 'DOB Info Update in progress') : menuBtn.title;
+            }
+            if (menuLabel) menuLabel.textContent = isUpdating ? (text || 'DOB') : 'DOB';
+            if (!isUpdating) updateMapDobInfoUpdatedDisplay();
         }
 
         function openDobNowPortal() {
@@ -22604,6 +22677,101 @@
             marker.openPopup();
         }
 
+        function findOpenMapPopupMarker() {
+            const markers = (mapMarkers || []).concat(additionalLocationMarkers || []);
+            for (let i = 0; i < markers.length; i++) {
+                const marker = markers[i];
+                if (marker && typeof marker.isPopupOpen === 'function' && marker.isPopupOpen()) return marker;
+            }
+            return null;
+        }
+
+        function readMapPopupSectionState(popupEl, editorPrefix, arrowPrefix) {
+            if (!popupEl || !popupEl.querySelector) return null;
+            const editor = popupEl.querySelector('[id^="' + editorPrefix + '"]');
+            const arrow = popupEl.querySelector('[id^="' + arrowPrefix + '"]');
+            if (!editor && !arrow) return null;
+            return {
+                display: editor ? editor.style.display : '',
+                arrow: arrow ? arrow.textContent : ''
+            };
+        }
+
+        // Map actions such as Favorite rebuild every marker, which destroys the open
+        // popup. Remember which pin was open so the same menu comes back.
+        function mapPopupRestoreKeyForMarker(marker) {
+            if (!marker) return '';
+            if (marker._mapPopupRestoreKey) return marker._mapPopupRestoreKey;
+            const buildingIndex = (mapMarkers || []).indexOf(marker);
+            if (buildingIndex >= 0 && mapBuildingsData && mapBuildingsData[buildingIndex]) {
+                return 'building:' + String(mapBuildingsData[buildingIndex].bin);
+            }
+            const additionalIndex = (additionalLocationMarkers || []).indexOf(marker);
+            if (additionalIndex >= 0) {
+                const locations = typeof getAdditionalLocations === 'function' ? getAdditionalLocations() : [];
+                const location = locations[additionalIndex];
+                if (location) return 'additional:' + String(location.latitude) + ',' + String(location.longitude);
+            }
+            return '';
+        }
+
+        function captureOpenMapPopupState() {
+            const marker = findOpenMapPopupMarker();
+            const key = mapPopupRestoreKeyForMarker(marker);
+            if (!key) return null;
+            const popup = typeof marker.getPopup === 'function' ? marker.getPopup() : null;
+            const popupEl = popup && typeof popup.getElement === 'function' ? popup.getElement() : null;
+            const scrollEl = popupEl && popupEl.querySelector ? popupEl.querySelector('.leaflet-popup-content') : null;
+            const note = popupEl && popupEl.querySelector ? popupEl.querySelector('textarea[id^="mapNote_"]') : null;
+            return {
+                key: key,
+                scrollTop: scrollEl ? scrollEl.scrollTop : 0,
+                noteValue: note ? note.value : null,
+                noteSection: readMapPopupSectionState(popupEl, 'mapNoteEditor_', 'mapNoteArrow_'),
+                scheduleSection: readMapPopupSectionState(popupEl, 'mapScheduleEditor_', 'mapScheduleArrow_')
+            };
+        }
+
+        function applyRestoredMapPopupDetails(marker, saved) {
+            if (!marker || !saved) return;
+            const popup = typeof marker.getPopup === 'function' ? marker.getPopup() : null;
+            const popupEl = popup && typeof popup.getElement === 'function' ? popup.getElement() : null;
+            if (!popupEl) return;
+            const note = saved.noteValue != null ? popupEl.querySelector('textarea[id^="mapNote_"]') : null;
+            if (note) note.value = saved.noteValue;
+            const restoreSection = (section, editorPrefix, arrowPrefix) => {
+                if (!section) return;
+                const editor = popupEl.querySelector('[id^="' + editorPrefix + '"]');
+                const arrow = popupEl.querySelector('[id^="' + arrowPrefix + '"]');
+                if (editor && section.display) editor.style.display = section.display;
+                if (arrow && section.arrow) arrow.textContent = section.arrow;
+            };
+            restoreSection(saved.noteSection, 'mapNoteEditor_', 'mapNoteArrow_');
+            restoreSection(saved.scheduleSection, 'mapScheduleEditor_', 'mapScheduleArrow_');
+            const scrollEl = popupEl.querySelector('.leaflet-popup-content');
+            if (scrollEl && saved.scrollTop) scrollEl.scrollTop = saved.scrollTop;
+        }
+
+        function restoreOpenMapPopupState(saved) {
+            if (!saved || !saved.key || !buildingMap) return;
+            const markers = (mapMarkers || []).concat(additionalLocationMarkers || []);
+            let marker = null;
+            for (let i = 0; i < markers.length; i++) {
+                if (markers[i] && markers[i]._mapPopupRestoreKey === saved.key) {
+                    marker = markers[i];
+                    break;
+                }
+            }
+            if (!marker || typeof buildingMap.hasLayer !== 'function' || !buildingMap.hasLayer(marker)) return;
+            const popup = typeof marker.getPopup === 'function' ? marker.getPopup() : null;
+            const previousAutoPan = popup && popup.options ? popup.options.autoPan : undefined;
+            if (popup && popup.options) popup.options.autoPan = false;
+            openMapMarkerPopup(marker);
+            if (popup && popup.options && previousAutoPan !== undefined) popup.options.autoPan = previousAutoPan;
+            applyRestoredMapPopupDetails(marker, saved);
+            setTimeout(() => applyRestoredMapPopupDetails(marker, saved), 0);
+        }
+
         const MAP_MARKER_OVERLAP_PX = 26;
 
         function collectVisibleMapMarkerEntries() {
@@ -31271,6 +31439,7 @@
 
             const modal = document.getElementById('buildingMapModal');
             modal.style.display = 'flex';
+            updateMapDobInfoUpdatedDisplay();
 
             // Initialize resize handles (safe to call multiple times)
             initMapResizeHandles();
@@ -31329,6 +31498,11 @@
                     toggleMapDashboard(false);
                     return;
                 }
+                const dobMenuPanel = document.getElementById('mapDobMenuPanel');
+                if (dobMenuPanel && !dobMenuPanel.hidden) {
+                    closeMapDobMenu();
+                    return;
+                }
                 closeBuildingMap();
             };
             document.addEventListener('keydown', handleEscKey);
@@ -31341,6 +31515,7 @@
         }
 
         function closeBuildingMap() {
+            closeMapDobMenu();
             exitMapDashboard({ restorePopout: false });
             resetMapLiveTable();
 
@@ -31723,6 +31898,7 @@
         let _mapIsMinimized = false;
 
         function minimizeMap() {
+            closeMapDobMenu();
             if (_mapFullscreen) return; // minimize only available in windowed mode
             const modal = document.getElementById('buildingMapModal');
             const pill  = document.getElementById('mapRestorePill');
@@ -32445,11 +32621,11 @@
                 reviewDeviceCountEl.textContent = String(reviewDeviceCount);
             }
             const stats = getMapDashboardStats();
-            const dobUpdatedEl = document.getElementById('mapDobLastUpdated');
-            const dobUpdatedText = dobUpdatedEl && dobUpdatedEl.style.display !== 'none' ? (dobUpdatedEl.textContent || '').trim() : '';
+            const dobUpdatedText = formatMapDobInfoUpdatedAt(mapDobInfoUpdatedAt);
+            const dobUpdatedLabel = dobUpdatedText ? `Last DOB Update: ${dobUpdatedText}` : '';
             if (subtitle) {
                 const todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-                subtitle.textContent = `${stats.year} testing overview · ${todayLabel}${dobUpdatedText ? ' · ' + dobUpdatedText : ''}`;
+                subtitle.textContent = `${stats.year} testing overview · ${todayLabel}${dobUpdatedLabel ? ' · ' + dobUpdatedLabel : ''}`;
             }
 
             const todayCount = stats.upcoming.filter(entry => entry.date === stats.todayKey).length;
@@ -32805,10 +32981,17 @@
             // Save current view if preserving
             let savedCenter = null;
             let savedZoom = null;
+            let popupToRestore = null;
             if (preserveView && buildingMap) {
                 try {
                     savedCenter = buildingMap.getCenter();
                     savedZoom = buildingMap.getZoom();
+                    popupToRestore = captureOpenMapPopupState();
+                    // Stop this click before the popup DOM is torn down, so it cannot
+                    // fall through to the map and immediately close the restored menu.
+                    if (popupToRestore && window.event && typeof window.event.stopPropagation === 'function') {
+                        window.event.stopPropagation();
+                    }
                 } catch (error) {
                     console.warn('Could not preserve current map view:', error);
                 }
@@ -33137,6 +33320,7 @@
                     title: building.address || ('BIN ' + building.bin),
                     subtitle: 'BIN ' + building.bin + (building.deviceCount ? (' · ' + building.deviceCount + ' device' + (building.deviceCount === 1 ? '' : 's')) : '')
                 };
+                marker._mapPopupRestoreKey = 'building:' + String(building.bin);
                 const hiddenByCurrentSettings = isBuildingHiddenByMapSettings(building);
 
                 // Create popup content with detailed device testing info
@@ -33747,6 +33931,7 @@
                         (!location.bin && !location.isHouse && !location.isTransportation) ? 'Custom pin' : ''
                     ].filter(Boolean).join(' · ')
                 };
+                additionalMarker._mapPopupRestoreKey = 'additional:' + String(location.latitude) + ',' + String(location.longitude);
                 if (shouldHideCompletedAdditionalLocation(location)) {
                     buildingMap.removeLayer(additionalMarker);
                 }
@@ -34134,9 +34319,7 @@
             // Add legend with hide/show functionality
             const legend = L.control({ position: 'bottomright' });
             legend.onAdd = function() {
-                const div = L.DomUtil.create('div', 'map-legend');
-                // Use CSS variables for theme-aware styling
-                div.style.cssText = 'background: var(--panel-bg, #2c2c2c); padding: 10px 12px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); font-size: 11px; line-height: 1.8; border: 1px solid var(--input-border, #444);';
+                const div = L.DomUtil.create('div', 'map-legend map-legend-collapsed');
                 
                 const isLegendHidden = true;
                 
@@ -34176,6 +34359,7 @@
             scheduleMapLiveTableRefresh();
             pruneMapBuildingSelection();
             syncMapSelectModeUi();
+            if (popupToRestore) restoreOpenMapPopupState(popupToRestore);
             } finally {
                 initBuildingMapInProgress = false;
             }
@@ -34187,9 +34371,11 @@
             const collapsed = document.getElementById('mapLegendCollapsed');
             
             if (content && collapsed) {
-                const isHidden = content.style.display === 'none';
-                content.style.display = isHidden ? 'block' : 'none';
-                collapsed.style.display = isHidden ? 'none' : 'block';
+                const showingLegend = content.style.display === 'none';
+                content.style.display = showingLegend ? 'block' : 'none';
+                collapsed.style.display = showingLegend ? 'none' : 'block';
+                const legend = collapsed.closest('.map-legend');
+                if (legend) legend.classList.toggle('map-legend-collapsed', !showingLegend);
             }
         }
         
