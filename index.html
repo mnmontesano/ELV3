@@ -15,7 +15,7 @@
     </script>
     <title>Vertical Terminal</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="styles.css?v=20261101-search-row-stay">
+    <link rel="stylesheet" href="styles.css?v=20261101-popup-scroll">
     <!-- Pinned, locally hosted libraries for user-supplied document parsing. -->
     <script src="vendor/pdf-lib/pdf-lib.min.js?v=1.17.1"></script>
     
@@ -22683,12 +22683,62 @@
             return !!(window.matchMedia && window.matchMedia(MAP_PHONE_LAYOUT_QUERY).matches);
         }
 
+        const MAP_LANDSCAPE_LAYOUT_QUERY = '(orientation: landscape) and (max-height: 900px) and (max-width: 1280px)';
+
+        function isMapCompactPopupLayout() {
+            return isMapPhoneLayout() || !!(window.matchMedia && window.matchMedia(MAP_LANDSCAPE_LAYOUT_QUERY).matches);
+        }
+
+        // Leaflet sets touch-action: none on the map, so a finger drag never scrolls the
+        // popup on iOS. Move the popup's own scroller for that gesture.
+        function enableMapPopupTouchScroll(popup) {
+            const popupEl = popup && typeof popup.getElement === 'function' ? popup.getElement() : null;
+            const scroller = popupEl && popupEl.querySelector ? popupEl.querySelector('.leaflet-popup-content') : null;
+            if (!scroller || scroller._mapTouchScrollBound) return;
+            scroller._mapTouchScrollBound = true;
+            let startY = 0;
+            let startScroll = 0;
+            let active = false;
+            scroller.addEventListener('touchstart', function (event) {
+                if (!event.touches || event.touches.length !== 1) {
+                    active = false;
+                    return;
+                }
+                startY = event.touches[0].clientY;
+                startScroll = scroller.scrollTop;
+                active = scroller.scrollHeight > scroller.clientHeight + 2;
+            }, { passive: true });
+            scroller.addEventListener('touchmove', function (event) {
+                if (!active || !event.touches || event.touches.length !== 1) return;
+                const dy = startY - event.touches[0].clientY;
+                if (Math.abs(dy) < 8) return;
+                const maxScroll = scroller.scrollHeight - scroller.clientHeight;
+                if (maxScroll <= 0) return;
+                scroller.scrollTop = Math.max(0, Math.min(maxScroll, startScroll + dy));
+                event.preventDefault();
+                event.stopPropagation();
+            }, { passive: false });
+        }
+
+        function fitMapPopupToVisibleMap(popup) {
+            if (!isMapCompactPopupLayout() || !buildingMap || !popup || typeof popup.getElement !== 'function') return;
+            const popupEl = popup.getElement();
+            const scroller = popupEl && popupEl.querySelector ? popupEl.querySelector('.leaflet-popup-content') : null;
+            const mapEl = buildingMap.getContainer();
+            if (!scroller || !mapEl) return;
+            const available = Math.max(96, Math.floor(mapEl.getBoundingClientRect().height - 56));
+            scroller.style.maxHeight = available + 'px';
+            scroller.style.overflowY = 'auto';
+            scroller.style.webkitOverflowScrolling = 'touch';
+        }
+
         // Popups grow upward after hydration, past Leaflet's open-time auto-pan; on short
         // phone maps that hides the popup's close button under the MAP header.
         function keepMapPopupInViewOnPhone(popup) {
-            if (!buildingMap || !popup || !window.matchMedia || !window.matchMedia(MAP_PHONE_LAYOUT_QUERY).matches) return;
+            if (!buildingMap || !popup || !isMapCompactPopupLayout()) return;
             setTimeout(() => {
                 if (!buildingMap || typeof popup.isOpen !== 'function' || !popup.isOpen()) return;
+                fitMapPopupToVisibleMap(popup);
                 const popupEl = popup.getElement();
                 const mapEl = buildingMap.getContainer();
                 if (!popupEl || !mapEl) return;
@@ -31996,6 +32046,8 @@
             const modal = document.getElementById('buildingMapModal');
             if (!modal || modal.style.display !== 'flex') return;
             applyMapControlsNarrowDefault(false);
+            const openMarker = typeof findOpenMapPopupMarker === 'function' ? findOpenMapPopupMarker() : null;
+            if (openMarker && typeof openMarker.getPopup === 'function') fitMapPopupToVisibleMap(openMarker.getPopup());
         });
 
         function requestMapResizeAfterControlsChange() {
@@ -33330,6 +33382,8 @@
 
             buildingMap.on('popupopen', function (e) {
                 hydrateOpenMapPopup(e.popup);
+                enableMapPopupTouchScroll(e.popup);
+                fitMapPopupToVisibleMap(e.popup);
                 keepMapPopupInViewOnPhone(e.popup);
             });
 
