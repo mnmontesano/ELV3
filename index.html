@@ -2158,6 +2158,7 @@
                     .map-overlap-chooser-btn:hover { background: rgba(26,115,232,0.14); border-color: #1a73e8; }
                     .map-overlap-chooser-btn.map-overlap-chooser-btn-selected { border-color: #27ae60; box-shadow: inset 0 0 0 1px #27ae60; }
                     .map-overlap-chooser-btn .map-overlap-chooser-label { font-weight: 600; font-size: 12px; line-height: 1.35; word-break: break-word; }
+                    .map-overlap-chooser-btn .map-overlap-chooser-aka { font-size: 12px; font-weight: 700; color: #e64a19; line-height: 1.3; margin-top: 2px; word-break: break-word; }
                     .map-overlap-chooser-btn .map-overlap-chooser-sub { font-size: 11px; opacity: 0.72; margin-top: 2px; }
                     .leaflet-tooltip.map-availability-tooltip { background: var(--panel-bg, #1e1e2e); color: var(--text-color, #fff); border: 1px solid var(--input-border, #555); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.35); padding: 8px 10px; min-width: 220px; max-width: 320px; white-space: normal; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
                     .leaflet-tooltip.map-availability-tooltip.leaflet-tooltip-top::before { border-top-color: var(--input-border, #555); }
@@ -2233,6 +2234,9 @@
                         word-break: break-word;
                     }
                     .map-select-info-address:hover { color: #1a73e8; }
+                    .map-select-info-aka { margin-top: 4px; }
+                    .map-select-info-aka-label { font-size: 9px; font-weight: 700; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.03em; }
+                    .map-select-info-aka-name { font-size: 12px; font-weight: 700; color: #e64a19; line-height: 1.3; word-break: break-word; }
                     .map-select-info-meta { margin-top: 3px; font-size: 11px; opacity: 0.78; }
                     .map-select-info-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
                     .map-select-info-chip { padding: 1px 6px; border-radius: 999px; color: white; font-size: 10px; font-weight: 800; }
@@ -20865,9 +20869,11 @@
             const renderCompletionTimeframe = timeframe => timeframe
                 ? `<span style="display:block; margin-top:4px; font-size:10px; line-height:1.35; opacity:0.82;"><strong>${timeframe.dateCount === 1 ? 'All devices completed' : 'Completion timeframe'}:</strong> ${timeframe.display}</span>`
                 : '';
+            const aliasNames = isBulk ? [] : getMapAddressAliasNamesForBin(bin);
             const subtitle = isBulk
                 ? `${bulkBins.length} buildings selected — this completion is saved on each one`
                 : (address || getMapCompletionKeyDisplayLabel(bin));
+            const akaHtml = renderMapAkaAddressHtml(aliasNames);
             const dobStatusHtml = isBulk ? '' : `
                     <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:8px; margin:-4px 0 14px;">
                         <div style="padding:8px 10px; border-radius:7px; background:${completionFacts.categoryComplete ? 'rgba(39,174,96,0.11)' : 'rgba(255,152,0,0.1)'}; border:1px solid ${completionFacts.categoryComplete ? 'rgba(39,174,96,0.32)' : 'rgba(255,152,0,0.32)'}; font-size:11px; color:var(--text-color);">
@@ -20895,7 +20901,8 @@
                         <h3 style="margin: 0; color: var(--text-color, #fff); font-size: 16px;">${isMapCustomLocationStoreKey(bin) ? '✓ Location Completion' : '✓ Building Completion'}</h3>
                         <button type="button" id="completedDetailsDobNowBtn" onclick="openDobNowPortal()" title="Open DOB Now in a separate window" style="background:#27ae60; border:none; border-radius:6px; padding:7px 12px; cursor:pointer; color:white; font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px; white-space:nowrap; flex-shrink:0;">↗ DOB Now</button>
                     </div>
-                    <p style="margin: 0 0 16px 0; font-size: 12px; opacity: 0.7; color: var(--text-color, #ccc);">${escapeMapSuggestionHtml(subtitle)}</p>
+                    <p style="margin: 0 0 ${akaHtml ? '6px' : '16px'} 0; font-size: 12px; opacity: 0.7; color: var(--text-color, #ccc);">${escapeMapSuggestionHtml(subtitle)}</p>
+                    ${akaHtml ? `<div style="margin: 0 0 16px 0;">${akaHtml}</div>` : ''}
                     <label style="font-size: 13px; color: var(--text-color, #ccc); display: block; margin-bottom: 6px;">What was completed?</label>
                     <select id="completedTestTypeInput" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--input-border, #555); background: var(--input-bg, #2a2a3e); color: var(--text-color, #fff); font-size: 14px; box-sizing: border-box; margin-bottom: 14px;">
                         ${renderMapCompletedTestOptions(currentTestType)}
@@ -21099,6 +21106,35 @@
             return uniqueMapAddressAliasesByName(mapAddressAliases.filter(alias =>
                 alias.devices.some(number => numbers.has(number))
             ));
+        }
+
+        // Names the user saved for this building. Device numbers already known for the
+        // building are included so Select mode can show them when the BIN group is missing.
+        function getMapAddressAliasNamesForBin(bin, extraDeviceNumbers) {
+            const names = [];
+            const seen = new Set();
+            const add = list => {
+                (list || []).forEach(name => {
+                    const key = mapAddressAliasNameKey(name);
+                    if (!key || seen.has(key)) return;
+                    seen.add(key);
+                    names.push(name);
+                });
+            };
+            add(getMapAddressAliasesForBin(bin).map(alias => alias && alias.name));
+            const numbers = new Set((extraDeviceNumbers || []).map(normalizeMapAliasDeviceNumber).filter(Boolean));
+            if (numbers.size && mapAddressAliases.length) {
+                add(uniqueMapAddressAliasesByName(mapAddressAliases.filter(alias =>
+                    (alias.devices || []).some(number => numbers.has(number))
+                )).map(alias => alias.name));
+            }
+            return names;
+        }
+
+        function renderMapAkaAddressHtml(names) {
+            const list = (names || []).filter(Boolean);
+            if (!list.length) return '';
+            return `<div class="map-select-info-aka"><div class="map-select-info-aka-label">Also known as</div>${list.map(name => `<div class="map-select-info-aka-name">🔁 ${escapeMapSuggestionHtml(name)}</div>`).join('')}</div>`;
         }
 
         function mapAddressAliasNameKey(name) {
@@ -22983,9 +23019,19 @@
             const buttons = entries.map((entry, index) => {
                 const title = escapeMapSuggestionHtml(entry.title || 'Location');
                 const selected = mapOverlapEntryIsSelected(entry);
+                const overlapBuilding = entry.kind === 'building' && entry.bin && Array.isArray(mapBuildingsData)
+                    ? mapBuildingsData.find(item => item && String(item.bin) === String(entry.bin))
+                    : null;
+                const akaNames = entry.kind === 'building' && entry.bin
+                    ? getMapAddressAliasNamesForBin(entry.bin, getMapSelectInfoDeviceNumbers(null, overlapBuilding))
+                    : [];
+                const akaHtml = akaNames.length
+                    ? `<div class="map-overlap-chooser-aka">🔁 ${escapeMapSuggestionHtml(akaNames.join(' · '))}</div>`
+                    : '';
                 const subtitle = escapeMapSuggestionHtml([entry.subtitle || '', selected ? 'Selected' : ''].filter(Boolean).join(' · '));
                 return `<button type="button" class="map-overlap-chooser-btn${selected ? ' map-overlap-chooser-btn-selected' : ''}" data-overlap-index="${index}">
                     <div class="map-overlap-chooser-label">${title}</div>
+                    ${akaHtml}
                     ${subtitle ? `<div class="map-overlap-chooser-sub">${subtitle}</div>` : ''}
                 </button>`;
             }).join('');
@@ -26204,6 +26250,7 @@
                     ? mapBuildingsData.find(item => item && String(item.bin) === bin)
                     : null;
                 const address = escapeMapSuggestionHtml(summary.address || ('BIN ' + bin));
+                const akaHtml = renderMapAkaAddressHtml(summary.aliasNames);
                 const deviceNumbers = getMapSelectInfoDeviceNumbers(summary, building);
                 const shownDevices = deviceNumbers.slice(0, 4);
                 const extraDevices = Math.max(0, deviceNumbers.length - shownDevices.length);
@@ -26258,6 +26305,7 @@
                 const safeBin = escapeMapSuggestionHtml(bin);
                 return `<article class="map-select-info-card" data-bin="${safeBin}">
                     <button type="button" class="map-select-info-address" onclick="focusMapSelectedBuilding('${safeBin}')">${address}</button>
+                    ${akaHtml}
                     <div class="map-select-info-meta">BIN ${safeBin} · ${deviceCount} device${deviceCount === 1 ? '' : 's'}${deviceText ? ' · ' + deviceText : ''}</div>
                     <div class="map-select-info-chips">${chips.join('')}</div>
                     ${lines.join('')}
@@ -26322,13 +26370,15 @@
                 const deviceNumbers = devices
                     .map(device => String(device && device.device_number || '').trim().toUpperCase())
                     .filter(Boolean);
+                const aliasNames = getMapAddressAliasNamesForBin(bin, getMapSelectInfoDeviceNumbers({ deviceNumbers }, building));
                 summaries.push({
                     bin: String(bin),
                     address: (group && group.address) || (building && building.address) || getMapBuildingAddressForBin(bin) || ('BIN ' + bin),
                     deviceCount: building && building.deviceCount != null
                         ? building.deviceCount
                         : countMapJobDevices(devices),
-                    deviceNumbers
+                    deviceNumbers,
+                    aliasNames
                 });
             });
             summaries.sort((a, b) => String(a.address).localeCompare(String(b.address)));
@@ -26531,6 +26581,7 @@
                 const datesText = formatMapScheduleDatesForDisplay(item.existingDates || item.otherDates || []);
                 return `<div style="padding:7px 8px; border:1px solid var(--input-border,#444); border-radius:7px; margin-bottom:6px; background:var(--input-bg,#2a2a3e);">
                     <div style="font-size:12px; font-weight:700; color:var(--text-color,#fff); word-break:break-word;">${escapeMapSuggestionHtml(item.address || ('BIN ' + item.bin))}</div>
+                    ${renderMapAkaAddressHtml(item.aliasNames)}
                     <div style="font-size:11px; opacity:0.78; margin-top:3px; color:var(--text-color,#ccc);">Current: ${escapeMapSuggestionHtml(datesText || 'None')}</div>
                 </div>`;
             }).join('');
@@ -26605,9 +26656,11 @@
                 const devicePreview = item.deviceNumbers.slice(0, 4).join(', ');
                 const moreDevices = item.deviceNumbers.length > 4 ? ` +${item.deviceNumbers.length - 4} more` : '';
                 const schedulePreview = getMapBulkSchedulePreviewText(item.bin);
+                const akaHtml = renderMapAkaAddressHtml(item.aliasNames);
                 return `<div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start; padding:7px 8px; border:1px solid var(--input-border,#444); border-radius:7px; margin-bottom:6px; background:var(--input-bg,#2a2a3e);">
                     <div style="min-width:0;">
                         <div style="font-size:12px; font-weight:700; color:var(--text-color,#fff); word-break:break-word;">${escapeMapSuggestionHtml(item.address)}</div>
+                        ${akaHtml}
                         <div style="font-size:10px; opacity:0.72; margin-top:2px; color:var(--text-color,#ccc);">BIN ${escapeMapSuggestionHtml(item.bin)} · ${item.deviceCount} device${item.deviceCount === 1 ? '' : 's'}${devicePreview ? ' · ' + escapeMapSuggestionHtml(devicePreview + moreDevices) : ''}</div>
                         <div style="font-size:10px; margin-top:3px; font-weight:700; ${schedulePreview ? 'color:#17a2b8;' : 'opacity:0.5; color:var(--text-color,#ccc);'}">${escapeMapSuggestionHtml(schedulePreview || 'No scheduled dates')}</div>
                     </div>
@@ -26803,6 +26856,7 @@
                     return {
                         bin: item.bin,
                         address: item.address,
+                        aliasNames: item.aliasNames,
                         existingDates: upcomingDates,
                         otherDates
                     };
