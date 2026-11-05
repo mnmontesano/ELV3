@@ -131,6 +131,24 @@ assert.deepEqual(
     [`${currentYear}-11-20`],
     'a test later this year keeps its scheduled shape while a future year is selected'
 );
+
+context.toggleMapFutureYearView(true);
+assert.equal(context.isMapFutureYearView(), true);
+assert.equal(context.getMapDisplayedCalendarYear(), currentYear + 1);
+assert.equal(context.getMapSchedulePlanningYear(), currentYear + 1, 'the 2027 map schedules into 2027');
+assert.deepEqual(
+    [...context.filterMapScheduleDatesForMapYear(mapDates)],
+    [`${currentYear + 1}-04-01`],
+    'the 2027 map shows that year\'s scheduled markers and hides this year\'s'
+);
+context.toggleMapFutureYearView(false);
+assert.equal(context.isMapFutureYearView(), false);
+assert.equal(context.getMapSchedulePlanningYear(), currentYear);
+assert.deepEqual(
+    [...context.filterMapScheduleDatesForMapYear(mapDates)],
+    [`${currentYear - 1}-12-01`, `${currentYear}-03-01`],
+    'leaving the 2027 map brings this year\'s markers back'
+);
 assert.deepEqual(
     [...context.filterMapScheduleDatesThroughThisYear(mapDates)],
     [`${currentYear - 1}-12-01`, `${currentYear}-03-01`],
