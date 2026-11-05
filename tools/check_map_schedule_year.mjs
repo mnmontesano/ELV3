@@ -112,7 +112,17 @@ assert.deepEqual(
     'this year on the map counts past-due and this year dates, not future-year dates'
 );
 context.setMapSchedulePlanningYear(currentYear + 1);
-assert.deepEqual([...context.filterMapScheduleDatesForMapYear(mapDates)], [`${currentYear + 1}-04-01`]);
+assert.deepEqual(
+    [...context.filterMapScheduleDatesForMapYear(mapDates)],
+    [`${currentYear - 1}-12-01`, `${currentYear}-03-01`],
+    'choosing next year in Scheduling year keeps this year\'s scheduled markers on the map'
+);
+context.setMapSchedulePlanningYear(currentYear + 3);
+assert.deepEqual(
+    [...context.filterMapScheduleDatesForMapYear([`${currentYear}-11-20`, `${currentYear + 3}-06-01`])],
+    [`${currentYear}-11-20`],
+    'a test later this year keeps its scheduled shape while a future year is selected'
+);
 assert.deepEqual(
     [...context.filterMapScheduleDatesThroughThisYear(mapDates)],
     [`${currentYear - 1}-12-01`, `${currentYear}-03-01`],
