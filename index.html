@@ -1491,7 +1491,10 @@
                                 <span class="mcp-arrow" id="mcpTestDatesArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpTestDates">
-                                <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">Past due dates are flagged in red. Click <strong>✓ Done</strong> to confirm testing was completed. Pick a day to see every schedule for that date.</p>
+                                <p class="mcp-desc" style="font-size:0.94em; line-height:1.5; opacity:0.82;">Past due dates are flagged in red. Click <strong>✓ Done</strong> to confirm testing was completed. Pick a day to see every schedule for that date. Choose next year to start scheduling that year’s inspections.</p>
+                                <label for="testDatesYearSelect" style="display:block; font-size:0.92em; font-weight:700; color:var(--text-color); margin-bottom:5px;">Scheduling year</label>
+                                <select id="testDatesYearSelect" data-map-schedule-year onchange="onMapScheduleYearChange(this.value)" style="width:100%; padding:7px 9px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:1em; font-weight:600; box-sizing:border-box; margin-bottom:6px;"></select>
+                                <div id="testDatesYearNote" style="font-size:0.86em; line-height:1.4; opacity:0.82; margin-bottom:8px; color:var(--text-color);">Dates you add for the selected year are saved with the map file.</div>
                                 <label for="testDatesTypeFilter" style="display:block; font-size:0.92em; font-weight:700; color:var(--text-color); margin-bottom:5px;">Testing type</label>
                                 <select id="testDatesTypeFilter" onchange="updateTestDatesPanel()" style="width:100%; padding:7px 9px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:1em; font-weight:600; box-sizing:border-box; margin-bottom:8px;">
                                     <option value="all">Both — Category &amp; PVI</option>
@@ -1981,6 +1984,7 @@
                                     <li>Use 👁️ in popup to hide a building</li>
                                     <li>Use 📅 dropdown to assign a month</li>
                                     <li>Use 🗓️ in popup to schedule test dates</li>
+                                    <li>Use the Scheduling year dropdown to add next year’s inspection dates. Those dates are saved with the map file</li>
                                     <li>Adding a Category or PVI date on a building with no inspections completed yet shows the next available date for the other test, 91 days later</li>
                                     <li>Scheduled markers: octagon = CAT, square = PVI, diamond = both</li>
                                     <li>Past-due test dates appear in Settings to confirm</li>
@@ -11525,6 +11529,7 @@
                 hold: getMapHold(),
                 deviceMonitors: getMapDeviceMonitors(),
                 testDates: getMapTestDates(),
+                schedulePlanningYear: getMapSchedulePlanningYear(),
                 deadlines: getMapDeadlines(),
                 notes: getMapNotes(),
                 addressAliases: getMapAddressAliases(),
@@ -14390,15 +14395,19 @@
                     category: values.completedCategoryDates.slice(),
                     general: values.completedGeneralDates.slice()
                 };
+                const completionYear = latestCompletedTestDate
+                    ? mapScheduleDateYear(latestCompletedTestDate)
+                    : new Date(Number(completionDate)).getFullYear();
                 if (completionTypeChanged) {
+                    const retired = lane => mapScheduleDatesThroughYear(schedule[lane], completionYear);
                     if (completionType === 'PVI' || completionType === 'Full') {
-                        completedSchedule.pvi = Array.from(new Set([...completedSchedule.pvi, ...schedule.pvi])).sort();
+                        completedSchedule.pvi = Array.from(new Set([...completedSchedule.pvi, ...retired('pvi')])).sort();
                     }
                     if (completionType === 'Category' || completionType === 'Full') {
-                        completedSchedule.category = Array.from(new Set([...completedSchedule.category, ...schedule.category])).sort();
+                        completedSchedule.category = Array.from(new Set([...completedSchedule.category, ...retired('category')])).sort();
                     }
                     if (completionType === 'Full') {
-                        completedSchedule.general = Array.from(new Set([...completedSchedule.general, ...schedule.general])).sort();
+                        completedSchedule.general = Array.from(new Set([...completedSchedule.general, ...retired('general')])).sort();
                     }
                 }
                 mapCompleted[bin] = {
@@ -14414,7 +14423,7 @@
                 };
                 if (hasMapCompletedDates(scopedCompletedTestDates)) mapCompleted[bin].completedDates = scopedCompletedTestDates;
                 else delete mapCompleted[bin].completedDates;
-                if (completionTypeChanged) clearScheduledDatesForCompletion(bin, completionType);
+                if (completionTypeChanged) clearScheduledDatesForCompletion(bin, completionType, { keepAfterYear: completionYear });
             }
             row.changedFields.clear();
         }
@@ -15995,11 +16004,11 @@
             const key = String(bin);
             // Only active schedules count — completed.scheduledDates are historical and must not
             // keep a building in the Scheduled Test Dates filter after it is marked complete.
-            const testDates = getMapScheduleDates(view.testDates && view.testDates[key]);
-            const liveDates = getTestDatesForBin(key);
+            const testDates = filterMapScheduleDatesForMapYear(getMapScheduleDates(view.testDates && view.testDates[key]));
+            const liveDates = filterMapScheduleDatesForMapYear(getTestDatesForBin(key));
             if (testDates.length > 0 || liveDates.length > 0) return true;
             if (mapViewIsCompleted(view, key, building)) return false;
-            const buildingDates = getMapScheduleDates(building && building.scheduledDates);
+            const buildingDates = filterMapScheduleDatesForMapYear(getMapScheduleDates(building && building.scheduledDates));
             return buildingDates.length > 0;
         }
 
@@ -16007,11 +16016,11 @@
             const key = String(bin);
             const normalizedType = normalizeMapScheduleType(type);
             if (normalizedType !== 'pvi' && normalizedType !== 'category') return false;
-            const savedDates = getMapScheduleDates(view.testDates && view.testDates[key], normalizedType);
-            const liveDates = getTestDatesForBin(key, normalizedType);
+            const savedDates = filterMapScheduleDatesForMapYear(getMapScheduleDates(view.testDates && view.testDates[key], normalizedType));
+            const liveDates = filterMapScheduleDatesForMapYear(getTestDatesForBin(key, normalizedType));
             if (savedDates.length > 0 || liveDates.length > 0) return true;
             if (mapViewIsCompleted(view, key, building)) return false;
-            return getMapScheduleDates(building && building.scheduledDates, normalizedType).length > 0;
+            return filterMapScheduleDatesForMapYear(getMapScheduleDates(building && building.scheduledDates, normalizedType)).length > 0;
         }
 
         function mapViewIsCompleted(view, bin, building) {
@@ -16929,6 +16938,7 @@
                     hold: view.hold || {},
                     deviceMonitors: view.deviceMonitors || {},
                     testDates: view.testDates || {},
+                    schedulePlanningYear: Number.isInteger(Number(view.schedulePlanningYear)) ? Number(view.schedulePlanningYear) : getMapSchedulePlanningYear(),
                     deadlines: view.deadlines || {},
                     notes: view.notes || {},
                     addressAliases: Array.isArray(view.addressAliases) ? view.addressAliases : [],
@@ -17181,6 +17191,12 @@
             return normalized;
         }
 
+        function normalizeImportedSchedulePlanningYear(value) {
+            const year = Number(value);
+            if (!Number.isInteger(year) || year < 2000 || year > 2100) return null;
+            return year;
+        }
+
         function normalizeImportedMapView(rawData) {
             const rawSource = rawData && rawData.view ? rawData.view : rawData;
             const source = sanitizeImportedMapValue(rawSource);
@@ -17340,6 +17356,7 @@
                 hold: source.hold || {},
                 deviceMonitors: source.deviceMonitors || {},
                 testDates: testDates,
+                schedulePlanningYear: normalizeImportedSchedulePlanningYear(source.schedulePlanningYear),
                 deadlines: source.deadlines || {},
                 notes: source.notes || {},
                 addressAliases: normalizeMapAddressAliases(source.addressAliases),
@@ -17366,6 +17383,7 @@
             setMapHold(view.hold || {});
             setMapDeviceMonitors(view.deviceMonitors || {});
             setMapTestDates(view.testDates || {});
+            setMapSchedulePlanningYear(view.schedulePlanningYear, { silent: true });
             setMapDeadlines(view.deadlines || {});
             setMapNotes(view.notes || {});
             setMapAddressAliases(view.addressAliases || []);
@@ -20306,19 +20324,29 @@
             return result;
         }
 
-        function getMapScheduledDatesReplacedByCompletion(bin, lanes, existing) {
+        // A completion covers the year it happens in. Dates already scheduled for a later
+        // year belong to that year's inspection and are never offered as completed dates.
+        function getMapCompletionScheduleYearLimit(todayKey) {
+            return Number(String(todayKey || '').slice(0, 4)) || new Date().getFullYear();
+        }
+
+        function getMapScheduledDatesReplacedByCompletion(bin, lanes, existing, todayKey) {
             if (!Array.isArray(lanes) || !lanes.length) return [];
             const active = normalizeMapScheduleRecord(mapTestDates[bin]);
             const saved = normalizeMapScheduleRecord(existing && existing.scheduledDates);
+            const yearLimit = getMapCompletionScheduleYearLimit(todayKey);
             return [...lanes, 'general'].flatMap(type =>
-                Array.from(new Set([...active[type], ...saved[type]])).sort().map(date => ({ type, date }))
+                mapScheduleDatesThroughYear(Array.from(new Set([...active[type], ...saved[type]])), yearLimit)
+                    .sort()
+                    .map(date => ({ type, date }))
             );
         }
 
-        function getMapCompletionLaneScheduledDates(bin, lane, existing) {
+        function getMapCompletionLaneScheduledDates(bin, lane, existing, todayKey) {
             const active = normalizeMapScheduleRecord(mapTestDates[bin]);
             const saved = normalizeMapScheduleRecord(existing && existing.scheduledDates);
-            return Array.from(new Set([...(active[lane] || []), ...(saved[lane] || [])])).sort();
+            const dates = Array.from(new Set([...(active[lane] || []), ...(saved[lane] || [])]));
+            return mapScheduleDatesThroughYear(dates, getMapCompletionScheduleYearLimit(todayKey)).sort();
         }
 
         function getMapCompletionDobLaneDates(bin, lane, todayKey) {
@@ -20340,7 +20368,7 @@
         // so one shared date cannot replace a Category or PVI date.
         function getMapDatesAlreadyOnBuilding(bin, lane, existing, todayKey) {
             const today = todayKey || formatLocalDateInputValue(new Date());
-            const scheduled = getMapCompletionLaneScheduledDates(bin, lane, existing);
+            const scheduled = getMapCompletionLaneScheduledDates(bin, lane, existing, today);
             if (scheduled.length) return scheduled;
             const dobDates = getMapCompletionDobLaneDates(bin, lane, today);
             if (dobDates.length) return dobDates;
@@ -20350,14 +20378,14 @@
             const generalDates = Array.from(new Set([...active.general, ...saved.general]));
             const generalThisYear = generalDates.filter(date => date <= today && date.startsWith(`${year}-`)).sort();
             if (generalThisYear.length) return generalThisYear;
-            const generalUpcoming = generalDates.filter(date => date >= today).sort();
+            const generalUpcoming = generalDates.filter(date => date >= today && date.startsWith(`${year}-`)).sort();
             return generalUpcoming;
         }
 
         function getMapCompletionDefaultDates(bin, lane, existing, todayKey) {
             const today = todayKey || formatLocalDateInputValue(new Date());
             const dobDates = getMapCompletionDobLaneDates(bin, lane, today);
-            const scheduled = getMapCompletionLaneScheduledDates(bin, lane, existing);
+            const scheduled = getMapCompletionLaneScheduledDates(bin, lane, existing, today);
             // A date DOB verified for this test is the date that stays. A manual or
             // saved date must not take its place, and today is not added beside it.
             if (dobDates.length) return Array.from(new Set([...dobDates, ...scheduled])).sort();
@@ -20382,7 +20410,7 @@
                 const dobDates = getMapCompletionDobLaneDates(bin, lane, today);
                 if (!dobDates.length) return;
                 const existing = typeof getMapCompleted === 'function' ? (getMapCompleted()[bin] || null) : null;
-                const scheduled = getMapCompletionLaneScheduledDates(bin, lane, existing);
+                const scheduled = getMapCompletionLaneScheduledDates(bin, lane, existing, today);
                 const provided = Array.isArray(completedDates[lane]) ? completedDates[lane] : [];
                 const extras = provided.filter(date => date !== today || dobDates.includes(date) || scheduled.includes(date));
                 const next = Array.from(new Set([...dobDates, ...scheduled, ...extras])).sort();
@@ -20601,15 +20629,21 @@
             const suppliedSchedule = normalizeMapScheduleRecord(opts.scheduledDates || savedSchedule);
             const existingSchedule = normalizeMapScheduleRecord(existing.scheduledDates);
             const clearAllScheduled = !!opts.clearAllScheduled;
+            const preliminaryLatest = getMapLatestCompletedDate(opts.completedDates);
+            const completionYear = preliminaryLatest
+                ? mapScheduleDateYear(preliminaryLatest)
+                : (opts.timestamp ? new Date(Number(opts.timestamp)).getFullYear() : new Date().getFullYear());
             const capturePvi = clearAllScheduled || completionType === 'PVI' || completionType === 'Full' || completionType === 'Legacy';
             const captureCategory = clearAllScheduled || completionType === 'Category' || completionType === 'Full' || completionType === 'Legacy';
             // Unspecified/legacy dates have no type — capture (and clear) them with any completion
             // so the building leaves the Scheduled Test Dates list.
             const captureGeneral = clearAllScheduled || !!completionType;
+            // Dates after the completion year stay on the active schedule so next year's
+            // inspections are not retired when this year's test is marked complete.
             const capturedSchedule = {
-                pvi: capturePvi ? suppliedSchedule.pvi : [],
-                category: captureCategory ? suppliedSchedule.category : [],
-                general: captureGeneral ? suppliedSchedule.general : []
+                pvi: capturePvi ? mapScheduleDatesThroughYear(suppliedSchedule.pvi, completionYear) : [],
+                category: captureCategory ? mapScheduleDatesThroughYear(suppliedSchedule.category, completionYear) : [],
+                general: captureGeneral ? mapScheduleDatesThroughYear(suppliedSchedule.general, completionYear) : []
             };
             const completedSchedule = {
                 pvi: Array.from(new Set([...existingSchedule.pvi, ...capturedSchedule.pvi])).sort(),
@@ -20665,11 +20699,10 @@
             if (hasMapCompletedDates(completedDates)) entry.completedDates = completedDates;
             else delete entry.completedDates;
             completed[bin] = entry;
-            if (clearAllScheduled) {
-                delete mapTestDates[bin];
-            } else {
-                clearScheduledDatesForCompletion(bin, completionType);
-            }
+            clearScheduledDatesForCompletion(bin, completionType, {
+                keepAfterYear: completionYear,
+                clearAll: clearAllScheduled
+            });
             setMapCompleted(completed);
             return { address, savedDates, savedSchedule: capturedSchedule, completionType };
         }
@@ -20935,7 +20968,7 @@
                     ? getMapSelectCompletionDefaultDates(selectCompletionBins, lane, todayKey)
                     : getMapCompletionDefaultDates(bin, lane, existing, todayKey),
                 getDobDates: lane => isBulk ? [] : getMapCompletionDobLaneDates(bin, lane, todayKey),
-                getReplacedScheduledDates: lanes => isBulk ? [] : getMapScheduledDatesReplacedByCompletion(bin, lanes, existing),
+                getReplacedScheduledDates: lanes => isBulk ? [] : getMapScheduledDatesReplacedByCompletion(bin, lanes, existing, todayKey),
                 onChange: refreshCompletedOtherInspectionHint
             });
             if (selectCompletionBins) {
@@ -24562,17 +24595,41 @@
             return removedCount;
         }
 
-        function clearScheduledDatesForCompletion(bin, completionType) {
+        function mapScheduleDateYear(dateStr) {
+            const year = Number(String(dateStr || '').slice(0, 4));
+            return Number.isInteger(year) ? year : 0;
+        }
+
+        function mapScheduleDatesThroughYear(dates, year) {
+            const limit = Number(year);
+            const list = Array.isArray(dates) ? dates : [];
+            if (!Number.isInteger(limit) || limit <= 0) return list.slice();
+            return list.filter(date => mapScheduleDateYear(date) <= limit);
+        }
+
+        function mapScheduleDatesAfterYear(dates, year) {
+            const limit = Number(year);
+            const list = Array.isArray(dates) ? dates : [];
+            if (!Number.isInteger(limit) || limit <= 0) return [];
+            return list.filter(date => mapScheduleDateYear(date) > limit);
+        }
+
+        function clearScheduledDatesForCompletion(bin, completionType, options) {
             if (!mapTestDates[bin]) return;
+            const opts = options || {};
             const record = normalizeMapScheduleRecord(mapTestDates[bin]);
             const normalized = normalizeMapCompletedTestType(completionType);
-            if (normalized === 'PVI' || normalized === 'Full' || normalized === 'Legacy') record.pvi = [];
-            if (normalized === 'Category' || normalized === 'Full' || normalized === 'Legacy') record.category = [];
+            const keepAfterYear = Number(opts.keepAfterYear);
+            const hasYearLimit = Number.isInteger(keepAfterYear) && keepAfterYear > 0;
+            const retainLaterYears = dates => hasYearLimit ? mapScheduleDatesAfterYear(dates, keepAfterYear) : [];
+            const clearPvi = !!opts.clearAll || normalized === 'PVI' || normalized === 'Full' || normalized === 'Legacy';
+            const clearCategory = !!opts.clearAll || normalized === 'Category' || normalized === 'Full' || normalized === 'Legacy';
             // Unspecified/legacy schedule dates (Excel import, older map files) are not typed.
             // Clear them on any completion so the building leaves Scheduled Test Dates.
-            if (normalized === 'PVI' || normalized === 'Category' || normalized === 'Full' || normalized === 'Legacy') {
-                record.general = [];
-            }
+            const clearGeneral = !!opts.clearAll || normalized === 'PVI' || normalized === 'Category' || normalized === 'Full' || normalized === 'Legacy';
+            if (clearPvi) record.pvi = retainLaterYears(record.pvi);
+            if (clearCategory) record.category = retainLaterYears(record.category);
+            if (clearGeneral) record.general = retainLaterYears(record.general);
             if (getMapScheduleDates(record).length > 0) mapTestDates[bin] = record;
             else delete mapTestDates[bin];
         }
@@ -25750,6 +25807,194 @@
             filterDeviceReportModal();
         }
 
+        let mapSchedulePlanningYear = null;
+        let refreshOpenMapScheduleYearEditors = null;
+        const MAP_SCHEDULE_FUTURE_YEARS = 5;
+
+        function getMapInspectionCalendarYear(date) {
+            const value = date instanceof Date ? date : new Date();
+            const year = value.getFullYear();
+            return Number.isInteger(year) ? year : new Date().getFullYear();
+        }
+
+        function getMapScheduleYearChoices(now) {
+            const current = getMapInspectionCalendarYear(now || new Date());
+            const years = new Set();
+            for (let offset = 0; offset <= MAP_SCHEDULE_FUTURE_YEARS; offset++) years.add(current + offset);
+            const stored = typeof getMapTestDates === 'function' ? getMapTestDates() : null;
+            Object.keys(stored || {}).forEach(bin => {
+                getMapScheduleDates(stored[bin]).forEach(date => {
+                    const year = mapScheduleDateYear(date);
+                    if (year >= 2000 && year <= 2100) years.add(year);
+                });
+            });
+            return Array.from(years).sort((a, b) => a - b).map(year => ({
+                year,
+                label: year === current
+                    ? `${year} (this year)`
+                    : year === current + 1
+                        ? `${year} (next year)`
+                        : String(year)
+            }));
+        }
+
+        function getMapSchedulePlanningYear() {
+            const choices = getMapScheduleYearChoices();
+            const selected = Number(mapSchedulePlanningYear);
+            if (choices.some(choice => choice.year === selected)) return selected;
+            const current = getMapInspectionCalendarYear(new Date());
+            if (choices.some(choice => choice.year === current)) return current;
+            return choices[0].year;
+        }
+
+        function renderMapScheduleYearOptions(selectedYear) {
+            const selected = Number(selectedYear) || getMapSchedulePlanningYear();
+            return getMapScheduleYearChoices().map(choice =>
+                `<option value="${choice.year}"${choice.year === selected ? ' selected' : ''}>${choice.label}</option>`
+            ).join('');
+        }
+
+        function renderMapScheduleYearSelect(select) {
+            if (!select) return;
+            const choices = getMapScheduleYearChoices();
+            const year = String(getMapSchedulePlanningYear());
+            const signature = choices.map(choice => `${choice.year}:${choice.label}`).join('|');
+            if (select.dataset.choiceSignature !== signature) {
+                select.dataset.choiceSignature = signature;
+                select.innerHTML = choices.map(choice => `<option value="${choice.year}">${choice.label}</option>`).join('');
+            }
+            if (select.value !== year) select.value = year;
+        }
+
+        function syncMapScheduleYearControls() {
+            document.querySelectorAll('select[data-map-schedule-year]').forEach(renderMapScheduleYearSelect);
+        }
+
+        function mapScheduleYearBounds(year) {
+            const selected = Number(year) || getMapSchedulePlanningYear();
+            return {
+                year: selected,
+                min: `${selected}-01-01`,
+                max: `${selected}-12-31`
+            };
+        }
+
+        function defaultMapScheduleDateForYear(year, earliest) {
+            const bounds = mapScheduleYearBounds(year);
+            const today = formatLocalDateInputValue(new Date());
+            let candidate = today >= bounds.min && today <= bounds.max ? today : bounds.min;
+            if (earliest instanceof Date && !isNaN(earliest.getTime())) {
+                const earliestKey = formatLocalDateInputValue(earliest);
+                if (earliestKey > candidate) candidate = earliestKey;
+            }
+            if (candidate < bounds.min) candidate = bounds.min;
+            if (candidate > bounds.max) candidate = bounds.max;
+            return candidate;
+        }
+
+        function mapDateIsInScheduleYear(dateStr, year) {
+            return mapScheduleDateYear(dateStr) === Number(year);
+        }
+
+        function applyMapScheduleYearToDateInput(input, year) {
+            if (!input) return;
+            const bounds = mapScheduleYearBounds(year);
+            if (!mapDateIsInScheduleYear(input.value, bounds.year)) {
+                input.value = defaultMapScheduleDateForYear(bounds.year);
+            }
+        }
+
+        function applyMapScheduleYearToOpenEditors() {
+            if (typeof refreshOpenMapScheduleYearEditors === 'function') refreshOpenMapScheduleYearEditors();
+            ['testDateInputCategory', 'testDateInputPvi', 'mapBulkCategoryDate', 'mapBulkPviDate'].forEach(id => {
+                applyMapScheduleYearToDateInput(document.getElementById(id), getMapSchedulePlanningYear());
+            });
+        }
+
+        function refreshMapAfterScheduleYearChange() {
+            if (typeof refreshMapSelectionMarkerIcons === 'function') refreshMapSelectionMarkerIcons();
+            if (typeof reapplyCurrentMapViewFilters === 'function') reapplyCurrentMapViewFilters({ fitMap: false, quiet: true });
+        }
+
+        function setMapSchedulePlanningYear(year, options) {
+            const previous = mapSchedulePlanningYear;
+            const numeric = Number(year);
+            const choices = getMapScheduleYearChoices();
+            const current = getMapInspectionCalendarYear(new Date());
+            const fallback = choices.some(choice => choice.year === current) ? current : choices[0].year;
+            mapSchedulePlanningYear = choices.some(choice => choice.year === numeric) ? numeric : fallback;
+            syncMapScheduleYearControls();
+            const opts = options || {};
+            if (opts.silent) return mapSchedulePlanningYear;
+            if (previous !== mapSchedulePlanningYear) {
+                applyMapScheduleYearToOpenEditors();
+                refreshMapAfterScheduleYearChange();
+            }
+            if (typeof updateTestDatesPanel === 'function') updateTestDatesPanel();
+            return mapSchedulePlanningYear;
+        }
+
+        // A date picked in another offered year switches the scheduling year to match,
+        // so a job can be scheduled for any upcoming year straight from the date field.
+        function followMapScheduleDateYear(dateStr) {
+            const year = mapScheduleDateYear(dateStr);
+            if (!year || year === getMapSchedulePlanningYear()) return false;
+            if (!getMapScheduleYearChoices().some(choice => choice.year === year)) return false;
+            setMapSchedulePlanningYear(year);
+            return true;
+        }
+
+        // Map markers and Scheduled filters follow the scheduling year: this year shows every
+        // date through this year (past-due included); a future year shows only that year's dates.
+        function filterMapScheduleDatesForMapYear(dates) {
+            const list = Array.isArray(dates) ? dates : [];
+            const current = getMapInspectionCalendarYear(new Date());
+            const selected = Number(mapSchedulePlanningYear);
+            if (Number.isInteger(selected) && selected > current) {
+                return list.filter(date => mapScheduleDateYear(date) === selected);
+            }
+            return list.filter(date => mapScheduleDateYear(date) <= current);
+        }
+
+        function filterMapScheduleDatesThroughThisYear(dates) {
+            return mapScheduleDatesThroughYear(dates, getMapInspectionCalendarYear(new Date()));
+        }
+
+        function onMapScheduleYearChange(value) {
+            setMapSchedulePlanningYear(value);
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            syncMapScheduleYearControls();
+            const note = document.getElementById('testDatesYearNote');
+            if (note) {
+                const year = getMapSchedulePlanningYear();
+                note.textContent = `Adding ${year} inspection dates. Save the map file to keep them.`;
+            }
+        });
+
+        function countMapScheduledDatesForYear(year) {
+            const selected = Number(year);
+            return Object.keys(getMapTestDates() || {}).reduce((sum, bin) => {
+                return sum + getMapTypedScheduleRows(bin).filter(row => mapDateIsInScheduleYear(row.date, selected)).length;
+            }, 0);
+        }
+
+        function getMapScheduleYearBannerHtml(year) {
+            const current = getMapInspectionCalendarYear(new Date());
+            const futureNote = Number(year) > current ? ' (future year)' : '';
+            return `Adding dates for <strong>${year}</strong> inspections${futureNote}. Change Scheduling year, or pick a date in another year and it switches automatically. These dates are saved when you save the map file.`;
+        }
+
+        function mapScheduleYearMismatchMessage(dateStr) {
+            const year = getMapSchedulePlanningYear();
+            if (!dateStr || mapDateIsInScheduleYear(dateStr, year)) return '';
+            const choices = getMapScheduleYearChoices();
+            const first = choices[0].year;
+            const last = choices[choices.length - 1].year;
+            return `That date is not in ${year}. Pick a date from ${first} through ${last}, or change Scheduling year.`;
+        }
+
         function openTestDatesModal(bin) {
             let address = '';
             if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && window.lastBulkSearchResults.binGroups[bin]) {
@@ -25771,24 +26016,17 @@
                 display: flex; align-items: center; justify-content: center;
             `;
 
-            const today = formatLocalDateInputValue(new Date());
-            const planningYear = new Date().getFullYear();
+            const planningYear = getMapSchedulePlanningYear();
             const initialPviCompletion = getMapTestCompletionForYear(bin, 'PVI', planningYear);
-            const pviDefaultDate = initialPviCompletion.isComplete ? `${initialPviCompletion.nextYear}-01-01` : today;
+            const pviDefaultDate = defaultMapScheduleDateForYear(planningYear);
             const pviCompletionNotice = initialPviCompletion.isComplete
                 ? `<div style="margin:0 0 10px; padding:7px 8px; border-radius:6px; border:1px solid rgba(39,174,96,0.35); background:rgba(39,174,96,0.09); color:#27ae60; font-size:10px; line-height:1.4; font-weight:700;">✓ All required PVI inspections are complete for ${planningYear}. Next PVI testing year: ${initialPviCompletion.nextYear}.</div>`
                 : '';
             const initialRules = getMapCategoryScheduleRules(bin, planningYear);
             const ruleSummary = getMapCategoryRuleSummaryHtml(initialRules);
-            let categoryDefaultDate = today;
-            if (initialRules.categoryCompleteForYear) {
-                const nextYearRules = getMapCategoryScheduleRules(bin, initialRules.nextCategoryYear);
-                const nextYearStart = new Date(initialRules.nextCategoryYear, 0, 1);
-                const nextEligibleDate = nextYearRules.earliestAllowed && nextYearRules.earliestAllowed > nextYearStart
-                    ? nextYearRules.earliestAllowed
-                    : nextYearStart;
-                categoryDefaultDate = formatLocalDateInputValue(nextEligibleDate);
-            }
+            const categoryDefaultDate = initialRules.categoryCompleteForYear
+                ? pviDefaultDate
+                : defaultMapScheduleDateForYear(planningYear, initialRules.earliestAllowed);
 
             overlay.innerHTML = `
                 <div style="background:var(--card-bg,#1e1e2e); border:1px solid var(--input-border,#444); border-radius:16px; padding:24px; max-width:620px; width:calc(100% - 32px); max-height:calc(100vh - 40px); overflow-y:auto; box-sizing:border-box; box-shadow:0 18px 55px rgba(0,0,0,0.5); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
@@ -25797,12 +26035,18 @@
                         <button id="testDatesCloseBtn" aria-label="Close" style="margin:0; background:none; border:none; color:var(--text-color,#ccc); font-size:22px; cursor:pointer; line-height:1; padding:2px;">×</button>
                     </div>
 
+                    <label for="testDatesYearSelectModal" style="display:block; font-size:12px; font-weight:800; color:var(--text-color,#fff); margin-bottom:6px;">Scheduling year</label>
+                    <select id="testDatesYearSelectModal" data-map-schedule-year onchange="onMapScheduleYearChange(this.value)" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); font-size:13px; font-weight:700; box-sizing:border-box; margin-bottom:8px;">
+                        ${renderMapScheduleYearOptions(planningYear)}
+                    </select>
+                    <div id="scheduleYearBanner" style="margin:0 0 12px; padding:7px 8px; border-radius:6px; border:1px solid rgba(26,115,232,0.35); background:rgba(26,115,232,0.08); color:var(--text-color,#d6e6ff); font-size:11px; line-height:1.45;">${getMapScheduleYearBannerHtml(planningYear)}</div>
+
                     <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px;">
                         <section style="padding:14px; border:1px solid rgba(155,89,182,0.38); border-radius:11px; background:rgba(155,89,182,0.07);">
                             <div style="font-size:13px; font-weight:800; color:#9b59b6; margin-bottom:3px;">CATEGORY TESTING</div>
                             <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:8px;">CAT 1 plus CAT 5 where required. Multiple testing days are allowed.</div>
                             <div id="categoryScheduleRule" style="display:${initialRules.categoryCompleteForYear ? 'none' : 'block'}; font-size:10.5px; line-height:1.4; color:var(--text-color,#ccc); padding:7px 8px; margin-bottom:10px; border-radius:6px; background:rgba(155,89,182,0.09);">${ruleSummary}</div>
-                            <div id="categoryCompletionStatus">${renderMapCategoryCompletionStatusHtml(bin)}</div>
+                            <div id="categoryCompletionStatus">${renderMapCategoryCompletionStatusHtml(bin, planningYear)}</div>
                             <div id="testDatesListCategory" style="margin-bottom:10px;"></div>
                             <div style="display:flex; gap:7px;"><input type="date" id="testDateInputCategory" value="${categoryDefaultDate}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;"><button id="testDateAddCategory" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#8e44ad; color:white; font-size:12px; font-weight:700;">+ Add</button></div>
                             <div id="categoryOtherInspectionHint" role="status" style="${MAP_OTHER_INSPECTION_HINT_STYLE}"></div>
@@ -25819,7 +26063,7 @@
                         <section style="padding:14px; border:1px solid rgba(26,115,232,0.34); border-radius:11px; background:rgba(26,115,232,0.07);">
                             <div style="font-size:13px; font-weight:800; color:#1a73e8; margin-bottom:3px;">PVI TESTING</div>
                             <div style="font-size:11px; opacity:0.68; color:var(--text-color,#ccc); margin-bottom:11px;">Add every day needed for periodic inspections.</div>
-                            ${pviCompletionNotice}
+                            <div id="pviYearNotice">${pviCompletionNotice}</div>
                             <div id="testDatesListPvi" style="margin-bottom:10px;"></div>
                             <div style="display:flex; gap:7px;"><input type="date" id="testDateInputPvi" value="${pviDefaultDate}" style="min-width:0; flex:1; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); box-sizing:border-box;"><button id="testDateAddPvi" style="margin:0; padding:8px 11px; border-radius:6px; border:none; background:#1a73e8; color:white; font-size:12px; font-weight:700;">+ Add</button></div>
                             <div id="pviOtherInspectionHint" role="status" style="${MAP_OTHER_INSPECTION_HINT_STYLE}"></div>
@@ -25957,6 +26201,13 @@
                 const bypassEligibility = !!(bypassInput && bypassInput.checked);
                 if (error) error.style.display = 'none';
                 if (!val) { showMapNotification('Please select a date', '#ff6b6b'); return; }
+                followMapScheduleDateYear(val);
+                const yearMismatch = mapScheduleYearMismatchMessage(val);
+                if (yearMismatch) {
+                    if (error) { error.textContent = yearMismatch; error.style.display = 'block'; }
+                    showMapNotification(yearMismatch, '#ff6b6b');
+                    return;
+                }
                 if (mapDobHasCompletedTestDate(bin, type, val)) {
                     showMapNotification(`That ${type === 'pvi' ? 'PVI' : 'Category'} date is already filed with DOB`, '#27ae60');
                     return;
@@ -26044,9 +26295,11 @@
                 }
             });
             document.getElementById('testDateInputPvi').addEventListener('change', event => {
+                followMapScheduleDateYear(event.target.value);
                 showTypedDateFeedback('pvi', event.target.value);
             });
             document.getElementById('testDateInputCategory').addEventListener('change', event => {
+                followMapScheduleDateYear(event.target.value);
                 const validation = showTypedDateFeedback('category', event.target.value);
                 const summary = document.getElementById('categoryScheduleRule');
                 if (summary && validation.rules) {
@@ -26064,9 +26317,48 @@
                 showTypedDateFeedback('category', input ? input.value : '');
             });
 
-            document.getElementById('testDatesDoneBtn').addEventListener('click', () => overlay.remove());
-            document.getElementById('testDatesCloseBtn').addEventListener('click', () => overlay.remove());
-            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+            function refreshTestDatesPlanningYear() {
+                const year = getMapSchedulePlanningYear();
+                const banner = document.getElementById('scheduleYearBanner');
+                if (banner) banner.innerHTML = getMapScheduleYearBannerHtml(year);
+                const rules = getMapCategoryScheduleRules(bin, year);
+                const categoryInput = document.getElementById('testDateInputCategory');
+                const pviInput = document.getElementById('testDateInputPvi');
+                if (categoryInput && !mapDateIsInScheduleYear(categoryInput.value, year)) {
+                    categoryInput.value = defaultMapScheduleDateForYear(year, rules.categoryCompleteForYear ? null : rules.earliestAllowed);
+                }
+                if (pviInput && !mapDateIsInScheduleYear(pviInput.value, year)) {
+                    pviInput.value = defaultMapScheduleDateForYear(year);
+                }
+                const pviCompletion = getMapTestCompletionForYear(bin, 'PVI', year);
+                const pviNotice = document.getElementById('pviYearNotice');
+                if (pviNotice) {
+                    pviNotice.innerHTML = pviCompletion.isComplete
+                        ? `<div style="margin:0 0 10px; padding:7px 8px; border-radius:6px; border:1px solid rgba(39,174,96,0.35); background:rgba(39,174,96,0.09); color:#27ae60; font-size:10px; line-height:1.4; font-weight:700;">✓ All required PVI inspections are complete for ${year}. Next PVI testing year: ${pviCompletion.nextYear}.</div>`
+                        : '';
+                }
+                const summary = document.getElementById('categoryScheduleRule');
+                if (summary) {
+                    summary.style.display = rules.categoryCompleteForYear ? 'none' : 'block';
+                    if (!rules.categoryCompleteForYear) summary.innerHTML = getMapCategoryRuleSummaryHtml(rules);
+                }
+                const categoryStatus = document.getElementById('categoryCompletionStatus');
+                if (categoryStatus) categoryStatus.innerHTML = renderMapCategoryCompletionStatusHtml(bin, year);
+                refreshScheduleOtherInspectionHint('category');
+                refreshScheduleOtherInspectionHint('pvi');
+                showTypedDateFeedback('category', categoryInput ? categoryInput.value : '');
+                showTypedDateFeedback('pvi', pviInput ? pviInput.value : '');
+            }
+
+            refreshOpenMapScheduleYearEditors = refreshTestDatesPlanningYear;
+            function closeTestDatesOverlay() {
+                if (refreshOpenMapScheduleYearEditors === refreshTestDatesPlanningYear) refreshOpenMapScheduleYearEditors = null;
+                overlay.remove();
+            }
+
+            document.getElementById('testDatesDoneBtn').addEventListener('click', closeTestDatesOverlay);
+            document.getElementById('testDatesCloseBtn').addEventListener('click', closeTestDatesOverlay);
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) closeTestDatesOverlay(); });
             document.getElementById('testDeadlineSaveBtn').addEventListener('click', () => {
                 const input = document.getElementById('testDeadlineDateInput');
                 const typeSelect = document.getElementById('testDeadlineTypeSelect');
@@ -26644,7 +26936,7 @@
             const existing = document.getElementById('mapBulkEditOverlay');
             if (existing) existing.remove();
 
-            const today = formatLocalDateInputValue(new Date());
+            const today = defaultMapScheduleDateForYear(getMapSchedulePlanningYear());
             const months = ['January', 'February', 'March', 'April', 'May', 'June',
                 'July', 'August', 'September', 'October', 'November', 'December', 'REVIEW'];
             const monthOptions = ['<option value="">Select month...</option>']
@@ -26686,6 +26978,12 @@
                         </div>
                         <button type="button" id="mapBulkEditCloseBtn" aria-label="Close" style="margin:0; background:none; border:none; color:var(--text-color,#ccc); font-size:22px; cursor:pointer; line-height:1; padding:2px;">×</button>
                     </div>
+
+                    <label for="mapBulkScheduleYear" style="display:block; font-size:12px; font-weight:800; color:var(--text-color,#fff); margin-bottom:6px;">Scheduling year</label>
+                    <select id="mapBulkScheduleYear" data-map-schedule-year onchange="onMapScheduleYearChange(this.value)" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); font-size:13px; font-weight:700; box-sizing:border-box; margin-bottom:8px;">
+                        ${renderMapScheduleYearOptions(getMapSchedulePlanningYear())}
+                    </select>
+                    <div id="mapBulkScheduleYearNote" style="margin:0 0 12px; padding:7px 8px; border-radius:6px; border:1px solid rgba(26,115,232,0.35); background:rgba(26,115,232,0.08); color:var(--text-color,#d6e6ff); font-size:11px; line-height:1.45;">Adding dates for <strong>${getMapSchedulePlanningYear()}</strong> inspections on every selected building. These dates are saved when you save the map file.</div>
 
                     <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:12px;">
                         <section style="padding:14px; border:1px solid rgba(155,89,182,0.38); border-radius:11px; background:rgba(155,89,182,0.07);">
@@ -26792,10 +27090,30 @@
             ['mapBulkCategoryDate', 'mapBulkPviDate'].forEach(id => {
                 const input = document.getElementById(id);
                 if (!input) return;
-                input.addEventListener('change', refreshBulkOtherInspectionHints);
+                input.addEventListener('change', () => {
+                    followMapScheduleDateYear(input.value);
+                    refreshBulkOtherInspectionHints();
+                });
                 input.addEventListener('input', refreshBulkOtherInspectionHints);
             });
             refreshBulkOtherInspectionHints();
+
+            function refreshBulkSchedulePlanningYear() {
+                const year = getMapSchedulePlanningYear();
+                ['mapBulkCategoryDate', 'mapBulkPviDate'].forEach(id => {
+                    applyMapScheduleYearToDateInput(document.getElementById(id), year);
+                });
+                const note = document.getElementById('mapBulkScheduleYearNote');
+                if (note) {
+                    note.innerHTML = `Adding dates for <strong>${year}</strong> inspections on every selected building. These dates are saved when you save the map file.`;
+                }
+                refreshBulkOtherInspectionHints();
+            }
+            refreshOpenMapScheduleYearEditors = refreshBulkSchedulePlanningYear;
+            function closeBulkEditOverlay() {
+                if (refreshOpenMapScheduleYearEditors === refreshBulkSchedulePlanningYear) refreshOpenMapScheduleYearEditors = null;
+                overlay.remove();
+            }
 
             function bindDeselectButtons() {
                 const list = document.getElementById('mapBulkSelectedList');
@@ -26845,6 +27163,16 @@
                         error.style.display = 'block';
                     }
                     showMapNotification('Please select a date', '#ff6b6b');
+                    return;
+                }
+                followMapScheduleDateYear(dateStr);
+                const yearMismatch = mapScheduleYearMismatchMessage(dateStr);
+                if (yearMismatch) {
+                    if (error) {
+                        error.textContent = yearMismatch;
+                        error.style.display = 'block';
+                    }
+                    showMapNotification(yearMismatch, '#ff6b6b');
                     return;
                 }
 
@@ -27158,9 +27486,9 @@
             document.getElementById('mapBulkClearNotes').addEventListener('click', () => applyBulkNote('clear'));
             document.getElementById('mapBulkApplyDeadline').addEventListener('click', () => applyBulkDeadline('set'));
             document.getElementById('mapBulkClearDeadline').addEventListener('click', () => applyBulkDeadline('clear'));
-            document.getElementById('mapBulkEditDoneBtn').addEventListener('click', () => overlay.remove());
-            document.getElementById('mapBulkEditCloseBtn').addEventListener('click', () => overlay.remove());
-            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+            document.getElementById('mapBulkEditDoneBtn').addEventListener('click', closeBulkEditOverlay);
+            document.getElementById('mapBulkEditCloseBtn').addEventListener('click', closeBulkEditOverlay);
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) closeBulkEditOverlay(); });
         }
 
         function clearAllTestDates() {
@@ -27237,13 +27565,13 @@
                 getDefaultDates: lane => {
                     const dobDates = getMapCompletionDobLaneDates(bin, lane, todayKey);
                     if (dobDates.length) return getMapCompletionDefaultDates(bin, lane, existingCompletion, todayKey);
-                    const ownScheduled = getMapCompletionLaneScheduledDates(bin, lane, existingCompletion);
+                    const ownScheduled = getMapCompletionLaneScheduledDates(bin, lane, existingCompletion, todayKey);
                     if (ownScheduled.length && (normalizedScheduledType === lane || normalizedScheduledType === 'general')) return ownScheduled;
                     if (normalizedScheduledType === lane && defaultCompletionDate) return [defaultCompletionDate];
                     return getMapCompletionDefaultDates(bin, lane, existingCompletion, todayKey);
                 },
                 getDobDates: lane => getMapCompletionDobLaneDates(bin, lane, todayKey),
-                getReplacedScheduledDates: lanes => getMapScheduledDatesReplacedByCompletion(bin, lanes, null)
+                getReplacedScheduledDates: lanes => getMapScheduledDatesReplacedByCompletion(bin, lanes, null, todayKey)
             });
             completionTypeInput.addEventListener('change', () => datesEditor.setCompletionType(completionTypeInput.value));
 
@@ -27277,8 +27605,8 @@
                     testType: completionType,
                     source: 'Manual',
                     markedCompletedAt: existing.markedCompletedAt || Date.now(),
-                    // Manual completion from Scheduled Test Dates always removes the building
-                    // from that list and moves the saved schedule into Completed.
+                    // Manual completion removes this year's dates from the active schedule.
+                    // Dates already added for a later year stay scheduled.
                     clearAllScheduled: true
                 });
                 addMapActivity('Completed scheduled test', {
@@ -27323,6 +27651,19 @@
             if (!listEl) return;
 
             const allTestDates = getMapTestDates();
+            const selectedYear = getMapSchedulePlanningYear();
+            syncMapScheduleYearControls();
+            const yearNoteEl = document.getElementById('testDatesYearNote');
+            if (yearNoteEl) {
+                const otherYears = getMapScheduleYearChoices()
+                    .map(choice => choice.year)
+                    .filter(year => year !== selectedYear);
+                const otherCount = otherYears.reduce((sum, year) => sum + countMapScheduledDatesForYear(year), 0);
+                const otherLabel = otherYears.length === 1 ? String(otherYears[0]) : 'other years';
+                yearNoteEl.textContent = otherCount
+                    ? `Adding and showing ${selectedYear} inspection dates. ${otherCount} date${otherCount === 1 ? '' : 's'} for ${otherLabel} ${otherCount === 1 ? 'stays' : 'stay'} saved with the map file.`
+                    : `Adding ${selectedYear} inspection dates. Save the map file to keep them.`;
+            }
             const typeFilterEl = document.getElementById('testDatesTypeFilter');
             const selectedType = typeFilterEl && (typeFilterEl.value === 'category' || typeFilterEl.value === 'pvi')
                 ? typeFilterEl.value
@@ -27334,6 +27675,7 @@
 
             function rowsForBin(bin) {
                 return getMapTypedScheduleRows(bin).filter(row => {
+                    if (!mapDateIsInScheduleYear(row.date, selectedYear)) return false;
                     if (selectedType !== 'all' && row.type !== selectedType) return false;
                     if (selectedDay && row.date !== selectedDay) return false;
                     return true;
@@ -27370,7 +27712,7 @@
                 const emptyType = selectedType === 'category' ? 'Category tests' : selectedType === 'pvi' ? 'PVI tests' : 'test dates';
                 const emptyLabel = selectedDay
                     ? `${emptyType} on ${new Date(selectedDay + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}`
-                    : emptyType;
+                    : `${emptyType} for ${selectedYear}`;
                 listEl.innerHTML = `<div style="font-size:1em; color:var(--text-color); opacity:0.75; text-align:center; padding:14px 8px; line-height:1.45;">No scheduled ${emptyLabel}</div>`;
                 if (typeof refreshMcpDetailBackTitle === 'function') refreshMcpDetailBackTitle();
                 return;
@@ -27508,7 +27850,7 @@
                     ? entries.length > 0
                     : entries.some(entry => entry.type === selectedType);
                 if (!matchesType) return false;
-                const hasScheduledTestDate = getTestDatesForBin(bin).length > 0;
+                const hasScheduledTestDate = getMapDeadlineRelevantScheduleDates(bin).length > 0;
                 if (selectedSchedule === 'scheduled') return hasScheduledTestDate;
                 if (selectedSchedule === 'unscheduled') return !hasScheduledTestDate;
                 return true;
@@ -27532,8 +27874,8 @@
             }
 
             bins.sort((a, b) => {
-                const aHasSchedule = getTestDatesForBin(a).length > 0;
-                const bHasSchedule = getTestDatesForBin(b).length > 0;
+                const aHasSchedule = getMapDeadlineRelevantScheduleDates(a).length > 0;
+                const bHasSchedule = getMapDeadlineRelevantScheduleDates(b).length > 0;
                 // When showing all, list unscheduled deadline jobs first so they stand out.
                 if (selectedSchedule === 'all' && aHasSchedule !== bHasSchedule) {
                     return aHasSchedule ? 1 : -1;
@@ -27550,7 +27892,7 @@
                 const entries = getMapDeadlinesForBin(bin)
                     .filter(entry => selectedType === 'all' || entry.type === selectedType)
                     .sort((a, b) => a.date.localeCompare(b.date));
-                const scheduleDates = getTestDatesForBin(bin);
+                const scheduleDates = getMapDeadlineRelevantScheduleDates(bin);
                 const hasScheduledTestDate = scheduleDates.length > 0;
                 const hasPast = entries.some(entry => getMapDeadlineDueState(entry.date).isPast);
                 const headerBg = hasPast ? 'rgba(255,107,107,0.08)' : 'rgba(230,126,34,0.08)';
@@ -28264,9 +28606,9 @@
                 .filter(([bin]) => !isMapNoTestByJuneDisregarded(bin, year, view))
                 .map(([bin, group]) => {
                     const key = String(bin);
-                    const scheduleDates = view
+                    const scheduleDates = filterMapScheduleDatesThroughThisYear(view
                         ? getMapScheduleDates(schedules[key])
-                        : getTestDatesForBin(key);
+                        : getTestDatesForBin(key));
                     return {
                         bin: key,
                         address: (group && group.address) || (completed[bin] && completed[bin].address) || '',
@@ -32578,6 +32920,13 @@
         // Unspecified (legacy) schedule dates count toward either deadline type.
         // Past schedule dates still count — otherwise missed deadlines with an
         // on-time (but already past) schedule incorrectly show "NO TEST DATE".
+        // A date scheduled for a later year than every deadline on the building does not meet one.
+        function getMapDeadlineRelevantScheduleDates(bin) {
+            const deadlineYears = getMapDeadlinesForBin(bin).map(entry => mapScheduleDateYear(entry.date));
+            const limit = Math.max(getMapInspectionCalendarYear(new Date()), ...deadlineYears);
+            return mapScheduleDatesThroughYear(getTestDatesForBin(bin), limit);
+        }
+
         function getMapDeadlineScheduleStatus(bin, deadline, todayKey) {
             const dates = getMapTypedScheduleRows(bin)
                 .filter(row => row.type === deadline.type || row.type === 'general')
@@ -33086,9 +33435,9 @@
                 markerColor = '#ff6b6b'; // Red - no devices ready to test
             }
 
-            const hasCatScheduled = getTestDatesForBin(building.bin, 'category').length > 0;
-            const hasPviScheduled = getTestDatesForBin(building.bin, 'pvi').length > 0;
-            const hasLegacyScheduled = getTestDatesForBin(building.bin, 'general').length > 0;
+            const hasCatScheduled = filterMapScheduleDatesForMapYear(getTestDatesForBin(building.bin, 'category')).length > 0;
+            const hasPviScheduled = filterMapScheduleDatesForMapYear(getTestDatesForBin(building.bin, 'pvi')).length > 0;
+            const hasLegacyScheduled = filterMapScheduleDatesForMapYear(getTestDatesForBin(building.bin, 'general')).length > 0;
             const showNoteStar = hasBuildingNote && !isHold;
             const notApplicableOnly = !building.deviceCount && building.notApplicableDevices && building.notApplicableDevices.length > 0;
             const markerLabel = showNoteStar

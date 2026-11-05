@@ -19,7 +19,7 @@ const source = [
     slice('        function normalizeMapDateList(value) {', '        function isMapScheduleDateUpcoming(dateStr) {'),
     slice('        // MAP completed test date helpers', '        // end MAP completed test date helpers'),
     slice('        function saveMapCompletedEntry(bin, options) {', '        function updateMapCompletionStatus(bin, value) {'),
-    slice('        function clearScheduledDatesForCompletion(bin, completionType) {', '        function addMapCalendarMonths(value, months) {'),
+    slice('        function mapScheduleDateYear(dateStr) {', '        function addMapCalendarMonths(value, months) {'),
     slice('        function formatLocalDateInputValue(value) {', '        function getMapDobSuggestedCompletionType(completionFacts) {')
 ].join('\n') + `
 this.setTestDates = value => { mapTestDates = value; };
@@ -188,6 +188,51 @@ assert.deepEqual(plain(completedStore.b7.completedDates), {
     category: ['2026-08-12', '2026-11-15']
 }, 'DOB verified dates are not replaced by today');
 context.getMapDobCompletedTestDateRows = () => [];
+
+// Completing a 2026 test keeps dates already scheduled for the next year.
+completedStore = {};
+context.setTestDates({
+    b8: { pvi: ['2026-10-10', '2027-03-04'], category: ['2027-04-15'], general: ['2027-05-01'] }
+});
+context.saveMapCompletedEntry('b8', {
+    testType: 'PVI',
+    completedDates: { pvi: ['2026-10-03'] },
+    clearAllScheduled: true,
+    source: 'Manual'
+});
+assert.deepEqual(plain(context.getTestDates().b8), {
+    pvi: ['2027-03-04'],
+    category: ['2027-04-15'],
+    general: ['2027-05-01']
+}, 'next-year scheduled dates stay active when this year is marked complete');
+assert.deepEqual(plain(completedStore.b8.scheduledDates).pvi, [], 'the completed 2026 PVI date replaces that year\'s scheduled PVI date');
+assert.ok(!plain(completedStore.b8.scheduledDates).category.includes('2027-04-15'), 'a 2027 category date is not retired onto the completed record');
+
+// The Done dialog prefill uses only dates through the completion year.
+completedStore = {};
+context.setTestDates({ b9: { pvi: ['2026-10-10', '2027-03-04'], category: [], general: ['2027-05-01'] } });
+const doneDialogPrefill = plain(context.getMapCompletionDefaultDates('b9', 'pvi', null, '2026-11-05'));
+assert.deepEqual(doneDialogPrefill, ['2026-10-10'], 'a 2027 PVI date is not offered as a completed 2026 date');
+assert.deepEqual(plain(context.getMapCompletionLaneScheduledDates('b9', 'pvi', null, '2026-11-05')), ['2026-10-10']);
+assert.deepEqual(
+    plain(context.getMapScheduledDatesReplacedByCompletion('b9', ['pvi'], null, '2026-11-05')),
+    [{ type: 'pvi', date: '2026-10-10' }],
+    'the replaced-dates note lists only this year\'s dates'
+);
+context.saveMapCompletedEntry('b9', { testType: 'PVI', completedDates: { pvi: doneDialogPrefill }, clearAllScheduled: true, source: 'Manual' });
+assert.deepEqual(plain(completedStore.b9.completedDates.pvi), ['2026-10-10']);
+assert.deepEqual(plain(context.getTestDates().b9), { pvi: ['2027-03-04'], category: [], general: ['2027-05-01'] },
+    'marking 2026 done from the Done dialog leaves the 2027 schedule in place');
+context.setTestDates({ b10: { pvi: [], category: [], general: ['2027-02-01'] } });
+assert.deepEqual(plain(context.getMapCompletionDefaultDates('b10', 'pvi', null, '2026-11-05')), ['2026-11-05'],
+    'an unspecified 2027 date is not used as a 2026 completion date');
+
+// Completion paths that pass a year (Table View) keep later-year dates.
+assert.match(html, /if \(completionTypeChanged\) clearScheduledDatesForCompletion\(bin, completionType, \{ keepAfterYear: completionYear \}\);/,
+    'Table View completion passes the completion year');
+context.setTestDates({ b11: { pvi: ['2026-04-01', '2027-03-04'], category: ['2027-04-15'], general: [] } });
+context.clearScheduledDatesForCompletion('b11', 'Full', { keepAfterYear: 2026 });
+assert.deepEqual(plain(context.getTestDates().b11), { pvi: ['2027-03-04'], category: ['2027-04-15'], general: [] });
 
 // DOB auto-completion without dates keeps the old behavior.
 completedStore = {};
