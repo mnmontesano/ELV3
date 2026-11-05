@@ -10,10 +10,13 @@ assert.match(html, /id="testDatesYearSelect"/);
 assert.match(html, /id="testDatesYearSelectModal"/);
 assert.match(html, /id="mapBulkScheduleYear"/);
 assert.match(html, /data-map-schedule-year/);
-assert.match(html, /schedulePlanningYear: getMapSchedulePlanningYear\(\)/);
-assert.match(html, /schedulePlanningYear: Number\.isInteger\(Number\(view\.schedulePlanningYear\)\)/);
-assert.match(html, /schedulePlanningYear: normalizeImportedSchedulePlanningYear\(source\.schedulePlanningYear\)/);
-assert.match(html, /setMapSchedulePlanningYear\(view\.schedulePlanningYear, \{ silent: true \}\)/);
+assert.doesNotMatch(html, /schedulePlanningYear/, 'the map file does not save a Scheduling year, so it always opens on this year');
+assert.match(html, /setMapSchedulePlanningYear\(getMapInspectionCalendarYear\(new Date\(\)\), \{ silent: true \}\)/,
+    'loading a map file returns Scheduling year to this year');
+assert.match(html, /id="mapScheduleYearBadge"/, 'the map shows which Scheduling year is active');
+assert.match(html, /beginMapScheduleYearEditing\(\);\n            const existing = document\.getElementById\('testDatesOverlay'\);/);
+assert.match(html, /beginMapScheduleYearEditing\(\);\n            const existing = document\.getElementById\('mapBulkEditOverlay'\);/);
+assert.match(html, /new MutationObserver\(endMapScheduleYearEditingIfClosed\)/);
 assert.match(html, /mapDateIsInScheduleYear\(row\.date, selectedYear\)/);
 assert.match(html, /mapScheduleYearMismatchMessage\(val\)/);
 assert.match(html, /mapScheduleYearMismatchMessage\(dateStr\)/);
@@ -39,10 +42,15 @@ const source = [
 ].join('\n');
 
 const stored = { dates: {} };
+const openOverlays = new Set();
+const badge = { style: { display: 'none' }, parts: {}, querySelector(selector) {
+    if (!this.parts[selector]) this.parts[selector] = { innerHTML: '', textContent: '' };
+    return this.parts[selector];
+} };
 const context = {
     document: {
         querySelectorAll: () => [],
-        getElementById: () => null,
+        getElementById: id => id === 'mapScheduleYearBadge' ? badge : (openOverlays.has(id) ? {} : null),
         addEventListener: () => {}
     },
     getMapTestDates: () => stored.dates,
@@ -129,16 +137,42 @@ assert.deepEqual(
     'No Test by June ignores future-year dates whatever the dropdown says'
 );
 
-const importStart = html.indexOf('        function normalizeImportedSchedulePlanningYear(value) {');
-const importEnd = html.indexOf('        function normalizeImportedMapView(rawData) {', importStart);
-assert.ok(importStart >= 0 && importEnd > importStart);
-const importContext = {};
-vm.createContext(importContext);
-vm.runInContext(html.slice(importStart, importEnd) + '\nthis.normalizeImportedSchedulePlanningYear = normalizeImportedSchedulePlanningYear;', importContext);
-assert.equal(importContext.normalizeImportedSchedulePlanningYear(2027), 2027);
-assert.equal(importContext.normalizeImportedSchedulePlanningYear('2027'), 2027);
-assert.equal(importContext.normalizeImportedSchedulePlanningYear('next'), null);
-assert.equal(importContext.normalizeImportedSchedulePlanningYear(1999), null);
-assert.equal(importContext.normalizeImportedSchedulePlanningYear(2101), null);
+context.setMapSchedulePlanningYear(currentYear);
+assert.equal(badge.style.display, 'none', 'no badge while scheduling this year');
 
-console.log(`Scheduling year dropdown offers ${currentYear} through ${currentYear + 5}, follows the year of a picked date, and future-year dates stay in the saved map file.`);
+// A year picked inside a schedule window goes back when the window closes.
+openOverlays.add('testDatesOverlay');
+context.beginMapScheduleYearEditing();
+assert.equal(context.followMapScheduleDateYear(`${currentYear + 1}-03-04`), true);
+assert.equal(badge.style.display, 'flex', 'the map shows the badge while next year is selected');
+assert.match(badge.parts['[data-map-schedule-year-text]'].innerHTML, new RegExp(`Scheduling year: <strong>${currentYear + 1}</strong>`));
+context.endMapScheduleYearEditingIfClosed();
+assert.equal(context.getMapSchedulePlanningYear(), currentYear + 1, 'still next year while the window is open');
+openOverlays.delete('testDatesOverlay');
+context.endMapScheduleYearEditingIfClosed();
+assert.equal(context.getMapSchedulePlanningYear(), currentYear, 'closing the schedule window returns to this year');
+assert.equal(badge.style.display, 'none');
+
+// Reopening a window while one is open keeps the year from before the first one opened.
+openOverlays.add('mapBulkEditOverlay');
+context.beginMapScheduleYearEditing();
+context.setMapSchedulePlanningYear(currentYear + 2);
+context.beginMapScheduleYearEditing();
+openOverlays.delete('mapBulkEditOverlay');
+context.endMapScheduleYearEditingIfClosed();
+assert.equal(context.getMapSchedulePlanningYear(), currentYear, 'Edit Selected also returns to this year');
+
+// Next year chosen on purpose in the Scheduled Test Dates panel stays after a window closes.
+context.setMapSchedulePlanningYear(currentYear + 1);
+openOverlays.add('testDatesOverlay');
+context.beginMapScheduleYearEditing();
+context.setMapSchedulePlanningYear(currentYear + 3);
+openOverlays.delete('testDatesOverlay');
+context.endMapScheduleYearEditingIfClosed();
+assert.equal(context.getMapSchedulePlanningYear(), currentYear + 1, 'a year set in the panel before opening is kept');
+assert.equal(badge.style.display, 'flex', 'the badge stays up for that advance view');
+context.resetMapSchedulePlanningYearToCurrent();
+assert.equal(context.getMapSchedulePlanningYear(), currentYear, 'Back to this year returns the map to this year');
+assert.equal(badge.style.display, 'none');
+
+console.log(`Scheduling year dropdown offers ${currentYear} through ${currentYear + 5}, follows the year of a picked date, returns to this year when a schedule window closes, and shows a map badge for other years.`);

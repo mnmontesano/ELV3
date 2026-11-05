@@ -1264,6 +1264,10 @@
                     </div>
                     <div id="mapCanvasWrapper" style="flex: 1; min-width: 0; min-height: 400px; position: relative;">
                         <div id="buildingMap" title="Right-click the map to add a pin at that location" style="width: 100%; height: 100%; min-height: 400px;"></div>
+                        <div id="mapScheduleYearBadge" role="status" aria-live="polite">
+                            <span data-map-schedule-year-text></span>
+                            <button type="button" data-map-schedule-year-reset onclick="resetMapSchedulePlanningYearToCurrent()">Back to this year</button>
+                        </div>
                         <div id="mapSelectToolbar" role="region" aria-label="Multi-building selection tools">
                             <span class="map-select-title">Select mode</span>
                             <span id="mapSelectCount" class="map-select-count">0 buildings selected</span>
@@ -2116,6 +2120,38 @@
                     </div>
                 </div>
                 <style>
+                    #mapScheduleYearBadge {
+                        display: none;
+                        position: absolute;
+                        left: 50%;
+                        bottom: 22px;
+                        transform: translateX(-50%);
+                        z-index: 1650;
+                        max-width: calc(100% - 24px);
+                        align-items: center;
+                        gap: 10px;
+                        padding: 8px 10px 8px 12px;
+                        border-radius: 10px;
+                        border: 1px solid rgba(26,115,232,0.55);
+                        background: rgba(13,42,84,0.94);
+                        color: #e8f1ff;
+                        font-size: 12px;
+                        line-height: 1.35;
+                        box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+                        box-sizing: border-box;
+                    }
+                    #mapScheduleYearBadge button {
+                        margin: 0;
+                        flex: 0 0 auto;
+                        padding: 5px 10px;
+                        border-radius: 6px;
+                        border: none;
+                        background: #1a73e8;
+                        color: #fff;
+                        font-size: 12px;
+                        font-weight: 700;
+                        cursor: pointer;
+                    }
                     #mapSelectToolbar {
                         display: none;
                         position: absolute;
@@ -11529,7 +11565,6 @@
                 hold: getMapHold(),
                 deviceMonitors: getMapDeviceMonitors(),
                 testDates: getMapTestDates(),
-                schedulePlanningYear: getMapSchedulePlanningYear(),
                 deadlines: getMapDeadlines(),
                 notes: getMapNotes(),
                 addressAliases: getMapAddressAliases(),
@@ -16938,7 +16973,6 @@
                     hold: view.hold || {},
                     deviceMonitors: view.deviceMonitors || {},
                     testDates: view.testDates || {},
-                    schedulePlanningYear: Number.isInteger(Number(view.schedulePlanningYear)) ? Number(view.schedulePlanningYear) : getMapSchedulePlanningYear(),
                     deadlines: view.deadlines || {},
                     notes: view.notes || {},
                     addressAliases: Array.isArray(view.addressAliases) ? view.addressAliases : [],
@@ -17191,12 +17225,6 @@
             return normalized;
         }
 
-        function normalizeImportedSchedulePlanningYear(value) {
-            const year = Number(value);
-            if (!Number.isInteger(year) || year < 2000 || year > 2100) return null;
-            return year;
-        }
-
         function normalizeImportedMapView(rawData) {
             const rawSource = rawData && rawData.view ? rawData.view : rawData;
             const source = sanitizeImportedMapValue(rawSource);
@@ -17356,7 +17384,6 @@
                 hold: source.hold || {},
                 deviceMonitors: source.deviceMonitors || {},
                 testDates: testDates,
-                schedulePlanningYear: normalizeImportedSchedulePlanningYear(source.schedulePlanningYear),
                 deadlines: source.deadlines || {},
                 notes: source.notes || {},
                 addressAliases: normalizeMapAddressAliases(source.addressAliases),
@@ -17383,7 +17410,8 @@
             setMapHold(view.hold || {});
             setMapDeviceMonitors(view.deviceMonitors || {});
             setMapTestDates(view.testDates || {});
-            setMapSchedulePlanningYear(view.schedulePlanningYear, { silent: true });
+            mapScheduleYearToRestore = null;
+            setMapSchedulePlanningYear(getMapInspectionCalendarYear(new Date()), { silent: true });
             setMapDeadlines(view.deadlines || {});
             setMapNotes(view.notes || {});
             setMapAddressAliases(view.addressAliases || []);
@@ -25868,6 +25896,49 @@
 
         function syncMapScheduleYearControls() {
             document.querySelectorAll('select[data-map-schedule-year]').forEach(renderMapScheduleYearSelect);
+            updateMapScheduleYearBadge();
+        }
+
+        function updateMapScheduleYearBadge() {
+            const badge = document.getElementById('mapScheduleYearBadge');
+            if (!badge) return;
+            const current = getMapInspectionCalendarYear(new Date());
+            const year = getMapSchedulePlanningYear();
+            if (year === current) {
+                badge.style.display = 'none';
+                return;
+            }
+            const text = badge.querySelector('[data-map-schedule-year-text]');
+            const button = badge.querySelector('[data-map-schedule-year-reset]');
+            if (text) text.innerHTML = `📅 Scheduling year: <strong>${year}</strong>. New dates go into ${year}. Map icons show ${current} schedules.`;
+            if (button) button.textContent = `Back to ${current}`;
+            badge.style.display = 'flex';
+        }
+
+        function resetMapSchedulePlanningYearToCurrent() {
+            mapScheduleYearToRestore = null;
+            setMapSchedulePlanningYear(getMapInspectionCalendarYear(new Date()));
+        }
+
+        // The year picked inside a schedule window lasts only while a window is open.
+        // Closing the last one returns to the year that was selected before it opened,
+        // which is this year unless the Scheduled Test Dates panel was set to another year.
+        const MAP_SCHEDULE_EDITOR_OVERLAY_IDS = ['testDatesOverlay', 'mapBulkEditOverlay'];
+        let mapScheduleYearToRestore = null;
+
+        function isMapScheduleEditorOpen() {
+            return MAP_SCHEDULE_EDITOR_OVERLAY_IDS.some(id => document.getElementById(id));
+        }
+
+        function beginMapScheduleYearEditing() {
+            if (mapScheduleYearToRestore === null) mapScheduleYearToRestore = getMapSchedulePlanningYear();
+        }
+
+        function endMapScheduleYearEditingIfClosed() {
+            if (mapScheduleYearToRestore === null || isMapScheduleEditorOpen()) return;
+            const year = mapScheduleYearToRestore;
+            mapScheduleYearToRestore = null;
+            if (year !== getMapSchedulePlanningYear()) setMapSchedulePlanningYear(year);
         }
 
         function mapScheduleYearBounds(year) {
@@ -25953,6 +26024,9 @@
 
         document.addEventListener('DOMContentLoaded', function() {
             syncMapScheduleYearControls();
+            if (typeof MutationObserver === 'function' && document.body) {
+                new MutationObserver(endMapScheduleYearEditingIfClosed).observe(document.body, { childList: true });
+            }
             const note = document.getElementById('testDatesYearNote');
             if (note) {
                 const year = getMapSchedulePlanningYear();
@@ -25992,6 +26066,7 @@
                 if (building) address = building.address || '';
             }
 
+            beginMapScheduleYearEditing();
             const existing = document.getElementById('testDatesOverlay');
             if (existing) existing.remove();
 
@@ -26920,6 +26995,7 @@
                 return;
             }
 
+            beginMapScheduleYearEditing();
             const existing = document.getElementById('mapBulkEditOverlay');
             if (existing) existing.remove();
 
