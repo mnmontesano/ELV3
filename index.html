@@ -1104,6 +1104,9 @@
                                         </button>
                                     </div>
                                 </div>
+                                <button type="button" id="mapFutureYearButton" onclick="toggleMapFutureYearView()" aria-pressed="false" title="Show the map as next year, with no tests completed yet" style="background: #1a73e8; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap;">
+                                    <span id="mapFutureYearButtonLabel">2027 Map</span>
+                                </button>
                                 <button id="mapSelectButton" onclick="toggleMapSelectMode()" aria-pressed="false" title="Select multiple buildings on the map to edit them at once" style="background: #c77700; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 3px; white-space: nowrap; transition: background 0.2s ease, opacity 0.2s ease;">
                                     <span>✓</span> <span>Select</span>
                                 </button>
@@ -1264,6 +1267,10 @@
                     </div>
                     <div id="mapCanvasWrapper" style="flex: 1; min-width: 0; min-height: 400px; position: relative;">
                         <div id="buildingMap" title="Right-click the map to add a pin at that location" style="width: 100%; height: 100%; min-height: 400px;"></div>
+                        <div id="mapFutureYearBanner" role="status">
+                            <span data-map-future-year-text></span>
+                            <button type="button" onclick="toggleMapFutureYearView(false)">Back to this year</button>
+                        </div>
                         <div id="mapScheduleYearBadge" role="status" aria-live="polite">
                             <span data-map-schedule-year-text></span>
                             <button type="button" data-map-schedule-year-reset onclick="resetMapSchedulePlanningYearToCurrent()">Back to this year</button>
@@ -2120,6 +2127,37 @@
                     </div>
                 </div>
                 <style>
+                    #mapFutureYearBanner {
+                        display: none;
+                        position: absolute;
+                        left: 12px;
+                        right: 12px;
+                        top: 12px;
+                        z-index: 1650;
+                        align-items: center;
+                        gap: 10px;
+                        padding: 8px 10px 8px 12px;
+                        border-radius: 10px;
+                        border: 1px solid rgba(26,115,232,0.55);
+                        background: rgba(13,42,84,0.94);
+                        color: #e8f1ff;
+                        font-size: 12px;
+                        line-height: 1.4;
+                        box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+                        box-sizing: border-box;
+                    }
+                    #mapFutureYearBanner button {
+                        margin: 0;
+                        flex: 0 0 auto;
+                        padding: 5px 10px;
+                        border-radius: 6px;
+                        border: none;
+                        background: #1a73e8;
+                        color: #fff;
+                        font-size: 12px;
+                        font-weight: 700;
+                        cursor: pointer;
+                    }
                     #mapScheduleYearBadge {
                         display: none;
                         position: absolute;
@@ -16060,6 +16098,7 @@
 
         function mapViewIsCompleted(view, bin, building) {
             const key = String(bin);
+            if (isMapFutureYearView()) return mapBuildingCountsCompletedOnDisplayedMap(key);
             return !!((view.completed && view.completed[key]) || (building && building.isCompleted));
         }
 
@@ -17410,8 +17449,10 @@
             setMapHold(view.hold || {});
             setMapDeviceMonitors(view.deviceMonitors || {});
             setMapTestDates(view.testDates || {});
+            mapFutureYearView = null;
             mapScheduleYearToRestore = null;
             setMapSchedulePlanningYear(getMapInspectionCalendarYear(new Date()), { silent: true });
+            if (typeof updateMapFutureYearControls === 'function') updateMapFutureYearControls();
             setMapDeadlines(view.deadlines || {});
             setMapNotes(view.notes || {});
             setMapAddressAliases(view.addressAliases || []);
@@ -22765,7 +22806,7 @@
                 const scheduleLabel = hasCompletedRows && !hasScheduledRows ? '🗓️ Completed Test Dates' : '🗓️ Scheduled Test Dates';
                 if (scheduleTitle) scheduleTitle.textContent = `${scheduleLabel}${hasDates ? ' (' + dateCount + ')' : ''}`;
             }
-            if (categoryStatus) categoryStatus.innerHTML = renderMapCategoryCompletionStatusHtml(bin);
+            if (categoryStatus) categoryStatus.innerHTML = renderMapCategoryCompletionStatusHtml(bin, getMapDisplayedCalendarYear());
             if (scheduleDateList) scheduleDateList.innerHTML = renderMapScheduleDateRows(bin);
 
             const deadlineBox = popupRoot.querySelector(`#mapDeadlineNote_${bin}`);
@@ -25902,6 +25943,10 @@
         function updateMapScheduleYearBadge() {
             const badge = document.getElementById('mapScheduleYearBadge');
             if (!badge) return;
+            if (isMapFutureYearView()) {
+                badge.style.display = 'none';
+                return;
+            }
             const current = getMapInspectionCalendarYear(new Date());
             const year = getMapSchedulePlanningYear();
             if (year === current) {
@@ -25936,7 +25981,7 @@
 
         function endMapScheduleYearEditingIfClosed() {
             if (mapScheduleYearToRestore === null || isMapScheduleEditorOpen()) return;
-            const year = mapScheduleYearToRestore;
+            const year = isMapFutureYearView() ? getMapDisplayedCalendarYear() : mapScheduleYearToRestore;
             mapScheduleYearToRestore = null;
             if (year !== getMapSchedulePlanningYear()) setMapSchedulePlanningYear(year);
         }
@@ -26007,11 +26052,73 @@
             return true;
         }
 
-        // Map markers and Scheduled filters show this year's work: every date through this year,
-        // past-due included. The Scheduling year dropdown changes where new dates go, not the map,
-        // so planning a later year never hides a test scheduled for later this year.
+        // The 2027 Map button is the advance view. While it is on, markers and Scheduled
+        // filters show that year's dates. Otherwise they show this year's work, past-due
+        // included, no matter which Scheduling year is selected.
+        let mapFutureYearView = null;
+
+        function getMapDisplayedCalendarYear() {
+            const current = getMapInspectionCalendarYear(new Date());
+            const year = Number(mapFutureYearView);
+            if (Number.isInteger(year) && year > current && year <= current + MAP_SCHEDULE_FUTURE_YEARS) return year;
+            return current;
+        }
+
+        function isMapFutureYearView() {
+            return getMapDisplayedCalendarYear() !== getMapInspectionCalendarYear(new Date());
+        }
+
+        // A completion saved for this year does not count on the next-year map.
+        function mapBuildingCountsCompletedOnDisplayedMap(bin) {
+            if (!getMapCompleted()[bin]) return false;
+            if (!isMapFutureYearView()) return true;
+            const year = getMapDisplayedCalendarYear();
+            return getMapSavedTestCompletionForYear(bin, 'PVI', year).isComplete
+                || getMapSavedTestCompletionForYear(bin, 'Category', year).isComplete;
+        }
+
         function filterMapScheduleDatesForMapYear(dates) {
+            const list = Array.isArray(dates) ? dates : [];
+            if (isMapFutureYearView()) {
+                const year = getMapDisplayedCalendarYear();
+                return list.filter(date => mapScheduleDateYear(date) === year);
+            }
             return filterMapScheduleDatesThroughThisYear(dates);
+        }
+
+        function updateMapFutureYearControls() {
+            const nextYear = getMapInspectionCalendarYear(new Date()) + 1;
+            const on = isMapFutureYearView();
+            const shown = on ? getMapDisplayedCalendarYear() : nextYear;
+            const button = document.getElementById('mapFutureYearButton');
+            const label = document.getElementById('mapFutureYearButtonLabel');
+            if (label) label.textContent = `${shown} Map`;
+            if (button) {
+                button.setAttribute('aria-pressed', on ? 'true' : 'false');
+                button.style.background = on ? '#0b3d91' : '#1a73e8';
+                button.title = on
+                    ? `Showing the ${shown} map. Click to return to this year.`
+                    : `Show the ${shown} map, with no tests completed for ${shown} yet.`;
+            }
+            const banner = document.getElementById('mapFutureYearBanner');
+            if (banner) {
+                const text = banner.querySelector('[data-map-future-year-text]');
+                if (text && on) {
+                    text.textContent = `${shown} Map. Nothing is completed for ${shown} yet. Green means the 91-day wait is already over, so the job can be scheduled. Red or yellow means the wait is still running — open the job to see the date it becomes ready. Squares and octagons are ${shown} schedules.`;
+                }
+                banner.style.display = on ? 'flex' : 'none';
+            }
+        }
+
+        function toggleMapFutureYearView(force) {
+            const current = getMapInspectionCalendarYear(new Date());
+            const turnOn = typeof force === 'boolean' ? force : !isMapFutureYearView();
+            mapFutureYearView = turnOn ? current + 1 : null;
+            mapScheduleYearToRestore = null;
+            setMapSchedulePlanningYear(turnOn ? current + 1 : current);
+            updateMapFutureYearControls();
+            const groups = typeof window !== 'undefined' && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
+            if (groups && typeof initBuildingMap === 'function') initBuildingMap(groups, true);
         }
 
         function filterMapScheduleDatesThroughThisYear(dates) {
@@ -26024,6 +26131,7 @@
 
         document.addEventListener('DOMContentLoaded', function() {
             syncMapScheduleYearControls();
+            updateMapFutureYearControls();
             if (typeof MutationObserver === 'function' && document.body) {
                 new MutationObserver(endMapScheduleYearEditingIfClosed).observe(document.body, { childList: true });
             }
@@ -33656,7 +33764,7 @@
                     const lng = parseFloat(group.longitude);
                     if (!isNaN(lat) && !isNaN(lng)) {
                         // Calculate completion stats and testing eligibility for this building
-                        const currentYear = new Date().getFullYear();
+                        const currentYear = getMapDisplayedCalendarYear();
                         const allRequiredTestsCompletedForYear = mapDobGroupHasCurrentYearCompletion(group, currentYear, bin);
                         const today = new Date();
                         today.setHours(0, 0, 0, 0);
@@ -33795,10 +33903,10 @@
                             noTestYetDevices,
                             allRequiredTestsCompletedForYear,
                             calendarYear: currentYear,
-                            missedJuneTestDeadline: mapBuildingMissedJuneTestDeadline(bin, new Date(), group),
+                            missedJuneTestDeadline: isMapFutureYearView() ? false : mapBuildingMissedJuneTestDeadline(bin, new Date(), group),
                             isHidden: !!hidden[bin],
-                            isCompleted: !!completed[bin],
-                            completionType: completed[bin] ? normalizeMapCompletedTestType(completed[bin].completionType || completed[bin].testType) : '',
+                            isCompleted: mapBuildingCountsCompletedOnDisplayedMap(bin),
+                            completionType: mapBuildingCountsCompletedOnDisplayedMap(bin) ? normalizeMapCompletedTestType(completed[bin].completionType || completed[bin].testType) : '',
                             isInProcess: !!inProcess[bin],
                             inProcessDate: inProcess[bin] ? inProcess[bin].date : null,
                             isHold: !!hold[bin]
@@ -34328,11 +34436,11 @@
                 const notApplicableDevices = [];
                 const violationDetails = [];
                 let allRequiredTestsCompletedForYear = false;
-                let calendarYear = new Date().getFullYear();
+                let calendarYear = getMapDisplayedCalendarYear();
                 let noTestYetDevices = [];
                 
                 if (location.devices && location.devices.length > 0) {
-                    const currentYear = new Date().getFullYear();
+                    const currentYear = getMapDisplayedCalendarYear();
                     calendarYear = currentYear;
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
