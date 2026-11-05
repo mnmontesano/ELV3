@@ -32928,9 +32928,16 @@
         }
 
         function getMapDeadlineScheduleStatus(bin, deadline, todayKey) {
+            const deadlineYear = Number(String(deadline && deadline.date || '').slice(0, 4));
             const dates = getMapTypedScheduleRows(bin)
                 .filter(row => row.type === deadline.type || row.type === 'general')
                 .map(row => row.date)
+                .filter(date => {
+                    // A date already planned for a later year is that year's inspection.
+                    // It does not meet, or run late for, an earlier year's deadline.
+                    const year = Number(String(date || '').slice(0, 4));
+                    return !Number.isInteger(deadlineYear) || deadlineYear <= 0 || year <= deadlineYear;
+                })
                 .sort();
             const onTime = dates.filter(date => date <= deadline.date);
             const upcomingOnTime = todayKey
