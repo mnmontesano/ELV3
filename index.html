@@ -11604,7 +11604,7 @@
                 deviceMonitors: getMapDeviceMonitors(),
                 testDates: getMapTestDates(),
                 deadlines: getMapDeadlines(),
-                notes: getMapNotes(),
+                notes: normalizeImportedMapNotes(getMapNotes()),
                 addressAliases: getMapAddressAliases(),
                 cat5Bypasses: getMapCat5Bypasses(),
                 cat1Bypasses: getMapCat1Bypasses(),
@@ -14416,8 +14416,7 @@
             if (values.scheduledMonth) mapMonthLabels[bin] = values.scheduledMonth;
             else delete mapMonthLabels[bin];
 
-            if (values.note) mapNotes[bin] = values.note;
-            else delete mapNotes[bin];
+            setMapNote(bin, getMapNoteYear(), values.note);
 
             const deadlineRecord = {};
             if (values.deadlineCategoryDate) deadlineRecord.category = values.deadlineCategoryDate;
@@ -14625,7 +14624,7 @@
                         completedPviDates: completedSchedule.pvi.slice(),
                         completedCategoryDates: completedSchedule.category.slice(),
                         completedGeneralDates: completedSchedule.general.slice(),
-                        note: mapNotes[bin] || '',
+                        note: getMapNote(bin),
                         favorite: !!mapFavorites[bin],
                         hidden: !!mapHidden[bin],
                         inProcess: !!mapInProcess[bin],
@@ -16320,7 +16319,12 @@
             if (filterValue === 'scheduled-cat') return new Set(allBins.filter(bin => mapViewHasScheduledType(view, bin, 'category')));
             if (filterValue === 'scheduled-pvi') return new Set(allBins.filter(bin => mapViewHasScheduledType(view, bin, 'pvi')));
             if (filterValue === 'hide-scheduled') return new Set(allBins.filter(bin => mapViewPassesHideScheduledCompletedFilter(view, bin)));
-            if (filterValue === 'notes') return new Set(Object.keys(view.notes || {}).map(String));
+            if (filterValue === 'notes') {
+                const notes = view.notes || {};
+                const year = String(getMapNoteYear());
+                const fallbackYear = getMapInspectionCalendarYear(new Date());
+                return new Set(Object.keys(notes).filter(bin => normalizeMapBuildingNotes(notes[bin], fallbackYear)[year]).map(String));
+            }
             if (filterValue === 'deadlines') {
                 const liveDeadlines = typeof getMapDeadlines === 'function' ? getMapDeadlines() : {};
                 return new Set(Object.keys(view.deadlines || liveDeadlines || {}).map(String));
@@ -17013,7 +17017,7 @@
                     deviceMonitors: view.deviceMonitors || {},
                     testDates: view.testDates || {},
                     deadlines: view.deadlines || {},
-                    notes: view.notes || {},
+                    notes: normalizeImportedMapNotes(view.notes),
                     addressAliases: Array.isArray(view.addressAliases) ? view.addressAliases : [],
                     cat5Bypasses: view.cat5Bypasses || {},
                     cat1Bypasses: view.cat1Bypasses || {},
@@ -17424,7 +17428,7 @@
                 deviceMonitors: source.deviceMonitors || {},
                 testDates: testDates,
                 deadlines: source.deadlines || {},
-                notes: source.notes || {},
+                notes: normalizeImportedMapNotes(source.notes),
                 addressAliases: normalizeMapAddressAliases(source.addressAliases),
                 cat5Bypasses: normalizedCat5Bypasses,
                 cat1Bypasses: normalizedCat1Bypasses,
@@ -19593,7 +19597,7 @@
                     hold: getMapHold(),
                     testDates: getMapTestDates(),
                     deadlines: getMapDeadlines(),
-                    notes: getMapNotes(),
+                    notes: normalizeImportedMapNotes(getMapNotes()),
                     monthLabels: labels
                 };
                 const bins = getMapViewFilterBins(viewForFilter, mapViewFilter) || new Set();
@@ -21103,8 +21107,110 @@
             mapNotes = notes && typeof notes === 'object' ? notes : {};
         }
 
-        function getMapNote(bin) {
-            return mapNotes[bin] || '';
+        function normalizeMapBuildingNotes(value, fallbackYear) {
+            const year = Number(fallbackYear) || new Date().getFullYear();
+            if (typeof value === 'string') {
+                const text = value.trim();
+                return text ? { [String(year)]: text } : {};
+            }
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+            const record = {};
+            Object.keys(value).forEach(key => {
+                const noteYear = Number(key);
+                const text = String(value[key] == null ? '' : value[key]).trim();
+                if (!Number.isInteger(noteYear) || noteYear < 2000 || noteYear > 2100 || !text) return;
+                record[String(noteYear)] = text;
+            });
+            return record;
+        }
+
+        function normalizeImportedMapNotes(notes) {
+            const fallbackYear = getMapInspectionCalendarYear(new Date());
+            const result = {};
+            Object.entries(notes && typeof notes === 'object' && !Array.isArray(notes) ? notes : {}).forEach(([bin, value]) => {
+                const record = normalizeMapBuildingNotes(value, fallbackYear);
+                if (Object.keys(record).length) result[String(bin)] = record;
+            });
+            return result;
+        }
+
+        function getMapNoteYear() {
+            return getMapDisplayedCalendarYear();
+        }
+
+        function getMapBuildingNotes(bin) {
+            return normalizeMapBuildingNotes(mapNotes[bin], getMapInspectionCalendarYear(new Date()));
+        }
+
+        function getMapNote(bin, year) {
+            const record = getMapBuildingNotes(bin);
+            const selected = Number(year) || getMapNoteYear();
+            return record[String(selected)] || '';
+        }
+
+        function setMapNote(bin, year, value) {
+            const selected = Number(year) || getMapNoteYear();
+            const record = getMapBuildingNotes(bin);
+            const text = String(value || '').trim();
+            if (!Number.isInteger(selected) || selected < 2000 || selected > 2100) return getMapNote(bin);
+            if (text) record[String(selected)] = text;
+            else delete record[String(selected)];
+            if (Object.keys(record).length) mapNotes[bin] = record;
+            else delete mapNotes[bin];
+            return text;
+        }
+
+        function getMapNoteYearChoices(bin) {
+            const current = getMapInspectionCalendarYear(new Date());
+            const years = new Set([current, current - 1, current + 1, getMapNoteYear()]);
+            Object.keys(bin ? getMapBuildingNotes(bin) : {}).forEach(year => years.add(Number(year)));
+            return Array.from(years).filter(year => year >= 2000 && year <= 2100).sort((a, b) => b - a);
+        }
+
+        function mapNoteYearLabel(year) {
+            const current = getMapInspectionCalendarYear(new Date());
+            if (year === current) return `${year} (this year)`;
+            if (year === current + 1) return `${year} (next year)`;
+            return String(year);
+        }
+
+        function renderMapNoteYearOptions(bin, selectedYear) {
+            const selected = Number(selectedYear) || getMapNoteYear();
+            return getMapNoteYearChoices(bin).map(year =>
+                `<option value="${year}"${year === selected ? ' selected' : ''}>${mapNoteYearLabel(year)}</option>`
+            ).join('');
+        }
+
+        let renderingNotesYearOptions = false;
+
+        function onNotesListYearChange() {
+            if (renderingNotesYearOptions) return;
+            updateMapControlsPanel();
+        }
+
+        function getMapNotesListYear() {
+            const select = document.getElementById('notesYearSelect');
+            const year = Number(select && select.value);
+            if (Number.isInteger(year) && year >= 2000 && year <= 2100) return year;
+            return getMapNoteYear();
+        }
+
+        function renderMapNotesYearOptions(selectedYear) {
+            const current = getMapInspectionCalendarYear(new Date());
+            const years = new Set([current, current - 1, current + 1, getMapNoteYear()]);
+            Object.keys(mapNotes || {}).forEach(bin => {
+                Object.keys(getMapBuildingNotes(bin)).forEach(year => years.add(Number(year)));
+            });
+            const selected = Number(selectedYear) || getMapNoteYear();
+            return Array.from(years).filter(year => year >= 2000 && year <= 2100).sort((a, b) => b - a).map(year =>
+                `<option value="${year}"${year === selected ? ' selected' : ''}>${mapNoteYearLabel(year)}</option>`
+            ).join('');
+        }
+
+        function getMapNoteEditorYear(bin) {
+            const select = document.getElementById(`mapNoteYear_${bin}`);
+            const year = Number(select && (select.value || select.dataset.noteYear));
+            return Number.isInteger(year) && year >= 2000 && year <= 2100 ? year : getMapNoteYear();
         }
 
         const MAP_ADDRESS_ALIAS_MAX = 5000;
@@ -22722,12 +22828,7 @@
         }
 
         function syncMapNoteDraft(bin, value) {
-            const note = String(value || '').trim();
-            if (note) {
-                mapNotes[bin] = note;
-            } else {
-                delete mapNotes[bin];
-            }
+            const note = setMapNote(bin, getMapNoteEditorYear(bin), value);
             refreshMapNoteMarkerIcon(bin);
             scheduleMapLiveTableRefresh();
             return note;
@@ -22777,9 +22878,17 @@
             if (!noteTextarea) return;
 
             const bin = noteTextarea.id.replace(/^mapNote_/, '');
-            const note = getMapNote(bin);
-            const hasNote = !!note.trim();
+            const noteYear = getMapNoteEditorYear(bin);
+            const note = getMapNote(bin, noteYear);
+            const hasNote = !!getMapNote(bin).trim();
             noteTextarea.value = note;
+            const noteYearSelect = popupRoot.querySelector(`#mapNoteYear_${bin}`);
+            if (noteYearSelect) {
+                noteYearSelect.innerHTML = renderMapNoteYearOptions(bin, noteYear);
+                noteYearSelect.dataset.noteYear = String(noteYear);
+            }
+            const noteYearHint = popupRoot.querySelector(`#mapNoteYearHint_${bin}`);
+            if (noteYearHint) noteYearHint.textContent = mapNoteYearHint(bin, noteYear);
 
             const noteEditor = popupRoot.querySelector(`#mapNoteEditor_${bin}`);
             const noteArrow = popupRoot.querySelector(`#mapNoteArrow_${bin}`);
@@ -23361,43 +23470,63 @@
             if (arrow) arrow.textContent = isOpen ? '▼' : '▲';
         }
 
+        function mapNoteYearHint(bin, year) {
+            const selected = Number(year) || getMapNoteYear();
+            const others = Object.keys(getMapBuildingNotes(bin)).map(Number).filter(noteYear => noteYear !== selected).sort((a, b) => b - a);
+            const otherText = others.length ? ` Notes from ${others.join(', ')} stay saved.` : '';
+            return `This note is saved for ${selected}.${otherText}`;
+        }
+
+        function onMapNoteYearChange(bin, year) {
+            const textarea = document.getElementById(`mapNote_${bin}`);
+            const select = document.getElementById(`mapNoteYear_${bin}`);
+            const previousYear = Number(select && select.dataset.noteYear) || getMapNoteEditorYear(bin);
+            if (textarea) setMapNote(bin, previousYear, textarea.value);
+            const nextYear = Number(year);
+            if (select) select.dataset.noteYear = String(nextYear);
+            if (textarea) textarea.value = getMapNote(bin, nextYear);
+            const hint = document.getElementById(`mapNoteYearHint_${bin}`);
+            if (hint) hint.textContent = mapNoteYearHint(bin, nextYear);
+            refreshMapNoteMarkerIcon(bin);
+            updateMapControlsPanel();
+        }
+
         function saveMapNote(bin) {
             const textarea = document.getElementById(`mapNote_${bin}`);
             if (!textarea) return;
-            const hadNote = !!mapNotes[bin];
+            const year = getMapNoteEditorYear(bin);
+            const hadNote = !!getMapNote(bin, year);
             const value = syncMapNoteDraft(bin, textarea.value);
             if (value) {
                 addMapActivity(hadNote ? 'Updated building note' : 'Added building note', {
                     type: 'Note',
                     bin,
-                    details: value.length > 120 ? value.substring(0, 120) + '...' : value
+                    details: `${year}: ${value.length > 120 ? value.substring(0, 120) + '...' : value}`
                 });
-                showMapNotification('Building note saved', '#1a73e8');
+                showMapNotification(`${year} building note saved`, '#1a73e8');
             } else {
-                if (hadNote) {
-                    addMapActivity('Cleared building note', { type: 'Note', bin });
-                    delete mapNotes[bin];
-                }
-                showMapNotification('Building note cleared', '#ff9800');
+                if (hadNote) addMapActivity('Cleared building note', { type: 'Note', bin, details: String(year) });
+                showMapNotification(`${year} building note cleared`, '#ff9800');
             }
             hydrateMapBuildingPopupState(document);
             updateMapControlsPanel();
         }
 
-        function clearMapNote(bin) {
+        function clearMapNote(bin, year) {
+            const selected = Number(year) || getMapNoteEditorYear(bin);
             const textarea = document.getElementById(`mapNote_${bin}`);
-            if (textarea) textarea.value = '';
-            const hadNote = !!mapNotes[bin];
-            delete mapNotes[bin];
+            if (textarea && getMapNoteEditorYear(bin) === selected) textarea.value = '';
+            const hadNote = !!getMapNote(bin, selected);
+            setMapNote(bin, selected, '');
             refreshMapNoteMarkerIcon(bin);
-            if (hadNote) addMapActivity('Cleared building note', { type: 'Note', bin });
-            showMapNotification('Building note cleared', '#ff9800');
+            if (hadNote) addMapActivity('Cleared building note', { type: 'Note', bin, details: String(selected) });
+            showMapNotification(`${selected} building note cleared`, '#ff9800');
             hydrateMapBuildingPopupState(document);
             updateMapControlsPanel();
         }
 
         function clearAllMapNotes() {
-            if (confirm('Clear all building notes?')) {
+            if (confirm('Clear building notes for every year?')) {
                 const count = Object.keys(mapNotes || {}).length;
                 setMapNotes({});
                 if (count > 0) addMapActivity('Cleared all building notes', { type: 'Note', details: `${count} note${count !== 1 ? 's' : ''} cleared` });
@@ -27562,14 +27691,14 @@
                 }
                 let changed = 0;
                 current.forEach(item => {
-                    const previous = mapNotes[item.bin] || '';
+                    const noteYear = getMapNoteYear();
+                    const previous = getMapNote(item.bin, noteYear);
                     let next = '';
                     if (mode === 'clear') next = '';
                     else if (mode === 'append') next = previous ? (previous.replace(/\s+$/, '') + '\n' + raw.trim()) : raw.trim();
                     else next = raw.trim();
                     if (previous === next) return;
-                    if (next) mapNotes[item.bin] = next;
-                    else delete mapNotes[item.bin];
+                    setMapNote(item.bin, noteYear, next);
                     changed += 1;
                     addMapActivity(
                         mode === 'clear' ? 'Cleared building note' : (previous ? 'Updated building note' : 'Added building note'),
@@ -30787,7 +30916,9 @@
                         <span class="mcp-arrow" id="mcpNotesArrow">›</span>
                     </div>
                     <div class="mcp-body" id="mcpNotes">
-                        <p class="mcp-desc">Buildings with saved MAP notes. Click a row to view the building.</p>
+                        <p class="mcp-desc">Notes are saved for a year. Choose an earlier year to read those notes. Click a row to view the building.</p>
+                        <label for="notesYearSelect" style="display:block; font-size:0.86em; font-weight:700; margin-bottom:4px;">Note year</label>
+                        <select id="notesYearSelect" onchange="onNotesListYearChange()" style="width:100%; margin-bottom:8px; padding:6px 8px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:0.95em; font-weight:700; box-sizing:border-box;"></select>
                         <input type="text" id="notesSearchInput" class="mcp-search-input" placeholder="🔍 Search by address, BIN, or note..."
                                oninput="filterMcpBinRowList('notesBuildingsList', this.value)">
                         <div id="notesBuildingsList" style="max-height: 220px; overflow-y: auto; margin-bottom: 8px;">
@@ -31601,13 +31732,17 @@
             const inProcessMap = getMapInProcess();
             const holdMap = getMapHold();
             const notesMap = getMapNotes();
+            const notesListYear = getMapNotesListYear();
             const favoritesCount = Object.keys(favorites).length;
             const deviceMonitorsCount = Object.keys(deviceMonitors || {}).length;
             const hiddenCount = Object.keys(hidden).length;
             const completedCount = Object.keys(completedMap).length;
             const inProcessCount = Object.keys(inProcessMap).length;
             const holdCount = Object.keys(holdMap).length;
-            const notesCount = Object.keys(notesMap).length;
+            const notesForYear = Object.entries(notesMap)
+                .map(([bin]) => [bin, getMapNote(bin, notesListYear)])
+                .filter(([, note]) => note);
+            const notesCount = notesForYear.length;
 
             const favCountEl = document.getElementById('mapFavoritesCount');
             const deviceMonitorsCountEl = document.getElementById('mapDeviceMonitorsCount');
@@ -31691,9 +31826,21 @@
             if (holdCountEl) holdCountEl.textContent = holdCount;
             if (notesCountEl) notesCountEl.textContent = notesCount;
 
+            const notesYearSelect = document.getElementById('notesYearSelect');
+            if (notesYearSelect) {
+                const selected = notesYearSelect.value || String(notesListYear);
+                const options = renderMapNotesYearOptions(Number(selected) || notesListYear);
+                if (notesYearSelect.dataset.optionSignature !== options) {
+                    renderingNotesYearOptions = true;
+                    notesYearSelect.dataset.optionSignature = options;
+                    notesYearSelect.innerHTML = options;
+                    renderingNotesYearOptions = false;
+                }
+            }
+
             if (notesListEl) {
                 if (notesCount > 0) {
-                    notesListEl.innerHTML = Object.entries(notesMap).map(([bin, note]) => {
+                    notesListEl.innerHTML = notesForYear.map(([bin, note]) => {
                         let address = '';
                         if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && window.lastBulkSearchResults.binGroups[bin]) {
                             address = window.lastBulkSearchResults.binGroups[bin].address || '';
@@ -31719,11 +31866,11 @@
                                 <span style="display:block;font-size:0.84em;opacity:0.75;padding-left:22px;line-height:1.35;white-space:normal;"><strong>Note:</strong> ${escapeMapSuggestionHtml(notePreview)}</span>
                                 ${address ? `<span style="display:block;font-size:0.8em;opacity:0.55;padding-left:22px;">BIN ${bin}</span>` : ''}
                             </span>
-                            <button onclick="clearMapNote('${bin}')" style="margin-top:5px;background:#ff9800;color:white;border:none;border-radius:3px;padding:3px 8px;cursor:pointer;font-size:0.8em;">Clear Note</button>
+                            <button onclick="clearMapNote('${bin}', ${notesListYear})" style="margin-top:5px;background:#ff9800;color:white;border:none;border-radius:3px;padding:3px 8px;cursor:pointer;font-size:0.8em;">Clear ${notesListYear} Note</button>
                         </div>`;
                     }).join('');
                 } else {
-                    notesListEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No building notes</div>';
+                    notesListEl.innerHTML = `<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No building notes for ${notesListYear}</div>`;
                 }
             }
 
@@ -34295,6 +34442,11 @@
                                 <span id="mapNoteArrow_${building.bin}" style="font-size: 11px; color: #ffc107; font-weight: 700;">${hasBuildingNote ? '▲' : '▼'}</span>
                             </div>
                             <div id="mapNoteEditor_${building.bin}" style="display: ${hasBuildingNote ? 'block' : 'none'}; padding: 0 10px 10px 10px;">
+                                <label for="mapNoteYear_${building.bin}" style="display:block; font-size:10px; font-weight:800; color:var(--text-color,#ccc); margin-bottom:4px;">Note year</label>
+                                <select id="mapNoteYear_${building.bin}" data-note-year="${getMapNoteYear()}" onchange="onMapNoteYearChange('${building.bin}', this.value)" style="width:100%; margin-bottom:5px; padding:5px 6px; border-radius:5px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); font-size:11px; font-weight:700; box-sizing:border-box;">
+                                    ${renderMapNoteYearOptions(building.bin, getMapNoteYear())}
+                                </select>
+                                <div id="mapNoteYearHint_${building.bin}" style="font-size:10px; line-height:1.35; opacity:0.75; margin-bottom:6px; color:var(--text-color);">${escapeMapSuggestionHtml(mapNoteYearHint(building.bin, getMapNoteYear()))}</div>
                                 <textarea id="mapNote_${building.bin}"
                                           placeholder="Add a note for this building..."
                                           oninput="syncMapNoteDraft('${building.bin}', this.value)"
