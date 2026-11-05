@@ -17,6 +17,11 @@ assert.match(html, /setMapSchedulePlanningYear\(view\.schedulePlanningYear, \{ s
 assert.match(html, /mapDateIsInScheduleYear\(row\.date, selectedYear\)/);
 assert.match(html, /mapScheduleYearMismatchMessage\(val\)/);
 assert.match(html, /mapScheduleYearMismatchMessage\(dateStr\)/);
+assert.match(html, /followMapScheduleDateYear\(val\);/);
+assert.match(html, /followMapScheduleDateYear\(dateStr\);/);
+assert.match(html, /followMapScheduleDateYear\(event\.target\.value\)/);
+assert.doesNotMatch(html, /id="testDateInput(?:Category|Pvi)"[^>]*\bmax=/, 'the job schedule date fields must not lock the calendar to one year');
+assert.doesNotMatch(html, /id="mapBulk(?:Category|Pvi)Date"[^>]*\bmax=/, 'the bulk schedule date fields must not lock the calendar to one year');
 
 function slice(startMarker, endMarker) {
     const start = html.indexOf(startMarker);
@@ -55,6 +60,11 @@ const currentYear = new Date().getFullYear();
 const choices = context.getMapScheduleYearChoices();
 assert.ok(choices.some(choice => choice.year === currentYear && /this year/.test(choice.label)));
 assert.ok(choices.some(choice => choice.year === currentYear + 1 && /next year/.test(choice.label)));
+assert.deepEqual(
+    [...choices.map(choice => choice.year)],
+    [0, 1, 2, 3, 4, 5].map(offset => currentYear + offset),
+    'the dropdown offers this year and the next five years'
+);
 assert.equal(context.getMapSchedulePlanningYear(), currentYear);
 
 stored.dates = { '1000001': { pvi: ['2027-04-02'], category: ['2025-01-15'], general: [] } };
@@ -84,7 +94,30 @@ assert.match(context.mapScheduleYearMismatchMessage(`${currentYear}-11-05`), new
 assert.equal(context.mapScheduleYearMismatchMessage(`${currentYear + 1}-02-02`), '');
 
 assert.equal(context.setMapSchedulePlanningYear(1999), currentYear, 'a year outside the dropdown falls back to this year');
-assert.equal(context.normalizeImportedSchedulePlanningYear ? context.normalizeImportedSchedulePlanningYear(2027) : 2027, 2027);
+
+assert.equal(context.followMapScheduleDateYear(`${currentYear + 3}-05-20`), true, 'picking a date in a future year switches to that year');
+assert.equal(context.getMapSchedulePlanningYear(), currentYear + 3);
+assert.equal(context.mapScheduleYearMismatchMessage(`${currentYear + 3}-05-20`), '');
+assert.equal(context.followMapScheduleDateYear(`${currentYear + 3}-08-01`), false, 'a date in the selected year leaves it alone');
+assert.equal(context.followMapScheduleDateYear(`${currentYear + 9}-01-10`), false, 'a year past the dropdown is not selected');
+assert.equal(context.getMapSchedulePlanningYear(), currentYear + 3);
+assert.match(context.mapScheduleYearMismatchMessage(`${currentYear + 9}-01-10`), new RegExp(`through ${currentYear + 5}`));
+assert.equal(context.followMapScheduleDateYear('0002-05-20'), false, 'a half-typed year does not switch the dropdown');
+
+const mapDates = [`${currentYear - 1}-12-01`, `${currentYear}-03-01`, `${currentYear + 1}-04-01`, `${currentYear + 3}-06-01`];
+context.setMapSchedulePlanningYear(currentYear);
+assert.deepEqual(
+    [...context.filterMapScheduleDatesForMapYear(mapDates)],
+    [`${currentYear - 1}-12-01`, `${currentYear}-03-01`],
+    'this year on the map counts past-due and this year dates, not future-year dates'
+);
+context.setMapSchedulePlanningYear(currentYear + 1);
+assert.deepEqual([...context.filterMapScheduleDatesForMapYear(mapDates)], [`${currentYear + 1}-04-01`]);
+assert.deepEqual(
+    [...context.filterMapScheduleDatesThroughThisYear(mapDates)],
+    [`${currentYear - 1}-12-01`, `${currentYear}-03-01`],
+    'No Test by June ignores future-year dates whatever the dropdown says'
+);
 
 const importStart = html.indexOf('        function normalizeImportedSchedulePlanningYear(value) {');
 const importEnd = html.indexOf('        function normalizeImportedMapView(rawData) {', importStart);
@@ -98,4 +131,4 @@ assert.equal(importContext.normalizeImportedSchedulePlanningYear('next'), null);
 assert.equal(importContext.normalizeImportedSchedulePlanningYear(1999), null);
 assert.equal(importContext.normalizeImportedSchedulePlanningYear(2101), null);
 
-console.log(`Scheduling year dropdown offers ${currentYear} and ${currentYear + 1}, and next-year dates stay in the saved map file.`);
+console.log(`Scheduling year dropdown offers ${currentYear} through ${currentYear + 5}, follows the year of a picked date, and future-year dates stay in the saved map file.`);
