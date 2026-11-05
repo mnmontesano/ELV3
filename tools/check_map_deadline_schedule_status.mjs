@@ -65,6 +65,20 @@ assert.deepEqual(status('mixedPastAndUpcoming', 'category', '2026-11-01'),
     { isScheduled: true, scheduledDate: '2026-10-20', isAfterDeadline: false },
     'an upcoming on-time date is preferred over past on-time and late dates');
 
+schedules.nextYearOnly = [['category', '2027-03-04']];
+assert.deepEqual(status('nextYearOnly', 'category', '2026-11-01'),
+    { isScheduled: false, scheduledDate: '', isAfterDeadline: false },
+    'a date planned for a later year does not schedule this year\'s deadline');
+
+schedules.nextYearWithThisYear = [['category', '2026-10-15'], ['category', '2027-03-04']];
+assert.equal(status('nextYearWithThisYear', 'category', '2026-11-01').scheduledDate, '2026-10-15',
+    'a later-year date is ignored when this year already has a date');
+
+schedules.sameFutureYear = [['category', '2027-03-04']];
+assert.deepEqual(status('sameFutureYear', 'category', '2027-06-01'),
+    { isScheduled: true, scheduledDate: '2027-03-04', isAfterDeadline: false },
+    'a date counts for a deadline in the same year');
+
 schedules.onlyPastOnTime = [['category', '2026-08-01'], ['category', '2026-09-15']];
 assert.deepEqual(status('onlyPastOnTime', 'category', '2026-11-01'),
     { isScheduled: true, scheduledDate: '2026-09-15', isAfterDeadline: false },
