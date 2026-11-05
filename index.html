@@ -25911,11 +25911,6 @@
             });
         }
 
-        function refreshMapAfterScheduleYearChange() {
-            if (typeof refreshMapSelectionMarkerIcons === 'function') refreshMapSelectionMarkerIcons();
-            if (typeof reapplyCurrentMapViewFilters === 'function') reapplyCurrentMapViewFilters({ fitMap: false, quiet: true });
-        }
-
         function setMapSchedulePlanningYear(year, options) {
             const previous = mapSchedulePlanningYear;
             const numeric = Number(year);
@@ -25926,10 +25921,7 @@
             syncMapScheduleYearControls();
             const opts = options || {};
             if (opts.silent) return mapSchedulePlanningYear;
-            if (previous !== mapSchedulePlanningYear) {
-                applyMapScheduleYearToOpenEditors();
-                refreshMapAfterScheduleYearChange();
-            }
+            if (previous !== mapSchedulePlanningYear) applyMapScheduleYearToOpenEditors();
             if (typeof updateTestDatesPanel === 'function') updateTestDatesPanel();
             return mapSchedulePlanningYear;
         }
@@ -25944,16 +25936,11 @@
             return true;
         }
 
-        // Map markers and Scheduled filters follow the scheduling year: this year shows every
-        // date through this year (past-due included); a future year shows only that year's dates.
+        // Map markers and Scheduled filters show this year's work: every date through this year,
+        // past-due included. The Scheduling year dropdown changes where new dates go, not the map,
+        // so planning a later year never hides a test scheduled for later this year.
         function filterMapScheduleDatesForMapYear(dates) {
-            const list = Array.isArray(dates) ? dates : [];
-            const current = getMapInspectionCalendarYear(new Date());
-            const selected = Number(mapSchedulePlanningYear);
-            if (Number.isInteger(selected) && selected > current) {
-                return list.filter(date => mapScheduleDateYear(date) === selected);
-            }
-            return list.filter(date => mapScheduleDateYear(date) <= current);
+            return filterMapScheduleDatesThroughThisYear(dates);
         }
 
         function filterMapScheduleDatesThroughThisYear(dates) {
