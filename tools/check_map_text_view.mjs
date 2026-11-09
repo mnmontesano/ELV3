@@ -121,6 +121,7 @@ const context = {
     getMapTypedScheduleRows: bin => schedules[bin] || [],
     getMapDeadlinesForBin: () => [],
     getMapAddressAliasNamesForBin: () => ['Broadway Tower'],
+    getMapAddressCode: bin => (bin === '1000001' ? 'A-1042' : ''),
     getMapCompletedTestLabel: () => 'PVI and Category completed',
     mapAvailabilityScheduleTypeLabel: type => String(type || '').toUpperCase(),
     formatMapTestDateRange: date => date,
@@ -141,6 +142,7 @@ const entries = context.collectMapTextViewEntries();
 assert.equal(entries.length, 2, 'text view keeps only markers currently on the map');
 assert.deepEqual([...entries.map(entry => entry.title)], ['100 Broadway', 'Office house']);
 assert.equal(entries[0].month, 'March');
+assert.equal(entries[0].code, 'A-1042');
 assert.equal(entries[0].note, 'Call the super before arrival');
 assert.deepEqual([...entries[0].aliases], ['Broadway Tower']);
 assert.equal(entries[0].ready.length, 1);
@@ -163,6 +165,7 @@ assert.match(text, /^MAP text view/);
 assert.match(text, /Filter: Hide Scheduled Test Dates & Completed Jobs within March/);
 assert.match(text, /2 locations shown · 2 devices/);
 assert.match(text, /1\. 100 Broadway/);
+assert.match(text, /Code: A-1042/);
 assert.match(text, /BIN: 1000001/);
 assert.match(text, /Month: March/);
 assert.match(text, /Also known as: Broadway Tower/);
@@ -192,20 +195,23 @@ const table = context.buildMapTextViewExportTable(entries, exportMeta);
 assert.equal(table.headers[0], 'Filter');
 assert.equal(table.headers[2], 'Location');
 assert.equal(table.rows.length, 2);
+assert.equal(table.headers[3], 'Code Number');
 assert.equal(table.rows[0][2], '100 Broadway');
-assert.equal(table.rows[0][4], '1000001');
-assert.equal(table.rows[0][5], 'March');
-assert.match(table.rows[0][15], /1P100 - Passenger - Category - Available now/);
-assert.match(table.rows[0][16], /1P200/);
-assert.match(table.rows[0][16], /45 days/);
-assert.equal(table.rows[0][19], 'Call the super before arrival');
+assert.equal(table.rows[0][3], 'A-1042');
+assert.equal(table.rows[0][5], '1000001');
+assert.equal(table.rows[0][6], 'March');
+assert.match(table.rows[0][16], /1P100 - Passenger - Category - Available now/);
+assert.match(table.rows[0][17], /1P200/);
+assert.match(table.rows[0][17], /45 days/);
+assert.equal(table.rows[0][20], 'Call the super before arrival');
 assert.equal(table.rows[1][2], 'Office house');
-assert.equal(table.rows[1][3], 'House pin - stays on the map with filters');
-assert.equal(table.rows[1][20], '40.73000');
+assert.equal(table.rows[1][3], '');
+assert.equal(table.rows[1][4], 'House pin - stays on the map with filters');
+assert.equal(table.rows[1][21], '40.73000');
 assert.ok(!table.rows.some(row => String(row[2]).includes('200 Scheduled')));
 
 const csv = context.formatMapTextViewCsv(entries, exportMeta);
-assert.match(csv, /"Filter","Text search","Location"/);
+assert.match(csv, /"Filter","Text search","Location","Code Number"/);
 assert.match(csv, /"100 Broadway"/);
 assert.match(csv, /"1000001"/);
 assert.match(csv, /"Call the super before arrival"/);

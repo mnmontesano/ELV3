@@ -1354,6 +1354,7 @@
                             #mapControlsPanelBody.mcp-detail-mode #transportationLocationsList,
                             #mapControlsPanelBody.mcp-detail-mode #customNamesList,
                             #mapControlsPanelBody.mcp-detail-mode #mapAddressAliasesList,
+                            #mapControlsPanelBody.mcp-detail-mode #mapAddressCodesList,
                             #mapControlsPanelBody.mcp-detail-mode #completedBuildingsList,
                             #mapControlsPanelBody.mcp-detail-mode #reviewBuildingsList,
                             #mapControlsPanelBody.mcp-detail-mode #monthLabelsList,
@@ -1378,6 +1379,7 @@
                             #transportationLocationsList,
                             #customNamesList,
                             #mapAddressAliasesList,
+                            #mapAddressCodesList,
                             #completedBuildingsList,
                             #reviewBuildingsList,
                             #monthLabelsList,
@@ -1400,6 +1402,7 @@
                             #mapControlsPanel.mcp-popped-out #transportationLocationsList,
                             #mapControlsPanel.mcp-popped-out #customNamesList,
                             #mapControlsPanel.mcp-popped-out #mapAddressAliasesList,
+                            #mapControlsPanel.mcp-popped-out #mapAddressCodesList,
                             #mapControlsPanel.mcp-popped-out #completedBuildingsList,
                             #mapControlsPanel.mcp-popped-out #reviewBuildingsList,
                             #mapControlsPanel.mcp-popped-out #monthLabelsList,
@@ -1868,6 +1871,32 @@
                             </div>
                         </div>
 
+                        <!-- Address code numbers saved with each map address -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpAddressCodes')">
+                                <span class="mcp-title"><span style="color:#6d4c41;">#</span> Address Codes - <span id="mapAddressCodesCount">0</span></span>
+                                <span class="mcp-arrow" id="mcpAddressCodesArrow">›</span>
+                            </div>
+                            <div class="mcp-body" id="mcpAddressCodes">
+                                <p class="mcp-desc">Add a code number to an address on this map. It shows with that address in the popup, the map search finds it, and it is stored in the map save file.</p>
+                                <div style="background: var(--input-bg); padding: 8px; border-radius: 6px; border: 1px solid rgba(109,76,65,0.35); margin-bottom: 10px;">
+                                    <label for="mapAddressCodeBinInput" style="display: block; font-size: 0.82em; font-weight: 700; margin-bottom: 3px;">BIN</label>
+                                    <input type="text" id="mapAddressCodeBinInput" class="mcp-search-input" inputmode="numeric" maxlength="7" placeholder="e.g. 1000001" autocomplete="off"
+                                           onkeydown="if (event.key === 'Enter') { event.preventDefault(); document.getElementById('mapAddressCodeValueInput').focus(); }">
+                                    <label for="mapAddressCodeValueInput" style="display: block; font-size: 0.82em; font-weight: 700; margin-bottom: 3px;">Code number</label>
+                                    <input type="text" id="mapAddressCodeValueInput" class="mcp-search-input" maxlength="32" placeholder="e.g. A-1042" autocomplete="off"
+                                           onkeydown="if (event.key === 'Enter') { event.preventDefault(); addMapAddressCodeFromForm(); }">
+                                    <button type="button" onclick="addMapAddressCodeFromForm()" class="mcp-btn" style="color:#6d4c41; font-weight:700; margin-top: 2px;">Add code number</button>
+                                </div>
+                                <input type="text" id="mapAddressCodesSearchInput" class="mcp-search-input" placeholder="🔍 Search code, address, BIN..."
+                                       oninput="filterMapAddressCodesList(this.value)">
+                                <div id="mapAddressCodesList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No address codes</div>
+                                </div>
+                                <button type="button" onclick="clearAllMapAddressCodes()" class="mcp-btn" style="color:#6d4c41;">Clear All Address Codes</button>
+                            </div>
+                        </div>
+
                         <!-- Houses (additional locations marked as house) -->
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpHouses')">
@@ -2008,6 +2037,7 @@
                                     <li>Review lists buildings marked completed that still have devices without the marked test filed for this year. It is separate from the REVIEW month label</li>
                                     <li>Map view filter: Hide Category Completed leaves PVI-only jobs visible; Hide PVI Completed leaves Category-only jobs visible. Fully completed jobs are hidden by both.</li>
                                     <li>Text View lists the locations currently drawn on the map after the Map view filter, including Hide Scheduled Test Dates &amp; Completed Jobs, as readable text you can copy, or export to Excel or CSV</li>
+                                    <li>Address Codes adds a code number to a map address. It shows on that address in the popup, and it is saved in the map file</li>
                                     <li>No Test Yet lists devices with no Category or PVI this year and counts down days left to finish both tests 91 days apart</li>
                                     <li>Disregard in No Test Yet hides only that device from the list and map highlight; other devices at the same building stay visible</li>
                                     <li>Copy on a No Test Yet building copies that building's devices; Copy All Devices copies every remaining device across all buildings</li>
@@ -11134,6 +11164,7 @@
         let mapTestDates = {};
         let mapDeadlines = {};
         let mapNotes = {};
+        let mapAddressCodes = {}; // key: BIN or custom:lat,lng → code number shown with that address
         let mapCat5Bypasses = {}; // key: "BIN::DEVICE_NUMBER" → { bypassed, note, timestamp }
         let mapCat1Bypasses = {}; // key: "BIN::DEVICE_NUMBER" → { bypassed, note, timestamp }
         let mapPviBypasses = {}; // key: "BIN::DEVICE_NUMBER" → { bypassed, note, timestamp }
@@ -11612,6 +11643,7 @@
                 testDates: getMapTestDates(),
                 deadlines: getMapDeadlines(),
                 notes: getMapNotes(),
+                addressCodes: getMapAddressCodes(),
                 addressAliases: getMapAddressAliases(),
                 cat5Bypasses: getMapCat5Bypasses(),
                 cat1Bypasses: getMapCat1Bypasses(),
@@ -14426,6 +14458,8 @@
             if (values.note) mapNotes[bin] = values.note;
             else delete mapNotes[bin];
 
+            setMapAddressCode(bin, values.addressCode || '');
+
             const deadlineRecord = {};
             if (values.deadlineCategoryDate) deadlineRecord.category = values.deadlineCategoryDate;
             if (values.deadlinePviDate) deadlineRecord.pvi = values.deadlinePviDate;
@@ -14609,6 +14643,9 @@
             const planningBins = new Set(groupRowByBin.keys());
             [mapMonthLabels, mapTestDates, mapDeadlines, mapNotes, mapFavorites, mapHidden, mapInProcess, mapHold, mapDeviceMonitors, mapCompleted]
                 .forEach(store => Object.keys(store || {}).forEach(bin => planningBins.add(String(bin))));
+            Object.keys(mapAddressCodes || {}).forEach(key => {
+                if (isMapBinStoreKey(key)) planningBins.add(String(key));
+            });
             const planningRows = Array.from(planningBins).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(bin => {
                 const groupRow = groupRowByBin.get(bin);
                 const group = groupRow ? groupRow.group : null;
@@ -14633,6 +14670,7 @@
                         completedCategoryDates: completedSchedule.category.slice(),
                         completedGeneralDates: completedSchedule.general.slice(),
                         note: mapNotes[bin] || '',
+                        addressCode: getMapAddressCode(bin),
                         favorite: !!mapFavorites[bin],
                         hidden: !!mapHidden[bin],
                         inProcess: !!mapInProcess[bin],
@@ -14802,6 +14840,15 @@
                         planningDateListColumn('scheduled_unspecified_dates', 'Scheduled Unspecified Dates', 'scheduledGeneralDates', ''),
                         planningColumn('deadline_cat_date', 'Deadline CAT Date', 'deadlineCategoryDate', { parse: parseMapTableSingleDateInput }),
                         planningColumn('deadline_pvi_date', 'Deadline PVI Date', 'deadlinePviDate', { parse: parseMapTableSingleDateInput }),
+                        planningColumn('address_code', 'Code Number', 'addressCode', {
+                            parse: rawValue => {
+                                const code = normalizeMapAddressCode(rawValue);
+                                if (code === null) {
+                                    return { valid: false, message: 'Use letters, numbers, spaces, and - # / . _ (32 characters max).' };
+                                }
+                                return { valid: true, value: code };
+                            }
+                        }),
                         planningColumn('building_note', 'Building Note', 'note', { multiline: true }),
                         planningColumn('favorite', 'Favorite', 'favorite', { inputType: 'boolean' }),
                         planningColumn('hidden', 'Hidden', 'hidden', { inputType: 'boolean' }),
@@ -15781,6 +15828,7 @@
             const item = entry || {};
             const lines = [(Number(index) + 1) + '. ' + (item.title || 'Untitled location')];
             const push = line => lines.push('   ' + line);
+            if (item.code) push('Code: ' + item.code);
             if (item.kindLabel) push(item.kindLabel);
             if (item.bin) push('BIN: ' + item.bin);
             if (Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)) && (item.passthrough || item.kind === 'additional')) {
@@ -15834,6 +15882,7 @@
             'Filter',
             'Text search',
             'Location',
+            'Code Number',
             'Kind',
             'BIN',
             'Month',
@@ -15873,6 +15922,7 @@
                 info.heading || 'Current map view',
                 info.findQuery || '',
                 item.title || 'Untitled location',
+                item.code || '',
                 item.kindLabel || (item.kind === 'additional' ? 'Additional location' : 'Building'),
                 item.bin || '',
                 item.month || '',
@@ -16058,6 +16108,7 @@
                 allRequiredTestsCompletedForYear: !!building.allRequiredTestsCompletedForYear,
                 calendarYear: building.calendarYear || '',
                 note: typeof getMapNote === 'function' ? String(getMapNote(bin) || '').trim() : '',
+                code: typeof getMapAddressCode === 'function' ? String(getMapAddressCode(bin) || '').trim() : '',
                 latitude: Number(building.latitude),
                 longitude: Number(building.longitude)
             };
@@ -16092,6 +16143,7 @@
                 allRequiredTestsCompletedForYear: !!snapshot.allRequiredTestsCompletedForYear,
                 calendarYear: snapshot.calendarYear || '',
                 note: key && typeof getMapNote === 'function' ? String(getMapNote(key) || '').trim() : '',
+                code: key && typeof getMapAddressCode === 'function' ? String(getMapAddressCode(key) || '').trim() : '',
                 latitude: Number(location.latitude),
                 longitude: Number(location.longitude)
             };
@@ -17358,6 +17410,7 @@
                     ['Scheduled Date Buildings', Object.keys(view.testDates || {}).length],
                     ['Deadline Buildings', Object.keys(view.deadlines || {}).length],
                     ['Note Buildings', Object.keys(view.notes || {}).length],
+                    ['Address Codes', Object.keys(view.addressCodes || {}).length],
                     ['Alternate Addresses', Array.isArray(view.addressAliases) ? view.addressAliases.length : 0],
                     ['No Test Disregarded', Object.keys(view.noTestByJuneDisregarded || {}).length],
                     ['No Test Yet Disregarded', Object.keys(view.noTestYetDisregarded || {}).length],
@@ -17375,7 +17428,7 @@
 
                 const groupKeys = collectMapExcelObjectKeys(buildingEntries.map(([, group]) => group), ['devices']);
                 const buildingHeaders = [
-                    'BIN', 'Address', 'Latitude', 'Longitude', 'Device Count', 'Active Map Job Device Count',
+                    'BIN', 'Address', 'Code Number', 'Latitude', 'Longitude', 'Device Count', 'Active Map Job Device Count',
                     'Violation Count', 'Favorite', 'Hidden', 'Completed', 'Completion Scope', 'Completed Date', 'Completed PVI Dates', 'Completed Category Dates', 'In Process',
                     'In Process Date', 'On Hold',                     'Scheduled PVI Dates', 'Scheduled Category Dates', 'Scheduled Unspecified Dates',
                     'Deadline CAT Date', 'Deadline PVI Date',
@@ -17389,6 +17442,7 @@
                     return [
                         bin,
                         getMapExcelBuildingAddress(bin, group, view),
+                        view.addressCodes && view.addressCodes[bin] ? view.addressCodes[bin] : '',
                         group.latitude || '',
                         group.longitude || '',
                         devices.length,
@@ -17512,6 +17566,16 @@
                     appendMapExcelSheet(workbook, usedSheetNames, 'Notes', ['BIN', 'Address', 'Note'], noteRows);
                 }
 
+                const addressCodeRows = Object.entries(view.addressCodes || {}).map(([key, code]) => [
+                    isMapBinStoreKey(key) ? key : '',
+                    getMapAddressCodePlace(key),
+                    code,
+                    isMapCustomLocationStoreKey(key) ? key : ''
+                ]);
+                if (addressCodeRows.length) {
+                    appendMapExcelSheet(workbook, usedSheetNames, 'Address Codes', ['BIN', 'Address', 'Code Number', 'Custom Location Key'], addressCodeRows);
+                }
+
                 const aliasDeviceIndex = buildMapAliasDeviceBinIndex(binGroups);
                 const aliasRows = (Array.isArray(view.addressAliases) ? view.addressAliases : []).map(alias => {
                     const resolved = resolveMapAddressAliasDevices(alias.devices || [], aliasDeviceIndex, binGroups);
@@ -17564,6 +17628,7 @@
                     ...splitMapExcelSectionRows('testDates', view.testDates || {}),
                     ...splitMapExcelSectionRows('deadlines', view.deadlines || {}),
                     ...splitMapExcelSectionRows('notes', view.notes || {}),
+                    ...splitMapExcelSectionRows('addressCodes', view.addressCodes || {}),
                     ...splitMapExcelSectionRows('addressAliases', view.addressAliases || []),
                     ...splitMapExcelSectionRows('noTestByJuneDisregarded', view.noTestByJuneDisregarded || {}),
                     ...splitMapExcelSectionRows('noTestYetDisregarded', view.noTestYetDisregarded || {}),
@@ -17643,6 +17708,7 @@
                     testDates: view.testDates || {},
                     deadlines: view.deadlines || {},
                     notes: view.notes || {},
+                    addressCodes: normalizeMapAddressCodes(view.addressCodes),
                     addressAliases: Array.isArray(view.addressAliases) ? view.addressAliases : [],
                     cat5Bypasses: view.cat5Bypasses || {},
                     cat1Bypasses: view.cat1Bypasses || {},
@@ -17934,6 +18000,18 @@
                     throw new Error('Map view contains an invalid activity entry.');
                 }
             });
+            if (source.addressCodes != null) {
+                if (typeof source.addressCodes !== 'object' || Array.isArray(source.addressCodes)) {
+                    throw new Error('Map view contains invalid address codes.');
+                }
+                const addressCodeKeys = Object.keys(source.addressCodes);
+                if (addressCodeKeys.length > MAP_ADDRESS_CODE_STORE_MAX) {
+                    throw new Error('Map view contains too many address codes.');
+                }
+                if (addressCodeKeys.some(key => !isValidMapCompletedStoreKey(key))) {
+                    throw new Error('Map view contains an invalid address code.');
+                }
+            }
             if (source.addressAliases != null && !Array.isArray(source.addressAliases)) {
                 throw new Error('Map view contains invalid alternate addresses.');
             }
@@ -18054,6 +18132,7 @@
                 testDates: testDates,
                 deadlines: source.deadlines || {},
                 notes: source.notes || {},
+                addressCodes: normalizeMapAddressCodes(source.addressCodes),
                 addressAliases: normalizeMapAddressAliases(source.addressAliases),
                 cat5Bypasses: normalizedCat5Bypasses,
                 cat1Bypasses: normalizedCat1Bypasses,
@@ -18084,6 +18163,7 @@
             if (typeof updateMapFutureYearControls === 'function') updateMapFutureYearControls();
             setMapDeadlines(view.deadlines || {});
             setMapNotes(view.notes || {});
+            setMapAddressCodes(view.addressCodes || {});
             setMapAddressAliases(view.addressAliases || []);
             setMapCat5Bypasses(view.cat5Bypasses || {});
             setMapCat1Bypasses(view.cat1Bypasses || {});
@@ -21736,6 +21816,270 @@
             return mapNotes[bin] || '';
         }
 
+        const MAP_ADDRESS_CODE_MAX = 32;
+        const MAP_ADDRESS_CODE_STORE_MAX = 10000;
+
+        function cleanMapAddressCode(value) {
+            const text = String(value == null ? '' : value)
+                .replace(/[^A-Za-z0-9 .#\/_-]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, MAP_ADDRESS_CODE_MAX);
+            if (!text || !/^[A-Za-z0-9]/.test(text)) return '';
+            return text;
+        }
+
+        // Empty string clears the code. null means the typed value is not a usable code.
+        function normalizeMapAddressCode(value) {
+            const trimmed = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+            if (!trimmed) return '';
+            const cleaned = cleanMapAddressCode(trimmed);
+            return cleaned === trimmed ? cleaned : null;
+        }
+
+        function normalizeMapAddressCodes(value) {
+            const result = {};
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
+            Object.keys(value).slice(0, MAP_ADDRESS_CODE_STORE_MAX).forEach(key => {
+                if (!isValidMapCompletedStoreKey(key)) return;
+                const code = cleanMapAddressCode(value[key]);
+                if (code) result[String(key)] = code;
+            });
+            return result;
+        }
+
+        function getMapAddressCodes() {
+            return mapAddressCodes;
+        }
+
+        function setMapAddressCodes(codes) {
+            mapAddressCodes = normalizeMapAddressCodes(codes);
+        }
+
+        function getMapAddressCode(key) {
+            return mapAddressCodes[String(key || '')] || '';
+        }
+
+        function setMapAddressCode(key, value) {
+            const storeKey = String(key || '');
+            if (!isValidMapCompletedStoreKey(storeKey)) return false;
+            const code = normalizeMapAddressCode(value);
+            if (code === null) {
+                if (typeof showMapNotification === 'function') {
+                    showMapNotification('Code numbers use letters, numbers, spaces, and - # / . _ (32 characters max)', '#ff6b6b');
+                }
+                return false;
+            }
+            if (!code) delete mapAddressCodes[storeKey];
+            else mapAddressCodes[storeKey] = code;
+            return true;
+        }
+        // MAP_ADDRESS_CODE_HELPERS_END
+
+        function getMapAddressCodePlace(key) {
+            const storeKey = String(key || '');
+            const groups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            if (groups[storeKey] && groups[storeKey].address) return String(groups[storeKey].address);
+            const location = findAdditionalLocationByCompletionKey(storeKey);
+            if (location) {
+                const label = getAdditionalLocationLabel(location);
+                if (label) return String(label);
+            }
+            const sources = [mapCompleted, mapInProcess, mapHold, mapFavorites, mapHidden];
+            for (const source of sources) {
+                if (source && source[storeKey] && source[storeKey].address) return String(source[storeKey].address);
+            }
+            if (isMapBinStoreKey(storeKey)) return 'BIN ' + storeKey;
+            return 'Custom location';
+        }
+
+        function renderMapAddressCodeBadgeHtml(storeKey) {
+            const key = String(storeKey || '');
+            if (!isValidMapCompletedStoreKey(key)) return '';
+            const code = getMapAddressCode(key);
+            return `<span class="map-address-code-badge" data-map-address-code-badge="${escapeMapSuggestionHtml(key)}" style="color:#6d4c41; font-weight:800;">${code ? ' · ' + escapeMapSuggestionHtml(code) : ''}</span>`;
+        }
+
+        function renderMapAddressCodeRowHtml(storeKey) {
+            const key = String(storeKey || '');
+            if (!isValidMapCompletedStoreKey(key)) return '';
+            const code = getMapAddressCode(key);
+            const keyHtml = escapeMapSuggestionHtml(key);
+            return `<div class="map-address-code-row" style="display:flex; align-items:center; gap:6px; margin:-2px 0 8px 0;">
+                <label style="font-size:11px; font-weight:800; letter-spacing:0.04em; color:#6d4c41; flex-shrink:0; margin:0;">CODE</label>
+                <input type="text" class="map-address-code-input" value="${escapeMapSuggestionHtml(code)}" maxlength="${MAP_ADDRESS_CODE_MAX}"
+                    placeholder="Add a code number" aria-label="Address code number"
+                    data-map-address-code-key="${keyHtml}"
+                    onchange="saveMapAddressCode(this.getAttribute('data-map-address-code-key'), this.value, this)"
+                    style="flex:1; min-width:0; margin:0; padding:4px 8px; border-radius:4px; border:1px solid ${code ? '#6d4c41' : 'var(--input-border)'}; background:var(--input-bg); color:var(--text-color); font-size:13px; font-weight:700; letter-spacing:0.02em; outline:none; box-sizing:border-box;">
+            </div>`;
+        }
+
+        function hydrateMapAddressCodeFields(root) {
+            const scope = root && root.querySelectorAll ? root : document;
+            scope.querySelectorAll('input[data-map-address-code-key]').forEach(el => {
+                const code = getMapAddressCode(el.getAttribute('data-map-address-code-key'));
+                el.value = code;
+                el.style.borderColor = code ? '#6d4c41' : 'var(--input-border)';
+            });
+            scope.querySelectorAll('[data-map-address-code-badge]').forEach(el => {
+                const code = getMapAddressCode(el.getAttribute('data-map-address-code-badge'));
+                el.textContent = code ? ' · ' + code : '';
+            });
+        }
+
+        function saveMapAddressCode(key, value, input) {
+            const storeKey = String(key || '');
+            if (!isValidMapCompletedStoreKey(storeKey)) {
+                showMapNotification('That location cannot take a code number', '#ff6b6b');
+                return false;
+            }
+            const previous = getMapAddressCode(storeKey);
+            const trimmed = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+            if (!trimmed && !previous) {
+                showMapNotification('Enter a code number', '#ff6b6b');
+                return false;
+            }
+            if (!setMapAddressCode(storeKey, trimmed)) {
+                if (input) input.value = previous;
+                return false;
+            }
+            const code = getMapAddressCode(storeKey);
+            hydrateMapAddressCodeFields(document);
+            if (previous !== code) {
+                addMapActivity(code ? 'Set address code' : 'Cleared address code', {
+                    type: 'Address Code',
+                    bin: isMapBinStoreKey(storeKey) ? storeKey : '',
+                    address: getMapAddressCodePlace(storeKey),
+                    details: code || previous
+                });
+            }
+            showMapNotification(code ? `Address code saved: ${code}` : 'Address code cleared', code ? '#6d4c41' : '#ff9800');
+            updateMapAddressCodesPanel();
+            if (typeof scheduleMapTextViewRefresh === 'function') scheduleMapTextViewRefresh();
+            return true;
+        }
+
+        function addMapAddressCodeFromForm() {
+            const binInput = document.getElementById('mapAddressCodeBinInput');
+            const codeInput = document.getElementById('mapAddressCodeValueInput');
+            const bin = String(binInput && binInput.value || '').replace(/\D/g, '');
+            if (!isMapBinStoreKey(bin)) {
+                showMapNotification('Enter a 6 or 7 digit BIN', '#ff6b6b');
+                return;
+            }
+            const groups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            if (!groups[bin] && !findAdditionalLocationByCompletionKey(bin)) {
+                showMapNotification('That BIN is not on this map', '#ff6b6b');
+                return;
+            }
+            if (!saveMapAddressCode(bin, codeInput ? codeInput.value : '')) return;
+            if (binInput) binInput.value = '';
+            if (codeInput) codeInput.value = '';
+        }
+
+        function clearAllMapAddressCodes() {
+            const count = Object.keys(mapAddressCodes || {}).length;
+            if (!count) {
+                showMapNotification('No address codes to clear', '#6d4c41');
+                return;
+            }
+            if (!confirm('Clear all address code numbers?')) return;
+            setMapAddressCodes({});
+            addMapActivity('Cleared all address codes', {
+                type: 'Address Code',
+                details: `${count} code${count === 1 ? '' : 's'} cleared`
+            });
+            showMapNotification('All address codes cleared', '#ff9800');
+            updateMapAddressCodesPanel();
+            if (typeof scheduleMapTextViewRefresh === 'function') scheduleMapTextViewRefresh();
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && buildingMap) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
+
+        function flyToMapAddressCode(key) {
+            const storeKey = String(key || '');
+            if (isMapBinStoreKey(storeKey)) {
+                flyToMapBuilding(storeKey);
+                return;
+            }
+            const location = findAdditionalLocationByCompletionKey(storeKey);
+            if (location) {
+                flyToAdditionalLocation(location.latitude, location.longitude);
+                return;
+            }
+            showMapNotification('This code is not on the current map', '#ff6b6b');
+        }
+
+        function updateMapAddressCodesPanel() {
+            const countEl = document.getElementById('mapAddressCodesCount');
+            const listEl = document.getElementById('mapAddressCodesList');
+            const entries = Object.entries(mapAddressCodes || {});
+            if (countEl) countEl.textContent = String(entries.length);
+            if (typeof refreshMcpDetailBackTitle === 'function') refreshMcpDetailBackTitle();
+            if (!listEl) return;
+            if (!entries.length) {
+                listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No address codes</div>';
+                return;
+            }
+            entries.sort((left, right) => getMapAddressCodePlace(left[0]).localeCompare(getMapAddressCodePlace(right[0]), undefined, {
+                numeric: true,
+                sensitivity: 'base'
+            }));
+            listEl.innerHTML = entries.map(([key, code]) => {
+                const place = getMapAddressCodePlace(key);
+                const keyHtml = escapeMapSuggestionHtml(key);
+                const searchText = escapeMapSuggestionHtml([code, place, key].join(' '));
+                const binLine = isMapBinStoreKey(key) ? `BIN ${escapeMapSuggestionHtml(key)}` : 'Custom location';
+                return `
+                <div data-map-address-code-row="1" data-search="${searchText}" style="background: var(--input-bg); padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid rgba(109,76,65,0.35);">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:4px;">
+                        <div style="flex:1; min-width:0; cursor:pointer;" title="Click to view on map" data-map-address-code-key="${keyHtml}" onclick="flyToMapAddressCode(this.getAttribute('data-map-address-code-key'))">
+                            <div style="font-size:0.9em; font-weight:700; color:#6d4c41; word-break:break-word; text-decoration:underline dotted;"># ${escapeMapSuggestionHtml(code)}</div>
+                            <div style="font-size:0.8em; opacity:0.75; word-break:break-word;">${escapeMapSuggestionHtml(place)}</div>
+                            <div style="font-size:0.76em; opacity:0.65;">${binLine}</div>
+                        </div>
+                        <button type="button" data-map-address-code-key="${keyHtml}" onclick="saveMapAddressCode(this.getAttribute('data-map-address-code-key'), '')" title="Remove code number" aria-label="Remove code number"
+                                style="flex-shrink:0; margin:0; background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.4); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 0.88em;">✕</button>
+                    </div>
+                    <input type="text" class="map-address-code-input" value="${escapeMapSuggestionHtml(code)}" maxlength="${MAP_ADDRESS_CODE_MAX}" placeholder="Code number" aria-label="Code number for ${escapeMapSuggestionHtml(place)}"
+                           data-map-address-code-key="${keyHtml}"
+                           onchange="saveMapAddressCode(this.getAttribute('data-map-address-code-key'), this.value, this)"
+                           style="width: 100%; margin: 0; padding: 4px 7px; border-radius: 4px; border: 1px solid rgba(109,76,65,0.5); background: var(--input-bg); color: var(--text-color); font-size: 0.88em; font-weight: 700; box-sizing: border-box; outline: none;">
+                </div>`;
+            }).join('');
+            const searchInput = document.getElementById('mapAddressCodesSearchInput');
+            if (searchInput && searchInput.value.trim()) filterMapAddressCodesList(searchInput.value);
+        }
+
+        function filterMapAddressCodesList(query) {
+            const list = document.getElementById('mapAddressCodesList');
+            if (!list) return;
+            const q = String(query || '').toLowerCase().trim();
+            const items = list.querySelectorAll(':scope > div[data-map-address-code-row]');
+            let anyVisible = false;
+            items.forEach(el => {
+                const match = !q || String(el.dataset.search || '').toLowerCase().includes(q);
+                el.style.display = match ? '' : 'none';
+                if (match) anyVisible = true;
+            });
+            const noResultsId = 'mapAddressCodesNoFilterMatch';
+            let noResults = document.getElementById(noResultsId);
+            if (!anyVisible && q && items.length > 0) {
+                if (!noResults) {
+                    noResults = document.createElement('div');
+                    noResults.id = noResultsId;
+                    noResults.style.cssText = 'font-size:1em;opacity:0.6;text-align:center;padding:8px;';
+                    list.appendChild(noResults);
+                }
+                noResults.textContent = 'No matches for "' + query + '"';
+                noResults.style.display = '';
+            } else if (noResults) {
+                noResults.style.display = 'none';
+            }
+        }
+
         const MAP_ADDRESS_ALIAS_MAX = 5000;
         const MAP_ADDRESS_ALIAS_NAME_MAX = 200;
         const MAP_ADDRESS_ALIAS_DEVICES_MAX = 50;
@@ -23455,6 +23799,7 @@
             const popupRoot = popup.getElement();
             if (!popupRoot) return;
             hydrateMapAddressAliasBoxes(popupRoot);
+            hydrateMapAddressCodeFields(popupRoot);
             hydrateMapBuildingPopupState(popupRoot);
             const untrackedContainer = popupRoot.querySelector
                 ? popupRoot.querySelector('[id^="mapUntrackedDevices_"]')
@@ -23906,9 +24251,14 @@
 
         function buildMapTestingAvailabilityTooltipHtml(title, devicesHtml, noteBin, scheduleKey) {
             const note = noteBin ? String(getMapNote(noteBin) || '').trim() : '';
+            const codeKey = scheduleKey || noteBin;
+            const code = codeKey ? String(getMapAddressCode(codeKey) || '').trim() : '';
             const scheduleHtml = buildMapScheduledTestDatesTooltipHtml(scheduleKey || noteBin);
             const aliasNames = noteBin ? getMapAddressAliasesForBin(noteBin).map(alias => alias.name) : [];
-            if (!devicesHtml && !note && !scheduleHtml && !aliasNames.length) return '';
+            if (!devicesHtml && !note && !scheduleHtml && !aliasNames.length && !code) return '';
+            const codeHtml = code
+                ? `<div class="map-availability-code" style="color:#6d4c41; font-weight:800; margin:-2px 0 4px 0;">Code ${escapeMapSuggestionHtml(code)}</div>`
+                : '';
             const aliasHtml = aliasNames.length
                 ? `<div class="map-availability-alias" style="color:#e64a19; font-weight:700; margin:-2px 0 4px 0;">🔁 ${escapeMapSuggestionHtml(aliasNames.join(' · '))}</div>`
                 : '';
@@ -23919,7 +24269,7 @@
                 ? ''
                 : '<div class="map-availability-summary" style="opacity:0.75;">No device testing dates on file</div>');
             return `<div class="map-availability-title">${escapeMapSuggestionHtml(title)}</div>
-                ${aliasHtml}${scheduleHtml}${deviceSection}${noteHtml}`;
+                ${codeHtml}${aliasHtml}${scheduleHtml}${deviceSection}${noteHtml}`;
         }
 
         // Hover-only: on touch screens a tap already opens the full popup.
@@ -32223,6 +32573,7 @@
         function updateMapControlsPanel() {
             ensureMapControlsNotesSection();
             updateMapAddressAliasesPanel();
+            updateMapAddressCodesPanel();
             const favorites = getMapFavorites();
             const deviceMonitors = getMapDeviceMonitors();
             const hidden = getMapHidden();
@@ -34738,7 +35089,8 @@
                 const popupContent = `
                     <div class="map-popup-content" style="min-width: 380px; max-width: 460px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                         <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isCompleted ? completionColor : isInProcess ? '#e67e22' : isHold ? '#607d8b' : isFavorited ? '#9b59b6' : '#1a73e8'};">
-                            <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${building.address}</div>
+                            <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${building.address}${renderMapAddressCodeBadgeHtml(building.bin)}</div>
+                            ${renderMapAddressCodeRowHtml(building.bin)}
                             <div class="map-popup-aliases" data-map-alias-bin="${building.bin}" style="margin: -4px 0 8px 0;"></div>
                             <div style="display: flex; gap: 6px; justify-content: space-between;">
                                 <button onclick="toggleMapCompleted('${building.bin}')" 
@@ -35344,6 +35696,9 @@
                 const totalViolations = violationDetails.length;
                 const escapedAddress = String(location.label || location.customName || location.bin || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 const currentMonthLabel = location.bin ? getMonthLabel(location.bin) : null;
+                const addressCodeKey = (location.bin && isMapBinStoreKey(String(location.bin)))
+                    ? String(location.bin)
+                    : getAdditionalLocationCompletionKey(location);
                 const defaultHeaderAccent = isHouse ? '#8d6e63' : (isTransportation ? MAP_TRANSPORTATION_COLOR : (hasCustomName ? '#e64a19' : '#00bcd4'));
                 const headerAccent = useCompletionMarkerStyle ? locationCompletionColor : defaultHeaderAccent;
                 const omitLocationCompletionControls = isHouse || isTransportation;
@@ -35352,7 +35707,8 @@
                 const additionalPopupContent = `
                     <div class="map-popup-content" style="min-width: 380px; max-width: 460px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                         <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${headerAccent};">
-                            <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${String(location.customName || location.label || ('BIN ' + (location.bin || ''))).toUpperCase()}</div>
+                            <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${String(location.customName || location.label || ('BIN ' + (location.bin || ''))).toUpperCase()}${renderMapAddressCodeBadgeHtml(addressCodeKey)}</div>
+                            ${renderMapAddressCodeRowHtml(addressCodeKey)}
                             <div style="display: flex; gap: 6px; justify-content: space-between; flex-wrap: wrap;">
                                 ${omitLocationCompletionControls ? '' : `<button onclick="toggleAdditionalLocationCompleted(${location.latitude}, ${location.longitude})"
                                         title="${isLocationCompleted ? 'Unmark as completed' : 'Mark as completed'}"
@@ -35850,7 +36206,11 @@
                 const key = `building:${building.bin || building.address}`;
                 if (seen.has(key)) return;
                 seen.add(key);
-                const score = mapSearchSimilarityScore(query, building.address);
+                const code = getMapAddressCode(building.bin);
+                const score = Math.max(
+                    mapSearchSimilarityScore(query, building.address),
+                    code ? mapSearchSimilarityScore(query, code) : 0
+                );
                 const deviceNumbers = [
                     ...(building.readyDevices || []),
                     ...(building.notReadyDevices || []),
@@ -35865,7 +36225,7 @@
                 candidates.push({
                     type: 'Building',
                     label: building.address,
-                    details: `BIN ${building.bin}`,
+                    details: `BIN ${building.bin}${code ? ' · Code ' + code : ''}`,
                     devicePreview: devicePreview ? `Devices: ${devicePreview}${moreDevices}` : '',
                     value: building.address,
                     score
@@ -35899,11 +36259,18 @@
                 const key = `additional:${location.latitude}:${location.longitude}:${index}`;
                 if (seen.has(key)) return;
                 seen.add(key);
-                const score = mapSearchSimilarityScore(query, label);
+                const codeKey = location.bin && isMapBinStoreKey(String(location.bin))
+                    ? String(location.bin)
+                    : getAdditionalLocationCompletionKey(location);
+                const locationCode = getMapAddressCode(codeKey);
+                const score = Math.max(
+                    mapSearchSimilarityScore(query, label),
+                    locationCode ? mapSearchSimilarityScore(query, locationCode) : 0
+                );
                 candidates.push({
                     type: 'Added Location',
                     label,
-                    details: location.bin ? `BIN ${location.bin}` : (location.type || ''),
+                    details: (location.bin ? `BIN ${location.bin}` : (location.type || '')) + (locationCode ? ` · Code ${locationCode}` : ''),
                     devicePreview: Array.isArray(location.devices) && location.devices.length
                         ? `Devices: ${location.devices.slice(0, 6).map(device => device.device_number).filter(Boolean).join(', ')}${location.devices.length > 6 ? ' +' + (location.devices.length - 6) + ' more' : ''}`
                         : '',
@@ -35997,12 +36364,13 @@
                 if (aliasMatchedBins.has(String(building.bin))) return true;
                 const addressMatch = mapSearchFieldIncludes(building.address, searchTerm);
                 const binMatch = mapSearchFieldIncludes(building.bin, searchTerm);
+                const codeMatch = mapSearchFieldIncludes(getMapAddressCode(building.bin), searchTerm);
                 const deviceMatch = deviceListMatches(building.readyDevices) ||
                                    deviceListMatches(building.notReadyDevices) ||
                                    deviceListMatches(building.completedDevices) ||
                                    deviceListMatches(building.removedDeletedDevices) ||
                                    deviceListMatches(building.notApplicableDevices);
-                return addressMatch || binMatch || deviceMatch;
+                return addressMatch || binMatch || deviceMatch || codeMatch;
             }) : [];
             
             // Search through additional locations (added via "add location") for matching address, BIN, or device numbers
@@ -36017,7 +36385,11 @@
                     );
                     const customNameMatch = (location.customName || '').toUpperCase().includes(searchTerm);
                     const houseMatch = location.isHouse && (searchTerm === 'HOUSE' || searchTerm === 'HOME');
-                    return addressMatch || binMatch || deviceNumberMatch || devicesMatch || customNameMatch || houseMatch;
+                    const codeKey = location.bin && isMapBinStoreKey(String(location.bin))
+                        ? String(location.bin)
+                        : getAdditionalLocationCompletionKey(location);
+                    const codeMatch = mapSearchFieldIncludes(getMapAddressCode(codeKey), searchTerm);
+                    return addressMatch || binMatch || deviceNumberMatch || devicesMatch || customNameMatch || houseMatch || codeMatch;
                 });
             
             // Combine matches - use consistent format { latitude, longitude, isAdditional, additionalIndex }
