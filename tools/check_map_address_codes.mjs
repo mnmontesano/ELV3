@@ -15,7 +15,9 @@ assert.match(html, /onclick="addMapAddressCodeFromForm\(\)"/);
 assert.match(html, /onclick="clearAllMapAddressCodes\(\)"/);
 assert.match(html, /id="mapAddressCodeBulkInput"/);
 assert.match(html, /onclick="importMapAddressCodesFromBulk\(\)"/);
-assert.match(html, /oninput="previewMapAddressCodeBulk\(\)"/);
+assert.match(html, /id="mapAddressCodeBulkRows"/);
+assert.match(html, /addMapAddressCodeBulkLinesFromPaste\(event\)/);
+assert.match(html, /function appendMapAddressCodeBulkLine\(/);
 assert.match(html, /renderMapAddressCodeRowHtml\(building\.bin\)/);
 assert.match(html, /hydrateMapAddressCodeFields\(popupRoot\);/);
 assert.match(html, /renderMapAddressCodeRowHtml\(addressCodeKey\)/);
@@ -158,8 +160,8 @@ const repeated = api.planMapAddressCodeBulk('100 Broadway | A-1\n100 Broadway | 
     existingCodes: {}
 });
 assert.equal(repeated.ready.length, 1);
-assert.equal(repeated.ready[0].code, 'A-2');
-assert.equal(repeated.ready[0].replaced, true);
+assert.equal(repeated.ready[0].code, 'A-1');
+assert.equal(repeated.duplicates.length, 1);
 
 const ambiguous = api.planMapAddressCodeBulk('100 Broadway | A-9', {
     binGroups: {
@@ -183,5 +185,20 @@ assert.deepEqual(
     Array.from(fromExport.ready, row => [String(row.key), String(row.code)]),
     [['2000002', 'P-4']]
 );
+
+const spaced = api.planMapAddressCodeBulk(`100 Broadway, New York, NY 10007 A-1042
+200 Scheduled Avenue B-9
+100 Broadway, Manhattan A-1
+1000 Broadway C-1`, {
+    binGroups: codeGroups,
+    aliases: [],
+    locations: [],
+    existingCodes: {}
+});
+assert.deepEqual(
+    Array.from(spaced.ready, row => [String(row.key), String(row.code)]),
+    [['1000001', 'A-1042'], ['2000002', 'B-9'], ['4000004', 'C-1']]
+);
+assert.equal(spaced.duplicates.length, 1);
 
 console.log('map address code checks passed');
