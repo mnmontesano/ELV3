@@ -1879,7 +1879,9 @@
                                 <span class="mcp-arrow" id="mcpAddressCodesArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpAddressCodes">
-                                <p class="mcp-desc">Add a code number to an address on this map. It shows with that address in the popup, the map search finds it, and it is stored in the map save file.</p>
+                                <p class="mcp-desc">Add a code number to an address on this map. It shows with that address in the popup, the map search finds it, and it is stored in the map save file. Show addresses with no codes filters the map to addresses that do not have one yet. Click it again to restore the previous map view.</p>
+                                <div id="mapAddressCodesMissingStatus" style="font-size: 0.86em; line-height: 1.4; margin: 0 0 8px; color: var(--text-color);"></div>
+                                <button type="button" id="mapAddressCodesMissingShowOnMapBtn" onclick="toggleMapAddressesMissingCodesShowOnMap()" class="mcp-btn" style="color:#6d4c41; font-weight:700; margin-bottom: 10px;">Show addresses with no codes</button>
                                 <div style="background: var(--input-bg); padding: 8px; border-radius: 6px; border: 1px solid rgba(109,76,65,0.35); margin-bottom: 10px;">
                                     <label for="mapAddressCodeBinInput" style="display: block; font-size: 0.82em; font-weight: 700; margin-bottom: 3px;">BIN</label>
                                     <input type="text" id="mapAddressCodeBinInput" class="mcp-search-input" inputmode="numeric" maxlength="7" placeholder="e.g. 1000001" autocomplete="off"
@@ -2052,7 +2054,7 @@
                                     <li>Review lists buildings marked completed that still have devices without the marked test filed for this year. It is separate from the REVIEW month label</li>
                                     <li>Map view filter: Hide Category Completed leaves PVI-only jobs visible; Hide PVI Completed leaves Category-only jobs visible. Fully completed jobs are hidden by both.</li>
                                     <li>Text View lists the locations currently drawn on the map after the Map view filter, including Hide Scheduled Test Dates &amp; Completed Jobs, as readable text you can copy, or export to Excel or CSV</li>
-                                    <li>Address Codes adds a code number to a map address. It shows on that address in the popup, and it is saved in the map file. Paste address and code rows to add many at once</li>
+                                    <li>Address Codes adds a code number to a map address. It shows on that address in the popup, and it is saved in the map file. Paste address and code rows to add many at once. Show addresses with no codes filters the map to addresses that still need a code</li>
                                     <li>No Test Yet lists devices with no Category or PVI this year and counts down days left to finish both tests 91 days apart</li>
                                     <li>Disregard in No Test Yet hides only that device from the list and map highlight; other devices at the same building stay visible</li>
                                     <li>Copy on a No Test Yet building copies that building's devices; Copy All Devices copies every remaining device across all buildings</li>
@@ -2099,6 +2101,7 @@
                                     <option value="deadlines">Buildings with Deadlines</option>
                                     <option value="month-labeled">Month-labeled</option>
                                     <option value="no-month">No month label</option>
+                                    <option value="no-address-code">No address code</option>
                                     <option value="month:January">January</option>
                                     <option value="month:February">February</option>
                                     <option value="month:March">March</option>
@@ -11197,6 +11200,7 @@
         let mapNoTestByJunePreviousView = null;
         let mapNoTestYetPreviousView = null;
         let mapReviewPreviousView = null;
+        let mapAddressCodesMissingPreviousView = null;
 
         let additionalLocationMarkers = [];
         const MAP_TRANSPORTATION_COLOR = '#1565c0';
@@ -16281,7 +16285,7 @@
         }
 
         function mapTextViewPassthroughNote(entries, context) {
-            if (!context || !context.filterValue || context.filterValue === 'all') return '';
+            if (!context || !context.filterValue || context.filterValue === 'all' || context.filterValue === 'no-address-code') return '';
             const count = (entries || []).filter(entry => entry.passthrough).length;
             if (!count) return '';
             const pins = count === 1 ? '1 custom pin stays' : count + ' custom pins stay';
@@ -16837,7 +16841,8 @@
                 notes: 'Buildings with Notes',
                 deadlines: 'Buildings with Deadlines',
                 'month-labeled': 'Month-labeled',
-                'no-month': 'No month label'
+                'no-month': 'No month label',
+                'no-address-code': 'No address code'
             };
             return labels[filterValue] || filterValue;
         }
@@ -17042,6 +17047,33 @@
             return new Set(ALL_MONTHS);
         }
 
+        function mapAddressCodesFromView(view) {
+            const codes = view && view.addressCodes;
+            if (codes && typeof codes === 'object' && !Array.isArray(codes)) return codes;
+            return typeof getMapAddressCodes === 'function' ? getMapAddressCodes() : {};
+        }
+
+        // BINs and custom-location keys that do not have an address code yet.
+        function collectMapMissingAddressCodeKeys(view) {
+            const codes = mapAddressCodesFromView(view);
+            const keys = new Set();
+            const binGroups = (view && view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups) || {};
+            Object.keys(binGroups).forEach(bin => {
+                const key = String(bin);
+                if (!codes[key]) keys.add(key);
+            });
+            const locations = Array.isArray(view && view.additionalLocations)
+                ? view.additionalLocations
+                : (typeof getAdditionalLocations === 'function' ? getAdditionalLocations() : []);
+            locations.forEach(location => {
+                const key = typeof getAdditionalLocationCompletionKey === 'function'
+                    ? getAdditionalLocationCompletionKey(location)
+                    : '';
+                if (key && !codes[String(key)]) keys.add(String(key));
+            });
+            return keys;
+        }
+
         function getMapViewFilterBins(view, filterValue) {
             const binGroups = (view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups) || {};
             const allBins = Object.keys(binGroups).map(String);
@@ -17128,6 +17160,7 @@
             if (filterValue === 'no-month') {
                 return new Set(allBins.filter(bin => !monthLabels[bin]));
             }
+            if (filterValue === 'no-address-code') return collectMapMissingAddressCodeKeys(view);
             if (filterValue.indexOf('month:') === 0) {
                 const month = filterValue.replace('month:', '');
                 return new Set(allBins.filter(bin => monthLabels[bin] === month));
@@ -17305,6 +17338,7 @@
                 updateMapNoTestByJuneShowOnMapButton();
                 updateMapNoTestYetShowOnMapButton();
                 updateMapReviewShowOnMapButton();
+                updateMapAddressCodesMissingShowOnMapButton();
                 if (!quiet) showMapNotification('Showing current map view', '#17a2b8');
                 return;
             }
@@ -17377,6 +17411,19 @@
                     }
                     return;
                 }
+                if (filterValue === 'no-address-code') {
+                    const key = getAdditionalLocationCompletionKey(location);
+                    const match = !key || bins.has(String(key));
+                    if (match) {
+                        if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
+                        bounds.extend(marker.getLatLng());
+                        if (viewport.contains(marker.getLatLng())) shownInViewport = true;
+                        shown++;
+                    } else if (buildingMap.hasLayer(marker)) {
+                        buildingMap.removeLayer(marker);
+                    }
+                    return;
+                }
                 // Tagged custom pins and right-clicked pins stay visible under map view filters
                 if (location && (location.isHouse || location.isTransportation || location.type === 'pinned')) {
                     if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
@@ -17391,6 +17438,7 @@
             updateMapNoTestByJuneShowOnMapButton();
             updateMapNoTestYetShowOnMapButton();
             updateMapReviewShowOnMapButton();
+            updateMapAddressCodesMissingShowOnMapButton();
             // Only re-zoom when none of the filtered buildings are already on screen,
             // so changing filters doesn't reset the user's zoom/position.
             if (shouldFitMap && bounds.isValid() && !shownInViewport) buildingMap.fitBounds(bounds, { padding: [50, 50] });
@@ -20284,6 +20332,8 @@
             updateMapNoTestYetShowOnMapButton();
             mapReviewPreviousView = null;
             updateMapReviewShowOnMapButton();
+            mapAddressCodesMissingPreviousView = null;
+            updateMapAddressCodesMissingShowOnMapButton();
 
             const hideCompletedToggle = document.getElementById('mapHideCompletedToggle');
             if (hideCompletedToggle) hideCompletedToggle.checked = false;
@@ -20416,19 +20466,32 @@
                     testDates: getMapTestDates(),
                     deadlines: getMapDeadlines(),
                     notes: getMapNotes(),
-                    monthLabels: labels
+                    addressCodes: getMapAddressCodes(),
+                    monthLabels: labels,
+                    additionalLocations: getAdditionalLocations()
                 };
                 const bins = getMapViewFilterBins(viewForFilter, mapViewFilter) || new Set();
-                const scopedMapViewCount = (mapBuildingsData || []).filter(building => {
+                let scopedMapViewCount = (mapBuildingsData || []).filter(building => {
                     if (!building) return false;
                     const matchesFilter = mapViewFilter === 'hide-scheduled'
                         ? mapViewPassesHideScheduledCompletedFilter(viewForFilter, building.bin, building)
                         : bins.has(String(building.bin));
                     return matchesFilter && mapBuildingMatchesActiveMonthScope(building, labels);
                 }).length;
+                if (mapViewFilter === 'no-address-code') {
+                    (getAdditionalLocations() || []).forEach(location => {
+                        if (shouldHideCompletedAdditionalLocation(location)) return;
+                        const key = getAdditionalLocationCompletionKey(location);
+                        if (key && isMapBinStoreKey(key) && (mapBuildingsData || []).some(building => building && String(building.bin) === key)) return;
+                        if (!key || bins.has(String(key))) scopedMapViewCount++;
+                    });
+                }
                 const mapViewLabel = getMapViewFilterDisplayLabel(mapViewFilter);
-                notices.push(`Map view filter active: ${mapViewLabel} — showing ${scopedMapViewCount} building${scopedMapViewCount !== 1 ? 's' : ''}`);
-                compactParts.push(`${scopedMapViewCount} building${scopedMapViewCount !== 1 ? 's' : ''} — ${mapViewLabel}`);
+                const countNoun = mapViewFilter === 'no-address-code'
+                    ? (scopedMapViewCount === 1 ? 'address' : 'addresses')
+                    : (scopedMapViewCount === 1 ? 'building' : 'buildings');
+                notices.push(`Map view filter active: ${mapViewLabel} — showing ${scopedMapViewCount} ${countNoun}`);
+                compactParts.push(`${scopedMapViewCount} ${countNoun} — ${mapViewLabel}`);
             }
 
             if (activeMonthFilters.size > 0) {
@@ -22392,6 +22455,7 @@
             }
             showMapNotification(code ? `Address code saved: ${code}` : 'Address code cleared', code ? '#6d4c41' : '#ff9800');
             updateMapAddressCodesPanel();
+            refreshMapIfShowingAddressesMissingCodes();
             if (typeof scheduleMapTextViewRefresh === 'function') scheduleMapTextViewRefresh();
             return true;
         }
@@ -22604,6 +22668,7 @@
             if (rows) rows.innerHTML = '';
             previewMapAddressCodeBulk();
             updateMapAddressCodesPanel();
+            refreshMapIfShowingAddressesMissingCodes();
             hydrateMapAddressCodeFields(document);
             if (typeof scheduleMapTextViewRefresh === 'function') scheduleMapTextViewRefresh();
             const extra = [];
@@ -22654,6 +22719,7 @@
         }
 
         function updateMapAddressCodesPanel() {
+            updateMapAddressCodesMissingStatus();
             const countEl = document.getElementById('mapAddressCodesCount');
             const listEl = document.getElementById('mapAddressCodesList');
             const entries = Object.entries(mapAddressCodes || {});
@@ -22692,6 +22758,7 @@
             }).join('');
             const searchInput = document.getElementById('mapAddressCodesSearchInput');
             if (searchInput && searchInput.value.trim()) filterMapAddressCodesList(searchInput.value);
+            updateMapAddressCodesMissingShowOnMapButton();
         }
 
         function filterMapAddressCodesList(query) {
@@ -22719,6 +22786,164 @@
             } else if (noResults) {
                 noResults.style.display = 'none';
             }
+        }
+
+        function countMapAddressesMissingCodes() {
+            const view = {
+                lastBulkSearchResults: window.lastBulkSearchResults || { binGroups: {} },
+                additionalLocations: typeof getAdditionalLocations === 'function' ? getAdditionalLocations() : [],
+                addressCodes: typeof getMapAddressCodes === 'function' ? getMapAddressCodes() : {}
+            };
+            const keys = collectMapMissingAddressCodeKeys(view);
+            let count = 0;
+            const buildings = Array.isArray(mapBuildingsData) ? mapBuildingsData : [];
+            const countedBins = new Set();
+            if (buildings.length) {
+                buildings.forEach(building => {
+                    if (!building || !keys.has(String(building.bin))) return;
+                    if (typeof isBuildingHiddenByMapSettings === 'function' && isBuildingHiddenByMapSettings(building)) return;
+                    if (typeof mapBuildingMatchesActiveMonthScope === 'function' && !mapBuildingMatchesActiveMonthScope(building)) return;
+                    countedBins.add(String(building.bin));
+                    count++;
+                });
+            } else {
+                Object.keys((view.lastBulkSearchResults && view.lastBulkSearchResults.binGroups) || {}).forEach(bin => {
+                    if (!keys.has(String(bin))) return;
+                    countedBins.add(String(bin));
+                    count++;
+                });
+            }
+            (view.additionalLocations || []).forEach(location => {
+                if (typeof shouldHideCompletedAdditionalLocation === 'function' && shouldHideCompletedAdditionalLocation(location)) return;
+                const key = typeof getAdditionalLocationCompletionKey === 'function' ? getAdditionalLocationCompletionKey(location) : '';
+                if (key && (countedBins.has(String(key)) || !keys.has(String(key)))) return;
+                count++;
+            });
+            return count;
+        }
+
+        function updateMapAddressCodesMissingStatus() {
+            const el = document.getElementById('mapAddressCodesMissingStatus');
+            if (!el) return;
+            const hasBuildings = Array.isArray(mapBuildingsData) && mapBuildingsData.length > 0;
+            const hasLocations = typeof getAdditionalLocations === 'function' && getAdditionalLocations().length > 0;
+            const groups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            if (!hasBuildings && !hasLocations && !Object.keys(groups).length) {
+                el.textContent = 'Load a map to see which addresses have no code.';
+                return;
+            }
+            const missing = countMapAddressesMissingCodes();
+            el.textContent = missing
+                ? (missing === 1 ? '1 address on this map has no code.' : `${missing} addresses on this map have no code.`)
+                : 'Every address on this map has a code.';
+        }
+
+        function isMapAddressCodesMissingShowOnMapActive() {
+            return getSelectedMapViewFilter() === 'no-address-code';
+        }
+
+        function updateMapAddressCodesMissingShowOnMapButton() {
+            const btn = document.getElementById('mapAddressCodesMissingShowOnMapBtn');
+            if (!btn) return;
+            if (isMapAddressCodesMissingShowOnMapActive()) {
+                btn.textContent = mapAddressCodesMissingPreviousView ? 'Restore Previous View' : 'Clear MAP Filter';
+                btn.style.background = '#6d4c41';
+                btn.style.color = 'white';
+                btn.style.borderColor = '#6d4c41';
+                btn.style.fontWeight = '700';
+            } else {
+                btn.textContent = 'Show addresses with no codes';
+                btn.style.background = '';
+                btn.style.color = '#6d4c41';
+                btn.style.borderColor = '';
+                btn.style.fontWeight = '700';
+            }
+        }
+
+        function captureMapAddressCodesMissingPreviousView() {
+            let center = null;
+            let zoom = null;
+            if (buildingMap) {
+                try {
+                    const currentCenter = buildingMap.getCenter();
+                    center = [currentCenter.lat, currentCenter.lng];
+                    zoom = buildingMap.getZoom();
+                } catch (error) {
+                    console.warn('Could not capture previous map camera:', error);
+                }
+            }
+            return {
+                viewFilter: getSelectedMapViewFilter() || 'all',
+                monthFilters: [...activeMonthFilters],
+                mapHideScheduledMonthSelectionReady: !!mapHideScheduledMonthSelectionReady,
+                pendingMapHideScheduledMonthPrompt: !!pendingMapHideScheduledMonthPrompt,
+                center,
+                zoom
+            };
+        }
+
+        function restoreMapAddressCodesMissingPreviousView(previous) {
+            const snapshot = previous || {};
+            activeMonthFilters.clear();
+            (Array.isArray(snapshot.monthFilters) ? snapshot.monthFilters : []).forEach(month => {
+                activeMonthFilters.add(month);
+            });
+            mapHideScheduledMonthSelectionReady = !!snapshot.mapHideScheduledMonthSelectionReady;
+            pendingMapHideScheduledMonthPrompt = !!snapshot.pendingMapHideScheduledMonthPrompt;
+            updateMonthFilterButtons();
+
+            let restoreFilter = snapshot.viewFilter || 'all';
+            if (restoreFilter === 'no-address-code') restoreFilter = 'all';
+            setSelectedMapViewFilter(restoreFilter, { applyOptions: { fitMap: false, quiet: true } });
+
+            if (buildingMap && Array.isArray(snapshot.center) && snapshot.center.length === 2 && snapshot.zoom != null) {
+                try {
+                    buildingMap.setView(snapshot.center, snapshot.zoom);
+                } catch (error) {
+                    console.warn('Could not restore previous map camera:', error);
+                }
+            }
+        }
+
+        function refreshMapIfShowingAddressesMissingCodes() {
+            if (!isMapAddressCodesMissingShowOnMapActive()) return;
+            if (typeof reapplyCurrentMapViewFilters === 'function') {
+                reapplyCurrentMapViewFilters({ fitMap: false, quiet: true });
+            }
+        }
+
+        function toggleMapAddressesMissingCodesShowOnMap() {
+            if (isMapAddressCodesMissingShowOnMapActive()) {
+                const previous = mapAddressCodesMissingPreviousView;
+                mapAddressCodesMissingPreviousView = null;
+                if (previous) {
+                    restoreMapAddressCodesMissingPreviousView(previous);
+                    showMapNotification('Restored previous map view', '#17a2b8');
+                } else {
+                    setSelectedMapViewFilter('all', { applyOptions: { fitMap: false, quiet: true } });
+                    showMapNotification('Cleared the no-code map filter', '#17a2b8');
+                }
+                updateMapAddressCodesMissingShowOnMapButton();
+                updateMapAddressCodesMissingStatus();
+                return;
+            }
+            const missing = countMapAddressesMissingCodes();
+            if (!missing) {
+                showMapNotification('Every address on this map already has a code', '#6d4c41');
+                return;
+            }
+            if (!buildingMap || !Array.isArray(mapMarkers)) {
+                showMapNotification('Open the map first, then show addresses with no codes', '#ff6b6b');
+                return;
+            }
+            mapAddressCodesMissingPreviousView = captureMapAddressCodesMissingPreviousView();
+            setSelectedMapViewFilter('no-address-code', { applyOptions: { fitMap: true } });
+            updateMapAddressCodesMissingShowOnMapButton();
+            updateMapAddressCodesMissingStatus();
+            showMapNotification(
+                `${missing} address${missing === 1 ? '' : 'es'} with no code`,
+                '#6d4c41'
+            );
         }
 
         const MAP_ADDRESS_ALIAS_MAX = 5000;
@@ -37086,9 +37311,12 @@
                 const additionalLocations = getAdditionalLocations();
                 additionalLocationMarkers.forEach((marker, index) => {
                     const location = additionalLocations[index];
+                    const passthroughPin = !!(location && (location.isHouse || location.isTransportation || location.type === 'pinned'));
+                    const missingCodePin = mapViewFilter === 'no-address-code'
+                        && (!getAdditionalLocationCompletionKey(location) || (mapViewBins && mapViewBins.has(String(getAdditionalLocationCompletionKey(location)))));
                     const shouldShowAdditional = matchedAdditionalIndexes.has(index) || (
                         !shouldHideCompletedAdditionalLocation(location) &&
-                        ((location && (location.isHouse || location.isTransportation || location.type === 'pinned')) || !hasMapViewFilter)
+                        (missingCodePin || (mapViewFilter !== 'no-address-code' && passthroughPin) || !hasMapViewFilter)
                     );
                     if (shouldShowAdditional) {
                         if (!buildingMap.hasLayer(marker)) buildingMap.addLayer(marker);
