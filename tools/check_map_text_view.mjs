@@ -14,6 +14,9 @@ assert.match(html, /onclick="exportMapTextViewExcel\(\)"/);
 assert.match(html, /onclick="exportMapTextViewCsv\(\)"/);
 assert.match(html, /onclick="closeMapViewMenu\(\); openMapTextView\(\)"/);
 assert.match(html, /onclick="openMapTextView\(\)"/);
+assert.match(html, /id="mapSelectTextViewButton"/);
+assert.match(html, /onclick="openMapSelectionTextView\(\)"/);
+assert.match(html, /function collectMapSelectedTextViewEntries\(\)/);
 assert.match(html, /function collectMapTextViewEntries\(\)/);
 assert.match(html, /buildingMap\.hasLayer\(marker\)/);
 assert.match(html, /scheduleMapTextViewRefresh\(\)/);
@@ -247,6 +250,47 @@ assert.equal(
     context.mapTextViewExportFileName('xlsx', { heading: 'Current map view' }, '2026-11-09'),
     'current-map-view-2026-11-09.xlsx'
 );
+
+context.mapTextViewScope = 'selection';
+context.mapSelectedBins = new Set(['2000002', '1000001']);
+const selectedEntries = context.collectMapTextViewEntries();
+assert.deepEqual([...selectedEntries.map(entry => entry.title)], ['100 Broadway', '200 Scheduled Avenue']);
+assert.equal(selectedEntries[0].code, 'A-1042');
+assert.ok(selectedEntries[1].schedules.length > 0, 'a selected building stays in the text even when its marker is hidden');
+const selectedContext = context.getMapTextViewContext();
+assert.equal(selectedContext.heading, '2 selected buildings');
+const selectedText = context.formatMapTextViewDocument(selectedEntries, {
+    heading: selectedContext.heading,
+    emptyMessage: selectedContext.emptyMessage
+});
+assert.match(selectedText, /Filter: 2 selected buildings/);
+assert.match(selectedText, /200 Scheduled Avenue/);
+assert.match(selectedText, /Scheduled test dates/);
+assert.doesNotMatch(selectedText, /Office house/);
+const selectedTable = context.buildMapTextViewExportTable(selectedEntries, { heading: selectedContext.heading, findQuery: '' });
+assert.equal(selectedTable.rows.length, 2);
+assert.equal(selectedTable.rows[1][2], '200 Scheduled Avenue');
+assert.equal(
+    context.mapTextViewExportFileName('csv', { heading: '2 selected buildings' }, '2026-11-09'),
+    '2-selected-buildings-2026-11-09.csv'
+);
+
+context.mapSelectedBins = new Set(['2000002']);
+const hiddenSelection = context.collectMapTextViewEntries();
+assert.deepEqual([...hiddenSelection.map(entry => entry.title)], ['200 Scheduled Avenue']);
+
+context.mapSelectedBins = new Set();
+assert.equal(context.collectMapTextViewEntries().length, 0);
+const noneSelected = context.getMapTextViewContext();
+assert.equal(noneSelected.heading, '0 selected buildings');
+assert.match(context.formatMapTextViewDocument([], {
+    heading: noneSelected.heading,
+    emptyMessage: noneSelected.emptyMessage
+}), /No buildings are selected\./);
+
+context.mapTextViewScope = 'map';
+delete context.mapSelectedBins;
+assert.equal(context.collectMapTextViewEntries().length, 2);
 
 const parsed = new Function(html.slice(
     html.indexOf('        function formatMapTextViewHeader('),

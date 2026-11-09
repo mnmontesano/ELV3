@@ -1283,6 +1283,7 @@
                             <span id="mapSelectCount" class="map-select-count">0 buildings selected</span>
                             <div class="map-select-actions">
                                 <button type="button" onclick="openMapSelectByDevicesModal()" style="background:#0d6efd;" title="Select buildings by entering device numbers">By Device #s</button>
+                                <button type="button" id="mapSelectTextViewButton" onclick="openMapSelectionTextView()" style="background:#37474f;" disabled title="Read the selected buildings as text, and export them to Excel or CSV">Text view</button>
                                 <button type="button" id="mapSelectEditButton" onclick="openMapBulkEditModal()" style="background:#1a73e8;" disabled title="Edit information for selected buildings">Edit Selected</button>
                                 <button type="button" id="mapSelectCompletedButton" onclick="openMapSelectCompletedMenu()" style="background:#27ae60;" disabled title="Open the completion menu for the selected buildings">Completed</button>
                                 <button type="button" id="mapSelectClearButton" onclick="clearMapBuildingSelection()" style="background:#6c757d;" disabled title="Clear current selection">Clear</button>
@@ -2020,6 +2021,7 @@
                                     <li>Click a marker to see building details</li>
                                     <li>Use ✓ in popup to mark a building complete</li>
                                     <li>In Select mode, Completed opens that same completion menu for every selected building</li>
+                                    <li>In Select mode, Text view lists the selected buildings as readable text you can copy, or export to Excel or CSV</li>
                                     <li>Stacked buildings in Select mode use the same location chooser as a normal map click. Choose the building to select</li>
                                     <li>Selected buildings are listed on the right. If Settings is open, that list sits to the left of Settings</li>
                                     <li>Use 🔄 in popup to mark a building in process</li>
@@ -11114,6 +11116,7 @@
         let mapOverlapChooserEntries = [];
         let mapSelectMode = false;
         let mapSelectedBins = new Set();
+        let mapTextViewScope = 'map';
         let mapContainerResizeObserver = null;
         let initBuildingMapInProgress = false;
 
@@ -16149,7 +16152,49 @@
             };
         }
 
+        function mapTextViewUsesSelection() {
+            return typeof mapTextViewScope !== 'undefined' && mapTextViewScope === 'selection';
+        }
+
+        function collectMapSelectedTextViewEntries() {
+            const entries = [];
+            const selected = (typeof mapSelectedBins !== 'undefined' && mapSelectedBins) ? mapSelectedBins : new Set();
+            const buildings = (typeof mapBuildingsData !== 'undefined' && Array.isArray(mapBuildingsData)) ? mapBuildingsData : [];
+            const groups = (typeof window !== 'undefined' && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            selected.forEach(bin => {
+                const binKey = String(bin);
+                const building = buildings.find(item => item && String(item.bin) === binKey);
+                if (building) {
+                    entries.push(buildMapTextViewBuildingEntry(building));
+                    return;
+                }
+                const group = groups[binKey];
+                if (!group) return;
+                const devices = Array.isArray(group.devices) ? group.devices : [];
+                entries.push(buildMapTextViewBuildingEntry({
+                    bin: binKey,
+                    address: group.address || ('BIN ' + binKey),
+                    latitude: Number(group.latitude),
+                    longitude: Number(group.longitude),
+                    deviceCount: devices.length,
+                    complete: 0,
+                    incomplete: 0,
+                    readyDevices: [],
+                    notReadyDevices: [],
+                    completedDevices: [],
+                    notApplicableDevices: [],
+                    violationDetails: []
+                }));
+            });
+            entries.sort((left, right) => String(left.title || '').localeCompare(String(right.title || ''), undefined, {
+                numeric: true,
+                sensitivity: 'base'
+            }));
+            return entries;
+        }
+
         function collectMapTextViewEntries() {
+            if (mapTextViewUsesSelection()) return collectMapSelectedTextViewEntries();
             const entries = [];
             if (!buildingMap || typeof buildingMap.hasLayer !== 'function') return entries;
             (mapMarkers || []).forEach((marker, index) => {
@@ -16171,6 +16216,16 @@
         }
 
         function getMapTextViewContext() {
+            if (mapTextViewUsesSelection()) {
+                const count = (typeof mapSelectedBins !== 'undefined' && mapSelectedBins) ? mapSelectedBins.size : 0;
+                return {
+                    filterValue: 'selection',
+                    searchTerm: '',
+                    heading: count === 1 ? '1 selected building' : count + ' selected buildings',
+                    monthPending: false,
+                    emptyMessage: 'No buildings are selected.'
+                };
+            }
             const filterValue = typeof getSelectedMapViewFilter === 'function' ? getSelectedMapViewFilter() : 'all';
             const searchInput = document.getElementById('mapSearchInput');
             const searchTerm = searchInput && searchInput.value ? searchInput.value.trim() : '';
@@ -16227,7 +16282,9 @@
                 heading: context.heading,
                 note: notes.join(' '),
                 findQuery: query,
-                emptyMessage: query ? 'No locations in this text match "' + query + '".' : ''
+                emptyMessage: query
+                    ? 'No locations in this text match "' + query + '".'
+                    : (context.emptyMessage || '')
             };
             modal._mapTextViewText = formatMapTextViewDocument(visible, meta);
             modal._mapTextViewExport = { entries: visible.slice(), meta };
@@ -16237,6 +16294,19 @@
             body.querySelectorAll('.map-text-view-entry').forEach(button => {
                 button.addEventListener('click', () => focusMapTextViewEntry(button));
             });
+            syncMapTextViewChrome();
+        }
+
+        function syncMapTextViewChrome() {
+            const selection = mapTextViewUsesSelection();
+            const title = document.getElementById('mapTextViewTitle');
+            const subtitle = document.getElementById('mapTextViewSubtitle');
+            if (title) title.textContent = selection ? '☰ Selected jobs' : '☰ Text View';
+            if (subtitle) {
+                subtitle.textContent = selection
+                    ? 'The buildings currently selected with the Select tool. Excel and CSV export this list.'
+                    : 'The locations currently drawn on the map, including the active Map view filter. Excel and CSV export this list.';
+            }
         }
 
         function scheduleMapTextViewRefresh() {
@@ -16358,7 +16428,16 @@
             showMapNotification('Exported ' + state.entries.length + ' location' + (state.entries.length === 1 ? '' : 's') + ' to Excel', '#217346');
         }
 
-        function openMapTextView() {
+        function openMapSelectionTextView() {
+            if (!mapSelectedBins || mapSelectedBins.size === 0) {
+                showMapNotification('Select at least one building first', '#c77700');
+                return;
+            }
+            openMapTextView('selection');
+        }
+
+        function openMapTextView(scope) {
+            mapTextViewScope = scope === 'selection' ? 'selection' : 'map';
             if (!buildingMap || !Array.isArray(mapMarkers)) {
                 alert('No map is open. Load a map view or run a bulk lookup first.');
                 return;
@@ -16396,7 +16475,7 @@
                     <div class="map-text-header">
                         <div>
                             <h3 id="mapTextViewTitle">☰ Text View</h3>
-                            <div class="map-text-subtitle">The locations currently drawn on the map, including the active Map view filter. Excel and CSV export this list.</div>
+                            <div id="mapTextViewSubtitle" class="map-text-subtitle">The locations currently drawn on the map, including the active Map view filter. Excel and CSV export this list.</div>
                         </div>
                         <button type="button" onclick="closeMapTextView()" aria-label="Close Text View" style="border:0;background:none;color:var(--text-color);font-size:24px;line-height:1;cursor:pointer;">×</button>
                     </div>
@@ -27595,6 +27674,7 @@
             const mapEl = document.getElementById('buildingMap');
             const countEl = document.getElementById('mapSelectCount');
             const editBtn = document.getElementById('mapSelectEditButton');
+            const textBtn = document.getElementById('mapSelectTextViewButton');
             const completedBtn = document.getElementById('mapSelectCompletedButton');
             const clearBtn = document.getElementById('mapSelectClearButton');
             const selectedCount = mapSelectedBins ? mapSelectedBins.size : 0;
@@ -27618,9 +27698,11 @@
                     : `${selectedCount} buildings selected`;
             }
             if (editBtn) editBtn.disabled = selectedCount === 0;
+            if (textBtn) textBtn.disabled = selectedCount === 0;
             if (completedBtn) completedBtn.disabled = selectedCount === 0;
             if (clearBtn) clearBtn.disabled = selectedCount === 0;
             renderMapSelectInfoPanel();
+            if (typeof scheduleMapTextViewRefresh === 'function') scheduleMapTextViewRefresh();
         }
 
         function focusMapSelectedBuilding(bin) {
