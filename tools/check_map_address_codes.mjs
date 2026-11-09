@@ -219,4 +219,63 @@ const many = api.planMapAddressCodeBulk(manyLines.join('\n'), {
 assert.equal(many.ready.length, 40);
 assert.equal(many.overLimit, undefined);
 
+const dobGroups = {
+    '1000001': { address: '123 WEST 57 STREET, MANHATTAN', devices: [] },
+    '1000002': { address: '350 5 AVENUE, MANHATTAN', devices: [] },
+    '1000003': { address: '1 EAST 86 STREET, MANHATTAN', devices: [] },
+    '4000004': { address: '35-20 BROADWAY, QUEENS', devices: [] },
+    '3000005': { address: '45 OAK AVENUE, BROOKLYN', devices: [] },
+    '1000006': { address: '88 PINE STREET, MANHATTAN', devices: [] },
+    '1000007': { address: '500 PARK AVENUE, MANHATTAN', devices: [] },
+    '1000008': { address: '100 BROADWAY, MANHATTAN', devices: [] },
+    '1000009': { address: '1000 BROADWAY, MANHATTAN', devices: [] }
+};
+const mixed = api.planMapAddressCodeBulk([
+    '123 W 57th St\t1042',
+    '350 Fifth Avenue, New York, NY 10118\tA-1',
+    '1 E. 86th Street | 86-2',
+    '35-20 Broadway, Astoria NY 11106\tQ-4',
+    '45 Oak Ave, B-19',
+    '88 Pine St 10234',
+    'C-7\t500 Park Avenue',
+    '100 Broadway    D-100',
+    '1000 Broadway\tD-1000',
+    '123 West 57 Street\t9999'
+].join('\n'), {
+    binGroups: dobGroups,
+    aliases: [],
+    locations: [],
+    existingCodes: {}
+});
+assert.deepEqual(
+    Array.from(mixed.ready, row => [String(row.key), String(row.code)]),
+    [
+        ['1000001', '1042'], ['1000002', 'A-1'], ['1000003', '86-2'], ['4000004', 'Q-4'], ['3000005', 'B-19'],
+        ['1000006', '10234'], ['1000007', 'C-7'], ['1000008', 'D-100'], ['1000009', 'D-1000']
+    ]
+);
+assert.equal(mixed.duplicates.length, 1);
+assert.equal(mixed.unmatched.length + mixed.ambiguous.length + mixed.skipped.length, 0);
+assert.equal(mixed.ready.find(row => row.code === 'B-19').address, '45 Oak Ave');
+
+const twoSides = api.planMapAddressCodeBulk('123 57th St\tX-1', {
+    binGroups: {
+        '1000001': { address: '123 WEST 57 STREET, MANHATTAN', devices: [] },
+        '1000002': { address: '123 EAST 57 STREET, MANHATTAN', devices: [] }
+    },
+    aliases: [],
+    locations: [],
+    existingCodes: {}
+});
+assert.equal(twoSides.ready.length, 0);
+assert.equal(twoSides.ambiguous.length, 1);
+
+const zipOnly = api.planMapAddressCodeBulk('100 Broadway, New York, NY 10007', {
+    binGroups: dobGroups,
+    aliases: [],
+    locations: [],
+    existingCodes: {}
+});
+assert.equal(zipOnly.ready.length, 0);
+
 console.log('map address code checks passed');

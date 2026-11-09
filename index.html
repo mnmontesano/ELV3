@@ -1891,10 +1891,11 @@
                                 </div>
                                 <div id="mapAddressCodeBulkBox" style="background: var(--input-bg); padding: 8px; border-radius: 6px; border: 1px dashed rgba(109,76,65,0.45); margin-bottom: 10px;">
                                     <label for="mapAddressCodeBulkInput" style="display: block; font-size: 0.82em; font-weight: 700; margin-bottom: 3px;">Add codes for many addresses</label>
-                                    <p class="mcp-desc" style="margin-bottom: 6px;">Paste one address and code per line. There is no limit on how many lines you can paste. Each line becomes its own address and code. A repeated address keeps the first code only. A header row is skipped. Separate the address and code with a tab, a <span style="font-family: ui-monospace, monospace;">|</span>, or a space before the code.</p>
+                                    <p class="mcp-desc" style="margin-bottom: 6px;">Paste one address and code per line. There is no limit on how many lines you can paste. Each line becomes its own address and code. A repeated address keeps the first code only. A header row is skipped. Separate the address and code with a tab, a <span style="font-family: ui-monospace, monospace;">|</span>, a comma, or a space. The code can go before or after the address, and street names like 57th St, Fifth Ave, or Broadway match the map.</p>
                                     <textarea id="mapAddressCodeBulkInput" class="mcp-search-input" rows="4" spellcheck="false" autocomplete="off"
                                               placeholder="Paste lines here&#10;100 Broadway A-1042&#10;45 Oak Ave B-19"
                                               onpaste="addMapAddressCodeBulkLinesFromPaste(event)"
+                                              oninput="moveMapAddressCodeBulkTextToLines(this)"
                                               onkeydown="if (event.key === 'Enter') { event.preventDefault(); addMapAddressCodeBulkLinesFromText(this.value); this.value = ''; }"
                                               style="min-height: 72px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre;"></textarea>
                                     <div id="mapAddressCodeBulkRows" style="margin: 6px 0; max-height: 420px; overflow-y: auto;"></div>
@@ -21962,18 +21963,48 @@
             return true;
         }
 
+        const MAP_ADDRESS_CODE_WORD_FORMS = {
+            FIRST: '1', SECOND: '2', THIRD: '3', FOURTH: '4', FIFTH: '5', SIXTH: '6', SEVENTH: '7',
+            EIGHTH: '8', NINTH: '9', TENTH: '10', ELEVENTH: '11', TWELFTH: '12',
+            AV: 'AVE', AVEN: 'AVE', STR: 'ST', PKWY: 'PKY', SQUARE: 'SQ', PLAZA: 'PLZ',
+            EXPRESSWAY: 'EXPY', BWAY: 'BROADWAY', BDWY: 'BROADWAY'
+        };
+
+        // DOB writes streets as "WEST 57 STREET" and "5 AVENUE"; pasted lists use "W 57th St" and "Fifth Ave".
         function mapAddressCodeCoreText(value) {
-            let text = typeof normalizeAddressForMatch === 'function' ? normalizeAddressForMatch(value) : String(value || '').toUpperCase().trim();
+            const raw = String(value == null ? '' : value).replace(/[\u2018\u2019']/g, '');
+            let text = typeof normalizeAddressForMatch === 'function' ? normalizeAddressForMatch(raw) : raw.toUpperCase().trim();
             if (!text) return '';
+            text = text
+                .replace(/\b(\d+)(?:ST|ND|RD|TH)\b/g, '$1')
+                .split(' ')
+                .map(word => MAP_ADDRESS_CODE_WORD_FORMS[word] || word)
+                .join(' ');
             let previous = '';
             while (text && text !== previous) {
                 previous = text;
                 text = text
-                    .replace(/\s+\d{5}(?:\s+\d{4})?$/, '')
+                    .replace(/\s+\d{5}(?:-?\d{4})?$/, '')
                     .replace(/\s+(?:NEW YORK|NYC|NY|MANHATTAN|BROOKLYN|QUEENS|THE BRONX|BRONX|STATEN ISLAND|USA)$/, '')
                     .trim();
             }
             return text;
+        }
+
+        function mapAddressCodeHouseAndStreet(core) {
+            const match = String(core || '').match(/^(\d+[A-Z]?(?:-\d+[A-Z]?)?)\s+(.+)$/);
+            if (!match) return null;
+            return { house: match[1], words: match[2].split(' ').filter(Boolean) };
+        }
+
+        function mapAddressCodeSameStreet(left, right) {
+            const a = mapAddressCodeHouseAndStreet(left);
+            const b = mapAddressCodeHouseAndStreet(right);
+            if (!a || !b || a.house !== b.house) return false;
+            const shorter = a.words.length <= b.words.length ? a.words : b.words;
+            const longer = a.words.length <= b.words.length ? b.words : a.words;
+            return shorter.length > 0 && shorter.some(word => /[A-Z]{2}/.test(word) || /^\d+$/.test(word)) &&
+                shorter.every(word => longer.includes(word));
         }
 
         function mapAddressCodeCoresAlign(left, right) {
@@ -22050,45 +22081,93 @@
             const exact = (places || []).filter(place => place.cores.includes(core));
             if (exact.length) return exact;
             const prefix = (places || []).filter(place => place.cores.some(item => mapAddressCodeCoresAlign(core, item)));
-            if (prefix.length <= 1) return prefix;
-            const ranked = prefix.map(place => ({
-                place,
-                length: Math.max(...place.cores.filter(item => mapAddressCodeCoresAlign(core, item)).map(item => item.length))
-            }));
-            const best = Math.max(...ranked.map(item => item.length));
-            return ranked.filter(item => item.length === best).map(item => item.place);
+            if (prefix.length === 1) return prefix;
+            if (prefix.length > 1) {
+                const ranked = prefix.map(place => ({
+                    place,
+                    length: Math.max(...place.cores.filter(item => mapAddressCodeCoresAlign(core, item)).map(item => item.length))
+                }));
+                const best = Math.max(...ranked.map(item => item.length));
+                return ranked.filter(item => item.length === best).map(item => item.place);
+            }
+            return (places || []).filter(place => place.cores.some(item => mapAddressCodeSameStreet(core, item)));
         }
 
         function mapAddressCodeTokenLooksLikeCode(token) {
             const code = normalizeMapAddressCode(token);
-            if (!code || !/\d/.test(code)) return false;
-            if (/^\d{5}(?:-\d{4})?$/.test(code)) return false;
-            return true;
+            return !!code && /\d/.test(code);
+        }
+
+        function mapAddressCodeLooksLikeZip(candidate, before) {
+            const text = String(candidate || '').trim();
+            if (/^[A-Z]{2}\s+\d{5}(?:-\d{4})?$/i.test(text)) return true;
+            if (!/^\d{5}(?:-\d{4})?$/.test(text)) return false;
+            return /\b(?:NY|NJ|CT|PA|NYC|NEW YORK)\s*,?\s*$/i.test(String(before || ''));
+        }
+
+        function mapAddressCodeLooksLikeStreet(text) {
+            return /^\d+[A-Z]?(?:-\d+[A-Z]?)?\s+\S*[A-Z]{2}/i.test(String(text || '').trim());
+        }
+
+        function mapAddressCodeLooksLikeCodeCell(text, before) {
+            const value = String(text || '').trim();
+            return mapAddressCodeTokenLooksLikeCode(value) &&
+                !mapAddressCodeLooksLikeZip(value, before) &&
+                !mapAddressCodeLooksLikeStreet(value);
         }
 
         function cleanMapAddressCodeBulkCell(cell) {
-            return String(cell == null ? '' : cell).trim().replace(/^"|"$/g, '').replace(/\s+/g, ' ').trim();
+            return String(cell == null ? '' : cell).trim().replace(/^"|"$/g, '').replace(/\s+/g, ' ').replace(/^[,;]+|[,;]+$/g, '').trim();
+        }
+
+        function pickMapAddressCodeCells(cells) {
+            const filled = (cells || []).map(cleanMapAddressCodeBulkCell).filter(Boolean);
+            if (!filled.length) return null;
+            if (filled.length === 1) return { address: filled[0], code: '' };
+            const first = filled[0];
+            if (!/\s/.test(first) && mapAddressCodeLooksLikeCodeCell(first, '')) {
+                const street = filled.slice(1).find(mapAddressCodeLooksLikeStreet);
+                if (street) return { address: street, code: first };
+            }
+            const rest = filled.slice(1);
+            const codeIndex = rest.findIndex((cell, index) => mapAddressCodeLooksLikeCodeCell(cell, index ? rest[index - 1] : first));
+            return { address: first, code: codeIndex >= 0 ? rest[codeIndex] : rest[0] };
         }
 
         function splitMapAddressCodeBulkCells(line) {
             const trimmed = String(line == null ? '' : line).replace(/^\uFEFF/, '').trim();
             if (!trimmed) return null;
-            let cells = null;
-            if (trimmed.includes('\t')) cells = trimmed.split('\t');
-            else if (trimmed.includes('|')) cells = trimmed.split('|');
-            else {
-                const wide = trimmed.split(/\s{2,}/).filter(part => String(part).trim());
-                if (wide.length >= 2) cells = wide;
-                else {
-                    const tokens = trimmed.split(/\s+/);
-                    const last = tokens[tokens.length - 1];
-                    if (tokens.length >= 2 && mapAddressCodeTokenLooksLikeCode(last)) {
-                        return { cells: [tokens.slice(0, -1).join(' '), last].map(cleanMapAddressCodeBulkCell) };
-                    }
-                    return { error: 'separate-columns' };
+            if (trimmed.includes('\t')) return { cells: trimmed.split('\t').map(cleanMapAddressCodeBulkCell) };
+            if (trimmed.includes('|')) return { cells: trimmed.split('|').map(cleanMapAddressCodeBulkCell) };
+            const commaParts = trimmed.split(',');
+            if (commaParts.length >= 2) {
+                const last = commaParts[commaParts.length - 1].trim();
+                const before = commaParts.slice(0, -1).join(',');
+                if (!/\s/.test(last) && mapAddressCodeLooksLikeCodeCell(last, before)) return { cells: [before, last].map(cleanMapAddressCodeBulkCell) };
+            }
+            const wide = trimmed.split(/\s{2,}/).filter(part => String(part).trim());
+            if (wide.length >= 2) {
+                const last = wide[wide.length - 1];
+                const before = wide.slice(0, -1).join(' ');
+                if (mapAddressCodeLooksLikeCodeCell(last, before)) return { cells: [before, last].map(cleanMapAddressCodeBulkCell) };
+                if (mapAddressCodeLooksLikeCodeCell(wide[0], '') && mapAddressCodeLooksLikeStreet(wide.slice(1).join(' '))) {
+                    return { cells: [wide.slice(1).join(' '), wide[0]].map(cleanMapAddressCodeBulkCell) };
                 }
             }
-            return { cells: cells.map(cleanMapAddressCodeBulkCell) };
+            const tokens = trimmed.split(/\s+/);
+            if (tokens.length >= 2) {
+                const last = tokens[tokens.length - 1];
+                const before = tokens.slice(0, -1).join(' ');
+                if (mapAddressCodeLooksLikeCodeCell(last, before) && mapAddressCodeLooksLikeStreet(before)) {
+                    return { cells: [before, last].map(cleanMapAddressCodeBulkCell) };
+                }
+                const rest = tokens.slice(1).join(' ');
+                if (mapAddressCodeLooksLikeCodeCell(tokens[0], '') && mapAddressCodeLooksLikeStreet(rest)) {
+                    return { cells: [rest, tokens[0]].map(cleanMapAddressCodeBulkCell) };
+                }
+                if (mapAddressCodeLooksLikeCodeCell(last, before)) return { cells: [before, last].map(cleanMapAddressCodeBulkCell) };
+            }
+            return { error: 'separate-columns' };
         }
 
         function mapAddressCodeBulkHeaderIndexes(cells) {
@@ -22113,7 +22192,7 @@
                 const split = splitMapAddressCodeBulkCells(line);
                 if (!split) return;
                 if (split.error) {
-                    skipped.push({ lineNumber, text: String(line).trim().slice(0, 180), reason: 'Separate the address and the code with a tab or a |' });
+                    skipped.push({ lineNumber, text: String(line).trim().slice(0, 180), reason: 'Add a code number after the address' });
                     seenContent = true;
                     return;
                 }
@@ -22128,8 +22207,12 @@
                     }
                 }
                 seenContent = true;
-                const address = split.cells[addressIdx] || '';
-                const codeText = split.cells[codeIdx] || '';
+                const picked = headerSkipped
+                    ? { address: cleanMapAddressCodeBulkCell(split.cells[addressIdx]), code: cleanMapAddressCodeBulkCell(split.cells[codeIdx]) }
+                    : pickMapAddressCodeCells(split.cells);
+                if (!picked) return;
+                const address = picked.address || '';
+                const codeText = picked.code || '';
                 if (!address || !codeText) {
                     skipped.push({
                         lineNumber,
@@ -22391,12 +22474,26 @@
 
         function addMapAddressCodeBulkLinesFromPaste(event) {
             const clipboard = event && (event.clipboardData || window.clipboardData);
-            const text = clipboard && clipboard.getData ? clipboard.getData('text') : '';
-            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            let text = '';
+            if (clipboard && clipboard.getData) {
+                text = clipboard.getData('text/plain') || clipboard.getData('text') || '';
+            }
+            // Without clipboard text the browser pastes into the box, and the input handler splits it.
             if (!text || !String(text).trim()) return;
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
             addMapAddressCodeBulkLinesFromText(text);
             const input = document.getElementById('mapAddressCodeBulkInput');
             if (input) input.value = '';
+        }
+
+        function moveMapAddressCodeBulkTextToLines(input) {
+            if (!input || !/[\r\n]/.test(input.value)) {
+                previewMapAddressCodeBulk();
+                return;
+            }
+            const text = input.value;
+            input.value = '';
+            addMapAddressCodeBulkLinesFromText(text);
         }
 
         function previewMapAddressCodeBulk() {
@@ -22422,23 +22519,23 @@
             if (plan.ready.length > previewCount) {
                 lines.push(`<div style="opacity:0.75;">${plan.ready.length - previewCount} more ready to import</div>`);
             }
-            plan.duplicates.slice(0, 4).forEach(row => {
-                lines.push(`<div style="opacity:0.8;">${escapeMapSuggestionHtml(row.address)} — same address as an earlier line, first code is kept</div>`);
-            });
-            plan.unmatched.slice(0, 4).forEach(row => {
+            plan.unmatched.forEach(row => {
                 lines.push(`<div style="color:#ff9800;">${escapeMapSuggestionHtml(row.address)} — not on this map</div>`);
             });
-            plan.ambiguous.slice(0, 3).forEach(row => {
-                lines.push(`<div style="color:#ff9800;">${escapeMapSuggestionHtml(row.address)} — matches more than one building</div>`);
+            plan.ambiguous.forEach(row => {
+                const where = (row.matches || []).slice(0, 3).join('; ');
+                lines.push(`<div style="color:#ff9800;">${escapeMapSuggestionHtml(row.address)} — matches more than one building${where ? ': ' + escapeMapSuggestionHtml(where) : ''}</div>`);
             });
-            plan.skipped.slice(0, 3).forEach(row => {
-                lines.push(`<div style="color:#ff9800;">Line ${row.lineNumber}: ${escapeMapSuggestionHtml(row.reason)}</div>`);
+            plan.skipped.forEach(row => {
+                lines.push(`<div style="color:#ff9800;">${escapeMapSuggestionHtml(row.text || ('Line ' + row.lineNumber))} — ${escapeMapSuggestionHtml(row.reason)}</div>`);
+            });
+            plan.duplicates.forEach(row => {
+                lines.push(`<div style="opacity:0.8;">${escapeMapSuggestionHtml(row.address)} — same address as an earlier line, first code is kept</div>`);
             });
             const notes = [];
-            if (plan.duplicates.length > 4) notes.push(`${plan.duplicates.length} repeated addresses kept once`);
-            else if (plan.duplicates.length) notes.push(`${plan.duplicates.length} repeated address${plan.duplicates.length === 1 ? '' : 'es'} kept once`);
+            if (plan.duplicates.length) notes.push(`${plan.duplicates.length} repeated address${plan.duplicates.length === 1 ? '' : 'es'} kept once`);
             if (plan.alreadySaved.length) notes.push(`${plan.alreadySaved.length} already saved`);
-            if (plan.unmatched.length > 4) notes.push(`${plan.unmatched.length - 4} more not on this map`);
+            if (plan.unmatched.length) notes.push(`${plan.unmatched.length} not on this map`);
             if (notes.length) lines.push(`<div style="opacity:0.8;">${notes.join(' · ')}</div>`);
             preview.innerHTML = lines.join('') || '<div style="opacity:0.75;">Nothing to import yet</div>';
             preview.style.display = 'block';
