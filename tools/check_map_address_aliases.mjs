@@ -44,7 +44,7 @@ const zoomRule = css.indexOf('#buildingMap:has(.leaflet-popup) .leaflet-control-
 assert.ok(phoneStart >= 0 && zoomRule > phoneStart, 'zoom buttons are only hidden behind popups in the phone layout');
 
 // The alternate name is shown in addition to the DOB address, never instead of it.
-assert.match(html, /\$\{building\.address\}\$\{renderMapAddressCodeBadgeHtml\(building\.bin\)\}<\/div>\s*\$\{renderMapAddressCodeRowHtml\(building\.bin\)\}\s*<div class="map-popup-aliases" data-map-alias-bin=/);
+assert.match(html, /\$\{building\.address\}<\/div>\s*<div class="map-popup-aliases" data-map-alias-bin="\$\{building\.bin\}"[^>]*>\s*<\/div>\s*\$\{renderMapAddressCodeRowHtml\(building\.bin\)\}/);
 assert.match(html, />Also known as<\/div>/);
 assert.match(html, /const addressMatch = mapSearchFieldIncludes\(building\.address, searchTerm\);/);
 
