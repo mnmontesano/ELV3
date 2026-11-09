@@ -11788,6 +11788,11 @@
             return isNaN(parsed.getTime()) ? String(value) : parsed.toISOString().slice(0, 10);
         }
 
+        function isDobServiceUnavailableError(error) {
+            const status = Number(error && error.status) || 0;
+            return status === 0 || status === 429 || status >= 500;
+        }
+
         async function fetchDobApiJson(url, errorMessage) {
             let lastError = null;
             for (let attempt = 1; attempt <= 3; attempt++) {
@@ -11801,9 +11806,7 @@
                     return await response.json();
                 } catch (error) {
                     lastError = error;
-                    const status = Number(error && error.status) || 0;
-                    const retryable = status === 0 || status === 429 || status >= 500;
-                    if (!retryable || attempt === 3) throw error;
+                    if (!isDobServiceUnavailableError(error) || attempt === 3) throw error;
                     await new Promise(resolve => setTimeout(resolve, 400 * attempt));
                 }
             }
@@ -11823,6 +11826,7 @@
 
         const DOB_DEVICE_BATCH_SIZE = 50;
         const DOB_DEVICE_BATCH_CONCURRENCY = 3;
+        const DOB_UNAVAILABLE_BATCH_RETRIES = 2;
         const DOB_BIN_SCAN_CONCURRENCY = 4;
 
         async function runWithLimitedConcurrency(items, concurrency, workerFn) {
@@ -12088,10 +12092,21 @@
 
             await runWithLimitedConcurrency(chunks, DOB_DEVICE_BATCH_CONCURRENCY, async (chunk) => {
                 let found = null;
-                try {
-                    found = await fetchDobDeviceRecordsChunk(chunk);
-                } catch (error) {
-                    console.warn('DOB batch lookup failed, falling back to per-device:', error);
+                let unavailable = false;
+                for (let round = 0; round <= DOB_UNAVAILABLE_BATCH_RETRIES && !found; round++) {
+                    try {
+                        found = await fetchDobDeviceRecordsChunk(chunk);
+                    } catch (error) {
+                        unavailable = isDobServiceUnavailableError(error);
+                        if (!unavailable) {
+                            console.warn('DOB batch lookup failed, falling back to per-device:', error);
+                            break;
+                        }
+                        console.warn('DOB service unavailable for batch lookup:', error);
+                        if (round < DOB_UNAVAILABLE_BATCH_RETRIES) {
+                            await new Promise(resolve => setTimeout(resolve, 1500 * Math.pow(2, round)));
+                        }
+                    }
                 }
 
                 if (found) {
@@ -12099,8 +12114,16 @@
                         if (found[deviceNumber]) freshByDevice[deviceNumber] = found[deviceNumber];
                         else failed.push(deviceNumber);
                     });
+                } else if (unavailable) {
+                    // One request per device would only multiply the load on a service that is already down.
+                    chunk.forEach(deviceNumber => failed.push(deviceNumber));
                 } else {
+                    let serviceDown = false;
                     for (const deviceNumber of chunk) {
+                        if (serviceDown) {
+                            failed.push(deviceNumber);
+                            continue;
+                        }
                         try {
                             const rec = await fetchCurrentDobDeviceRecord(deviceNumber);
                             if (rec) freshByDevice[deviceNumber] = rec;
@@ -12108,6 +12131,7 @@
                         } catch (deviceError) {
                             console.warn('DOB info update failed for device:', deviceNumber, deviceError);
                             failed.push(deviceNumber);
+                            serviceDown = isDobServiceUnavailableError(deviceError);
                         }
                     }
                 }
