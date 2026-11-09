@@ -27,7 +27,8 @@ assert.match(html, /addressCodes: getMapAddressCodes\(\),/);
 assert.match(html, /addressCodes: normalizeMapAddressCodes\(view\.addressCodes\),/);
 assert.match(html, /addressCodes: normalizeMapAddressCodes\(source\.addressCodes\),/);
 assert.match(html, /setMapAddressCodes\(view\.addressCodes \|\| \{\}\);/);
-assert.match(html, /addressCodeKeys\.length > MAP_ADDRESS_CODE_STORE_MAX/);
+assert.doesNotMatch(html, /MAP_ADDRESS_CODE_STORE_MAX/);
+assert.doesNotMatch(html, /too many address codes/);
 assert.match(html, /planningColumn\('address_code', 'Code Number', 'addressCode'/);
 assert.match(css, /#mcpAddressCodes input\[type="text"\],\s*#mcpAddressCodes textarea,\s*\.map-address-code-input \{\s*font-size: 16px !important;/);
 
@@ -200,5 +201,22 @@ assert.deepEqual(
     [['1000001', 'A-1042'], ['2000002', 'B-9'], ['4000004', 'C-1']]
 );
 assert.equal(spaced.duplicates.length, 1);
+
+const manyGroups = {};
+const manyLines = [];
+for (let index = 0; index < 40; index += 1) {
+    const bin = String(5000000 + index);
+    const number = 500 + index;
+    manyGroups[bin] = { address: `${number} UNIQUE STREET, MANHATTAN`, devices: [] };
+    manyLines.push(`${number} Unique Street C-${index}`);
+}
+const many = api.planMapAddressCodeBulk(manyLines.join('\n'), {
+    binGroups: manyGroups,
+    aliases: [],
+    locations: [],
+    existingCodes: {}
+});
+assert.equal(many.ready.length, 40);
+assert.equal(many.overLimit, undefined);
 
 console.log('map address code checks passed');

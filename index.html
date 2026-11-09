@@ -1891,13 +1891,13 @@
                                 </div>
                                 <div id="mapAddressCodeBulkBox" style="background: var(--input-bg); padding: 8px; border-radius: 6px; border: 1px dashed rgba(109,76,65,0.45); margin-bottom: 10px;">
                                     <label for="mapAddressCodeBulkInput" style="display: block; font-size: 0.82em; font-weight: 700; margin-bottom: 3px;">Add codes for many addresses</label>
-                                    <p class="mcp-desc" style="margin-bottom: 6px;">Paste one address and code per line. Each line becomes its own address and code. A repeated address keeps the first code only. A header row is skipped. Separate the address and code with a tab, a <span style="font-family: ui-monospace, monospace;">|</span>, or a space before the code.</p>
+                                    <p class="mcp-desc" style="margin-bottom: 6px;">Paste one address and code per line. There is no limit on how many lines you can paste. Each line becomes its own address and code. A repeated address keeps the first code only. A header row is skipped. Separate the address and code with a tab, a <span style="font-family: ui-monospace, monospace;">|</span>, or a space before the code.</p>
                                     <textarea id="mapAddressCodeBulkInput" class="mcp-search-input" rows="4" spellcheck="false" autocomplete="off"
                                               placeholder="Paste lines here&#10;100 Broadway A-1042&#10;45 Oak Ave B-19"
                                               onpaste="addMapAddressCodeBulkLinesFromPaste(event)"
                                               onkeydown="if (event.key === 'Enter') { event.preventDefault(); addMapAddressCodeBulkLinesFromText(this.value); this.value = ''; }"
                                               style="min-height: 72px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre;"></textarea>
-                                    <div id="mapAddressCodeBulkRows" style="margin: 6px 0;"></div>
+                                    <div id="mapAddressCodeBulkRows" style="margin: 6px 0; max-height: 420px; overflow-y: auto;"></div>
                                     <div id="mapAddressCodeBulkPreview" style="font-size: 0.82em; line-height: 1.4; margin-bottom: 4px; display: none; max-height: 180px; overflow-y: auto;"></div>
                                     <button type="button" id="mapAddressCodeBulkAddBtn" onclick="importMapAddressCodesFromBulk()" class="mcp-btn" disabled style="color:#6d4c41; font-weight:700; margin-top: 2px; opacity: 0.5;">Import code numbers</button>
                                 </div>
@@ -18096,9 +18096,6 @@
                     throw new Error('Map view contains invalid address codes.');
                 }
                 const addressCodeKeys = Object.keys(source.addressCodes);
-                if (addressCodeKeys.length > MAP_ADDRESS_CODE_STORE_MAX) {
-                    throw new Error('Map view contains too many address codes.');
-                }
                 if (addressCodeKeys.some(key => !isValidMapCompletedStoreKey(key))) {
                     throw new Error('Map view contains an invalid address code.');
                 }
@@ -21908,7 +21905,6 @@
         }
 
         const MAP_ADDRESS_CODE_MAX = 32;
-        const MAP_ADDRESS_CODE_STORE_MAX = 10000;
 
         function cleanMapAddressCode(value) {
             const text = String(value == null ? '' : value)
@@ -21931,7 +21927,7 @@
         function normalizeMapAddressCodes(value) {
             const result = {};
             if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
-            Object.keys(value).slice(0, MAP_ADDRESS_CODE_STORE_MAX).forEach(key => {
+            Object.keys(value).forEach(key => {
                 if (!isValidMapCompletedStoreKey(key)) return;
                 const code = cleanMapAddressCode(value[key]);
                 if (code) result[String(key)] = code;
@@ -22162,8 +22158,6 @@
             const ambiguous = [];
             const alreadySaved = [];
             const duplicates = [];
-            const overLimit = [];
-            const readyKeys = new Set(Object.keys(existing));
             const seenAddresses = new Set();
             parsed.rows.forEach(row => {
                 const addressKey = mapAddressCodeCoreText(row.address);
@@ -22190,11 +22184,6 @@
                     alreadySaved.push(row);
                     return;
                 }
-                if (!readyKeys.has(target.key) && readyKeys.size >= MAP_ADDRESS_CODE_STORE_MAX) {
-                    overLimit.push(row);
-                    return;
-                }
-                readyKeys.add(target.key);
                 ready.push({
                     lineNumber: row.lineNumber,
                     address: row.address,
@@ -22211,7 +22200,6 @@
                 ambiguous,
                 alreadySaved,
                 duplicates,
-                overLimit,
                 skipped: parsed.skipped
             };
         }
@@ -22451,7 +22439,6 @@
             else if (plan.duplicates.length) notes.push(`${plan.duplicates.length} repeated address${plan.duplicates.length === 1 ? '' : 'es'} kept once`);
             if (plan.alreadySaved.length) notes.push(`${plan.alreadySaved.length} already saved`);
             if (plan.unmatched.length > 4) notes.push(`${plan.unmatched.length - 4} more not on this map`);
-            if (plan.overLimit.length) notes.push(`${plan.overLimit.length} over the limit`);
             if (notes.length) lines.push(`<div style="opacity:0.8;">${notes.join(' · ')}</div>`);
             preview.innerHTML = lines.join('') || '<div style="opacity:0.75;">Nothing to import yet</div>';
             preview.style.display = 'block';
