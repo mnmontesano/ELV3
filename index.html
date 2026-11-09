@@ -1091,7 +1091,7 @@
                             </button>
                             <div class="map-modal-dob-group" style="display: flex; align-items: center; gap: 5px; flex-wrap: wrap;">
                                 <div id="mapViewMenu" class="map-dob-menu">
-                                    <button type="button" id="mapViewMenuButton" onclick="toggleMapViewMenu(event)" aria-expanded="false" aria-pressed="false" aria-controls="mapViewMenuPanel" title="Dashboard and Table View" style="background: #b8860b; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 4px; white-space: nowrap;">
+                                    <button type="button" id="mapViewMenuButton" onclick="toggleMapViewMenu(event)" aria-expanded="false" aria-pressed="false" aria-controls="mapViewMenuPanel" title="Dashboard, Table View, and Text View" style="background: #b8860b; border: none; border-radius: 5px; padding: 2px 7px; cursor: pointer; color: white; font-size: 0.72em; display: flex; align-items: center; gap: 4px; white-space: nowrap;">
                                         <span>View</span>
                                         <span aria-hidden="true">▾</span>
                                     </button>
@@ -1101,6 +1101,9 @@
                                         </button>
                                         <button type="button" id="mapTableViewButton" onclick="closeMapViewMenu(); openMapTableView()" title="View, filter, and edit the data loaded into this map">
                                             <span>▦</span> <span>Table View</span>
+                                        </button>
+                                        <button type="button" id="mapTextViewButton" onclick="closeMapViewMenu(); openMapTextView()" title="Read the locations currently shown on the map as text">
+                                            <span>☰</span> <span>Text View</span>
                                         </button>
                                     </div>
                                 </div>
@@ -1280,6 +1283,7 @@
                             <span id="mapSelectCount" class="map-select-count">0 buildings selected</span>
                             <div class="map-select-actions">
                                 <button type="button" onclick="openMapSelectByDevicesModal()" style="background:#0d6efd;" title="Select buildings by entering device numbers">By Device #s</button>
+                                <button type="button" id="mapSelectTextViewButton" onclick="openMapSelectionTextView()" style="background:#37474f;" disabled title="Read the selected buildings as text, and export them to Excel or CSV">Text view</button>
                                 <button type="button" id="mapSelectEditButton" onclick="openMapBulkEditModal()" style="background:#1a73e8;" disabled title="Edit information for selected buildings">Edit Selected</button>
                                 <button type="button" id="mapSelectCompletedButton" onclick="openMapSelectCompletedMenu()" style="background:#27ae60;" disabled title="Open the completion menu for the selected buildings">Completed</button>
                                 <button type="button" id="mapSelectClearButton" onclick="clearMapBuildingSelection()" style="background:#6c757d;" disabled title="Clear current selection">Clear</button>
@@ -1351,6 +1355,7 @@
                             #mapControlsPanelBody.mcp-detail-mode #transportationLocationsList,
                             #mapControlsPanelBody.mcp-detail-mode #customNamesList,
                             #mapControlsPanelBody.mcp-detail-mode #mapAddressAliasesList,
+                            #mapControlsPanelBody.mcp-detail-mode #mapAddressCodesList,
                             #mapControlsPanelBody.mcp-detail-mode #completedBuildingsList,
                             #mapControlsPanelBody.mcp-detail-mode #reviewBuildingsList,
                             #mapControlsPanelBody.mcp-detail-mode #monthLabelsList,
@@ -1375,6 +1380,7 @@
                             #transportationLocationsList,
                             #customNamesList,
                             #mapAddressAliasesList,
+                            #mapAddressCodesList,
                             #completedBuildingsList,
                             #reviewBuildingsList,
                             #monthLabelsList,
@@ -1397,6 +1403,7 @@
                             #mapControlsPanel.mcp-popped-out #transportationLocationsList,
                             #mapControlsPanel.mcp-popped-out #customNamesList,
                             #mapControlsPanel.mcp-popped-out #mapAddressAliasesList,
+                            #mapControlsPanel.mcp-popped-out #mapAddressCodesList,
                             #mapControlsPanel.mcp-popped-out #completedBuildingsList,
                             #mapControlsPanel.mcp-popped-out #reviewBuildingsList,
                             #mapControlsPanel.mcp-popped-out #monthLabelsList,
@@ -1865,6 +1872,32 @@
                             </div>
                         </div>
 
+                        <!-- Address code numbers saved with each map address -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpAddressCodes')">
+                                <span class="mcp-title"><span style="color:#6d4c41;">#</span> Address Codes - <span id="mapAddressCodesCount">0</span></span>
+                                <span class="mcp-arrow" id="mcpAddressCodesArrow">›</span>
+                            </div>
+                            <div class="mcp-body" id="mcpAddressCodes">
+                                <p class="mcp-desc">Add a code number to an address on this map. It shows with that address in the popup, the map search finds it, and it is stored in the map save file.</p>
+                                <div style="background: var(--input-bg); padding: 8px; border-radius: 6px; border: 1px solid rgba(109,76,65,0.35); margin-bottom: 10px;">
+                                    <label for="mapAddressCodeBinInput" style="display: block; font-size: 0.82em; font-weight: 700; margin-bottom: 3px;">BIN</label>
+                                    <input type="text" id="mapAddressCodeBinInput" class="mcp-search-input" inputmode="numeric" maxlength="7" placeholder="e.g. 1000001" autocomplete="off"
+                                           onkeydown="if (event.key === 'Enter') { event.preventDefault(); document.getElementById('mapAddressCodeValueInput').focus(); }">
+                                    <label for="mapAddressCodeValueInput" style="display: block; font-size: 0.82em; font-weight: 700; margin-bottom: 3px;">Code number</label>
+                                    <input type="text" id="mapAddressCodeValueInput" class="mcp-search-input" maxlength="32" placeholder="e.g. A-1042" autocomplete="off"
+                                           onkeydown="if (event.key === 'Enter') { event.preventDefault(); addMapAddressCodeFromForm(); }">
+                                    <button type="button" onclick="addMapAddressCodeFromForm()" class="mcp-btn" style="color:#6d4c41; font-weight:700; margin-top: 2px;">Add code number</button>
+                                </div>
+                                <input type="text" id="mapAddressCodesSearchInput" class="mcp-search-input" placeholder="🔍 Search code, address, BIN..."
+                                       oninput="filterMapAddressCodesList(this.value)">
+                                <div id="mapAddressCodesList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No address codes</div>
+                                </div>
+                                <button type="button" onclick="clearAllMapAddressCodes()" class="mcp-btn" style="color:#6d4c41;">Clear All Address Codes</button>
+                            </div>
+                        </div>
+
                         <!-- Houses (additional locations marked as house) -->
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpHouses')">
@@ -1988,6 +2021,7 @@
                                     <li>Click a marker to see building details</li>
                                     <li>Use ✓ in popup to mark a building complete</li>
                                     <li>In Select mode, Completed opens that same completion menu for every selected building</li>
+                                    <li>In Select mode, Text view lists the selected buildings as readable text you can copy, or export to Excel or CSV</li>
                                     <li>Stacked buildings in Select mode use the same location chooser as a normal map click. Choose the building to select</li>
                                     <li>Selected buildings are listed on the right. If Settings is open, that list sits to the left of Settings</li>
                                     <li>Use 🔄 in popup to mark a building in process</li>
@@ -2004,6 +2038,8 @@
                                     <li>When you mark a test completed, its completed date replaces the scheduled date. Use + Add another date to record testing that took more than one day</li>
                                     <li>Review lists buildings marked completed that still have devices without the marked test filed for this year. It is separate from the REVIEW month label</li>
                                     <li>Map view filter: Hide Category Completed leaves PVI-only jobs visible; Hide PVI Completed leaves Category-only jobs visible. Fully completed jobs are hidden by both.</li>
+                                    <li>Text View lists the locations currently drawn on the map after the Map view filter, including Hide Scheduled Test Dates &amp; Completed Jobs, as readable text you can copy, or export to Excel or CSV</li>
+                                    <li>Address Codes adds a code number to a map address. It shows on that address in the popup, and it is saved in the map file</li>
                                     <li>No Test Yet lists devices with no Category or PVI this year and counts down days left to finish both tests 91 days apart</li>
                                     <li>Disregard in No Test Yet hides only that device from the list and map highlight; other devices at the same building stay visible</li>
                                     <li>Copy on a No Test Yet building copies that building's devices; Copy All Devices copies every remaining device across all buildings</li>
@@ -2064,6 +2100,9 @@
                                     <option value="month:December">December</option>
                                     <option value="month:REVIEW">REVIEW</option>
                                 </select>
+                                <button type="button" id="mapFilterTextViewButton" onclick="openMapTextView()" class="mcp-btn" style="background: #37474f; color: white; border-color: #37474f; font-weight: 600; margin-top: 8px;" title="Read the locations currently shown on the map for this filter as text">
+                                    Text view of filtered results
+                                </button>
                             </div>
                             <button id="mapExportExcelButton" onclick="showMapExportModal()" class="mcp-btn" style="background: #28a745; color: white; border-color: #28a745; font-weight: 600; margin-top: 10px;">
                                 Export
@@ -11077,6 +11116,7 @@
         let mapOverlapChooserEntries = [];
         let mapSelectMode = false;
         let mapSelectedBins = new Set();
+        let mapTextViewScope = 'map';
         let mapContainerResizeObserver = null;
         let initBuildingMapInProgress = false;
 
@@ -11127,6 +11167,7 @@
         let mapTestDates = {};
         let mapDeadlines = {};
         let mapNotes = {};
+        let mapAddressCodes = {}; // key: BIN or custom:lat,lng → code number shown with that address
         let mapCat5Bypasses = {}; // key: "BIN::DEVICE_NUMBER" → { bypassed, note, timestamp }
         let mapCat1Bypasses = {}; // key: "BIN::DEVICE_NUMBER" → { bypassed, note, timestamp }
         let mapPviBypasses = {}; // key: "BIN::DEVICE_NUMBER" → { bypassed, note, timestamp }
@@ -11605,6 +11646,7 @@
                 testDates: getMapTestDates(),
                 deadlines: getMapDeadlines(),
                 notes: getMapNotes(),
+                addressCodes: getMapAddressCodes(),
                 addressAliases: getMapAddressAliases(),
                 cat5Bypasses: getMapCat5Bypasses(),
                 cat1Bypasses: getMapCat1Bypasses(),
@@ -14419,6 +14461,8 @@
             if (values.note) mapNotes[bin] = values.note;
             else delete mapNotes[bin];
 
+            setMapAddressCode(bin, values.addressCode || '');
+
             const deadlineRecord = {};
             if (values.deadlineCategoryDate) deadlineRecord.category = values.deadlineCategoryDate;
             if (values.deadlinePviDate) deadlineRecord.pvi = values.deadlinePviDate;
@@ -14602,6 +14646,9 @@
             const planningBins = new Set(groupRowByBin.keys());
             [mapMonthLabels, mapTestDates, mapDeadlines, mapNotes, mapFavorites, mapHidden, mapInProcess, mapHold, mapDeviceMonitors, mapCompleted]
                 .forEach(store => Object.keys(store || {}).forEach(bin => planningBins.add(String(bin))));
+            Object.keys(mapAddressCodes || {}).forEach(key => {
+                if (isMapBinStoreKey(key)) planningBins.add(String(key));
+            });
             const planningRows = Array.from(planningBins).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(bin => {
                 const groupRow = groupRowByBin.get(bin);
                 const group = groupRow ? groupRow.group : null;
@@ -14626,6 +14673,7 @@
                         completedCategoryDates: completedSchedule.category.slice(),
                         completedGeneralDates: completedSchedule.general.slice(),
                         note: mapNotes[bin] || '',
+                        addressCode: getMapAddressCode(bin),
                         favorite: !!mapFavorites[bin],
                         hidden: !!mapHidden[bin],
                         inProcess: !!mapInProcess[bin],
@@ -14795,6 +14843,15 @@
                         planningDateListColumn('scheduled_unspecified_dates', 'Scheduled Unspecified Dates', 'scheduledGeneralDates', ''),
                         planningColumn('deadline_cat_date', 'Deadline CAT Date', 'deadlineCategoryDate', { parse: parseMapTableSingleDateInput }),
                         planningColumn('deadline_pvi_date', 'Deadline PVI Date', 'deadlinePviDate', { parse: parseMapTableSingleDateInput }),
+                        planningColumn('address_code', 'Code Number', 'addressCode', {
+                            parse: rawValue => {
+                                const code = normalizeMapAddressCode(rawValue);
+                                if (code === null) {
+                                    return { valid: false, message: 'Use letters, numbers, spaces, and - # / . _ (32 characters max).' };
+                                }
+                                return { valid: true, value: code };
+                            }
+                        }),
                         planningColumn('building_note', 'Building Note', 'note', { multiline: true }),
                         planningColumn('favorite', 'Favorite', 'favorite', { inputType: 'boolean' }),
                         planningColumn('hidden', 'Hidden', 'hidden', { inputType: 'boolean' }),
@@ -15108,6 +15165,7 @@
         }
 
         function scheduleMapLiveTableRefresh() {
+            scheduleMapTextViewRefresh();
             const panel = document.getElementById('mapLiveTablePanel');
             if (!panel || !isMapLiveTableOpen()) return;
             if (mapLiveTableRefreshTimer) clearTimeout(mapLiveTableRefreshTimer);
@@ -15745,6 +15803,708 @@
             if (modal._mapTableEscapeHandler) document.removeEventListener('keydown', modal._mapTableEscapeHandler);
             cancelMapTableFilterRender(modal);
             modal.remove();
+        }
+
+        // MAP_TEXT_VIEW_FORMAT_START
+        function formatMapTextViewHeader(entries, meta) {
+            const list = Array.isArray(entries) ? entries : [];
+            const info = meta || {};
+            const deviceTotal = list.reduce((sum, entry) => sum + (Number(entry.deviceCount) || 0), 0);
+            const locationLabel = list.length + ' location' + (list.length === 1 ? '' : 's') + ' shown';
+            const deviceLabel = deviceTotal
+                ? deviceTotal + ' device' + (deviceTotal === 1 ? '' : 's')
+                : '';
+            const lines = [
+                'MAP text view',
+                'Filter: ' + (info.heading || 'Current map view'),
+                deviceLabel ? locationLabel + ' · ' + deviceLabel : locationLabel
+            ];
+            if (info.note) lines.push(info.note);
+            if (!list.length) {
+                lines.push('');
+                lines.push(info.emptyMessage || 'No locations are currently shown on the map for this filter.');
+            }
+            return lines.join('\n');
+        }
+
+        function formatMapTextViewEntry(entry, index) {
+            const item = entry || {};
+            const lines = [(Number(index) + 1) + '. ' + (item.title || 'Untitled location')];
+            const push = line => lines.push('   ' + line);
+            if (item.code) push('Code: ' + item.code);
+            if (item.kindLabel) push(item.kindLabel);
+            if (item.bin) push('BIN: ' + item.bin);
+            if (Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)) && (item.passthrough || item.kind === 'additional')) {
+                push('Map location: ' + Number(item.latitude).toFixed(5) + ', ' + Number(item.longitude).toFixed(5));
+            }
+            if (item.month) push('Month: ' + item.month);
+            (item.statuses || []).forEach(status => push('Status: ' + status));
+            if (item.aliases && item.aliases.length) push('Also known as: ' + item.aliases.join('; '));
+            const ready = item.ready || [];
+            const notReady = item.notReady || [];
+            const completedDevices = item.completedDevices || [];
+            const hasDeviceInfo = item.deviceCount || item.notApplicableCount || ready.length || notReady.length || completedDevices.length;
+            if (hasDeviceInfo) {
+                const counts = [];
+                if (item.complete || item.incomplete) {
+                    counts.push((Number(item.complete) || 0) + ' complete');
+                    counts.push((Number(item.incomplete) || 0) + ' incomplete');
+                }
+                push('Devices: ' + (Number(item.deviceCount) || 0) + (counts.length ? ' (' + counts.join(', ') + ')' : ''));
+            }
+            if (item.notApplicableCount) push('N/A devices: ' + item.notApplicableCount);
+            if (item.allRequiredTestsCompletedForYear) {
+                push('All required tests completed for ' + (item.calendarYear || 'this year'));
+            }
+            const addSection = (label, rows) => {
+                if (!rows || !rows.length) return;
+                push(label + ' (' + rows.length + '):');
+                rows.forEach(row => lines.push('     ' + row));
+            };
+            addSection('Scheduled test dates', (item.schedules || []).map(row => row.label + ' - ' + row.display));
+            addSection('Deadlines', (item.deadlines || []).map(row => row.label + ' - ' + row.display));
+            addSection('Ready to test', ready);
+            addSection('Not ready', notReady);
+            addSection('Completed this year', completedDevices);
+            addSection('Active violations', item.violations || []);
+            if (item.note) {
+                push('Note:');
+                String(item.note).split(/\r?\n/).forEach(line => lines.push('     ' + line));
+            }
+            return lines.join('\n');
+        }
+
+        function formatMapTextViewDocument(entries, meta) {
+            const list = Array.isArray(entries) ? entries : [];
+            const header = formatMapTextViewHeader(list, meta);
+            if (!list.length) return header;
+            return header + '\n\n' + list.map((entry, index) => formatMapTextViewEntry(entry, index)).join('\n\n');
+        }
+
+        const MAP_TEXT_VIEW_EXPORT_HEADERS = [
+            'Filter',
+            'Text search',
+            'Location',
+            'Code Number',
+            'Kind',
+            'BIN',
+            'Month',
+            'Status',
+            'Also known as',
+            'Devices',
+            'Complete',
+            'Incomplete',
+            'N/A devices',
+            'All required tests completed',
+            'Scheduled test dates',
+            'Deadlines',
+            'Ready to test',
+            'Not ready',
+            'Completed this year',
+            'Active violations',
+            'Note',
+            'Latitude',
+            'Longitude'
+        ];
+
+        function mapTextViewCsvCell(value) {
+            let text = String(value ?? '');
+            if (/^[\t\r ]*[=+\-@]/.test(text)) text = `'${text}`;
+            return `"${text.replace(/"/g, '""')}"`;
+        }
+
+        function mapTextViewExportRow(entry, meta) {
+            const item = entry || {};
+            const info = meta || {};
+            const schedules = (item.schedules || []).map(row => row.label + ' - ' + row.display);
+            const deadlines = (item.deadlines || []).map(row => row.label + ' - ' + row.display);
+            const hasDeviceInfo = item.deviceCount || item.notApplicableCount || (item.ready || []).length || (item.notReady || []).length || (item.completedDevices || []).length;
+            const showCounts = item.complete || item.incomplete;
+            const hasCoords = Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)) && (item.passthrough || item.kind === 'additional');
+            return [
+                info.heading || 'Current map view',
+                info.findQuery || '',
+                item.title || 'Untitled location',
+                item.code || '',
+                item.kindLabel || (item.kind === 'additional' ? 'Additional location' : 'Building'),
+                item.bin || '',
+                item.month || '',
+                (item.statuses || []).join('; '),
+                (item.aliases || []).join('; '),
+                hasDeviceInfo ? String(Number(item.deviceCount) || 0) : '',
+                showCounts ? String(Number(item.complete) || 0) : '',
+                showCounts ? String(Number(item.incomplete) || 0) : '',
+                item.notApplicableCount ? String(item.notApplicableCount) : '',
+                item.allRequiredTestsCompletedForYear ? ('Yes' + (item.calendarYear ? ' (' + item.calendarYear + ')' : '')) : '',
+                schedules.join('\n'),
+                deadlines.join('\n'),
+                (item.ready || []).join('\n'),
+                (item.notReady || []).join('\n'),
+                (item.completedDevices || []).join('\n'),
+                (item.violations || []).join('\n'),
+                item.note || '',
+                hasCoords ? Number(item.latitude).toFixed(5) : '',
+                hasCoords ? Number(item.longitude).toFixed(5) : ''
+            ];
+        }
+
+        function buildMapTextViewExportTable(entries, meta) {
+            return {
+                headers: MAP_TEXT_VIEW_EXPORT_HEADERS.slice(),
+                rows: (Array.isArray(entries) ? entries : []).map(entry => mapTextViewExportRow(entry, meta))
+            };
+        }
+
+        function formatMapTextViewCsv(entries, meta) {
+            const table = buildMapTextViewExportTable(entries, meta);
+            const lines = [table.headers.map(mapTextViewCsvCell).join(',')];
+            table.rows.forEach(row => lines.push(row.map(mapTextViewCsvCell).join(',')));
+            return lines.join('\r\n') + '\r\n';
+        }
+
+        function mapTextViewExportFileName(extension, meta, date) {
+            const day = date || new Date().toISOString().slice(0, 10);
+            const heading = String((meta && meta.heading) || 'map-text-view')
+                .toLowerCase()
+                .replace(/&/g, ' and ')
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .slice(0, 70)
+                .replace(/-+$/g, '');
+            return (heading || 'map-text-view') + '-' + day + '.' + extension;
+        }
+        // MAP_TEXT_VIEW_FORMAT_END
+
+        let mapTextViewRefreshTimer = null;
+
+        function formatMapTextNamedDate(value) {
+            if (!value) return '';
+            if (value instanceof Date && !isNaN(value.getTime())) {
+                return value.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+            const text = String(value);
+            if (/^\d{4}-\d{2}-\d{2}/.test(text) && typeof formatMapTestDateRange === 'function') {
+                return formatMapTestDateRange(text.slice(0, 10));
+            }
+            const parsed = new Date(text);
+            if (!isNaN(parsed.getTime())) {
+                return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+            return text;
+        }
+
+        function mapTextDeviceRows(devices, kind) {
+            return (Array.isArray(devices) ? devices : []).map(device => {
+                const parts = [String(device && device.number || 'Unknown')];
+                if (device && device.type && device.type !== 'Unknown') parts.push(String(device.type));
+                if (kind === 'completed') {
+                    parts.push('Completed');
+                    return parts.join(' - ');
+                }
+                if (device && device.nextRequiredTest && device.nextRequiredTest !== 'All required tests filed') {
+                    parts.push(String(device.nextRequiredTest));
+                }
+                if (kind === 'ready') {
+                    parts.push('Available now');
+                } else if (kind === 'notReady') {
+                    if (device && device.eligibleDate) parts.push('Ready on ' + formatMapTextNamedDate(device.eligibleDate));
+                    const days = device && Number(device.daysUntil);
+                    if (days > 0) parts.push(days + ' day' + (days === 1 ? '' : 's'));
+                    if (!device || (!device.eligibleDate && !(days > 0))) parts.push('Not available yet');
+                }
+                return parts.join(' - ');
+            }).filter(Boolean);
+        }
+
+        function mapTextViolationRows(violations) {
+            return (Array.isArray(violations) ? violations : []).map(violation => {
+                const number = String(violation && (violation.deviceNumber || violation.device_number) || 'Device');
+                const description = String(violation && (violation.description || violation.violation_description) || '').replace(/\s+/g, ' ').trim();
+                const shortDescription = description.length > 100 ? description.slice(0, 100) + '...' : description;
+                return shortDescription ? number + ' - ' + shortDescription : number;
+            });
+        }
+
+        function mapTextStatusLines(bin, building) {
+            const lines = [];
+            const key = String(bin || '');
+            const completed = key && typeof getMapCompleted === 'function' ? getMapCompleted()[key] : null;
+            if (completed || (building && building.isCompleted)) {
+                const type = completed
+                    ? (completed.completionType || completed.testType)
+                    : building.completionType;
+                lines.push(typeof getMapCompletedTestLabel === 'function' ? getMapCompletedTestLabel(type) : 'Completed');
+            }
+            const inProcess = key && typeof getMapInProcess === 'function' ? getMapInProcess()[key] : null;
+            if (inProcess || (building && building.isInProcess)) {
+                const date = inProcess && inProcess.date ? inProcess.date : (building && building.inProcessDate);
+                lines.push(date ? 'In Process - ' + formatMapTextNamedDate(date) : 'In Process');
+            }
+            const hold = key && typeof getMapHold === 'function' ? getMapHold()[key] : null;
+            if (hold || (building && building.isHold)) lines.push('On Hold');
+            const favorites = typeof getMapFavorites === 'function' ? getMapFavorites() : {};
+            if (key && favorites[key]) lines.push('Favorite');
+            return lines;
+        }
+
+        function mapTextScheduleLines(bin) {
+            if (!bin || typeof getMapTypedScheduleRows !== 'function') return [];
+            return getMapTypedScheduleRows(bin)
+                .filter(row => row && row.date)
+                .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.type || '').localeCompare(String(b.type || '')))
+                .map(row => ({
+                    label: typeof mapAvailabilityScheduleTypeLabel === 'function' ? mapAvailabilityScheduleTypeLabel(row.type) : String(row.type || 'SCHEDULED'),
+                    display: typeof formatMapTestDateRange === 'function' ? formatMapTestDateRange(row.date, row.endDate) : String(row.date)
+                }));
+        }
+
+        function mapTextDeadlineLines(bin) {
+            if (!bin || typeof getMapDeadlinesForBin !== 'function') return [];
+            return getMapDeadlinesForBin(bin).map(entry => ({
+                label: typeof getMapDeadlineTypeLabel === 'function' ? getMapDeadlineTypeLabel(entry.type) : String(entry.type || 'Deadline'),
+                display: formatMapTextNamedDate(entry.date)
+            }));
+        }
+
+        function mapTextAliasNames(bin, devices) {
+            if (!bin || typeof getMapAddressAliasNamesForBin !== 'function') return [];
+            const numbers = [];
+            (devices || []).forEach(device => {
+                const number = device && (device.number || device.device_number);
+                if (number) numbers.push(number);
+            });
+            return getMapAddressAliasNamesForBin(bin, numbers);
+        }
+
+        function mapTextAdditionalKindLabel(location) {
+            if (!location) return 'Custom location';
+            if (location.isHouse) return 'House pin - stays on the map with filters';
+            if (location.isTransportation) return 'Transportation pin - stays on the map with filters';
+            if (location.type === 'pinned') return 'Dropped pin - stays on the map with filters';
+            if (location.bin) return 'Additional location';
+            return 'Custom location';
+        }
+
+        function buildMapTextViewBuildingEntry(building) {
+            const bin = String(building && building.bin || '');
+            const deviceLists = []
+                .concat(building.readyDevices || [], building.notReadyDevices || [], building.completedDevices || []);
+            return {
+                kind: 'building',
+                passthrough: false,
+                title: building.address || ('BIN ' + bin),
+                kindLabel: '',
+                bin,
+                month: typeof getMonthLabel === 'function' ? (getMonthLabel(bin) || '') : '',
+                statuses: mapTextStatusLines(bin, building),
+                aliases: mapTextAliasNames(bin, deviceLists),
+                deviceCount: Number(building.deviceCount) || 0,
+                complete: Number(building.complete) || 0,
+                incomplete: Number(building.incomplete) || 0,
+                notApplicableCount: Array.isArray(building.notApplicableDevices) ? building.notApplicableDevices.length : 0,
+                violations: mapTextViolationRows(building.violationDetails),
+                schedules: mapTextScheduleLines(bin),
+                deadlines: mapTextDeadlineLines(bin),
+                ready: mapTextDeviceRows(building.readyDevices, 'ready'),
+                notReady: mapTextDeviceRows(building.notReadyDevices, 'notReady'),
+                completedDevices: mapTextDeviceRows(building.completedDevices, 'completed'),
+                allRequiredTestsCompletedForYear: !!building.allRequiredTestsCompletedForYear,
+                calendarYear: building.calendarYear || '',
+                note: typeof getMapNote === 'function' ? String(getMapNote(bin) || '').trim() : '',
+                code: typeof getMapAddressCode === 'function' ? String(getMapAddressCode(bin) || '').trim() : '',
+                latitude: Number(building.latitude),
+                longitude: Number(building.longitude)
+            };
+        }
+
+        function buildMapTextViewAdditionalEntry(location, marker) {
+            const snapshot = marker && marker._mapTextSnapshot ? marker._mapTextSnapshot : {};
+            const bin = location && location.bin ? String(location.bin) : '';
+            const key = bin || (typeof getAdditionalLocationCompletionKey === 'function' ? getAdditionalLocationCompletionKey(location) : '');
+            const passthrough = !!(location && (location.isHouse || location.isTransportation || location.type === 'pinned'));
+            const deviceLists = []
+                .concat(snapshot.readyDevices || [], snapshot.notReadyDevices || [], snapshot.completedDevices || []);
+            return {
+                kind: 'additional',
+                passthrough,
+                title: String(location.customName || location.label || (bin ? 'BIN ' + bin : 'Custom location')),
+                kindLabel: mapTextAdditionalKindLabel(location),
+                bin,
+                month: bin && typeof getMonthLabel === 'function' ? (getMonthLabel(bin) || '') : '',
+                statuses: key ? mapTextStatusLines(key, null) : [],
+                aliases: bin ? mapTextAliasNames(bin, deviceLists) : [],
+                deviceCount: Number(snapshot.deviceCount) || 0,
+                complete: Number(snapshot.complete) || 0,
+                incomplete: Number(snapshot.incomplete) || 0,
+                notApplicableCount: Number(snapshot.notApplicableCount) || 0,
+                violations: mapTextViolationRows(snapshot.violations),
+                schedules: key ? mapTextScheduleLines(key) : [],
+                deadlines: key ? mapTextDeadlineLines(key) : [],
+                ready: mapTextDeviceRows(snapshot.readyDevices, 'ready'),
+                notReady: mapTextDeviceRows(snapshot.notReadyDevices, 'notReady'),
+                completedDevices: mapTextDeviceRows(snapshot.completedDevices, 'completed'),
+                allRequiredTestsCompletedForYear: !!snapshot.allRequiredTestsCompletedForYear,
+                calendarYear: snapshot.calendarYear || '',
+                note: key && typeof getMapNote === 'function' ? String(getMapNote(key) || '').trim() : '',
+                code: key && typeof getMapAddressCode === 'function' ? String(getMapAddressCode(key) || '').trim() : '',
+                latitude: Number(location.latitude),
+                longitude: Number(location.longitude)
+            };
+        }
+
+        function mapTextViewUsesSelection() {
+            return typeof mapTextViewScope !== 'undefined' && mapTextViewScope === 'selection';
+        }
+
+        function collectMapSelectedTextViewEntries() {
+            const entries = [];
+            const selected = (typeof mapSelectedBins !== 'undefined' && mapSelectedBins) ? mapSelectedBins : new Set();
+            const buildings = (typeof mapBuildingsData !== 'undefined' && Array.isArray(mapBuildingsData)) ? mapBuildingsData : [];
+            const groups = (typeof window !== 'undefined' && window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            selected.forEach(bin => {
+                const binKey = String(bin);
+                const building = buildings.find(item => item && String(item.bin) === binKey);
+                if (building) {
+                    entries.push(buildMapTextViewBuildingEntry(building));
+                    return;
+                }
+                const group = groups[binKey];
+                if (!group) return;
+                const devices = Array.isArray(group.devices) ? group.devices : [];
+                entries.push(buildMapTextViewBuildingEntry({
+                    bin: binKey,
+                    address: group.address || ('BIN ' + binKey),
+                    latitude: Number(group.latitude),
+                    longitude: Number(group.longitude),
+                    deviceCount: devices.length,
+                    complete: 0,
+                    incomplete: 0,
+                    readyDevices: [],
+                    notReadyDevices: [],
+                    completedDevices: [],
+                    notApplicableDevices: [],
+                    violationDetails: []
+                }));
+            });
+            entries.sort((left, right) => String(left.title || '').localeCompare(String(right.title || ''), undefined, {
+                numeric: true,
+                sensitivity: 'base'
+            }));
+            return entries;
+        }
+
+        function collectMapTextViewEntries() {
+            if (mapTextViewUsesSelection()) return collectMapSelectedTextViewEntries();
+            const entries = [];
+            if (!buildingMap || typeof buildingMap.hasLayer !== 'function') return entries;
+            (mapMarkers || []).forEach((marker, index) => {
+                const building = mapBuildingsData && mapBuildingsData[index];
+                if (!marker || !building || !buildingMap.hasLayer(marker)) return;
+                entries.push(buildMapTextViewBuildingEntry(building));
+            });
+            const locations = typeof getAdditionalLocations === 'function' ? getAdditionalLocations() : [];
+            (additionalLocationMarkers || []).forEach((marker, index) => {
+                const location = locations[index];
+                if (!marker || !location || !buildingMap.hasLayer(marker)) return;
+                entries.push(buildMapTextViewAdditionalEntry(location, marker));
+            });
+            entries.sort((left, right) => String(left.title || '').localeCompare(String(right.title || ''), undefined, {
+                numeric: true,
+                sensitivity: 'base'
+            }));
+            return entries;
+        }
+
+        function getMapTextViewContext() {
+            if (mapTextViewUsesSelection()) {
+                const count = (typeof mapSelectedBins !== 'undefined' && mapSelectedBins) ? mapSelectedBins.size : 0;
+                return {
+                    filterValue: 'selection',
+                    searchTerm: '',
+                    heading: count === 1 ? '1 selected building' : count + ' selected buildings',
+                    monthPending: false,
+                    emptyMessage: 'No buildings are selected.'
+                };
+            }
+            const filterValue = typeof getSelectedMapViewFilter === 'function' ? getSelectedMapViewFilter() : 'all';
+            const searchInput = document.getElementById('mapSearchInput');
+            const searchTerm = searchInput && searchInput.value ? searchInput.value.trim() : '';
+            const monthsChosen = !!(activeMonthFilters && activeMonthFilters.size > 0);
+            const monthPending = filterValue === 'hide-scheduled' && !mapHideScheduledMonthSelectionReady && !monthsChosen;
+            let heading = 'Current map view';
+            if (monthPending) {
+                heading = 'Hide Scheduled Test Dates & Completed Jobs - select months to apply this filter';
+            } else if (filterValue && filterValue !== 'all' && typeof getMapViewFilterDisplayLabel === 'function') {
+                heading = getMapViewFilterDisplayLabel(filterValue);
+            } else if (monthsChosen) {
+                heading = 'Months: ' + [...activeMonthFilters].join(', ');
+            }
+            if (searchTerm) heading += ' · Search: ' + searchTerm;
+            return { filterValue, searchTerm, heading, monthPending };
+        }
+
+        function mapTextViewPassthroughNote(entries, context) {
+            if (!context || !context.filterValue || context.filterValue === 'all') return '';
+            const count = (entries || []).filter(entry => entry.passthrough).length;
+            if (!count) return '';
+            const pins = count === 1 ? '1 custom pin stays' : count + ' custom pins stay';
+            return pins + ' on the map with this filter (house, transportation, or a dropped pin) and ' + (count === 1 ? 'is' : 'are') + ' included below.';
+        }
+
+        function renderMapTextViewBody(entries, meta) {
+            const header = formatMapTextViewHeader(entries, meta);
+            const blocks = (entries || []).map((entry, index) => {
+                const text = formatMapTextViewEntry(entry, index);
+                const locate = entry.bin
+                    ? ` data-map-text-bin="${escapeMapSuggestionHtml(entry.bin)}"`
+                    : ` data-map-text-lat="${escapeMapSuggestionHtml(entry.latitude)}" data-map-text-lng="${escapeMapSuggestionHtml(entry.longitude)}"`;
+                return `<button type="button" class="map-text-view-entry"${locate} title="Show this location on the map">${escapeMapSuggestionHtml(text)}</button>`;
+            }).join('');
+            return `<pre class="map-text-view-header">${escapeMapSuggestionHtml(header)}</pre>${blocks}`;
+        }
+
+        function renderMapTextView() {
+            const modal = document.getElementById('mapTextViewModal');
+            const body = document.getElementById('mapTextViewBody');
+            if (!modal || !body || modal.style.display === 'none') return;
+            const context = getMapTextViewContext();
+            const entries = collectMapTextViewEntries();
+            const findInput = document.getElementById('mapTextViewFind');
+            const query = findInput && findInput.value ? findInput.value.trim() : '';
+            const visible = query
+                ? entries.filter(entry => formatMapTextViewEntry(entry, 0).toLowerCase().includes(query.toLowerCase()))
+                : entries;
+            const notes = [];
+            const passthrough = mapTextViewPassthroughNote(query ? visible : entries, context);
+            if (passthrough) notes.push(passthrough);
+            if (query) notes.push('Showing ' + visible.length + ' of ' + entries.length + ' locations matching "' + query + '".');
+            const meta = {
+                heading: context.heading,
+                note: notes.join(' '),
+                findQuery: query,
+                emptyMessage: query
+                    ? 'No locations in this text match "' + query + '".'
+                    : (context.emptyMessage || '')
+            };
+            modal._mapTextViewText = formatMapTextViewDocument(visible, meta);
+            modal._mapTextViewExport = { entries: visible.slice(), meta };
+            const scrollTop = body.scrollTop;
+            body.innerHTML = renderMapTextViewBody(visible, meta);
+            body.scrollTop = scrollTop;
+            body.querySelectorAll('.map-text-view-entry').forEach(button => {
+                button.addEventListener('click', () => focusMapTextViewEntry(button));
+            });
+            syncMapTextViewChrome();
+        }
+
+        function syncMapTextViewChrome() {
+            const selection = mapTextViewUsesSelection();
+            const title = document.getElementById('mapTextViewTitle');
+            const subtitle = document.getElementById('mapTextViewSubtitle');
+            if (title) title.textContent = selection ? '☰ Selected jobs' : '☰ Text View';
+            if (subtitle) {
+                subtitle.textContent = selection
+                    ? 'The buildings currently selected with the Select tool. Excel and CSV export this list.'
+                    : 'The locations currently drawn on the map, including the active Map view filter. Excel and CSV export this list.';
+            }
+        }
+
+        function scheduleMapTextViewRefresh() {
+            const modal = document.getElementById('mapTextViewModal');
+            if (!modal || modal.style.display === 'none') return;
+            if (mapTextViewRefreshTimer) clearTimeout(mapTextViewRefreshTimer);
+            mapTextViewRefreshTimer = setTimeout(() => {
+                mapTextViewRefreshTimer = null;
+                renderMapTextView();
+            }, 60);
+        }
+
+        function closeMapTextView() {
+            if (mapTextViewRefreshTimer) {
+                clearTimeout(mapTextViewRefreshTimer);
+                mapTextViewRefreshTimer = null;
+            }
+            const modal = document.getElementById('mapTextViewModal');
+            if (modal) modal.remove();
+        }
+
+        function focusMapTextViewEntry(button) {
+            if (!button) return;
+            const bin = button.getAttribute('data-map-text-bin') || '';
+            const latitude = Number(button.getAttribute('data-map-text-lat'));
+            const longitude = Number(button.getAttribute('data-map-text-lng'));
+            closeMapTextView();
+            if (bin && typeof flyToMapBuilding === 'function') {
+                flyToMapBuilding(bin, { temporarilyShowHidden: true });
+                return;
+            }
+            if (Number.isFinite(latitude) && Number.isFinite(longitude) && typeof flyToAdditionalLocation === 'function') {
+                flyToAdditionalLocation(latitude, longitude);
+            }
+        }
+
+        async function copyMapTextView() {
+            const modal = document.getElementById('mapTextViewModal');
+            const text = modal && modal._mapTextViewText;
+            const button = document.getElementById('mapTextViewCopyButton');
+            if (!text) {
+                showMapNotification('No text to copy', '#ff6b6b');
+                return;
+            }
+            try {
+                if (typeof writeMapClipboardText === 'function') await writeMapClipboardText(text);
+                else await navigator.clipboard.writeText(text);
+                if (button) {
+                    const original = button.textContent;
+                    button.textContent = 'Copied';
+                    setTimeout(() => {
+                        if (button.isConnected) button.textContent = original;
+                    }, 1600);
+                }
+                showMapNotification('Copied the map text view', '#37474f');
+            } catch (error) {
+                console.error('Failed to copy map text view:', error);
+                showMapNotification('Failed to copy text', '#ff6b6b');
+            }
+        }
+
+        function downloadMapTextViewBlob(filename, blob) {
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.href = url;
+            link.download = filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(url), 1500);
+        }
+
+        function getMapTextViewExportState() {
+            const modal = document.getElementById('mapTextViewModal');
+            if (!modal || !modal._mapTextViewExport) {
+                showMapNotification('Open Text View before exporting', '#ff6b6b');
+                return null;
+            }
+            const state = modal._mapTextViewExport;
+            if (!state.entries || !state.entries.length) {
+                showMapNotification('No locations to export', '#ff6b6b');
+                return null;
+            }
+            return state;
+        }
+
+        function exportMapTextViewCsv() {
+            const state = getMapTextViewExportState();
+            if (!state) return;
+            const csv = formatMapTextViewCsv(state.entries, state.meta);
+            const filename = mapTextViewExportFileName('csv', state.meta);
+            downloadMapTextViewBlob(filename, new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+            showMapNotification('Exported ' + state.entries.length + ' location' + (state.entries.length === 1 ? '' : 's') + ' to CSV', '#217346');
+        }
+
+        function exportMapTextViewExcel() {
+            const state = getMapTextViewExportState();
+            if (!state) return;
+            if (!window.XLSX) {
+                alert('Excel export library is not available. Please reload the page and try again.');
+                return;
+            }
+            const table = buildMapTextViewExportTable(state.entries, state.meta);
+            const info = state.meta || {};
+            const deviceTotal = state.entries.reduce((sum, entry) => sum + (Number(entry.deviceCount) || 0), 0);
+            const workbook = XLSX.utils.book_new();
+            const usedSheetNames = new Set();
+            appendMapExcelSheet(workbook, usedSheetNames, 'Summary', ['Field', 'Value'], [
+                ['Filter', info.heading || 'Current map view'],
+                ['Text search', info.findQuery || ''],
+                ['Locations', state.entries.length],
+                ['Devices', deviceTotal],
+                ['Note', info.note || '']
+            ]);
+            appendMapExcelSheet(workbook, usedSheetNames, 'Locations', table.headers, table.rows);
+            const filename = mapTextViewExportFileName('xlsx', state.meta);
+            XLSX.writeFile(workbook, filename);
+            showMapNotification('Exported ' + state.entries.length + ' location' + (state.entries.length === 1 ? '' : 's') + ' to Excel', '#217346');
+        }
+
+        function openMapSelectionTextView() {
+            if (!mapSelectedBins || mapSelectedBins.size === 0) {
+                showMapNotification('Select at least one building first', '#c77700');
+                return;
+            }
+            openMapTextView('selection');
+        }
+
+        function openMapTextView(scope) {
+            mapTextViewScope = scope === 'selection' ? 'selection' : 'map';
+            if (!buildingMap || !Array.isArray(mapMarkers)) {
+                alert('No map is open. Load a map view or run a bulk lookup first.');
+                return;
+            }
+            let modal = document.getElementById('mapTextViewModal');
+            if (modal) {
+                renderMapTextView();
+                return;
+            }
+            modal = document.createElement('div');
+            modal.id = 'mapTextViewModal';
+            modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.68);z-index:10060;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+            modal.innerHTML = `
+                <style>
+                    #mapTextViewModal * { box-sizing:border-box; }
+                    #mapTextViewModal .map-text-shell { width:min(860px,100%); height:min(860px,100%); background:var(--card-bg,#1e1e2e); color:var(--text-color,#fff); border:1px solid var(--input-border,#444); border-radius:14px; box-shadow:0 18px 60px rgba(0,0,0,.5); display:flex; flex-direction:column; overflow:hidden; }
+                    #mapTextViewModal .map-text-header { display:flex; justify-content:space-between; gap:12px; padding:14px 16px 10px; border-bottom:1px solid var(--input-border,#444); background:var(--panel-bg,#252536); }
+                    #mapTextViewModal h3 { margin:0; color:var(--header-color,#fff); font-size:17px; }
+                    #mapTextViewModal .map-text-subtitle { margin-top:3px; font-size:12px; opacity:.72; line-height:1.4; }
+                    #mapTextViewModal .map-text-toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:10px 12px; border-bottom:1px solid var(--input-border,#444); }
+                    #mapTextViewModal .map-text-toolbar input { flex:1 1 220px; min-width:160px; padding:7px 9px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); font-size:12px; }
+                    #mapTextViewModal .map-text-toolbar button, #mapTextViewModal .map-text-footer button { border:1px solid var(--input-border,#555); border-radius:6px; padding:7px 11px; background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); cursor:pointer; font-size:12px; font-weight:700; }
+                    #mapTextViewModal #mapTextViewCopyButton { background:#37474f; border-color:#37474f; color:white; }
+                    #mapTextViewModal #mapTextViewExcelButton { background:#217346; border-color:#217346; color:white; }
+                    #mapTextViewModal #mapTextViewCsvButton { background:#0d6efd; border-color:#0d6efd; color:white; }
+                    #mapTextViewBody { flex:1; min-height:0; overflow:auto; padding:12px 14px 18px; }
+                    #mapTextViewModal .map-text-view-header, #mapTextViewModal .map-text-view-entry { margin:0; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12.5px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+                    #mapTextViewModal .map-text-view-header { margin-bottom:14px; color:var(--header-color,var(--text-color,#fff)); }
+                    #mapTextViewModal .map-text-view-entry { display:block; width:100%; margin:0 0 12px; padding:8px 10px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--text-color,#fff); cursor:pointer; text-align:left; }
+                    #mapTextViewModal .map-text-view-entry:hover, #mapTextViewModal .map-text-view-entry:focus-visible { border-color:rgba(55,71,79,.55); background:rgba(55,71,79,.16); outline:none; }
+                    #mapTextViewModal .map-text-footer { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 14px; border-top:1px solid var(--input-border,#444); background:var(--panel-bg,#252536); font-size:11px; }
+                    @media (max-width:700px) { #mapTextViewModal { padding:0 !important; } #mapTextViewModal .map-text-shell { border-radius:0; } }
+                </style>
+                <div class="map-text-shell" role="dialog" aria-modal="true" aria-labelledby="mapTextViewTitle">
+                    <div class="map-text-header">
+                        <div>
+                            <h3 id="mapTextViewTitle">☰ Text View</h3>
+                            <div id="mapTextViewSubtitle" class="map-text-subtitle">The locations currently drawn on the map, including the active Map view filter. Excel and CSV export this list.</div>
+                        </div>
+                        <button type="button" onclick="closeMapTextView()" aria-label="Close Text View" style="border:0;background:none;color:var(--text-color);font-size:24px;line-height:1;cursor:pointer;">×</button>
+                    </div>
+                    <div class="map-text-toolbar">
+                        <input id="mapTextViewFind" type="search" placeholder="Find in this text…" aria-label="Find in the map text view" oninput="renderMapTextView()">
+                        <button type="button" id="mapTextViewCopyButton" onclick="copyMapTextView()">Copy text</button>
+                        <button type="button" id="mapTextViewExcelButton" onclick="exportMapTextViewExcel()" title="Download the locations shown here as an Excel workbook">Excel</button>
+                        <button type="button" id="mapTextViewCsvButton" onclick="exportMapTextViewCsv()" title="Download the locations shown here as a CSV file">CSV</button>
+                        <button type="button" id="mapTextViewRefreshButton" onclick="renderMapTextView()">Refresh</button>
+                    </div>
+                    <div id="mapTextViewBody"></div>
+                    <div class="map-text-footer">
+                        <span>Click a location to show it on the map.</span>
+                        <button type="button" onclick="closeMapTextView()">Close</button>
+                    </div>
+                </div>`;
+            modal.addEventListener('click', event => {
+                if (event.target === modal) closeMapTextView();
+            });
+            modal.addEventListener('keydown', event => {
+                if (event.key !== 'Escape') return;
+                event.preventDefault();
+                event.stopPropagation();
+                closeMapTextView();
+            });
+            document.body.appendChild(modal);
+            renderMapTextView();
+            const findInput = document.getElementById('mapTextViewFind');
+            if (findInput) findInput.focus();
         }
 
         function openMapTableView() {
@@ -16729,6 +17489,7 @@
                     ['Scheduled Date Buildings', Object.keys(view.testDates || {}).length],
                     ['Deadline Buildings', Object.keys(view.deadlines || {}).length],
                     ['Note Buildings', Object.keys(view.notes || {}).length],
+                    ['Address Codes', Object.keys(view.addressCodes || {}).length],
                     ['Alternate Addresses', Array.isArray(view.addressAliases) ? view.addressAliases.length : 0],
                     ['No Test Disregarded', Object.keys(view.noTestByJuneDisregarded || {}).length],
                     ['No Test Yet Disregarded', Object.keys(view.noTestYetDisregarded || {}).length],
@@ -16746,7 +17507,7 @@
 
                 const groupKeys = collectMapExcelObjectKeys(buildingEntries.map(([, group]) => group), ['devices']);
                 const buildingHeaders = [
-                    'BIN', 'Address', 'Latitude', 'Longitude', 'Device Count', 'Active Map Job Device Count',
+                    'BIN', 'Address', 'Code Number', 'Latitude', 'Longitude', 'Device Count', 'Active Map Job Device Count',
                     'Violation Count', 'Favorite', 'Hidden', 'Completed', 'Completion Scope', 'Completed Date', 'Completed PVI Dates', 'Completed Category Dates', 'In Process',
                     'In Process Date', 'On Hold',                     'Scheduled PVI Dates', 'Scheduled Category Dates', 'Scheduled Unspecified Dates',
                     'Deadline CAT Date', 'Deadline PVI Date',
@@ -16760,6 +17521,7 @@
                     return [
                         bin,
                         getMapExcelBuildingAddress(bin, group, view),
+                        view.addressCodes && view.addressCodes[bin] ? view.addressCodes[bin] : '',
                         group.latitude || '',
                         group.longitude || '',
                         devices.length,
@@ -16883,6 +17645,16 @@
                     appendMapExcelSheet(workbook, usedSheetNames, 'Notes', ['BIN', 'Address', 'Note'], noteRows);
                 }
 
+                const addressCodeRows = Object.entries(view.addressCodes || {}).map(([key, code]) => [
+                    isMapBinStoreKey(key) ? key : '',
+                    getMapAddressCodePlace(key),
+                    code,
+                    isMapCustomLocationStoreKey(key) ? key : ''
+                ]);
+                if (addressCodeRows.length) {
+                    appendMapExcelSheet(workbook, usedSheetNames, 'Address Codes', ['BIN', 'Address', 'Code Number', 'Custom Location Key'], addressCodeRows);
+                }
+
                 const aliasDeviceIndex = buildMapAliasDeviceBinIndex(binGroups);
                 const aliasRows = (Array.isArray(view.addressAliases) ? view.addressAliases : []).map(alias => {
                     const resolved = resolveMapAddressAliasDevices(alias.devices || [], aliasDeviceIndex, binGroups);
@@ -16935,6 +17707,7 @@
                     ...splitMapExcelSectionRows('testDates', view.testDates || {}),
                     ...splitMapExcelSectionRows('deadlines', view.deadlines || {}),
                     ...splitMapExcelSectionRows('notes', view.notes || {}),
+                    ...splitMapExcelSectionRows('addressCodes', view.addressCodes || {}),
                     ...splitMapExcelSectionRows('addressAliases', view.addressAliases || []),
                     ...splitMapExcelSectionRows('noTestByJuneDisregarded', view.noTestByJuneDisregarded || {}),
                     ...splitMapExcelSectionRows('noTestYetDisregarded', view.noTestYetDisregarded || {}),
@@ -17014,6 +17787,7 @@
                     testDates: view.testDates || {},
                     deadlines: view.deadlines || {},
                     notes: view.notes || {},
+                    addressCodes: normalizeMapAddressCodes(view.addressCodes),
                     addressAliases: Array.isArray(view.addressAliases) ? view.addressAliases : [],
                     cat5Bypasses: view.cat5Bypasses || {},
                     cat1Bypasses: view.cat1Bypasses || {},
@@ -17305,6 +18079,18 @@
                     throw new Error('Map view contains an invalid activity entry.');
                 }
             });
+            if (source.addressCodes != null) {
+                if (typeof source.addressCodes !== 'object' || Array.isArray(source.addressCodes)) {
+                    throw new Error('Map view contains invalid address codes.');
+                }
+                const addressCodeKeys = Object.keys(source.addressCodes);
+                if (addressCodeKeys.length > MAP_ADDRESS_CODE_STORE_MAX) {
+                    throw new Error('Map view contains too many address codes.');
+                }
+                if (addressCodeKeys.some(key => !isValidMapCompletedStoreKey(key))) {
+                    throw new Error('Map view contains an invalid address code.');
+                }
+            }
             if (source.addressAliases != null && !Array.isArray(source.addressAliases)) {
                 throw new Error('Map view contains invalid alternate addresses.');
             }
@@ -17425,6 +18211,7 @@
                 testDates: testDates,
                 deadlines: source.deadlines || {},
                 notes: source.notes || {},
+                addressCodes: normalizeMapAddressCodes(source.addressCodes),
                 addressAliases: normalizeMapAddressAliases(source.addressAliases),
                 cat5Bypasses: normalizedCat5Bypasses,
                 cat1Bypasses: normalizedCat1Bypasses,
@@ -17455,6 +18242,7 @@
             if (typeof updateMapFutureYearControls === 'function') updateMapFutureYearControls();
             setMapDeadlines(view.deadlines || {});
             setMapNotes(view.notes || {});
+            setMapAddressCodes(view.addressCodes || {});
             setMapAddressAliases(view.addressAliases || []);
             setMapCat5Bypasses(view.cat5Bypasses || {});
             setMapCat1Bypasses(view.cat1Bypasses || {});
@@ -21107,6 +21895,270 @@
             return mapNotes[bin] || '';
         }
 
+        const MAP_ADDRESS_CODE_MAX = 32;
+        const MAP_ADDRESS_CODE_STORE_MAX = 10000;
+
+        function cleanMapAddressCode(value) {
+            const text = String(value == null ? '' : value)
+                .replace(/[^A-Za-z0-9 .#\/_-]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, MAP_ADDRESS_CODE_MAX);
+            if (!text || !/^[A-Za-z0-9]/.test(text)) return '';
+            return text;
+        }
+
+        // Empty string clears the code. null means the typed value is not a usable code.
+        function normalizeMapAddressCode(value) {
+            const trimmed = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+            if (!trimmed) return '';
+            const cleaned = cleanMapAddressCode(trimmed);
+            return cleaned === trimmed ? cleaned : null;
+        }
+
+        function normalizeMapAddressCodes(value) {
+            const result = {};
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
+            Object.keys(value).slice(0, MAP_ADDRESS_CODE_STORE_MAX).forEach(key => {
+                if (!isValidMapCompletedStoreKey(key)) return;
+                const code = cleanMapAddressCode(value[key]);
+                if (code) result[String(key)] = code;
+            });
+            return result;
+        }
+
+        function getMapAddressCodes() {
+            return mapAddressCodes;
+        }
+
+        function setMapAddressCodes(codes) {
+            mapAddressCodes = normalizeMapAddressCodes(codes);
+        }
+
+        function getMapAddressCode(key) {
+            return mapAddressCodes[String(key || '')] || '';
+        }
+
+        function setMapAddressCode(key, value) {
+            const storeKey = String(key || '');
+            if (!isValidMapCompletedStoreKey(storeKey)) return false;
+            const code = normalizeMapAddressCode(value);
+            if (code === null) {
+                if (typeof showMapNotification === 'function') {
+                    showMapNotification('Code numbers use letters, numbers, spaces, and - # / . _ (32 characters max)', '#ff6b6b');
+                }
+                return false;
+            }
+            if (!code) delete mapAddressCodes[storeKey];
+            else mapAddressCodes[storeKey] = code;
+            return true;
+        }
+        // MAP_ADDRESS_CODE_HELPERS_END
+
+        function getMapAddressCodePlace(key) {
+            const storeKey = String(key || '');
+            const groups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            if (groups[storeKey] && groups[storeKey].address) return String(groups[storeKey].address);
+            const location = findAdditionalLocationByCompletionKey(storeKey);
+            if (location) {
+                const label = getAdditionalLocationLabel(location);
+                if (label) return String(label);
+            }
+            const sources = [mapCompleted, mapInProcess, mapHold, mapFavorites, mapHidden];
+            for (const source of sources) {
+                if (source && source[storeKey] && source[storeKey].address) return String(source[storeKey].address);
+            }
+            if (isMapBinStoreKey(storeKey)) return 'BIN ' + storeKey;
+            return 'Custom location';
+        }
+
+        function renderMapAddressCodeBadgeHtml(storeKey) {
+            const key = String(storeKey || '');
+            if (!isValidMapCompletedStoreKey(key)) return '';
+            const code = getMapAddressCode(key);
+            return `<span class="map-address-code-badge" data-map-address-code-badge="${escapeMapSuggestionHtml(key)}" style="color:#6d4c41; font-weight:800;">${code ? ' · ' + escapeMapSuggestionHtml(code) : ''}</span>`;
+        }
+
+        function renderMapAddressCodeRowHtml(storeKey) {
+            const key = String(storeKey || '');
+            if (!isValidMapCompletedStoreKey(key)) return '';
+            const code = getMapAddressCode(key);
+            const keyHtml = escapeMapSuggestionHtml(key);
+            return `<div class="map-address-code-row" style="display:flex; align-items:center; gap:6px; margin:-2px 0 8px 0;">
+                <label style="font-size:11px; font-weight:800; letter-spacing:0.04em; color:#6d4c41; flex-shrink:0; margin:0;">CODE</label>
+                <input type="text" class="map-address-code-input" value="${escapeMapSuggestionHtml(code)}" maxlength="${MAP_ADDRESS_CODE_MAX}"
+                    placeholder="Add a code number" aria-label="Address code number"
+                    data-map-address-code-key="${keyHtml}"
+                    onchange="saveMapAddressCode(this.getAttribute('data-map-address-code-key'), this.value, this)"
+                    style="flex:1; min-width:0; margin:0; padding:4px 8px; border-radius:4px; border:1px solid ${code ? '#6d4c41' : 'var(--input-border)'}; background:var(--input-bg); color:var(--text-color); font-size:13px; font-weight:700; letter-spacing:0.02em; outline:none; box-sizing:border-box;">
+            </div>`;
+        }
+
+        function hydrateMapAddressCodeFields(root) {
+            const scope = root && root.querySelectorAll ? root : document;
+            scope.querySelectorAll('input[data-map-address-code-key]').forEach(el => {
+                const code = getMapAddressCode(el.getAttribute('data-map-address-code-key'));
+                el.value = code;
+                el.style.borderColor = code ? '#6d4c41' : 'var(--input-border)';
+            });
+            scope.querySelectorAll('[data-map-address-code-badge]').forEach(el => {
+                const code = getMapAddressCode(el.getAttribute('data-map-address-code-badge'));
+                el.textContent = code ? ' · ' + code : '';
+            });
+        }
+
+        function saveMapAddressCode(key, value, input) {
+            const storeKey = String(key || '');
+            if (!isValidMapCompletedStoreKey(storeKey)) {
+                showMapNotification('That location cannot take a code number', '#ff6b6b');
+                return false;
+            }
+            const previous = getMapAddressCode(storeKey);
+            const trimmed = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+            if (!trimmed && !previous) {
+                showMapNotification('Enter a code number', '#ff6b6b');
+                return false;
+            }
+            if (!setMapAddressCode(storeKey, trimmed)) {
+                if (input) input.value = previous;
+                return false;
+            }
+            const code = getMapAddressCode(storeKey);
+            hydrateMapAddressCodeFields(document);
+            if (previous !== code) {
+                addMapActivity(code ? 'Set address code' : 'Cleared address code', {
+                    type: 'Address Code',
+                    bin: isMapBinStoreKey(storeKey) ? storeKey : '',
+                    address: getMapAddressCodePlace(storeKey),
+                    details: code || previous
+                });
+            }
+            showMapNotification(code ? `Address code saved: ${code}` : 'Address code cleared', code ? '#6d4c41' : '#ff9800');
+            updateMapAddressCodesPanel();
+            if (typeof scheduleMapTextViewRefresh === 'function') scheduleMapTextViewRefresh();
+            return true;
+        }
+
+        function addMapAddressCodeFromForm() {
+            const binInput = document.getElementById('mapAddressCodeBinInput');
+            const codeInput = document.getElementById('mapAddressCodeValueInput');
+            const bin = String(binInput && binInput.value || '').replace(/\D/g, '');
+            if (!isMapBinStoreKey(bin)) {
+                showMapNotification('Enter a 6 or 7 digit BIN', '#ff6b6b');
+                return;
+            }
+            const groups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            if (!groups[bin] && !findAdditionalLocationByCompletionKey(bin)) {
+                showMapNotification('That BIN is not on this map', '#ff6b6b');
+                return;
+            }
+            if (!saveMapAddressCode(bin, codeInput ? codeInput.value : '')) return;
+            if (binInput) binInput.value = '';
+            if (codeInput) codeInput.value = '';
+        }
+
+        function clearAllMapAddressCodes() {
+            const count = Object.keys(mapAddressCodes || {}).length;
+            if (!count) {
+                showMapNotification('No address codes to clear', '#6d4c41');
+                return;
+            }
+            if (!confirm('Clear all address code numbers?')) return;
+            setMapAddressCodes({});
+            addMapActivity('Cleared all address codes', {
+                type: 'Address Code',
+                details: `${count} code${count === 1 ? '' : 's'} cleared`
+            });
+            showMapNotification('All address codes cleared', '#ff9800');
+            updateMapAddressCodesPanel();
+            if (typeof scheduleMapTextViewRefresh === 'function') scheduleMapTextViewRefresh();
+            if (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && buildingMap) {
+                initBuildingMap(window.lastBulkSearchResults.binGroups, true);
+            }
+        }
+
+        function flyToMapAddressCode(key) {
+            const storeKey = String(key || '');
+            if (isMapBinStoreKey(storeKey)) {
+                flyToMapBuilding(storeKey);
+                return;
+            }
+            const location = findAdditionalLocationByCompletionKey(storeKey);
+            if (location) {
+                flyToAdditionalLocation(location.latitude, location.longitude);
+                return;
+            }
+            showMapNotification('This code is not on the current map', '#ff6b6b');
+        }
+
+        function updateMapAddressCodesPanel() {
+            const countEl = document.getElementById('mapAddressCodesCount');
+            const listEl = document.getElementById('mapAddressCodesList');
+            const entries = Object.entries(mapAddressCodes || {});
+            if (countEl) countEl.textContent = String(entries.length);
+            if (typeof refreshMcpDetailBackTitle === 'function') refreshMcpDetailBackTitle();
+            if (!listEl) return;
+            if (!entries.length) {
+                listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No address codes</div>';
+                return;
+            }
+            entries.sort((left, right) => getMapAddressCodePlace(left[0]).localeCompare(getMapAddressCodePlace(right[0]), undefined, {
+                numeric: true,
+                sensitivity: 'base'
+            }));
+            listEl.innerHTML = entries.map(([key, code]) => {
+                const place = getMapAddressCodePlace(key);
+                const keyHtml = escapeMapSuggestionHtml(key);
+                const searchText = escapeMapSuggestionHtml([code, place, key].join(' '));
+                const binLine = isMapBinStoreKey(key) ? `BIN ${escapeMapSuggestionHtml(key)}` : 'Custom location';
+                return `
+                <div data-map-address-code-row="1" data-search="${searchText}" style="background: var(--input-bg); padding: 8px; border-radius: 6px; margin-bottom: 6px; border: 1px solid rgba(109,76,65,0.35);">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:4px;">
+                        <div style="flex:1; min-width:0; cursor:pointer;" title="Click to view on map" data-map-address-code-key="${keyHtml}" onclick="flyToMapAddressCode(this.getAttribute('data-map-address-code-key'))">
+                            <div style="font-size:0.9em; font-weight:700; color:#6d4c41; word-break:break-word; text-decoration:underline dotted;"># ${escapeMapSuggestionHtml(code)}</div>
+                            <div style="font-size:0.8em; opacity:0.75; word-break:break-word;">${escapeMapSuggestionHtml(place)}</div>
+                            <div style="font-size:0.76em; opacity:0.65;">${binLine}</div>
+                        </div>
+                        <button type="button" data-map-address-code-key="${keyHtml}" onclick="saveMapAddressCode(this.getAttribute('data-map-address-code-key'), '')" title="Remove code number" aria-label="Remove code number"
+                                style="flex-shrink:0; margin:0; background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.4); border-radius: 4px; padding: 3px 7px; cursor: pointer; font-size: 0.88em;">✕</button>
+                    </div>
+                    <input type="text" class="map-address-code-input" value="${escapeMapSuggestionHtml(code)}" maxlength="${MAP_ADDRESS_CODE_MAX}" placeholder="Code number" aria-label="Code number for ${escapeMapSuggestionHtml(place)}"
+                           data-map-address-code-key="${keyHtml}"
+                           onchange="saveMapAddressCode(this.getAttribute('data-map-address-code-key'), this.value, this)"
+                           style="width: 100%; margin: 0; padding: 4px 7px; border-radius: 4px; border: 1px solid rgba(109,76,65,0.5); background: var(--input-bg); color: var(--text-color); font-size: 0.88em; font-weight: 700; box-sizing: border-box; outline: none;">
+                </div>`;
+            }).join('');
+            const searchInput = document.getElementById('mapAddressCodesSearchInput');
+            if (searchInput && searchInput.value.trim()) filterMapAddressCodesList(searchInput.value);
+        }
+
+        function filterMapAddressCodesList(query) {
+            const list = document.getElementById('mapAddressCodesList');
+            if (!list) return;
+            const q = String(query || '').toLowerCase().trim();
+            const items = list.querySelectorAll(':scope > div[data-map-address-code-row]');
+            let anyVisible = false;
+            items.forEach(el => {
+                const match = !q || String(el.dataset.search || '').toLowerCase().includes(q);
+                el.style.display = match ? '' : 'none';
+                if (match) anyVisible = true;
+            });
+            const noResultsId = 'mapAddressCodesNoFilterMatch';
+            let noResults = document.getElementById(noResultsId);
+            if (!anyVisible && q && items.length > 0) {
+                if (!noResults) {
+                    noResults = document.createElement('div');
+                    noResults.id = noResultsId;
+                    noResults.style.cssText = 'font-size:1em;opacity:0.6;text-align:center;padding:8px;';
+                    list.appendChild(noResults);
+                }
+                noResults.textContent = 'No matches for "' + query + '"';
+                noResults.style.display = '';
+            } else if (noResults) {
+                noResults.style.display = 'none';
+            }
+        }
+
         const MAP_ADDRESS_ALIAS_MAX = 5000;
         const MAP_ADDRESS_ALIAS_NAME_MAX = 200;
         const MAP_ADDRESS_ALIAS_DEVICES_MAX = 50;
@@ -22826,6 +23878,7 @@
             const popupRoot = popup.getElement();
             if (!popupRoot) return;
             hydrateMapAddressAliasBoxes(popupRoot);
+            hydrateMapAddressCodeFields(popupRoot);
             hydrateMapBuildingPopupState(popupRoot);
             const untrackedContainer = popupRoot.querySelector
                 ? popupRoot.querySelector('[id^="mapUntrackedDevices_"]')
@@ -23277,9 +24330,14 @@
 
         function buildMapTestingAvailabilityTooltipHtml(title, devicesHtml, noteBin, scheduleKey) {
             const note = noteBin ? String(getMapNote(noteBin) || '').trim() : '';
+            const codeKey = scheduleKey || noteBin;
+            const code = codeKey ? String(getMapAddressCode(codeKey) || '').trim() : '';
             const scheduleHtml = buildMapScheduledTestDatesTooltipHtml(scheduleKey || noteBin);
             const aliasNames = noteBin ? getMapAddressAliasesForBin(noteBin).map(alias => alias.name) : [];
-            if (!devicesHtml && !note && !scheduleHtml && !aliasNames.length) return '';
+            if (!devicesHtml && !note && !scheduleHtml && !aliasNames.length && !code) return '';
+            const codeHtml = code
+                ? `<div class="map-availability-code" style="color:#6d4c41; font-weight:800; margin:-2px 0 4px 0;">Code ${escapeMapSuggestionHtml(code)}</div>`
+                : '';
             const aliasHtml = aliasNames.length
                 ? `<div class="map-availability-alias" style="color:#e64a19; font-weight:700; margin:-2px 0 4px 0;">🔁 ${escapeMapSuggestionHtml(aliasNames.join(' · '))}</div>`
                 : '';
@@ -23290,7 +24348,7 @@
                 ? ''
                 : '<div class="map-availability-summary" style="opacity:0.75;">No device testing dates on file</div>');
             return `<div class="map-availability-title">${escapeMapSuggestionHtml(title)}</div>
-                ${aliasHtml}${scheduleHtml}${deviceSection}${noteHtml}`;
+                ${codeHtml}${aliasHtml}${scheduleHtml}${deviceSection}${noteHtml}`;
         }
 
         // Hover-only: on touch screens a tap already opens the full popup.
@@ -26616,6 +27674,7 @@
             const mapEl = document.getElementById('buildingMap');
             const countEl = document.getElementById('mapSelectCount');
             const editBtn = document.getElementById('mapSelectEditButton');
+            const textBtn = document.getElementById('mapSelectTextViewButton');
             const completedBtn = document.getElementById('mapSelectCompletedButton');
             const clearBtn = document.getElementById('mapSelectClearButton');
             const selectedCount = mapSelectedBins ? mapSelectedBins.size : 0;
@@ -26639,9 +27698,11 @@
                     : `${selectedCount} buildings selected`;
             }
             if (editBtn) editBtn.disabled = selectedCount === 0;
+            if (textBtn) textBtn.disabled = selectedCount === 0;
             if (completedBtn) completedBtn.disabled = selectedCount === 0;
             if (clearBtn) clearBtn.disabled = selectedCount === 0;
             renderMapSelectInfoPanel();
+            if (typeof scheduleMapTextViewRefresh === 'function') scheduleMapTextViewRefresh();
         }
 
         function focusMapSelectedBuilding(bin) {
@@ -31594,6 +32655,7 @@
         function updateMapControlsPanel() {
             ensureMapControlsNotesSection();
             updateMapAddressAliasesPanel();
+            updateMapAddressCodesPanel();
             const favorites = getMapFavorites();
             const deviceMonitors = getMapDeviceMonitors();
             const hidden = getMapHidden();
@@ -32137,6 +33199,10 @@
             // Add event listener to close modal on ESC key
             const handleEscKey = (e) => {
                 if (e.key !== 'Escape' || modal.style.display !== 'flex') return;
+                if (document.getElementById('mapTextViewModal')) {
+                    closeMapTextView();
+                    return;
+                }
                 const conflictOverlay = document.getElementById('mapBulkDateConflictOverlay');
                 if (conflictOverlay) {
                     conflictOverlay.remove();
@@ -32191,6 +33257,7 @@
 
         function closeBuildingMap() {
             closeMapHeaderMenus();
+            closeMapTextView();
             exitMapDashboard({ restorePopout: false });
             resetMapLiveTable();
 
@@ -34104,7 +35171,8 @@
                 const popupContent = `
                     <div class="map-popup-content" style="min-width: 380px; max-width: 460px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                         <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isCompleted ? completionColor : isInProcess ? '#e67e22' : isHold ? '#607d8b' : isFavorited ? '#9b59b6' : '#1a73e8'};">
-                            <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${building.address}</div>
+                            <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${building.address}${renderMapAddressCodeBadgeHtml(building.bin)}</div>
+                            ${renderMapAddressCodeRowHtml(building.bin)}
                             <div class="map-popup-aliases" data-map-alias-bin="${building.bin}" style="margin: -4px 0 8px 0;"></div>
                             <div style="display: flex; gap: 6px; justify-content: space-between;">
                                 <button onclick="toggleMapCompleted('${building.bin}')" 
@@ -34632,6 +35700,21 @@
                     ].filter(Boolean).join(' · ')
                 };
                 additionalMarker._mapPopupRestoreKey = 'additional:' + String(location.latitude) + ',' + String(location.longitude);
+                additionalMarker._mapTextSnapshot = {
+                    deviceCount,
+                    complete,
+                    incomplete,
+                    readyDevices,
+                    notReadyDevices,
+                    completedDevices,
+                    notApplicableCount: notApplicableDevices.length,
+                    violations: violationDetails.map(item => ({
+                        deviceNumber: item.deviceNumber,
+                        description: item.description
+                    })),
+                    allRequiredTestsCompletedForYear,
+                    calendarYear
+                };
                 if (shouldHideCompletedAdditionalLocation(location)) {
                     buildingMap.removeLayer(additionalMarker);
                 }
@@ -34695,6 +35778,9 @@
                 const totalViolations = violationDetails.length;
                 const escapedAddress = String(location.label || location.customName || location.bin || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 const currentMonthLabel = location.bin ? getMonthLabel(location.bin) : null;
+                const addressCodeKey = (location.bin && isMapBinStoreKey(String(location.bin)))
+                    ? String(location.bin)
+                    : getAdditionalLocationCompletionKey(location);
                 const defaultHeaderAccent = isHouse ? '#8d6e63' : (isTransportation ? MAP_TRANSPORTATION_COLOR : (hasCustomName ? '#e64a19' : '#00bcd4'));
                 const headerAccent = useCompletionMarkerStyle ? locationCompletionColor : defaultHeaderAccent;
                 const omitLocationCompletionControls = isHouse || isTransportation;
@@ -34703,7 +35789,8 @@
                 const additionalPopupContent = `
                     <div class="map-popup-content" style="min-width: 380px; max-width: 460px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                         <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${headerAccent};">
-                            <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${String(location.customName || location.label || ('BIN ' + (location.bin || ''))).toUpperCase()}</div>
+                            <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${String(location.customName || location.label || ('BIN ' + (location.bin || ''))).toUpperCase()}${renderMapAddressCodeBadgeHtml(addressCodeKey)}</div>
+                            ${renderMapAddressCodeRowHtml(addressCodeKey)}
                             <div style="display: flex; gap: 6px; justify-content: space-between; flex-wrap: wrap;">
                                 ${omitLocationCompletionControls ? '' : `<button onclick="toggleAdditionalLocationCompleted(${location.latitude}, ${location.longitude})"
                                         title="${isLocationCompleted ? 'Unmark as completed' : 'Mark as completed'}"
@@ -35201,7 +36288,11 @@
                 const key = `building:${building.bin || building.address}`;
                 if (seen.has(key)) return;
                 seen.add(key);
-                const score = mapSearchSimilarityScore(query, building.address);
+                const code = getMapAddressCode(building.bin);
+                const score = Math.max(
+                    mapSearchSimilarityScore(query, building.address),
+                    code ? mapSearchSimilarityScore(query, code) : 0
+                );
                 const deviceNumbers = [
                     ...(building.readyDevices || []),
                     ...(building.notReadyDevices || []),
@@ -35216,7 +36307,7 @@
                 candidates.push({
                     type: 'Building',
                     label: building.address,
-                    details: `BIN ${building.bin}`,
+                    details: `BIN ${building.bin}${code ? ' · Code ' + code : ''}`,
                     devicePreview: devicePreview ? `Devices: ${devicePreview}${moreDevices}` : '',
                     value: building.address,
                     score
@@ -35250,11 +36341,18 @@
                 const key = `additional:${location.latitude}:${location.longitude}:${index}`;
                 if (seen.has(key)) return;
                 seen.add(key);
-                const score = mapSearchSimilarityScore(query, label);
+                const codeKey = location.bin && isMapBinStoreKey(String(location.bin))
+                    ? String(location.bin)
+                    : getAdditionalLocationCompletionKey(location);
+                const locationCode = getMapAddressCode(codeKey);
+                const score = Math.max(
+                    mapSearchSimilarityScore(query, label),
+                    locationCode ? mapSearchSimilarityScore(query, locationCode) : 0
+                );
                 candidates.push({
                     type: 'Added Location',
                     label,
-                    details: location.bin ? `BIN ${location.bin}` : (location.type || ''),
+                    details: (location.bin ? `BIN ${location.bin}` : (location.type || '')) + (locationCode ? ` · Code ${locationCode}` : ''),
                     devicePreview: Array.isArray(location.devices) && location.devices.length
                         ? `Devices: ${location.devices.slice(0, 6).map(device => device.device_number).filter(Boolean).join(', ')}${location.devices.length > 6 ? ' +' + (location.devices.length - 6) + ' more' : ''}`
                         : '',
@@ -35348,12 +36446,13 @@
                 if (aliasMatchedBins.has(String(building.bin))) return true;
                 const addressMatch = mapSearchFieldIncludes(building.address, searchTerm);
                 const binMatch = mapSearchFieldIncludes(building.bin, searchTerm);
+                const codeMatch = mapSearchFieldIncludes(getMapAddressCode(building.bin), searchTerm);
                 const deviceMatch = deviceListMatches(building.readyDevices) ||
                                    deviceListMatches(building.notReadyDevices) ||
                                    deviceListMatches(building.completedDevices) ||
                                    deviceListMatches(building.removedDeletedDevices) ||
                                    deviceListMatches(building.notApplicableDevices);
-                return addressMatch || binMatch || deviceMatch;
+                return addressMatch || binMatch || deviceMatch || codeMatch;
             }) : [];
             
             // Search through additional locations (added via "add location") for matching address, BIN, or device numbers
@@ -35368,7 +36467,11 @@
                     );
                     const customNameMatch = (location.customName || '').toUpperCase().includes(searchTerm);
                     const houseMatch = location.isHouse && (searchTerm === 'HOUSE' || searchTerm === 'HOME');
-                    return addressMatch || binMatch || deviceNumberMatch || devicesMatch || customNameMatch || houseMatch;
+                    const codeKey = location.bin && isMapBinStoreKey(String(location.bin))
+                        ? String(location.bin)
+                        : getAdditionalLocationCompletionKey(location);
+                    const codeMatch = mapSearchFieldIncludes(getMapAddressCode(codeKey), searchTerm);
+                    return addressMatch || binMatch || deviceNumberMatch || devicesMatch || customNameMatch || houseMatch || codeMatch;
                 });
             
             // Combine matches - use consistent format { latitude, longitude, isAdditional, additionalIndex }
