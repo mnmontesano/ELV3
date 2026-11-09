@@ -1889,6 +1889,16 @@
                                            onkeydown="if (event.key === 'Enter') { event.preventDefault(); addMapAddressCodeFromForm(); }">
                                     <button type="button" onclick="addMapAddressCodeFromForm()" class="mcp-btn" style="color:#6d4c41; font-weight:700; margin-top: 2px;">Add code number</button>
                                 </div>
+                                <div id="mapAddressCodeBulkBox" style="background: var(--input-bg); padding: 8px; border-radius: 6px; border: 1px dashed rgba(109,76,65,0.45); margin-bottom: 10px;">
+                                    <label for="mapAddressCodeBulkInput" style="display: block; font-size: 0.82em; font-weight: 700; margin-bottom: 3px;">Add codes for many addresses</label>
+                                    <p class="mcp-desc" style="margin-bottom: 6px;">Paste from Excel, one address per row. The first column is the address and the next column is the code number. A header row is skipped. You can also type <span style="font-family: ui-monospace, monospace;">address | code</span> on each line. Each address is matched to a building on this map, including an alternate name.</p>
+                                    <textarea id="mapAddressCodeBulkInput" class="mcp-search-input" rows="5" spellcheck="false" autocomplete="off"
+                                              placeholder="100 Broadway | A-1042&#10;45 Oak Ave | B-19"
+                                              oninput="previewMapAddressCodeBulk()"
+                                              style="min-height: 96px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre;"></textarea>
+                                    <div id="mapAddressCodeBulkPreview" style="font-size: 0.82em; line-height: 1.4; margin-bottom: 4px; display: none; max-height: 180px; overflow-y: auto;"></div>
+                                    <button type="button" id="mapAddressCodeBulkAddBtn" onclick="importMapAddressCodesFromBulk()" class="mcp-btn" disabled style="color:#6d4c41; font-weight:700; margin-top: 2px; opacity: 0.5;">Import code numbers</button>
+                                </div>
                                 <input type="text" id="mapAddressCodesSearchInput" class="mcp-search-input" placeholder="🔍 Search code, address, BIN..."
                                        oninput="filterMapAddressCodesList(this.value)">
                                 <div id="mapAddressCodesList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
@@ -2039,7 +2049,7 @@
                                     <li>Review lists buildings marked completed that still have devices without the marked test filed for this year. It is separate from the REVIEW month label</li>
                                     <li>Map view filter: Hide Category Completed leaves PVI-only jobs visible; Hide PVI Completed leaves Category-only jobs visible. Fully completed jobs are hidden by both.</li>
                                     <li>Text View lists the locations currently drawn on the map after the Map view filter, including Hide Scheduled Test Dates &amp; Completed Jobs, as readable text you can copy, or export to Excel or CSV</li>
-                                    <li>Address Codes adds a code number to a map address. It shows on that address in the popup, and it is saved in the map file</li>
+                                    <li>Address Codes adds a code number to a map address. It shows on that address in the popup, and it is saved in the map file. Paste address and code rows to add many at once</li>
                                     <li>No Test Yet lists devices with no Category or PVI this year and counts down days left to finish both tests 91 days apart</li>
                                     <li>Disregard in No Test Yet hides only that device from the list and map highlight; other devices at the same building stay visible</li>
                                     <li>Copy on a No Test Yet building copies that building's devices; Copy All Devices copies every remaining device across all buildings</li>
@@ -21953,6 +21963,229 @@
             else mapAddressCodes[storeKey] = code;
             return true;
         }
+
+        function mapAddressCodeCoreText(value) {
+            let text = typeof normalizeAddressForMatch === 'function' ? normalizeAddressForMatch(value) : String(value || '').toUpperCase().trim();
+            if (!text) return '';
+            let previous = '';
+            while (text && text !== previous) {
+                previous = text;
+                text = text
+                    .replace(/\s+\d{5}(?:\s+\d{4})?$/, '')
+                    .replace(/\s+(?:NEW YORK|NYC|NY|MANHATTAN|BROOKLYN|QUEENS|THE BRONX|BRONX|STATEN ISLAND|USA)$/, '')
+                    .trim();
+            }
+            return text;
+        }
+
+        function mapAddressCodeCoresAlign(left, right) {
+            if (!left || !right) return false;
+            if (left === right) return true;
+            const shorter = left.length <= right.length ? left : right;
+            const longer = left.length <= right.length ? right : left;
+            if (!longer.startsWith(shorter + ' ')) return false;
+            const houseNumber = text => (String(text).match(/^(\d+[A-Z]?)\b/) || [])[1] || '';
+            const leftHouse = houseNumber(shorter);
+            const rightHouse = houseNumber(longer);
+            return !leftHouse || !rightHouse || leftHouse === rightHouse;
+        }
+
+        function mapAddressCodeAliasBins(alias, binGroups) {
+            const wanted = new Set((alias && alias.devices || [])
+                .map(number => String(number || '').replace(/\s+/g, '').toUpperCase())
+                .filter(Boolean));
+            if (!wanted.size) return [];
+            const bins = [];
+            Object.entries(binGroups || {}).forEach(([bin, group]) => {
+                if (!isMapBinStoreKey(bin)) return;
+                const numbers = (group && group.devices || [])
+                    .map(device => String(device && device.device_number || '').replace(/\s+/g, '').toUpperCase());
+                if (numbers.some(number => wanted.has(number)) && !bins.includes(String(bin))) bins.push(String(bin));
+            });
+            return bins;
+        }
+
+        function collectMapAddressCodePlaces(binGroups, aliases, locations) {
+            const places = [];
+            const byKey = new Map();
+            Object.entries(binGroups || {}).forEach(([bin, group]) => {
+                if (!isMapBinStoreKey(bin)) return;
+                const label = (group && group.address) || ('BIN ' + bin);
+                const place = { key: String(bin), label, cores: [] };
+                const core = mapAddressCodeCoreText(label);
+                if (core) place.cores.push(core);
+                places.push(place);
+                byKey.set(place.key, place);
+            });
+            (aliases || []).forEach(alias => {
+                const core = mapAddressCodeCoreText(alias && alias.name);
+                if (!core) return;
+                mapAddressCodeAliasBins(alias, binGroups).forEach(bin => {
+                    const place = byKey.get(bin);
+                    if (place && !place.cores.includes(core)) place.cores.push(core);
+                });
+            });
+            (locations || []).forEach(location => {
+                const key = typeof getAdditionalLocationCompletionKey === 'function' ? getAdditionalLocationCompletionKey(location) : '';
+                const label = typeof getAdditionalLocationLabel === 'function' ? getAdditionalLocationLabel(location) : '';
+                if (!key || !label) return;
+                let place = byKey.get(key);
+                if (!place) {
+                    place = { key, label, cores: [] };
+                    places.push(place);
+                    byKey.set(key, place);
+                }
+                const core = mapAddressCodeCoreText(label);
+                if (core && !place.cores.includes(core)) place.cores.push(core);
+            });
+            return places;
+        }
+
+        function matchMapAddressCodeTargets(address, places) {
+            const raw = String(address || '').trim();
+            if (isMapBinStoreKey(raw)) {
+                const hit = (places || []).find(place => place.key === raw);
+                return hit ? [hit] : [];
+            }
+            const core = mapAddressCodeCoreText(raw);
+            if (!core) return [];
+            const exact = (places || []).filter(place => place.cores.includes(core));
+            if (exact.length) return exact;
+            const prefix = (places || []).filter(place => place.cores.some(item => mapAddressCodeCoresAlign(core, item)));
+            if (prefix.length <= 1) return prefix;
+            const ranked = prefix.map(place => ({
+                place,
+                length: Math.max(...place.cores.filter(item => mapAddressCodeCoresAlign(core, item)).map(item => item.length))
+            }));
+            const best = Math.max(...ranked.map(item => item.length));
+            return ranked.filter(item => item.length === best).map(item => item.place);
+        }
+
+        function splitMapAddressCodeBulkCells(line) {
+            const trimmed = String(line == null ? '' : line).replace(/^\uFEFF/, '').trim();
+            if (!trimmed) return null;
+            const cells = trimmed.includes('\t')
+                ? trimmed.split('\t')
+                : (trimmed.includes('|') ? trimmed.split('|') : null);
+            if (!cells) return { error: 'separate-columns' };
+            return { cells: cells.map(cell => String(cell).trim().replace(/^"|"$/g, '').replace(/\s+/g, ' ').trim()) };
+        }
+
+        function mapAddressCodeBulkHeaderIndexes(cells) {
+            const labels = (cells || []).map(cell => String(cell || '').trim().toLowerCase());
+            const addressIdx = labels.findIndex(label => /^(address|location|building( address)?|aka|also known as|name)$/.test(label));
+            const codeIdx = labels.findIndex(label => /^(code( number| #)?|address code|#)$/.test(label));
+            if (addressIdx >= 0 && codeIdx >= 0 && addressIdx !== codeIdx) return { addressIdx, codeIdx };
+            return null;
+        }
+
+        function parseMapAddressCodeBulkText(text) {
+            const lines = String(text == null ? '' : text).split(/\r\n|\n|\r/);
+            const rows = [];
+            const skipped = [];
+            let headerSkipped = false;
+            let addressIdx = 0;
+            let codeIdx = 1;
+            let seenContent = false;
+            lines.forEach((line, index) => {
+                if (!String(line).trim()) return;
+                const lineNumber = index + 1;
+                const split = splitMapAddressCodeBulkCells(line);
+                if (!split) return;
+                if (split.error) {
+                    skipped.push({ lineNumber, text: String(line).trim().slice(0, 180), reason: 'Separate the address and the code with a tab or a |' });
+                    seenContent = true;
+                    return;
+                }
+                if (!seenContent) {
+                    const header = mapAddressCodeBulkHeaderIndexes(split.cells);
+                    if (header) {
+                        addressIdx = header.addressIdx;
+                        codeIdx = header.codeIdx;
+                        headerSkipped = true;
+                        seenContent = true;
+                        return;
+                    }
+                }
+                seenContent = true;
+                const address = split.cells[addressIdx] || '';
+                const codeText = split.cells[codeIdx] || '';
+                if (!address || !codeText) {
+                    skipped.push({
+                        lineNumber,
+                        text: (address || codeText || String(line).trim()).slice(0, 180),
+                        reason: address ? 'Enter a code number' : 'Enter an address'
+                    });
+                    return;
+                }
+                const code = normalizeMapAddressCode(codeText);
+                if (code === null || !code) {
+                    skipped.push({ lineNumber, text: address, reason: 'That code number cannot be saved' });
+                    return;
+                }
+                rows.push({ lineNumber, address, code });
+            });
+            return { rows, skipped, headerSkipped };
+        }
+
+        function planMapAddressCodeBulk(text, sources) {
+            const input = sources || {};
+            const parsed = parseMapAddressCodeBulkText(text);
+            const places = collectMapAddressCodePlaces(input.binGroups, input.aliases, input.locations);
+            const existing = input.existingCodes || {};
+            const ready = [];
+            const unmatched = [];
+            const ambiguous = [];
+            const alreadySaved = [];
+            const overLimit = [];
+            const readyKeys = new Set(Object.keys(existing));
+            parsed.rows.forEach(row => {
+                const targets = matchMapAddressCodeTargets(row.address, places);
+                if (!targets.length) {
+                    unmatched.push(row);
+                    return;
+                }
+                if (targets.length > 1) {
+                    ambiguous.push(Object.assign({ matches: targets.map(place => place.label) }, row));
+                    return;
+                }
+                const target = targets[0];
+                const previous = ready.find(item => item.key === target.key);
+                if (previous) {
+                    previous.code = row.code;
+                    previous.address = row.address;
+                    previous.replaced = true;
+                    return;
+                }
+                if (existing[target.key] === row.code) {
+                    alreadySaved.push(row);
+                    return;
+                }
+                if (!readyKeys.has(target.key) && readyKeys.size >= MAP_ADDRESS_CODE_STORE_MAX) {
+                    overLimit.push(row);
+                    return;
+                }
+                readyKeys.add(target.key);
+                ready.push({
+                    lineNumber: row.lineNumber,
+                    address: row.address,
+                    code: row.code,
+                    key: target.key,
+                    label: target.label,
+                    previous: existing[target.key] || '',
+                    replaced: false
+                });
+            });
+            return {
+                headerSkipped: parsed.headerSkipped,
+                ready,
+                unmatched,
+                ambiguous,
+                alreadySaved,
+                overLimit,
+                skipped: parsed.skipped
+            };
+        }
         // MAP_ADDRESS_CODE_HELPERS_END
 
         function getMapAddressCodePlace(key) {
@@ -22055,6 +22288,107 @@
             if (!saveMapAddressCode(bin, codeInput ? codeInput.value : '')) return;
             if (binInput) binInput.value = '';
             if (codeInput) codeInput.value = '';
+        }
+
+        function mapAddressCodeBulkSources() {
+            return {
+                binGroups: (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {},
+                aliases: typeof getMapAddressAliases === 'function' ? getMapAddressAliases() : [],
+                locations: typeof getAdditionalLocations === 'function' ? getAdditionalLocations() : [],
+                existingCodes: getMapAddressCodes()
+            };
+        }
+
+        function previewMapAddressCodeBulk() {
+            const input = document.getElementById('mapAddressCodeBulkInput');
+            const preview = document.getElementById('mapAddressCodeBulkPreview');
+            const button = document.getElementById('mapAddressCodeBulkAddBtn');
+            if (!input || !preview || !button) return;
+            if (!input.value.trim()) {
+                preview.style.display = 'none';
+                preview.innerHTML = '';
+                button.disabled = true;
+                button.style.opacity = '0.5';
+                button.textContent = 'Import code numbers';
+                return;
+            }
+            const plan = planMapAddressCodeBulk(input.value, mapAddressCodeBulkSources());
+            const lines = [];
+            const previewCount = Math.min(plan.ready.length, 8);
+            plan.ready.slice(0, previewCount).forEach(row => {
+                const action = row.previous ? `replaces ${row.previous}` : 'new';
+                lines.push(`<div style="color:#27ae60; font-weight:600;">✓ ${escapeMapSuggestionHtml(row.address)} → ${escapeMapSuggestionHtml(row.code)} · ${escapeMapSuggestionHtml(row.label)} (${action})</div>`);
+            });
+            if (plan.ready.length > previewCount) {
+                lines.push(`<div style="opacity:0.75;">${plan.ready.length - previewCount} more ready to import</div>`);
+            }
+            plan.unmatched.slice(0, 4).forEach(row => {
+                lines.push(`<div style="color:#ff9800;">${escapeMapSuggestionHtml(row.address)} — not on this map</div>`);
+            });
+            plan.ambiguous.slice(0, 3).forEach(row => {
+                lines.push(`<div style="color:#ff9800;">${escapeMapSuggestionHtml(row.address)} — matches more than one building</div>`);
+            });
+            plan.skipped.slice(0, 3).forEach(row => {
+                lines.push(`<div style="color:#ff9800;">Line ${row.lineNumber}: ${escapeMapSuggestionHtml(row.reason)}</div>`);
+            });
+            const notes = [];
+            if (plan.alreadySaved.length) notes.push(`${plan.alreadySaved.length} already saved`);
+            if (plan.unmatched.length > 4) notes.push(`${plan.unmatched.length - 4} more not on this map`);
+            if (plan.overLimit.length) notes.push(`${plan.overLimit.length} over the limit`);
+            if (notes.length) lines.push(`<div style="opacity:0.8;">${notes.join(' · ')}</div>`);
+            preview.innerHTML = lines.join('') || '<div style="opacity:0.75;">Nothing to import yet</div>';
+            preview.style.display = 'block';
+            const count = plan.ready.length;
+            button.disabled = count === 0;
+            button.style.opacity = count ? '1' : '0.5';
+            button.textContent = count
+                ? `Import ${count} code number${count === 1 ? '' : 's'}`
+                : 'Import code numbers';
+        }
+
+        function importMapAddressCodesFromBulk() {
+            const input = document.getElementById('mapAddressCodeBulkInput');
+            if (!input) return;
+            const plan = planMapAddressCodeBulk(input.value, mapAddressCodeBulkSources());
+            if (!plan.ready.length) {
+                showMapNotification(plan.skipped.length || plan.unmatched.length || plan.ambiguous.length
+                    ? 'Nothing to import — check the rows that did not match'
+                    : 'Paste an address and a code number first', '#ff9800');
+                previewMapAddressCodeBulk();
+                return;
+            }
+            let added = 0;
+            let updated = 0;
+            plan.ready.forEach(row => {
+                const previous = getMapAddressCode(row.key);
+                if (!setMapAddressCode(row.key, row.code)) return;
+                if (previous && previous !== row.code) updated++;
+                else if (!previous) added++;
+            });
+            const saved = added + updated;
+            addMapActivity(updated && !added ? 'Updated address codes' : 'Imported address codes', {
+                type: 'Address Code',
+                bin: isMapBinStoreKey(plan.ready[0].key) ? plan.ready[0].key : '',
+                address: plan.ready[0].label,
+                details: saved === 1
+                    ? `${plan.ready[0].code} — ${plan.ready[0].label}`
+                    : `${saved} code${saved === 1 ? '' : 's'} — ${plan.ready[0].label} and ${saved - 1} more`
+            });
+            input.value = '';
+            previewMapAddressCodeBulk();
+            updateMapAddressCodesPanel();
+            hydrateMapAddressCodeFields(document);
+            if (typeof scheduleMapTextViewRefresh === 'function') scheduleMapTextViewRefresh();
+            const extra = [];
+            if (updated && added) extra.push(`${updated} updated`);
+            if (plan.unmatched.length) extra.push(`${plan.unmatched.length} not on this map`);
+            if (plan.ambiguous.length) extra.push(`${plan.ambiguous.length} matched more than one building`);
+            if (plan.alreadySaved.length) extra.push(`${plan.alreadySaved.length} already saved`);
+            if (plan.skipped.length) extra.push(`${plan.skipped.length} skipped`);
+            showMapNotification(
+                `Imported ${saved} code number${saved === 1 ? '' : 's'}` + (extra.length ? ` (${extra.join(', ')})` : ''),
+                '#6d4c41'
+            );
         }
 
         function clearAllMapAddressCodes() {
@@ -35171,9 +35505,9 @@
                 const popupContent = `
                     <div class="map-popup-content" style="min-width: 380px; max-width: 460px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                         <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid ${isCompleted ? completionColor : isInProcess ? '#e67e22' : isHold ? '#607d8b' : isFavorited ? '#9b59b6' : '#1a73e8'};">
-                            <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${building.address}${renderMapAddressCodeBadgeHtml(building.bin)}</div>
+                            <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; line-height: 1.35; white-space: normal; word-break: break-word;">${building.address}</div>
+                            <div class="map-popup-aliases" data-map-alias-bin="${building.bin}" style="margin: 0 0 8px 0;"></div>
                             ${renderMapAddressCodeRowHtml(building.bin)}
-                            <div class="map-popup-aliases" data-map-alias-bin="${building.bin}" style="margin: -4px 0 8px 0;"></div>
                             <div style="display: flex; gap: 6px; justify-content: space-between;">
                                 <button onclick="toggleMapCompleted('${building.bin}')" 
                                         title="${isCompleted ? 'Unmark as completed' : 'Mark as completed'}"
@@ -47781,7 +48115,7 @@
 
     <button onclick="submitFeedback()" class="feedback-button">Submit Feedback</button>
     <div class="credit-text">Created by <a href="https://www.linkedin.com/in/michaelmontesano/" target="_blank" rel="noopener noreferrer">Michael Montesano</a></div>
-    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 6.5</div>
+    <div style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 0.5rem;">version 7</div>
 
     <!-- Map restore pill — shown when the map is minimized -->
     <div id="mapRestorePill" style="display: none; position: fixed; bottom: 18px; left: 18px; z-index: 10002;">
