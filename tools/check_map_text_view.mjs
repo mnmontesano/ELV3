@@ -8,6 +8,10 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
 assert.match(html, /id="mapTextViewButton"/);
 assert.match(html, /id="mapFilterTextViewButton"/);
+assert.match(html, /id="mapTextViewExcelButton"/);
+assert.match(html, /id="mapTextViewCsvButton"/);
+assert.match(html, /onclick="exportMapTextViewExcel\(\)"/);
+assert.match(html, /onclick="exportMapTextViewCsv\(\)"/);
 assert.match(html, /onclick="closeMapViewMenu\(\); openMapTextView\(\)"/);
 assert.match(html, /onclick="openMapTextView\(\)"/);
 assert.match(html, /function collectMapTextViewEntries\(\)/);
@@ -25,6 +29,9 @@ this.formatMapTextViewDocument = formatMapTextViewDocument;
 this.collectMapTextViewEntries = collectMapTextViewEntries;
 this.getMapTextViewContext = getMapTextViewContext;
 this.mapTextDeviceRows = mapTextDeviceRows;
+this.buildMapTextViewExportTable = buildMapTextViewExportTable;
+this.formatMapTextViewCsv = formatMapTextViewCsv;
+this.mapTextViewExportFileName = mapTextViewExportFileName;
 `;
 
 const visibleMarker = { id: 'visible' };
@@ -179,6 +186,61 @@ const noFindMatch = context.formatMapTextViewDocument([], {
 });
 assert.match(noFindMatch, /No locations in this text match "Scheduled Avenue"\./);
 assert.doesNotMatch(noFindMatch, /No locations are currently shown on the map for this filter\./);
+
+const exportMeta = { heading: viewContext.heading, findQuery: '' };
+const table = context.buildMapTextViewExportTable(entries, exportMeta);
+assert.equal(table.headers[0], 'Filter');
+assert.equal(table.headers[2], 'Location');
+assert.equal(table.rows.length, 2);
+assert.equal(table.rows[0][2], '100 Broadway');
+assert.equal(table.rows[0][4], '1000001');
+assert.equal(table.rows[0][5], 'March');
+assert.match(table.rows[0][15], /1P100 - Passenger - Category - Available now/);
+assert.match(table.rows[0][16], /1P200/);
+assert.match(table.rows[0][16], /45 days/);
+assert.equal(table.rows[0][19], 'Call the super before arrival');
+assert.equal(table.rows[1][2], 'Office house');
+assert.equal(table.rows[1][3], 'House pin - stays on the map with filters');
+assert.equal(table.rows[1][20], '40.73000');
+assert.ok(!table.rows.some(row => String(row[2]).includes('200 Scheduled')));
+
+const csv = context.formatMapTextViewCsv(entries, exportMeta);
+assert.match(csv, /"Filter","Text search","Location"/);
+assert.match(csv, /"100 Broadway"/);
+assert.match(csv, /"1000001"/);
+assert.match(csv, /"Call the super before arrival"/);
+assert.match(csv, /Hide Scheduled Test Dates & Completed Jobs within March/);
+assert.doesNotMatch(csv, /200 Scheduled Avenue/);
+assert.doesNotMatch(csv, /1P300/);
+
+const tricky = context.formatMapTextViewCsv([{
+    title: '100 Broadway, New York',
+    kind: 'building',
+    bin: '1000001',
+    note: '=cmd|" /C calc"!A0',
+    ready: ['1P100 - Available now'],
+    notReady: [],
+    completedDevices: [],
+    statuses: [],
+    aliases: ['Tower, West'],
+    schedules: [],
+    deadlines: [],
+    violations: []
+}], { heading: 'Hide Scheduled', findQuery: 'Broadway' });
+assert.match(tricky, /"100 Broadway, New York"/);
+assert.match(tricky, /"Tower, West"/);
+assert.match(tricky, /"'=cmd\|"" \/C calc""!A0"/);
+assert.match(tricky, /"Broadway"/);
+assert.doesNotMatch(tricky, /"=cmd/);
+
+assert.equal(
+    context.mapTextViewExportFileName('csv', { heading: 'Hide Scheduled Test Dates & Completed Jobs within March' }, '2026-11-09'),
+    'hide-scheduled-test-dates-and-completed-jobs-within-march-2026-11-09.csv'
+);
+assert.equal(
+    context.mapTextViewExportFileName('xlsx', { heading: 'Current map view' }, '2026-11-09'),
+    'current-map-view-2026-11-09.xlsx'
+);
 
 const parsed = new Function(html.slice(
     html.indexOf('        function formatMapTextViewHeader('),

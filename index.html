@@ -2007,7 +2007,7 @@
                                     <li>When you mark a test completed, its completed date replaces the scheduled date. Use + Add another date to record testing that took more than one day</li>
                                     <li>Review lists buildings marked completed that still have devices without the marked test filed for this year. It is separate from the REVIEW month label</li>
                                     <li>Map view filter: Hide Category Completed leaves PVI-only jobs visible; Hide PVI Completed leaves Category-only jobs visible. Fully completed jobs are hidden by both.</li>
-                                    <li>Text View lists the locations currently drawn on the map after the Map view filter, including Hide Scheduled Test Dates &amp; Completed Jobs, as readable text you can copy</li>
+                                    <li>Text View lists the locations currently drawn on the map after the Map view filter, including Hide Scheduled Test Dates &amp; Completed Jobs, as readable text you can copy, or export to Excel or CSV</li>
                                     <li>No Test Yet lists devices with no Category or PVI this year and counts down days left to finish both tests 91 days apart</li>
                                     <li>Disregard in No Test Yet hides only that device from the list and map highlight; other devices at the same building stay visible</li>
                                     <li>Copy on a No Test Yet building copies that building's devices; Copy All Devices copies every remaining device across all buildings</li>
@@ -15829,6 +15829,97 @@
             if (!list.length) return header;
             return header + '\n\n' + list.map((entry, index) => formatMapTextViewEntry(entry, index)).join('\n\n');
         }
+
+        const MAP_TEXT_VIEW_EXPORT_HEADERS = [
+            'Filter',
+            'Text search',
+            'Location',
+            'Kind',
+            'BIN',
+            'Month',
+            'Status',
+            'Also known as',
+            'Devices',
+            'Complete',
+            'Incomplete',
+            'N/A devices',
+            'All required tests completed',
+            'Scheduled test dates',
+            'Deadlines',
+            'Ready to test',
+            'Not ready',
+            'Completed this year',
+            'Active violations',
+            'Note',
+            'Latitude',
+            'Longitude'
+        ];
+
+        function mapTextViewCsvCell(value) {
+            let text = String(value ?? '');
+            if (/^[\t\r ]*[=+\-@]/.test(text)) text = `'${text}`;
+            return `"${text.replace(/"/g, '""')}"`;
+        }
+
+        function mapTextViewExportRow(entry, meta) {
+            const item = entry || {};
+            const info = meta || {};
+            const schedules = (item.schedules || []).map(row => row.label + ' - ' + row.display);
+            const deadlines = (item.deadlines || []).map(row => row.label + ' - ' + row.display);
+            const hasDeviceInfo = item.deviceCount || item.notApplicableCount || (item.ready || []).length || (item.notReady || []).length || (item.completedDevices || []).length;
+            const showCounts = item.complete || item.incomplete;
+            const hasCoords = Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)) && (item.passthrough || item.kind === 'additional');
+            return [
+                info.heading || 'Current map view',
+                info.findQuery || '',
+                item.title || 'Untitled location',
+                item.kindLabel || (item.kind === 'additional' ? 'Additional location' : 'Building'),
+                item.bin || '',
+                item.month || '',
+                (item.statuses || []).join('; '),
+                (item.aliases || []).join('; '),
+                hasDeviceInfo ? String(Number(item.deviceCount) || 0) : '',
+                showCounts ? String(Number(item.complete) || 0) : '',
+                showCounts ? String(Number(item.incomplete) || 0) : '',
+                item.notApplicableCount ? String(item.notApplicableCount) : '',
+                item.allRequiredTestsCompletedForYear ? ('Yes' + (item.calendarYear ? ' (' + item.calendarYear + ')' : '')) : '',
+                schedules.join('\n'),
+                deadlines.join('\n'),
+                (item.ready || []).join('\n'),
+                (item.notReady || []).join('\n'),
+                (item.completedDevices || []).join('\n'),
+                (item.violations || []).join('\n'),
+                item.note || '',
+                hasCoords ? Number(item.latitude).toFixed(5) : '',
+                hasCoords ? Number(item.longitude).toFixed(5) : ''
+            ];
+        }
+
+        function buildMapTextViewExportTable(entries, meta) {
+            return {
+                headers: MAP_TEXT_VIEW_EXPORT_HEADERS.slice(),
+                rows: (Array.isArray(entries) ? entries : []).map(entry => mapTextViewExportRow(entry, meta))
+            };
+        }
+
+        function formatMapTextViewCsv(entries, meta) {
+            const table = buildMapTextViewExportTable(entries, meta);
+            const lines = [table.headers.map(mapTextViewCsvCell).join(',')];
+            table.rows.forEach(row => lines.push(row.map(mapTextViewCsvCell).join(',')));
+            return lines.join('\r\n') + '\r\n';
+        }
+
+        function mapTextViewExportFileName(extension, meta, date) {
+            const day = date || new Date().toISOString().slice(0, 10);
+            const heading = String((meta && meta.heading) || 'map-text-view')
+                .toLowerCase()
+                .replace(/&/g, ' and ')
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .slice(0, 70)
+                .replace(/-+$/g, '');
+            return (heading || 'map-text-view') + '-' + day + '.' + extension;
+        }
         // MAP_TEXT_VIEW_FORMAT_END
 
         let mapTextViewRefreshTimer = null;
@@ -16083,9 +16174,11 @@
             const meta = {
                 heading: context.heading,
                 note: notes.join(' '),
+                findQuery: query,
                 emptyMessage: query ? 'No locations in this text match "' + query + '".' : ''
             };
             modal._mapTextViewText = formatMapTextViewDocument(visible, meta);
+            modal._mapTextViewExport = { entries: visible.slice(), meta };
             const scrollTop = body.scrollTop;
             body.innerHTML = renderMapTextViewBody(visible, meta);
             body.scrollTop = scrollTop;
@@ -16153,6 +16246,66 @@
             }
         }
 
+        function downloadMapTextViewBlob(filename, blob) {
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.href = url;
+            link.download = filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(url), 1500);
+        }
+
+        function getMapTextViewExportState() {
+            const modal = document.getElementById('mapTextViewModal');
+            if (!modal || !modal._mapTextViewExport) {
+                showMapNotification('Open Text View before exporting', '#ff6b6b');
+                return null;
+            }
+            const state = modal._mapTextViewExport;
+            if (!state.entries || !state.entries.length) {
+                showMapNotification('No locations to export', '#ff6b6b');
+                return null;
+            }
+            return state;
+        }
+
+        function exportMapTextViewCsv() {
+            const state = getMapTextViewExportState();
+            if (!state) return;
+            const csv = formatMapTextViewCsv(state.entries, state.meta);
+            const filename = mapTextViewExportFileName('csv', state.meta);
+            downloadMapTextViewBlob(filename, new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+            showMapNotification('Exported ' + state.entries.length + ' location' + (state.entries.length === 1 ? '' : 's') + ' to CSV', '#217346');
+        }
+
+        function exportMapTextViewExcel() {
+            const state = getMapTextViewExportState();
+            if (!state) return;
+            if (!window.XLSX) {
+                alert('Excel export library is not available. Please reload the page and try again.');
+                return;
+            }
+            const table = buildMapTextViewExportTable(state.entries, state.meta);
+            const info = state.meta || {};
+            const deviceTotal = state.entries.reduce((sum, entry) => sum + (Number(entry.deviceCount) || 0), 0);
+            const workbook = XLSX.utils.book_new();
+            const usedSheetNames = new Set();
+            appendMapExcelSheet(workbook, usedSheetNames, 'Summary', ['Field', 'Value'], [
+                ['Filter', info.heading || 'Current map view'],
+                ['Text search', info.findQuery || ''],
+                ['Locations', state.entries.length],
+                ['Devices', deviceTotal],
+                ['Note', info.note || '']
+            ]);
+            appendMapExcelSheet(workbook, usedSheetNames, 'Locations', table.headers, table.rows);
+            const filename = mapTextViewExportFileName('xlsx', state.meta);
+            XLSX.writeFile(workbook, filename);
+            showMapNotification('Exported ' + state.entries.length + ' location' + (state.entries.length === 1 ? '' : 's') + ' to Excel', '#217346');
+        }
+
         function openMapTextView() {
             if (!buildingMap || !Array.isArray(mapMarkers)) {
                 alert('No map is open. Load a map view or run a bulk lookup first.');
@@ -16177,6 +16330,8 @@
                     #mapTextViewModal .map-text-toolbar input { flex:1 1 220px; min-width:160px; padding:7px 9px; border-radius:6px; border:1px solid var(--input-border,#555); background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); font-size:12px; }
                     #mapTextViewModal .map-text-toolbar button, #mapTextViewModal .map-text-footer button { border:1px solid var(--input-border,#555); border-radius:6px; padding:7px 11px; background:var(--input-bg,#2a2a3e); color:var(--text-color,#fff); cursor:pointer; font-size:12px; font-weight:700; }
                     #mapTextViewModal #mapTextViewCopyButton { background:#37474f; border-color:#37474f; color:white; }
+                    #mapTextViewModal #mapTextViewExcelButton { background:#217346; border-color:#217346; color:white; }
+                    #mapTextViewModal #mapTextViewCsvButton { background:#0d6efd; border-color:#0d6efd; color:white; }
                     #mapTextViewBody { flex:1; min-height:0; overflow:auto; padding:12px 14px 18px; }
                     #mapTextViewModal .map-text-view-header, #mapTextViewModal .map-text-view-entry { margin:0; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12.5px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
                     #mapTextViewModal .map-text-view-header { margin-bottom:14px; color:var(--header-color,var(--text-color,#fff)); }
@@ -16189,13 +16344,15 @@
                     <div class="map-text-header">
                         <div>
                             <h3 id="mapTextViewTitle">☰ Text View</h3>
-                            <div class="map-text-subtitle">The locations currently drawn on the map, including the active Map view filter.</div>
+                            <div class="map-text-subtitle">The locations currently drawn on the map, including the active Map view filter. Excel and CSV export this list.</div>
                         </div>
                         <button type="button" onclick="closeMapTextView()" aria-label="Close Text View" style="border:0;background:none;color:var(--text-color);font-size:24px;line-height:1;cursor:pointer;">×</button>
                     </div>
                     <div class="map-text-toolbar">
                         <input id="mapTextViewFind" type="search" placeholder="Find in this text…" aria-label="Find in the map text view" oninput="renderMapTextView()">
                         <button type="button" id="mapTextViewCopyButton" onclick="copyMapTextView()">Copy text</button>
+                        <button type="button" id="mapTextViewExcelButton" onclick="exportMapTextViewExcel()" title="Download the locations shown here as an Excel workbook">Excel</button>
+                        <button type="button" id="mapTextViewCsvButton" onclick="exportMapTextViewCsv()" title="Download the locations shown here as a CSV file">CSV</button>
                         <button type="button" id="mapTextViewRefreshButton" onclick="renderMapTextView()">Refresh</button>
                     </div>
                     <div id="mapTextViewBody"></div>
