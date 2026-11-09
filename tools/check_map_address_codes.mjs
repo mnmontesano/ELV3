@@ -13,6 +13,9 @@ assert.match(html, /id="mapAddressCodeValueInput"/);
 assert.match(html, /id="mapAddressCodesList"/);
 assert.match(html, /onclick="addMapAddressCodeFromForm\(\)"/);
 assert.match(html, /onclick="clearAllMapAddressCodes\(\)"/);
+assert.match(html, /id="mapAddressCodeBulkInput"/);
+assert.match(html, /onclick="importMapAddressCodesFromBulk\(\)"/);
+assert.match(html, /oninput="previewMapAddressCodeBulk\(\)"/);
 assert.match(html, /renderMapAddressCodeRowHtml\(building\.bin\)/);
 assert.match(html, /hydrateMapAddressCodeFields\(popupRoot\);/);
 assert.match(html, /renderMapAddressCodeRowHtml\(addressCodeKey\)/);
@@ -24,15 +27,18 @@ assert.match(html, /addressCodes: normalizeMapAddressCodes\(source\.addressCodes
 assert.match(html, /setMapAddressCodes\(view\.addressCodes \|\| \{\}\);/);
 assert.match(html, /addressCodeKeys\.length > MAP_ADDRESS_CODE_STORE_MAX/);
 assert.match(html, /planningColumn\('address_code', 'Code Number', 'addressCode'/);
-assert.match(css, /#mcpAddressCodes input\[type="text"\],\s*\.map-address-code-input \{\s*font-size: 16px !important;/);
+assert.match(css, /#mcpAddressCodes input\[type="text"\],\s*#mcpAddressCodes textarea,\s*\.map-address-code-input \{\s*font-size: 16px !important;/);
 
 const keyStart = html.indexOf('        function isMapBinStoreKey(key)');
-const keyEnd = html.indexOf('        function getAdditionalLocationCompletionKey(location)');
+const keyEnd = html.indexOf('        function findAdditionalLocationIndexByLatLng');
+const matchStart = html.indexOf('        function normalizeAddressForMatch(addr)');
+const matchEnd = html.indexOf('        function parseExcelDate(raw)');
 const helperStart = html.indexOf('        const MAP_ADDRESS_CODE_MAX = ');
 const helperEnd = html.indexOf('        // MAP_ADDRESS_CODE_HELPERS_END');
 const sanitizeStart = html.indexOf('        function sanitizeMapViewForExport(view)');
 const sanitizeEnd = html.indexOf('        async function triggerMapViewLoad()');
 assert.ok(keyStart > 0 && keyEnd > keyStart, 'BIN key helpers not found');
+assert.ok(matchStart > 0 && matchEnd > matchStart, 'address matcher not found');
 assert.ok(helperStart > 0 && helperEnd > helperStart, 'address code helpers not found');
 assert.ok(sanitizeStart > 0 && sanitizeEnd > sanitizeStart, 'map save sanitizer not found');
 
@@ -44,6 +50,7 @@ vm.createContext(context);
 vm.runInContext(`
 let mapAddressCodes = {};
 ${html.slice(keyStart, keyEnd)}
+${html.slice(matchStart, matchEnd)}
 ${html.slice(helperStart, helperEnd)}
 ${html.slice(sanitizeStart, sanitizeEnd)}
 this.api = {
@@ -54,7 +61,9 @@ this.api = {
     setMapAddressCodes,
     getMapAddressCode,
     getMapAddressCodes,
-    sanitizeMapViewForExport
+    sanitizeMapViewForExport,
+    planMapAddressCodeBulk,
+    parseMapAddressCodeBulkText
 };
 `, context);
 const api = context.api;
@@ -114,5 +123,65 @@ assert.deepEqual({ ...dropped.view.addressCodes }, { '1000001': 'OK-1' });
 
 const emptyFile = api.sanitizeMapViewForExport({});
 assert.deepEqual({ ...emptyFile.view.addressCodes }, {});
+
+const codeGroups = {
+    '1000001': { address: '100 BROADWAY, MANHATTAN', devices: [{ device_number: '1P100' }] },
+    '2000002': { address: '200 SCHEDULED AVENUE, BROOKLYN', devices: [{ device_number: '1P200' }] },
+    '4000004': { address: '1000 BROADWAY, MANHATTAN', devices: [{ device_number: '1P400' }] }
+};
+const pasted = api.planMapAddressCodeBulk(`Address\tCode Number
+100 Broadway, New York, NY 10007\tA-1042
+Broadway Tower | B-9
+1000 Broadway\tC-1
+10 Broadway\tD-1
+Not a place | Z-1
+45 Oak Ave | bad code!
+`, {
+    binGroups: codeGroups,
+    aliases: [{ name: 'Broadway Tower', devices: ['1P200'] }],
+    locations: [],
+    existingCodes: { '4000004': 'C-1' }
+});
+assert.equal(pasted.headerSkipped, true);
+assert.deepEqual(
+    Array.from(pasted.ready, row => [String(row.key), String(row.code)]),
+    [['1000001', 'A-1042'], ['2000002', 'B-9']]
+);
+assert.equal(pasted.alreadySaved.length, 1);
+assert.equal(pasted.unmatched.length, 2);
+assert.equal(pasted.skipped.length, 1);
+
+const repeated = api.planMapAddressCodeBulk('100 Broadway | A-1\n100 Broadway | A-2', {
+    binGroups: codeGroups,
+    aliases: [],
+    locations: [],
+    existingCodes: {}
+});
+assert.equal(repeated.ready.length, 1);
+assert.equal(repeated.ready[0].code, 'A-2');
+assert.equal(repeated.ready[0].replaced, true);
+
+const ambiguous = api.planMapAddressCodeBulk('100 Broadway | A-9', {
+    binGroups: {
+        '1000001': { address: '100 BROADWAY, MANHATTAN', devices: [] },
+        '3000003': { address: '100 BROADWAY, MANHATTAN', devices: [] }
+    },
+    aliases: [],
+    locations: [],
+    existingCodes: {}
+});
+assert.equal(ambiguous.ready.length, 0);
+assert.equal(ambiguous.ambiguous.length, 1);
+
+const fromExport = api.planMapAddressCodeBulk('Filter\tLocation\tCode Number\nHide\t200 Scheduled Avenue\tP-4', {
+    binGroups: codeGroups,
+    aliases: [],
+    locations: [],
+    existingCodes: {}
+});
+assert.deepEqual(
+    Array.from(fromExport.ready, row => [String(row.key), String(row.code)]),
+    [['2000002', 'P-4']]
+);
 
 console.log('map address code checks passed');
