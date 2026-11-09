@@ -15,7 +15,9 @@ assert.match(html, /onclick="addMapAddressCodeFromForm\(\)"/);
 assert.match(html, /onclick="clearAllMapAddressCodes\(\)"/);
 assert.match(html, /id="mapAddressCodeBulkInput"/);
 assert.match(html, /onclick="importMapAddressCodesFromBulk\(\)"/);
-assert.match(html, /oninput="previewMapAddressCodeBulk\(\)"/);
+assert.match(html, /id="mapAddressCodeBulkRows"/);
+assert.match(html, /addMapAddressCodeBulkLinesFromPaste\(event\)/);
+assert.match(html, /function appendMapAddressCodeBulkLine\(/);
 assert.match(html, /renderMapAddressCodeRowHtml\(building\.bin\)/);
 assert.match(html, /hydrateMapAddressCodeFields\(popupRoot\);/);
 assert.match(html, /renderMapAddressCodeRowHtml\(addressCodeKey\)/);
@@ -25,7 +27,8 @@ assert.match(html, /addressCodes: getMapAddressCodes\(\),/);
 assert.match(html, /addressCodes: normalizeMapAddressCodes\(view\.addressCodes\),/);
 assert.match(html, /addressCodes: normalizeMapAddressCodes\(source\.addressCodes\),/);
 assert.match(html, /setMapAddressCodes\(view\.addressCodes \|\| \{\}\);/);
-assert.match(html, /addressCodeKeys\.length > MAP_ADDRESS_CODE_STORE_MAX/);
+assert.doesNotMatch(html, /MAP_ADDRESS_CODE_STORE_MAX/);
+assert.doesNotMatch(html, /too many address codes/);
 assert.match(html, /planningColumn\('address_code', 'Code Number', 'addressCode'/);
 assert.match(css, /#mcpAddressCodes input\[type="text"\],\s*#mcpAddressCodes textarea,\s*\.map-address-code-input \{\s*font-size: 16px !important;/);
 
@@ -158,8 +161,8 @@ const repeated = api.planMapAddressCodeBulk('100 Broadway | A-1\n100 Broadway | 
     existingCodes: {}
 });
 assert.equal(repeated.ready.length, 1);
-assert.equal(repeated.ready[0].code, 'A-2');
-assert.equal(repeated.ready[0].replaced, true);
+assert.equal(repeated.ready[0].code, 'A-1');
+assert.equal(repeated.duplicates.length, 1);
 
 const ambiguous = api.planMapAddressCodeBulk('100 Broadway | A-9', {
     binGroups: {
@@ -183,5 +186,37 @@ assert.deepEqual(
     Array.from(fromExport.ready, row => [String(row.key), String(row.code)]),
     [['2000002', 'P-4']]
 );
+
+const spaced = api.planMapAddressCodeBulk(`100 Broadway, New York, NY 10007 A-1042
+200 Scheduled Avenue B-9
+100 Broadway, Manhattan A-1
+1000 Broadway C-1`, {
+    binGroups: codeGroups,
+    aliases: [],
+    locations: [],
+    existingCodes: {}
+});
+assert.deepEqual(
+    Array.from(spaced.ready, row => [String(row.key), String(row.code)]),
+    [['1000001', 'A-1042'], ['2000002', 'B-9'], ['4000004', 'C-1']]
+);
+assert.equal(spaced.duplicates.length, 1);
+
+const manyGroups = {};
+const manyLines = [];
+for (let index = 0; index < 40; index += 1) {
+    const bin = String(5000000 + index);
+    const number = 500 + index;
+    manyGroups[bin] = { address: `${number} UNIQUE STREET, MANHATTAN`, devices: [] };
+    manyLines.push(`${number} Unique Street C-${index}`);
+}
+const many = api.planMapAddressCodeBulk(manyLines.join('\n'), {
+    binGroups: manyGroups,
+    aliases: [],
+    locations: [],
+    existingCodes: {}
+});
+assert.equal(many.ready.length, 40);
+assert.equal(many.overLimit, undefined);
 
 console.log('map address code checks passed');
