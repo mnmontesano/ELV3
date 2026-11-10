@@ -17921,9 +17921,13 @@
             fileInput.click();
         }
 
+        // Every JSON value takes at least 2 bytes, so this cap never rejects a file that passes the upload size limit.
+        const MAP_VIEW_IMPORT_MAX_VALUES = Math.ceil(ELV3_UPLOAD_LIMITS.mapViewBytes / 2);
+        const MAP_VIEW_IMPORT_MAX_DEPTH = 32;
+
         function sanitizeImportedMapValue(value, state = { count: 0 }, depth = 0) {
             state.count += 1;
-            if (state.count > 100000 || depth > 12) throw new Error('Map view is too complex.');
+            if (state.count > MAP_VIEW_IMPORT_MAX_VALUES || depth > MAP_VIEW_IMPORT_MAX_DEPTH) throw new Error('Map view is too complex.');
             if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
             if (typeof value === 'string') {
                 if (value.length > 20000) throw new Error('Map view contains an oversized text value.');
