@@ -2845,7 +2845,7 @@
             pdfBatchBytes: 100 * 1024 * 1024,
             pdfBatchFiles: 20,
             spreadsheetBytes: 15 * 1024 * 1024,
-            mapViewBytes: 10 * 1024 * 1024,
+            mapViewBytes: 50 * 1024 * 1024,
             remotePdfBytes: 25 * 1024 * 1024
         });
 
@@ -17924,23 +17924,26 @@
         // Every JSON value takes at least 2 bytes, so this cap never rejects a file that passes the upload size limit.
         const MAP_VIEW_IMPORT_MAX_VALUES = Math.ceil(ELV3_UPLOAD_LIMITS.mapViewBytes / 2);
         const MAP_VIEW_IMPORT_MAX_DEPTH = 32;
+        const MAP_VIEW_IMPORT_MAX_TEXT_LENGTH = 20000;
+
+        function sanitizeImportedMapText(value, maxLength = MAP_VIEW_IMPORT_MAX_TEXT_LENGTH) {
+            if (value.length > maxLength) throw new Error('Map view contains an oversized text value.');
+            return value
+                .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+                .replace(/&/g, '＆')
+                .replace(/</g, '‹')
+                .replace(/>/g, '›')
+                .replace(/"/g, '”')
+                .replace(/'/g, '’')
+                .replace(/`/g, '’')
+                .replace(/\\/g, '＼');
+        }
 
         function sanitizeImportedMapValue(value, state = { count: 0 }, depth = 0) {
             state.count += 1;
             if (state.count > MAP_VIEW_IMPORT_MAX_VALUES || depth > MAP_VIEW_IMPORT_MAX_DEPTH) throw new Error('Map view is too complex.');
             if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
-            if (typeof value === 'string') {
-                if (value.length > 20000) throw new Error('Map view contains an oversized text value.');
-                return value
-                    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
-                    .replace(/&/g, '＆')
-                    .replace(/</g, '‹')
-                    .replace(/>/g, '›')
-                    .replace(/"/g, '”')
-                    .replace(/'/g, '’')
-                    .replace(/`/g, '’')
-                    .replace(/\\/g, '＼');
-            }
+            if (typeof value === 'string') return sanitizeImportedMapText(value);
             if (Array.isArray(value)) {
                 if (value.length > 20000) throw new Error('Map view contains too many list items.');
                 return value.map(item => sanitizeImportedMapValue(item, state, depth + 1));
@@ -18129,10 +18132,15 @@
 
         function normalizeImportedMapView(rawData) {
             const rawSource = rawData && rawData.view ? rawData.view : rawData;
-            const source = sanitizeImportedMapValue(rawSource);
-            if (!source || typeof source !== 'object') {
+            // The pasted device list is saved as one text value, so it may be far longer than a note.
+            const rawBulkDeviceNumbers = rawSource && typeof rawSource === 'object' && typeof rawSource.bulkDeviceNumbers === 'string'
+                ? rawSource.bulkDeviceNumbers
+                : '';
+            const source = sanitizeImportedMapValue(rawBulkDeviceNumbers ? { ...rawSource, bulkDeviceNumbers: '' } : rawSource);
+            if (!source || typeof source !== 'object' || Array.isArray(source)) {
                 throw new Error('Invalid file format.');
             }
+            source.bulkDeviceNumbers = sanitizeImportedMapText(rawBulkDeviceNumbers, ELV3_UPLOAD_LIMITS.mapViewBytes);
             if (!source.lastBulkSearchResults || !source.lastBulkSearchResults.binGroups) {
                 throw new Error('Missing map lookup results in file.');
             }
