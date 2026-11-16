@@ -7,7 +7,7 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
 const PHONE_QUERY = '(max-width: 768px), (pointer: coarse) and (max-height: 500px)';
-const LANDSCAPE_QUERY = '(pointer: coarse) and (max-height: 500px)';
+const LANDSCAPE_QUERY = '(orientation: landscape) and (max-height: 900px) and (max-width: 1280px)';
 
 function mediaBlock(source, query) {
     const start = source.indexOf(`@media ${query} {`);
@@ -66,10 +66,12 @@ const panStart = html.indexOf('function keepMapPopupInViewOnPhone(popup) {');
 const panEnd = html.indexOf('function openMapMarkerPopup(marker) {', panStart);
 assert.ok(panStart > 0 && panEnd > panStart);
 const pan = html.slice(panStart, panEnd);
-assert.match(pan, /window\.matchMedia\(MAP_PHONE_LAYOUT_QUERY\)\.matches\) return;/);
+assert.match(pan, /!isMapCompactPopupLayout\(\)\) return;/);
+assert.match(html, /const MAP_LANDSCAPE_LAYOUT_QUERY = '\(orientation: landscape\) and \(max-height: 900px\) and \(max-width: 1280px\)';/);
+assert.match(html, /function isMapCompactPopupLayout\(\) \{\s*return isMapPhoneLayout\(\) \|\| !!\(window\.matchMedia && window\.matchMedia\(MAP_LANDSCAPE_LAYOUT_QUERY\)\.matches\);/);
 assert.match(pan, /popup\.isOpen\(\)/);
 assert.match(pan, /buildingMap\.panBy\(/);
-assert.match(html, /buildingMap\.on\('popupopen', function \(e\) \{\s*hydrateOpenMapPopup\(e\.popup\);\s*keepMapPopupInViewOnPhone\(e\.popup\);/);
+assert.match(html, /buildingMap\.on\('popupopen', function \(e\) \{\s*hydrateOpenMapPopup\(e\.popup\);\s*enableMapPopupTouchScroll\(e\.popup\);\s*fitMapPopupToVisibleMap\(e\.popup\);\s*keepMapPopupInViewOnPhone\(e\.popup\);/);
 
 // A loaded MAP file opens Settings on a wide screen and leaves it closed on a phone.
 assert.match(html, /function isMapPhoneLayout\(\)/);
