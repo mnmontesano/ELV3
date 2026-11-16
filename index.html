@@ -1370,7 +1370,8 @@
                             #mapControlsPanelBody.mcp-detail-mode #noTestByJuneDisregardedList,
                             #mapControlsPanelBody.mcp-detail-mode #noTestYetList,
                             #mapControlsPanelBody.mcp-detail-mode #noTestYetDisregardedList,
-                            #mapControlsPanelBody.mcp-detail-mode #testDatesPanelList { max-height: min(68vh, 620px) !important; }
+                            #mapControlsPanelBody.mcp-detail-mode #testDatesPanelList,
+                            #mapControlsPanelBody.mcp-detail-mode #mapUnscheduledJobsList { max-height: min(68vh, 620px) !important; }
                             #favoritesBuildingsList,
                             #monitoredBuildingsList,
                             #inProcessBuildingsList,
@@ -1392,7 +1393,8 @@
                             #noTestByJuneDisregardedList,
                             #noTestYetList,
                             #noTestYetDisregardedList,
-                            #testDatesPanelList { max-height: min(52vh, 460px) !important; }
+                            #testDatesPanelList,
+                            #mapUnscheduledJobsList { max-height: min(52vh, 460px) !important; }
                             /* Popped-out panel: lift list height caps so content fills available space */
                             #mapControlsPanel.mcp-popped-out #favoritesBuildingsList,
                             #mapControlsPanel.mcp-popped-out #monitoredBuildingsList,
@@ -1415,7 +1417,8 @@
                             #mapControlsPanel.mcp-popped-out #noTestByJuneDisregardedList,
                             #mapControlsPanel.mcp-popped-out #noTestYetList,
                             #mapControlsPanel.mcp-popped-out #noTestYetDisregardedList,
-                            #mapControlsPanel.mcp-popped-out #testDatesPanelList { max-height: none !important; }
+                            #mapControlsPanel.mcp-popped-out #testDatesPanelList,
+                            #mapControlsPanel.mcp-popped-out #mapUnscheduledJobsList { max-height: none !important; }
                             #noTestYetList .no-test-yet-linked {
                                 box-shadow: 0 0 0 2px #c0392b;
                                 background: rgba(192,57,43,0.16) !important;
@@ -1502,6 +1505,22 @@
                         </div>
 
                         <!-- Hidden -->
+                        <!-- Jobs not scheduled yet -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpUnscheduledJobs'); renderMapUnscheduledJobs();">
+                                <span class="mcp-title"><span style="color:#e67e22;">📋</span> Not Scheduled - <span id="mapUnscheduledJobsCount">0</span></span>
+                                <span class="mcp-arrow" id="mcpUnscheduledJobsArrow">›</span>
+                            </div>
+                            <div class="mcp-body" id="mcpUnscheduledJobs">
+                                <p class="mcp-desc" id="mapUnscheduledJobsNote" style="font-size:0.94em; line-height:1.5; opacity:0.82;">Address and also-known-as name for each loaded job with no scheduled test date. Fully completed jobs are left off. Click an address to view it on the map.</p>
+                                <input type="search" id="mapUnscheduledJobsSearch" class="mcp-search-input" placeholder="🔍 Search address or AKA"
+                                       oninput="filterMapUnscheduledJobs(this.value)">
+                                <div id="mapUnscheduledJobsList" style="max-height: 260px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No jobs yet</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Scheduled Test Dates -->
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpTestDates')">
@@ -1923,7 +1942,7 @@
                                 <span class="mcp-arrow" id="mcpHousesArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpHouses">
-                                <p class="mcp-desc">Pins you marked as a house use the brown marker color below on the map. Unmark keeps the pin under Additional Locations; Remove deletes the pin entirely.</p>
+                                <p class="mcp-desc">Pins you marked as a house stay brown on the map and show initials from the custom name, or from the address when there is no custom name. A completion mark still replaces those initials. Unmark keeps the pin under Additional Locations; Remove deletes the pin entirely.</p>
                                 <input type="text" id="housesLocationsSearchInput" class="mcp-search-input" placeholder="🔍 Search label, address, BIN, coordinates..."
                                        oninput="filterHousesLocationsList(this.value)">
                                 <div id="housesLocationsList" style="max-height: 240px; overflow-y: auto; margin-bottom: 8px;">
@@ -4544,6 +4563,111 @@
             }
 
             closeSettings();
+        }
+
+        function getUnscheduledMapJobRecords() {
+            const groups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            const groupBins = Object.keys(groups);
+            const bins = groupBins.length
+                ? groupBins
+                : (Array.isArray(mapBuildingsData) ? mapBuildingsData.map(building => building && building.bin).filter(Boolean) : []);
+            const seen = new Set();
+            const records = [];
+            bins.forEach(bin => {
+                const key = String(bin || '').trim();
+                if (!key || seen.has(key)) return;
+                seen.add(key);
+                const building = Array.isArray(mapBuildingsData)
+                    ? mapBuildingsData.find(item => item && String(item.bin) === key)
+                    : null;
+                const hasSchedule = filterMapScheduleDatesForMapYear(getTestDatesForBin(key)).length > 0;
+                const fullyCompleted = !isMapFutureYearView() && mapViewIsFullyCompleted({ completed: getMapCompleted() }, key, building);
+                const groupAddress = groups[key] && groups[key].address;
+                const address = groupAddress || (building && building.address) || _addressOrBin(key);
+                records.push({
+                    bin: key,
+                    address,
+                    aka: getMapAddressAliasNamesForBin(key),
+                    onHold: !!(getMapHold() && getMapHold()[key]),
+                    hasSchedule,
+                    fullyCompleted
+                });
+            });
+            return selectUnscheduledMapJobs(records);
+        }
+
+        function renderMapUnscheduledJobs() {
+            const listEl = document.getElementById('mapUnscheduledJobsList');
+            const countEl = document.getElementById('mapUnscheduledJobsCount');
+            const noteEl = document.getElementById('mapUnscheduledJobsNote');
+            if (!listEl) return;
+            if (!listEl.dataset.unscheduledClickBound) {
+                listEl.dataset.unscheduledClickBound = 'true';
+                listEl.addEventListener('click', function(event) {
+                    const row = event.target.closest('.settings-unscheduled-row');
+                    if (!row || !row.dataset.bin) return;
+                    if (typeof flyToMapBuilding === 'function') flyToMapBuilding(row.dataset.bin, { temporarilyShowHidden: true });
+                });
+            }
+            const year = typeof getMapDisplayedCalendarYear === 'function'
+                ? getMapDisplayedCalendarYear()
+                : new Date().getFullYear();
+            const loaded = !!(
+                (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && Object.keys(window.lastBulkSearchResults.binGroups).length)
+                || (Array.isArray(mapBuildingsData) && mapBuildingsData.length)
+            );
+            if (noteEl) {
+                noteEl.textContent = loaded
+                    ? `Address and also-known-as name for each loaded job with no scheduled test date for ${year}. Fully completed jobs are left off. Click an address to view it on the map.`
+                    : 'Load a map to see jobs that have not been scheduled.';
+            }
+            if (!loaded) {
+                if (countEl) countEl.textContent = '0';
+                listEl.innerHTML = '<div class="settings-unscheduled-empty">No map loaded</div>';
+                return;
+            }
+            const jobs = getUnscheduledMapJobRecords();
+            if (countEl) countEl.textContent = String(jobs.length);
+            if (!jobs.length) {
+                listEl.innerHTML = '<div class="settings-unscheduled-empty">Every loaded job has a scheduled test date, or is fully completed.</div>';
+                return;
+            }
+            listEl.innerHTML = jobs.map(job => {
+                const akaText = job.aka.length ? job.aka.join(' · ') : '—';
+                const searchText = [job.address, job.aka.join(' '), job.bin, job.onHold ? 'on hold' : ''].join(' ').toLowerCase();
+                const hold = job.onHold ? '<span class="settings-unscheduled-hold">On hold</span>' : '';
+                return `<button type="button" class="settings-unscheduled-row" data-bin="${escapeMapSuggestionHtml(job.bin)}" data-search="${escapeMapSuggestionHtml(searchText)}">
+                    <span class="settings-unscheduled-address">${escapeMapSuggestionHtml(job.address)}${hold}</span>
+                    <span class="settings-unscheduled-aka"><span class="settings-unscheduled-aka-label">AKA</span> ${escapeMapSuggestionHtml(akaText)}</span>
+                </button>`;
+            }).join('');
+            const search = document.getElementById('mapUnscheduledJobsSearch');
+            if (search && search.value) filterMapUnscheduledJobs(search.value);
+        }
+
+        function filterMapUnscheduledJobs(query) {
+            const listEl = document.getElementById('mapUnscheduledJobsList');
+            if (!listEl) return;
+            const q = String(query || '').toLowerCase().trim();
+            const rows = listEl.querySelectorAll('.settings-unscheduled-row');
+            let visible = 0;
+            rows.forEach(row => {
+                const match = !q || String(row.dataset.search || '').includes(q);
+                row.style.display = match ? '' : 'none';
+                if (match) visible += 1;
+            });
+            let empty = listEl.querySelector('.settings-unscheduled-filter-empty');
+            if (rows.length && !visible) {
+                if (!empty) {
+                    empty = document.createElement('div');
+                    empty.className = 'settings-unscheduled-empty settings-unscheduled-filter-empty';
+                    listEl.appendChild(empty);
+                }
+                empty.textContent = 'No jobs match that search';
+                empty.style.display = '';
+            } else if (empty) {
+                empty.style.display = 'none';
+            }
         }
 
         // Dropdown menu was removed; the old window.onclick close handler referenced a
@@ -11277,6 +11401,61 @@
             if (!location) return '';
             return location.customName || location.label || location.address ||
                 (location.bin ? ('BIN ' + location.bin) : '');
+        }
+
+        const NAME_INITIAL_SKIP_WORDS = new Set([
+            'THE', 'A', 'AN', 'OF', 'AND', 'AT',
+            'ST', 'STREET', 'AVE', 'AVENUE', 'RD', 'ROAD', 'DR', 'DRIVE',
+            'LN', 'LANE', 'BLVD', 'BOULEVARD', 'PL', 'PLACE', 'CT', 'COURT',
+            'TER', 'TERRACE', 'PKWY', 'PARKWAY', 'WAY', 'HWY', 'HIGHWAY',
+            'EXPY', 'EXPRESSWAY', 'PLZ', 'PLAZA', 'SQ', 'SQUARE'
+        ]);
+
+        // Two letters from a place name: first and last significant word, or the
+        // first two characters of a single word. Street numbers and suffixes are skipped.
+        function getNameInitials(name) {
+            const words = String(name || '')
+                .toUpperCase()
+                .replace(/[^A-Z0-9]+/g, ' ')
+                .trim()
+                .split(/\s+/)
+                .filter(Boolean);
+            if (!words.length) return '';
+            const significant = words.filter(word => !NAME_INITIAL_SKIP_WORDS.has(word) && !/^\d+$/.test(word));
+            const chosen = significant.length
+                ? significant
+                : words.filter(word => !NAME_INITIAL_SKIP_WORDS.has(word));
+            const finalWords = chosen.length ? chosen : words;
+            if (finalWords.length === 1) return finalWords[0].slice(0, 2);
+            return finalWords[0].charAt(0) + finalWords[finalWords.length - 1].charAt(0);
+        }
+
+        function getHousePinInitials(location) {
+            const custom = location && String(location.customName || '').trim();
+            const label = location && String(location.label || location.address || '').trim();
+            return getNameInitials(custom || label) || 'H';
+        }
+
+        function selectUnscheduledMapJobs(records) {
+            const rows = [];
+            (Array.isArray(records) ? records : []).forEach(record => {
+                if (!record || record.hasSchedule || record.fullyCompleted) return;
+                const bin = String(record.bin || '').trim();
+                if (!bin) return;
+                const address = String(record.address || '').trim() || ('BIN ' + bin);
+                const aka = [];
+                const seen = new Set();
+                (Array.isArray(record.aka) ? record.aka : []).forEach(name => {
+                    const text = String(name || '').trim();
+                    const key = text.toUpperCase();
+                    if (!text || seen.has(key)) return;
+                    seen.add(key);
+                    aka.push(text);
+                });
+                rows.push({ bin, address, aka, onHold: !!record.onHold });
+            });
+            rows.sort((a, b) => a.address.localeCompare(b.address, undefined, { sensitivity: 'base' }) || a.bin.localeCompare(b.bin));
+            return rows;
         }
 
         function findAdditionalLocationIndexByLatLng(lat, lng) {
@@ -19804,8 +19983,10 @@
                     listEl.innerHTML = '<div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No houses</div>';
                 } else {
                     const houseMapColor = '#8d6e63';
-                    const houseIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="${houseMapColor}" d="M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg>`;
                     listEl.innerHTML = houses.map((loc) => {
+                        const houseInitials = getHousePinInitials(loc);
+                        const houseName = (loc.customName && String(loc.customName).trim()) || String(loc.label || '').trim() || 'House';
+                        const houseInitialsBadge = `<span title="${escapeMapSuggestionHtml(houseName)}" style="width:22px; height:22px; border-radius:50%; background:${houseMapColor}; color:#fff; font-size:${houseInitials.length > 1 ? '9px' : '12px'}; font-weight:700; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; border:1px solid rgba(255,255,255,0.85); box-sizing:border-box;">${escapeMapSuggestionHtml(houseInitials)}</span>`;
                         const hasBin = loc.bin ? true : false;
                         const addrEsc = (loc.label || '').replace(/"/g, '&quot;');
                         const customEsc = (loc.customName || '').replace(/"/g, '&quot;');
@@ -19823,8 +20004,7 @@
                             <span style="flex: 1; overflow: hidden; min-width: 0; cursor: pointer;" title="Click to view on map" onclick="flyToAdditionalLocation(${loc.latitude}, ${loc.longitude})">
                                 <span style="display: flex; align-items: flex-start; gap: 6px; overflow: hidden;">
                                     <span style="flex-shrink: 0; display: flex; align-items: center; gap: 5px; padding-top: 1px;">
-                                        ${houseIconSvg}
-                                        <span title="Same color as the pin on the map" style="width: 10px; height: 10px; border-radius: 50%; background: ${houseMapColor}; border: 1px solid rgba(0,0,0,0.12); flex-shrink: 0; box-sizing: border-box;"></span>
+                                        ${houseInitialsBadge}
                                     </span>
                                     <span style="flex: 1; min-width: 0; overflow: hidden;">
                                         ${loc.customName ? `<span style="display: block; font-size: 0.8em; font-weight: 700; color: #e64a19; margin-bottom: 2px;">🏷️ ${loc.customName}</span>` : ''}
@@ -29859,6 +30039,7 @@
                 filterMcpBinRowList('testDatesPanelList', tds.value);
             }
             if (typeof refreshMcpDetailBackTitle === 'function') refreshMcpDetailBackTitle();
+            if (typeof renderMapUnscheduledJobs === 'function') renderMapUnscheduledJobs();
         }
 
         function updateMapDeadlinesPanel() {
@@ -32687,8 +32868,12 @@
             };
 
             const testDatesSection = sectionFor('mcpTestDates');
+            const unscheduledSection = sectionFor('mcpUnscheduledJobs');
             const deadlinesSection = sectionFor('mcpDeadlines');
             const monthsSection = sectionFor('mcpMonths');
+            if (unscheduledSection && testDatesSection && testDatesSection.previousElementSibling !== unscheduledSection) {
+                testDatesSection.before(unscheduledSection);
+            }
             if (testDatesSection && deadlinesSection && testDatesSection.nextElementSibling !== deadlinesSection) {
                 testDatesSection.after(deadlinesSection);
             }
@@ -36436,14 +36621,20 @@
                 const useCompletionMarkerStyle = isLocationCompleted && locationCompletionType !== 'PVI' && locationCompletionType !== 'Category';
                 let iconText;
                 let iconHtml;
+                let markerFontSize = 11;
+                let markerTitle = '';
                 if (useCompletionMarkerStyle) {
                     iconText = '✓';
+                } else if (isHouse) {
+                    markerTitle = (location.customName && String(location.customName).trim())
+                        || String(location.label || location.address || '').trim()
+                        || 'House';
+                    iconText = getHousePinInitials(location);
+                    markerFontSize = iconText.length > 1 ? 9 : 12;
                 } else if (deviceCount > 0) {
                     iconText = deviceCount;
                 } else if (notApplicableDevices.length > 0) {
                     iconText = 'N/A';
-                } else if (isHouse) {
-                    iconText = '🏠';
                 } else if (isTransportation) {
                     iconHtml = getTransportationTrainSvg('#ffffff', 15);
                 } else {
@@ -36465,7 +36656,7 @@
 
                 const additionalIcon = L.divIcon({
                     className: 'custom-map-marker-additional',
-                    html: `<div style="
+                    html: `<div title="${escapeMapSuggestionHtml(markerTitle)}" style="
                         background: ${markerBg};
                         width: 24px;
                         height: 24px;
@@ -36477,7 +36668,8 @@
                         justify-content: center;
                         color: ${markerFg};
                         font-weight: bold;
-                        font-size: 11px;
+                        font-size: ${markerFontSize}px;
+                        letter-spacing: ${markerFontSize < 11 ? '-0.03em' : '0'};
                     ">${iconHtml || iconText}</div>`,
                     iconSize: [30, 30],
                     iconAnchor: [15, 15]
@@ -36924,7 +37116,7 @@
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display:inline-block; width:14px; height:14px; border-radius:2px; background:#1a73e8; flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">PVI Scheduled</span></div>
                         <div style="display: flex; align-items: center; gap: 6px;"><span style="display:inline-block; width:11px; height:11px; transform:rotate(45deg); background:#607d8b; margin:1px 2px; flex-shrink:0;"></span><span style="color: var(--text-color, #fff);">CAT + PVI Scheduled</span></div>
                         <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #d32f2f; border: 2px solid #ffffff; box-sizing: border-box; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">📍 Custom Location</span></div>
-                        <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #8d6e63; flex-shrink: 0;"></span><span style="color: var(--text-color, #fff);">🏠 House (custom)</span></div>
+                        <div style="display: flex; align-items: center; gap: 6px;"><span style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: #8d6e63; color: #fff; font-size: 7px; font-weight: 700; flex-shrink: 0;">AB</span><span style="color: var(--text-color, #fff);">House initials</span></div>
                         <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--input-border, #444); font-size: 10px; color: var(--text-color, #fff); opacity: 0.8;">
                             Ready = 91+ days since last test<br>
                             Click marker for favorite/hide options<br>
