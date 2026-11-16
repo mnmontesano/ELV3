@@ -2089,6 +2089,7 @@
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
                                     <li>Missing Devices scans an imported list against this map file, then lets you choose which missing devices to add. Mark N/A for devices that are in the building but not your responsibility. Those stay on the map and in the file, labeled N/A, and are left out of device counts, tests, and violations.</li>
+                                    <li>In a job's Device Report, click Not mine on any device to mark it N/A the same way, and add a note explaining why. Count as mine puts it back.</li>
                                     <li>Custom location pins have a ✓ completed button, matching building markers. Choose Category, PVI, or both when marking complete. House and transportation pins do not show the completed button or Completed / Not Completed status</li>
                                     <li><strong>Save your work</strong> — data is not kept between sessions</li>
                                 </ul>
@@ -11379,6 +11380,12 @@
             return !!(device && device.map_not_applicable);
         }
 
+        function getMapDeviceNotApplicableNote(device) {
+            return device && device.map_not_applicable_note
+                ? String(device.map_not_applicable_note).trim()
+                : '';
+        }
+
         function isWorkInProgressDevice(device) {
             const status = (device && device.device_status ? device.device_status : '').toUpperCase();
             return status.includes('WORK IN PROGRESS');
@@ -13551,10 +13558,12 @@
             const existingViolations = savedDevice.violations;
             const existingMachineType = savedDevice.machine_type;
             const notApplicable = !!savedDevice.map_not_applicable;
+            const notApplicableNote = savedDevice.map_not_applicable_note;
             Object.assign(savedDevice, freshDevice);
             if (existingViolations !== undefined) savedDevice.violations = existingViolations;
             if (existingMachineType && !savedDevice.machine_type) savedDevice.machine_type = existingMachineType;
             if (notApplicable) savedDevice.map_not_applicable = true;
+            if (notApplicableNote) savedDevice.map_not_applicable_note = notApplicableNote;
 
             return changes;
         }
@@ -27569,6 +27578,27 @@
                             ? '<span style="color:#4CAF50;font-weight:600;">All done ✓</span>'
                             : `<span style="color:#ff6b6b;font-weight:600;">${pending.join(', ')}</span>`;
 
+                    const notApplicableNote = getMapDeviceNotApplicableNote(device);
+                    const notApplicableNoteId = mapNotApplicableNoteElementId(deviceIndex);
+                    const notApplicableNoteHtml = isNotApplicable ? `
+                        <div class="map-na-note-box" style="margin-top:10px;border:1px dashed rgba(92,107,192,0.55);border-radius:6px;background:rgba(92,107,192,0.07);padding:8px 10px 10px;">
+                            <label for="${notApplicableNoteId}" style="display:block;font-size:12px;font-weight:700;color:#3949ab;margin-bottom:5px;">Note — why this device is not yours</label>
+                            <textarea id="${notApplicableNoteId}"
+                                      rows="2"
+                                      maxlength="2000"
+                                      placeholder="e.g. Serviced by another company, tenant-owned, covered under a different contract..."
+                                      onclick="event.stopPropagation()"
+                                      style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:5px;border:1px solid var(--input-border);background:var(--card-bg);color:var(--text-color);font-size:12px;resize:vertical;min-height:52px;">${escapeMapSuggestionHtml(notApplicableNote)}</textarea>
+                            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;">
+                                <span style="font-size:11px;opacity:0.7;">Saved with the map file.</span>
+                                <button type="button"
+                                        onclick="event.stopPropagation(); saveMapDeviceNotApplicableNote('${binJs}', '${numJs}', ${deviceIndex})"
+                                        style="padding:5px 10px;border-radius:5px;border:1px solid #3949ab;background:#3949ab;color:white;font-size:12px;font-weight:600;cursor:pointer;">
+                                    Save Note
+                                </button>
+                            </div>
+                        </div>` : '';
+
                     const violCount = device.violations ? device.violations.length : 0;
                     const violHtml = violCount > 0
                         ? `<span style="color:#ff6b6b;font-weight:600;">⚠️ ${violCount}</span>`
@@ -27675,6 +27705,21 @@
                                 ${isNotApplicable ? `<span style="font-size:12px;font-weight:800;letter-spacing:0.04em;padding:2px 8px;border-radius:10px;background:rgba(92,107,192,0.18);color:#3949ab;border:1px solid rgba(92,107,192,0.45);">N/A</span>` : ''}
                                 <span style="font-size:13px;padding:2px 8px;border-radius:10px;background:rgba(128,128,128,0.15);">${status}</span>
                                 ${violHtml !== '<span style="opacity:0.45;">—</span>' ? `<span style="font-size:13px;">${violHtml} violation${violCount !== 1 ? 's' : ''}</span>` : ''}
+                                ${isNotApplicable
+                                    ? `<button type="button"
+                                        class="map-device-count-mine-btn"
+                                        onclick="event.stopPropagation(); clearMapDeviceNotApplicable('${binJs}', '${numJs}')"
+                                        title="Count this device as yours again so it needs testing"
+                                        style="padding:4px 10px;border-radius:6px;border:1px solid #3949ab;background:transparent;color:#3949ab;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
+                                    ✓ Count as mine
+                                </button>`
+                                    : (!isRemoved ? `<button type="button"
+                                        class="map-device-not-mine-btn"
+                                        onclick="event.stopPropagation(); markMapDeviceNotApplicable('${binJs}', '${numJs}')"
+                                        title="Not your device: keep it on the map but stop counting it as needing tests"
+                                        style="padding:4px 10px;border-radius:6px;border:1px solid #5c6bc0;background:rgba(92,107,192,0.12);color:#3949ab;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
+                                    🚫 Not mine
+                                </button>` : '')}
                                 <button type="button"
                                         onclick="event.stopPropagation(); removeMapDeviceFromReport('${binJs}', '${numJs}')"
                                         title="Remove this device from the map view"
@@ -27694,6 +27739,7 @@
                         <div style="font-size:13px;">
                             <span style="opacity:0.6;margin-right:4px;">Pending:</span>${pendingHtml}
                         </div>
+                        ${notApplicableNoteHtml}
                         ${bypassMenuHtml}
                         ${violationDropdownHtml}
                     </div>`;
@@ -27747,6 +27793,7 @@
                                 <option value="has-cat1">CAT 1 done this year</option>
                                 <option value="has-cat5">CAT 5 done this year</option>
                                 <option value="all-complete">All required tests complete</option>
+                                <option value="not-applicable">Not mine (N/A)</option>
                             </select>
                         </div>
                         <button type="button"
@@ -27940,6 +27987,7 @@
                 else if (selectedTest === 'has-cat1') testMatch = item.getAttribute('data-has-cat1') === '1';
                 else if (selectedTest === 'has-cat5') testMatch = item.getAttribute('data-has-cat5') === '1';
                 else if (selectedTest === 'all-complete') testMatch = item.getAttribute('data-all-complete') === '1';
+                else if (selectedTest === 'not-applicable') testMatch = item.getAttribute('data-not-applicable') === '1';
                 const show = typeMatch && searchMatch && testMatch;
                 item.style.display = show ? '' : 'none';
                 if (show) visible++;
@@ -35627,12 +35675,16 @@
             const rows = list.slice(0, 8).map(device => {
                 const number = device && device.number ? device.number : '';
                 const numberJs = String(number).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                return `<div style="font-size: 11px; padding: 4px 0; display: flex; justify-content: space-between; gap: 8px; align-items: center; border-bottom: 1px solid rgba(92,107,192,0.22);">
-                    <span style="min-width:0;"><strong>${escapeMapSuggestionHtml(number)}</strong> <span style="opacity:0.7;">${escapeMapSuggestionHtml(device.type || '')}</span></span>
-                    <span style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
-                        <span style="font-size:10px; font-weight:800; letter-spacing:0.04em; color:#3949ab; background:rgba(92,107,192,0.16); border-radius:999px; padding:2px 7px;">N/A</span>
-                        <button type="button" onclick="clearMapDeviceNotApplicable('${keyJs}','${numberJs}')" style="border:1px solid rgba(92,107,192,0.5); background:transparent; color:#3949ab; border-radius:6px; font-size:10px; font-weight:700; padding:2px 6px; cursor:pointer;">Count as mine</button>
-                    </span>
+                const note = device && device.note ? String(device.note) : '';
+                return `<div style="font-size: 11px; padding: 4px 0; border-bottom: 1px solid rgba(92,107,192,0.22);">
+                    <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center;">
+                        <span style="min-width:0;"><strong>${escapeMapSuggestionHtml(number)}</strong> <span style="opacity:0.7;">${escapeMapSuggestionHtml(device.type || '')}</span></span>
+                        <span style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                            <span style="font-size:10px; font-weight:800; letter-spacing:0.04em; color:#3949ab; background:rgba(92,107,192,0.16); border-radius:999px; padding:2px 7px;">N/A</span>
+                            <button type="button" onclick="clearMapDeviceNotApplicable('${keyJs}','${numberJs}')" style="border:1px solid rgba(92,107,192,0.5); background:transparent; color:#3949ab; border-radius:6px; font-size:10px; font-weight:700; padding:2px 6px; cursor:pointer;">Count as mine</button>
+                        </span>
+                    </div>
+                    ${note ? `<div class="map-na-device-note" style="margin-top:3px; font-size:10.5px; line-height:1.35; color:var(--text-color); opacity:0.85; white-space:pre-wrap; word-break:break-word;"><strong style="color:#3949ab;">Note:</strong> ${escapeMapSuggestionHtml(note)}</div>` : ''}
                 </div>`;
             }).join('');
             return `<div style="margin-top: 10px; background: rgba(92,107,192,0.1); padding: 10px; border-radius: 6px; border: 1px dashed #5c6bc0;">
@@ -35667,21 +35719,110 @@
             return null;
         }
 
+        // The open Device Report knows whether it belongs to a building or a custom
+        // location, so prefer that group before searching every location by number.
+        function findMapReportDevice(locationKey, deviceNumber) {
+            const number = String(deviceNumber || '').trim().toUpperCase();
+            if (!number) return { device: null, fromAdditional: false };
+            const ctx = getDeviceDetailModalReportContext();
+            const key = String(locationKey || ctx.bin || '').trim();
+            const resolved = resolveMapDeviceReportGroup(key, {
+                latitude: Number.isFinite(ctx.latitude) ? ctx.latitude : null,
+                longitude: Number.isFinite(ctx.longitude) ? ctx.longitude : null
+            });
+            if (resolved && resolved.group && Array.isArray(resolved.group.devices)) {
+                const found = resolved.group.devices.find(device =>
+                    String(device && device.device_number || '').trim().toUpperCase() === number
+                );
+                if (found) return { device: found, fromAdditional: resolved.source !== 'buildings' };
+            }
+            const fallback = findSavedMapDevice(key, number);
+            const binGroups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
+            const group = binGroups[key];
+            const inBuildings = !!(fallback && group && Array.isArray(group.devices) && group.devices.includes(fallback));
+            return { device: fallback, fromAdditional: !!fallback && !inBuildings };
+        }
+
+        function refreshMapAfterNotApplicableChange(locationKey, fromAdditional) {
+            if (fromAdditional) {
+                setAdditionalLocations(getAdditionalLocations());
+                if (typeof updateAdditionalLocationsPanel === 'function') updateAdditionalLocationsPanel();
+            }
+            if (typeof updateMapCategory5Panel === 'function') updateMapCategory5Panel();
+            if (typeof updateMapControlsPanel === 'function') updateMapControlsPanel();
+            refreshMapViewAfterDobInfoUpdate();
+            if (document.getElementById('deviceDetailModal')) {
+                const ctx = getDeviceDetailModalReportContext();
+                reopenDeviceDetailModalFromContext({
+                    ...ctx,
+                    bin: ctx.bin || String(locationKey || '').trim()
+                });
+            }
+        }
+
+        function markMapDeviceNotApplicable(locationKey, deviceNumber) {
+            const { device, fromAdditional } = findMapReportDevice(locationKey, deviceNumber);
+            if (!device) {
+                showMapNotification('That device is no longer in this map file', '#ff9800');
+                return;
+            }
+            device.map_not_applicable = true;
+            addMapActivity('Marked device not mine', {
+                type: 'Device',
+                bin: locationKey,
+                details: `${device.device_number} marked N/A — no longer counted as needing tests`
+            });
+            showMapNotification(`${device.device_number} is marked not yours. Add a note below if you want.`, '#5c6bc0');
+            refreshMapAfterNotApplicableChange(locationKey, fromAdditional);
+        }
+
+        function mapNotApplicableNoteElementId(deviceIndex) {
+            return 'mapNotApplicableNote_' + String(deviceIndex);
+        }
+
+        function saveMapDeviceNotApplicableNote(locationKey, deviceNumber, deviceIndex) {
+            const { device, fromAdditional } = findMapReportDevice(locationKey, deviceNumber);
+            if (!device) {
+                showMapNotification('That device is no longer in this map file', '#ff9800');
+                return;
+            }
+            const noteEl = document.getElementById(mapNotApplicableNoteElementId(deviceIndex));
+            const note = noteEl ? String(noteEl.value || '').trim().slice(0, 2000) : '';
+            const previous = getMapDeviceNotApplicableNote(device);
+            if (note === previous) {
+                showMapNotification('Note unchanged', '#607d8b');
+                return;
+            }
+            if (note) device.map_not_applicable_note = note;
+            else delete device.map_not_applicable_note;
+            addMapActivity(note ? 'Saved note on N/A device' : 'Cleared note on N/A device', {
+                type: 'Device',
+                bin: locationKey,
+                details: `${device.device_number}${note ? ' — ' + (note.length > 80 ? note.substring(0, 80) + '...' : note) : ''}`
+            });
+            showMapNotification(note ? `Note saved for ${device.device_number}. Save the map file to keep it.` : `Note cleared for ${device.device_number}`, '#4CAF50');
+            refreshMapAfterNotApplicableChange(locationKey, fromAdditional);
+        }
+
         function clearMapDeviceNotApplicable(locationKey, deviceNumber) {
-            const device = findSavedMapDevice(locationKey, deviceNumber);
+            const { device, fromAdditional } = findMapReportDevice(locationKey, deviceNumber);
             if (!device) {
                 showMapNotification('That N/A device is no longer in this map file', '#ff9800');
                 return;
             }
+            const note = getMapDeviceNotApplicableNote(device);
+            if (note && !confirm(`Count ${device.device_number} as your device again?\n\nIts note will be removed:\n${note}`)) {
+                return;
+            }
             delete device.map_not_applicable;
-            const binGroups = window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups;
-            if (binGroups && buildingMap) initBuildingMap(binGroups, true);
+            delete device.map_not_applicable_note;
             addMapActivity('Counted N/A device as a job device', {
                 type: 'Device',
                 bin: locationKey,
                 details: `${device.device_number} is no longer marked N/A`
             });
             showMapNotification(`${device.device_number} now counts as your device`, '#0d6efd');
+            refreshMapAfterNotApplicableChange(locationKey, fromAdditional);
         }
 
         function createBuildingMarkerIcon(building) {
@@ -35892,7 +36033,8 @@
                                 notApplicableDevices.push({
                                     number: device.device_number,
                                     type: device.device_type || 'Unknown',
-                                    status: device.device_status || 'N/A'
+                                    status: device.device_status || 'N/A',
+                                    note: getMapDeviceNotApplicableNote(device)
                                 });
                                 return;
                             }
