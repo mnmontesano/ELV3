@@ -1512,7 +1512,13 @@
                                 <span class="mcp-arrow" id="mcpUnscheduledJobsArrow">›</span>
                             </div>
                             <div class="mcp-body" id="mcpUnscheduledJobs">
-                                <p class="mcp-desc" id="mapUnscheduledJobsNote" style="font-size:0.94em; line-height:1.5; opacity:0.82;">Address and also-known-as name for each loaded job with no scheduled test date. Fully completed jobs are left off. Click an address to view it on the map.</p>
+                                <p class="mcp-desc" id="mapUnscheduledJobsNote" style="font-size:0.94em; line-height:1.5; opacity:0.82;">Jobs missing a CAT date, a PVI date, or both. A test already completed this year is left off. Click an address to view it on the map.</p>
+                                <label for="mapUnscheduledJobsTypeFilter" style="display:block; font-size:0.92em; font-weight:700; color:var(--text-color); margin-bottom:5px;">Missing scheduled date</label>
+                                <select id="mapUnscheduledJobsTypeFilter" onchange="renderMapUnscheduledJobs()" style="width:100%; padding:7px 9px; border-radius:5px; border:1px solid var(--input-border); background:var(--panel-bg); color:var(--text-color); font-size:1em; font-weight:600; box-sizing:border-box; margin-bottom:8px;">
+                                    <option value="either">CAT or PVI</option>
+                                    <option value="category">CAT</option>
+                                    <option value="pvi">PVI</option>
+                                </select>
                                 <input type="search" id="mapUnscheduledJobsSearch" class="mcp-search-input" placeholder="🔍 Search address or AKA"
                                        oninput="filterMapUnscheduledJobs(this.value)">
                                 <div id="mapUnscheduledJobsList" style="max-height: 260px; overflow-y: auto; margin-bottom: 8px;">
@@ -4565,6 +4571,12 @@
             closeSettings();
         }
 
+        function getMapUnscheduledJobsFilter() {
+            const select = document.getElementById('mapUnscheduledJobsTypeFilter');
+            const value = select ? select.value : 'either';
+            return value === 'category' || value === 'pvi' ? value : 'either';
+        }
+
         function getUnscheduledMapJobRecords() {
             const groups = (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups) || {};
             const groupBins = Object.keys(groups);
@@ -4573,6 +4585,8 @@
                 : (Array.isArray(mapBuildingsData) ? mapBuildingsData.map(building => building && building.bin).filter(Boolean) : []);
             const seen = new Set();
             const records = [];
+            const view = { completed: typeof getMapCompleted === 'function' ? getMapCompleted() : {} };
+            const futureYear = typeof isMapFutureYearView === 'function' && isMapFutureYearView();
             bins.forEach(bin => {
                 const key = String(bin || '').trim();
                 if (!key || seen.has(key)) return;
@@ -4580,8 +4594,10 @@
                 const building = Array.isArray(mapBuildingsData)
                     ? mapBuildingsData.find(item => item && String(item.bin) === key)
                     : null;
-                const hasSchedule = filterMapScheduleDatesForMapYear(getTestDatesForBin(key)).length > 0;
-                const fullyCompleted = !isMapFutureYearView() && mapViewIsFullyCompleted({ completed: getMapCompleted() }, key, building);
+                const hasCategorySchedule = filterMapScheduleDatesForMapYear(getTestDatesForBin(key, 'category')).length > 0;
+                const hasPviSchedule = filterMapScheduleDatesForMapYear(getTestDatesForBin(key, 'pvi')).length > 0;
+                const categoryCompleted = !futureYear && mapViewHasCompletedTest(view, key, building, 'Category');
+                const pviCompleted = !futureYear && mapViewHasCompletedTest(view, key, building, 'PVI');
                 const groupAddress = groups[key] && groups[key].address;
                 const address = groupAddress || (building && building.address) || _addressOrBin(key);
                 records.push({
@@ -4589,11 +4605,13 @@
                     address,
                     aka: getMapAddressAliasNamesForBin(key),
                     onHold: !!(getMapHold() && getMapHold()[key]),
-                    hasSchedule,
-                    fullyCompleted
+                    hasCategorySchedule,
+                    hasPviSchedule,
+                    categoryCompleted,
+                    pviCompleted
                 });
             });
-            return selectUnscheduledMapJobs(records);
+            return selectUnscheduledMapJobs(records, getMapUnscheduledJobsFilter());
         }
 
         function renderMapUnscheduledJobs() {
@@ -4616,28 +4634,42 @@
                 (window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups && Object.keys(window.lastBulkSearchResults.binGroups).length)
                 || (Array.isArray(mapBuildingsData) && mapBuildingsData.length)
             );
+            const missingFilter = getMapUnscheduledJobsFilter();
+            const missingLabel = missingFilter === 'category' ? 'CAT' : (missingFilter === 'pvi' ? 'PVI' : 'CAT or PVI');
             if (noteEl) {
                 noteEl.textContent = loaded
-                    ? `Address and also-known-as name for each loaded job with no scheduled test date for ${year}. Fully completed jobs are left off. Click an address to view it on the map.`
+                    ? `Jobs missing a ${missingLabel} scheduled date for ${year}. A test already completed this year is left off. Click an address to view it on the map.`
                     : 'Load a map to see jobs that have not been scheduled.';
             }
             if (!loaded) {
                 if (countEl) countEl.textContent = '0';
                 listEl.innerHTML = '<div class="settings-unscheduled-empty">No map loaded</div>';
+                if (typeof refreshMcpDetailBackTitle === 'function') refreshMcpDetailBackTitle();
                 return;
             }
             const jobs = getUnscheduledMapJobRecords();
             if (countEl) countEl.textContent = String(jobs.length);
+            if (typeof refreshMcpDetailBackTitle === 'function') refreshMcpDetailBackTitle();
             if (!jobs.length) {
-                listEl.innerHTML = '<div class="settings-unscheduled-empty">Every loaded job has a scheduled test date, or is fully completed.</div>';
+                const emptyText = missingFilter === 'category'
+                    ? 'Every loaded job has a CAT date, or CAT testing is already complete.'
+                    : missingFilter === 'pvi'
+                        ? 'Every loaded job has a PVI date, or PVI testing is already complete.'
+                        : 'Every loaded job has a CAT date and a PVI date, or those tests are already complete.';
+                listEl.innerHTML = `<div class="settings-unscheduled-empty">${emptyText}</div>`;
                 return;
             }
             listEl.innerHTML = jobs.map(job => {
                 const akaText = job.aka.length ? job.aka.join(' · ') : '—';
-                const searchText = [job.address, job.aka.join(' '), job.bin, job.onHold ? 'on hold' : ''].join(' ').toLowerCase();
+                const missingBits = [];
+                if (job.missingCategory) missingBits.push('no cat');
+                if (job.missingPvi) missingBits.push('no pvi');
+                const searchText = [job.address, job.aka.join(' '), job.bin, job.onHold ? 'on hold' : '', missingBits.join(' ')].join(' ').toLowerCase();
                 const hold = job.onHold ? '<span class="settings-unscheduled-hold">On hold</span>' : '';
+                const missingCat = job.missingCategory ? '<span class="settings-unscheduled-missing settings-unscheduled-missing-cat">No CAT</span>' : '';
+                const missingPvi = job.missingPvi ? '<span class="settings-unscheduled-missing settings-unscheduled-missing-pvi">No PVI</span>' : '';
                 return `<button type="button" class="settings-unscheduled-row" data-bin="${escapeMapSuggestionHtml(job.bin)}" data-search="${escapeMapSuggestionHtml(searchText)}">
-                    <span class="settings-unscheduled-address">${escapeMapSuggestionHtml(job.address)}${hold}</span>
+                    <span class="settings-unscheduled-address">${escapeMapSuggestionHtml(job.address)}${hold}${missingCat}${missingPvi}</span>
                     <span class="settings-unscheduled-aka"><span class="settings-unscheduled-aka-label">AKA</span> ${escapeMapSuggestionHtml(akaText)}</span>
                 </button>`;
             }).join('');
@@ -11436,12 +11468,28 @@
             return getNameInitials(custom || label) || 'H';
         }
 
-        function selectUnscheduledMapJobs(records) {
+        function selectUnscheduledMapJobs(records, filter) {
+            const mode = filter === 'category' || filter === 'pvi' ? filter : 'either';
             const rows = [];
             (Array.isArray(records) ? records : []).forEach(record => {
-                if (!record || record.hasSchedule || record.fullyCompleted) return;
+                if (!record) return;
                 const bin = String(record.bin || '').trim();
                 if (!bin) return;
+                const usesTypedSchedule = record.hasCategorySchedule !== undefined
+                    || record.hasPviSchedule !== undefined
+                    || record.categoryCompleted !== undefined
+                    || record.pviCompleted !== undefined;
+                const missingCategory = !record.hasCategorySchedule && !record.categoryCompleted;
+                const missingPvi = !record.hasPviSchedule && !record.pviCompleted;
+                if (!usesTypedSchedule) {
+                    if (record.hasSchedule || record.fullyCompleted) return;
+                } else if (mode === 'category') {
+                    if (!missingCategory) return;
+                } else if (mode === 'pvi') {
+                    if (!missingPvi) return;
+                } else if (!missingCategory && !missingPvi) {
+                    return;
+                }
                 const address = String(record.address || '').trim() || ('BIN ' + bin);
                 const aka = [];
                 const seen = new Set();
@@ -11452,7 +11500,14 @@
                     seen.add(key);
                     aka.push(text);
                 });
-                rows.push({ bin, address, aka, onHold: !!record.onHold });
+                rows.push({
+                    bin,
+                    address,
+                    aka,
+                    onHold: !!record.onHold,
+                    missingCategory: usesTypedSchedule ? missingCategory : true,
+                    missingPvi: usesTypedSchedule ? missingPvi : true
+                });
             });
             rows.sort((a, b) => a.address.localeCompare(b.address, undefined, { sensitivity: 'base' }) || a.bin.localeCompare(b.bin));
             return rows;
