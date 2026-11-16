@@ -2089,7 +2089,7 @@
                                     <li>Favorited buildings turn purple</li>
                                     <li>Add custom locations with the ➕ button</li>
                                     <li>Missing Devices scans an imported list against this map file, then lets you choose which missing devices to add. Mark N/A for devices that are in the building but not your responsibility. Those stay on the map and in the file, labeled N/A, and are left out of device counts, tests, and violations.</li>
-                                    <li>In a job's Device Report, click Not mine on any device to mark it N/A the same way, and add a note explaining why. Count as mine puts it back.</li>
+                                    <li>In a job's Device Report, click Not mine on any device to mark it N/A the same way. Give it a tag such as Another company or Tenant owned, plus a note explaining why. Filter the report by tag. Count as mine puts it back.</li>
                                     <li>Custom location pins have a ✓ completed button, matching building markers. Choose Category, PVI, or both when marking complete. House and transportation pins do not show the completed button or Completed / Not Completed status</li>
                                     <li><strong>Save your work</strong> — data is not kept between sessions</li>
                                 </ul>
@@ -11386,6 +11386,63 @@
                 : '';
         }
 
+        const MAP_NOT_APPLICABLE_TAG_PRESETS = [
+            'Another company',
+            'Tenant owned',
+            'Owner handles',
+            'Out of contract',
+            'Decommissioned',
+            'Duplicate record'
+        ];
+        const MAP_NOT_APPLICABLE_TAG_MAX = 40;
+
+        function normalizeMapNotApplicableTag(value) {
+            return String(value == null ? '' : value).replace(/\s+/g, ' ').trim().slice(0, MAP_NOT_APPLICABLE_TAG_MAX);
+        }
+
+        function getMapDeviceNotApplicableTag(device) {
+            return device ? normalizeMapNotApplicableTag(device.map_not_applicable_tag) : '';
+        }
+
+        // Presets first, then any other tag already used on an N/A device in this map,
+        // so one spelling of a category is reused instead of near-duplicates.
+        function collectMapNotApplicableTags(binGroups, additionalLocations) {
+            const tags = [];
+            const seen = new Set();
+            const add = value => {
+                const tag = normalizeMapNotApplicableTag(value);
+                const key = tag.toUpperCase();
+                if (!tag || seen.has(key)) return;
+                seen.add(key);
+                tags.push(tag);
+            };
+            MAP_NOT_APPLICABLE_TAG_PRESETS.forEach(add);
+            const used = [];
+            const collect = devices => (Array.isArray(devices) ? devices : []).forEach(device => {
+                if (isNotApplicableMapDevice(device)) used.push(getMapDeviceNotApplicableTag(device));
+            });
+            Object.values(binGroups || {}).forEach(group => collect(group && group.devices));
+            (Array.isArray(additionalLocations) ? additionalLocations : []).forEach(location => collect(location && location.devices));
+            used.filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })).forEach(add);
+            return tags;
+        }
+
+        function getMapNotApplicableTagHue(tag) {
+            const text = normalizeMapNotApplicableTag(tag).toUpperCase();
+            let hash = 0;
+            for (let index = 0; index < text.length; index += 1) {
+                hash = (hash * 31 + text.charCodeAt(index)) % 360;
+            }
+            return hash;
+        }
+
+        function renderMapNotApplicableTagBadge(tag, fontSize) {
+            const text = normalizeMapNotApplicableTag(tag);
+            if (!text) return '';
+            const hue = getMapNotApplicableTagHue(text);
+            return `<span class="map-na-tag-badge" title="Tag: ${escapeMapSuggestionHtml(text)}" style="display:inline-block;font-size:${fontSize || 11}px;font-weight:700;line-height:1.3;padding:1px 7px;border-radius:999px;color:hsl(${hue},55%,32%);background:hsla(${hue},70%,55%,0.16);border:1px solid hsla(${hue},55%,40%,0.45);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;">🏷 ${escapeMapSuggestionHtml(text)}</span>`;
+        }
+
         function isWorkInProgressDevice(device) {
             const status = (device && device.device_status ? device.device_status : '').toUpperCase();
             return status.includes('WORK IN PROGRESS');
@@ -13559,11 +13616,13 @@
             const existingMachineType = savedDevice.machine_type;
             const notApplicable = !!savedDevice.map_not_applicable;
             const notApplicableNote = savedDevice.map_not_applicable_note;
+            const notApplicableTag = savedDevice.map_not_applicable_tag;
             Object.assign(savedDevice, freshDevice);
             if (existingViolations !== undefined) savedDevice.violations = existingViolations;
             if (existingMachineType && !savedDevice.machine_type) savedDevice.machine_type = existingMachineType;
             if (notApplicable) savedDevice.map_not_applicable = true;
             if (notApplicableNote) savedDevice.map_not_applicable_note = notApplicableNote;
+            if (notApplicableTag) savedDevice.map_not_applicable_tag = notApplicableTag;
 
             return changes;
         }
@@ -27579,9 +27638,21 @@
                             : `<span style="color:#ff6b6b;font-weight:600;">${pending.join(', ')}</span>`;
 
                     const notApplicableNote = getMapDeviceNotApplicableNote(device);
+                    const notApplicableTag = getMapDeviceNotApplicableTag(device);
                     const notApplicableNoteId = mapNotApplicableNoteElementId(deviceIndex);
+                    const notApplicableTagId = mapNotApplicableTagElementId(deviceIndex);
                     const notApplicableNoteHtml = isNotApplicable ? `
                         <div class="map-na-note-box" style="margin-top:10px;border:1px dashed rgba(92,107,192,0.55);border-radius:6px;background:rgba(92,107,192,0.07);padding:8px 10px 10px;">
+                            <label for="${notApplicableTagId}" style="display:block;font-size:12px;font-weight:700;color:#3949ab;margin-bottom:5px;">Tag</label>
+                            <input type="text"
+                                   id="${notApplicableTagId}"
+                                   class="map-na-tag-input"
+                                   list="mapNotApplicableTagOptions"
+                                   maxlength="${MAP_NOT_APPLICABLE_TAG_MAX}"
+                                   value="${escapeMapSuggestionHtml(notApplicableTag)}"
+                                   placeholder="Pick or type a category, e.g. Another company"
+                                   onclick="event.stopPropagation()"
+                                   style="width:100%;box-sizing:border-box;padding:7px 8px;border-radius:5px;border:1px solid var(--input-border);background:var(--card-bg);color:var(--text-color);font-size:12px;margin-bottom:8px;">
                             <label for="${notApplicableNoteId}" style="display:block;font-size:12px;font-weight:700;color:#3949ab;margin-bottom:5px;">Note — why this device is not yours</label>
                             <textarea id="${notApplicableNoteId}"
                                       rows="2"
@@ -27592,9 +27663,9 @@
                             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;">
                                 <span style="font-size:11px;opacity:0.7;">Saved with the map file.</span>
                                 <button type="button"
-                                        onclick="event.stopPropagation(); saveMapDeviceNotApplicableNote('${binJs}', '${numJs}', ${deviceIndex})"
+                                        onclick="event.stopPropagation(); saveMapDeviceNotApplicableDetails('${binJs}', '${numJs}', ${deviceIndex})"
                                         style="padding:5px 10px;border-radius:5px;border:1px solid #3949ab;background:#3949ab;color:white;font-size:12px;font-weight:600;cursor:pointer;">
-                                    Save Note
+                                    Save Tag &amp; Note
                                 </button>
                             </div>
                         </div>` : '';
@@ -27691,6 +27762,7 @@
                          data-any-pending="${(!isRemoved && !isNotApplicable && pending.length > 0) ? '1' : '0'}"
                          data-removed="${isRemoved ? '1' : '0'}"
                          data-not-applicable="${isNotApplicable ? '1' : '0'}"
+                         data-na-tag="${isNotApplicable ? escapeMapSuggestionHtml(notApplicableTag) : ''}"
                          style="background:${rowBg};border:1px solid var(--input-border);border-radius:8px;padding:12px;margin-bottom:8px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
                             <div>
@@ -27703,6 +27775,7 @@
                             </div>
                             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                                 ${isNotApplicable ? `<span style="font-size:12px;font-weight:800;letter-spacing:0.04em;padding:2px 8px;border-radius:10px;background:rgba(92,107,192,0.18);color:#3949ab;border:1px solid rgba(92,107,192,0.45);">N/A</span>` : ''}
+                                ${isNotApplicable && notApplicableTag ? renderMapNotApplicableTagBadge(notApplicableTag, 12) : ''}
                                 <span style="font-size:13px;padding:2px 8px;border-radius:10px;background:rgba(128,128,128,0.15);">${status}</span>
                                 ${violHtml !== '<span style="opacity:0.45;">—</span>' ? `<span style="font-size:13px;">${violHtml} violation${violCount !== 1 ? 's' : ''}</span>` : ''}
                                 ${isNotApplicable
@@ -27759,13 +27832,45 @@
                 const escaped = escapeMapSuggestionHtml(t);
                 return `<option value="${escaped}">${escaped}</option>`;
             }).join('');
+            const reportNotApplicableDevices = devices.filter(isNotApplicableMapDevice);
+            const reportTagValues = [];
+            const reportTagKeys = new Set();
+            reportNotApplicableDevices.forEach(function(device) {
+                const tag = getMapDeviceNotApplicableTag(device);
+                const key = tag.toUpperCase();
+                if (!tag || reportTagKeys.has(key)) return;
+                reportTagKeys.add(key);
+                reportTagValues.push(tag);
+            });
+            reportTagValues.sort(function(a, b) { return a.localeCompare(b, undefined, { sensitivity: 'base' }); });
+            const reportHasUntagged = reportNotApplicableDevices.some(function(device) { return !getMapDeviceNotApplicableTag(device); });
+            const deviceReportTagFilterHtml = reportNotApplicableDevices.length > 0 ? `
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <label for="deviceReportTagFilter" style="color:var(--text-color);font-size:13px;white-space:nowrap;">Tag:</label>
+                            <select id="deviceReportTagFilter"
+                                    onchange="filterDeviceReportModal()"
+                                    style="padding:8px 10px;background:var(--card-bg);color:var(--text-color);border:1px solid var(--input-border);border-radius:6px;font-size:13px;min-width:130px;max-width:220px;">
+                                <option value="all">All tags</option>
+                                ${reportTagValues.map(function(tag) {
+                                    const escaped = escapeMapSuggestionHtml(tag);
+                                    return `<option value="${escaped}">${escaped}</option>`;
+                                }).join('')}
+                                ${reportHasUntagged ? '<option value="__untagged__">Untagged N/A</option>' : ''}
+                            </select>
+                        </div>` : '';
+            const mapNotApplicableTagOptionsHtml = `<datalist id="mapNotApplicableTagOptions">${collectMapNotApplicableTags(
+                window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups,
+                getAdditionalLocations()
+            ).map(function(tag) {
+                return `<option value="${escapeMapSuggestionHtml(tag)}"></option>`;
+            }).join('')}</datalist>`;
             const deviceReportFilterBarHtml = devices.length > 0 ? `
                     <div style="padding:12px 16px;border-bottom:1px solid var(--input-border);background:var(--panel-bg);flex-shrink:0;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
                         <div style="display:flex;align-items:center;gap:6px;flex:1 1 180px;min-width:160px;">
                             <label for="deviceReportSearchInput" style="color:var(--text-color);font-size:13px;white-space:nowrap;">Search:</label>
                             <input type="text"
                                    id="deviceReportSearchInput"
-                                   placeholder="Device number"
+                                   placeholder="Device number or tag"
                                    oninput="filterDeviceReportModal()"
                                    style="flex:1;min-width:0;padding:8px 10px;background:var(--card-bg);color:var(--text-color);border:1px solid var(--input-border);border-radius:6px;font-size:13px;">
                         </div>
@@ -27796,6 +27901,7 @@
                                 <option value="not-applicable">Not mine (N/A)</option>
                             </select>
                         </div>
+                        ${deviceReportTagFilterHtml}
                         <button type="button"
                                 onclick="resetDeviceReportFilters()"
                                 style="padding:8px 12px;background:var(--card-bg);color:var(--text-color);border:1px solid var(--input-border);border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap;">
@@ -27844,6 +27950,7 @@
                         <div id="deviceReportList">
                             ${rows}
                         </div>
+                        ${mapNotApplicableTagOptionsHtml}
                     </div>
                 </div>
                 </div>`;
@@ -27962,6 +28069,7 @@
         function filterDeviceReportModal() {
             const typeFilter = document.getElementById('deviceReportTypeFilter');
             const testFilter = document.getElementById('deviceReportTestFilter');
+            const tagFilter = document.getElementById('deviceReportTagFilter');
             const searchInput = document.getElementById('deviceReportSearchInput');
             const items = document.querySelectorAll('#deviceReportList .device-report-item');
             const countEl = document.getElementById('deviceReportFilterCount');
@@ -27969,14 +28077,19 @@
 
             const selectedType = typeFilter ? typeFilter.value : 'all';
             const selectedTest = testFilter ? testFilter.value : 'all';
+            const selectedTag = tagFilter ? tagFilter.value : 'all';
             const search = searchInput ? searchInput.value.trim().toUpperCase() : '';
             let visible = 0;
 
             items.forEach(function(item) {
                 const itemType = item.getAttribute('data-device-type') || '';
                 const itemNumber = (item.getAttribute('data-device-number') || '').toUpperCase();
+                const itemTag = item.getAttribute('data-na-tag') || '';
+                const itemIsNotApplicable = item.getAttribute('data-not-applicable') === '1';
                 const typeMatch = selectedType === 'all' || itemType === selectedType;
-                const searchMatch = !search || itemNumber.includes(search);
+                const searchMatch = !search || itemNumber.includes(search) || itemTag.toUpperCase().includes(search);
+                const tagMatch = selectedTag === 'all'
+                    || (selectedTag === '__untagged__' ? (itemIsNotApplicable && !itemTag) : itemTag === selectedTag);
                 let testMatch = true;
                 if (selectedTest === 'no-tests-year') testMatch = item.getAttribute('data-no-tests-year') === '1';
                 else if (selectedTest === 'any-pending') testMatch = item.getAttribute('data-any-pending') === '1';
@@ -27988,14 +28101,14 @@
                 else if (selectedTest === 'has-cat5') testMatch = item.getAttribute('data-has-cat5') === '1';
                 else if (selectedTest === 'all-complete') testMatch = item.getAttribute('data-all-complete') === '1';
                 else if (selectedTest === 'not-applicable') testMatch = item.getAttribute('data-not-applicable') === '1';
-                const show = typeMatch && searchMatch && testMatch;
+                const show = typeMatch && searchMatch && testMatch && tagMatch;
                 item.style.display = show ? '' : 'none';
                 if (show) visible++;
             });
 
             if (countEl) {
                 const total = items.length;
-                const filtersActive = selectedType !== 'all' || selectedTest !== 'all' || search.length > 0;
+                const filtersActive = selectedType !== 'all' || selectedTest !== 'all' || selectedTag !== 'all' || search.length > 0;
                 if (filtersActive) {
                     countEl.style.display = '';
                     countEl.textContent = 'Showing ' + visible + ' of ' + total + ' device' + (total !== 1 ? 's' : '');
@@ -28010,8 +28123,10 @@
             const typeFilter = document.getElementById('deviceReportTypeFilter');
             const testFilter = document.getElementById('deviceReportTestFilter');
             const searchInput = document.getElementById('deviceReportSearchInput');
+            const tagFilter = document.getElementById('deviceReportTagFilter');
             if (typeFilter) typeFilter.value = 'all';
             if (testFilter) testFilter.value = 'all';
+            if (tagFilter) tagFilter.value = 'all';
             if (searchInput) searchInput.value = '';
             filterDeviceReportModal();
         }
@@ -35676,9 +35791,10 @@
                 const number = device && device.number ? device.number : '';
                 const numberJs = String(number).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 const note = device && device.note ? String(device.note) : '';
+                const tag = device && device.tag ? String(device.tag) : '';
                 return `<div style="font-size: 11px; padding: 4px 0; border-bottom: 1px solid rgba(92,107,192,0.22);">
                     <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center;">
-                        <span style="min-width:0;"><strong>${escapeMapSuggestionHtml(number)}</strong> <span style="opacity:0.7;">${escapeMapSuggestionHtml(device.type || '')}</span></span>
+                        <span style="min-width:0;"><strong>${escapeMapSuggestionHtml(number)}</strong> <span style="opacity:0.7;">${escapeMapSuggestionHtml(device.type || '')}</span>${tag ? ' ' + renderMapNotApplicableTagBadge(tag, 10) : ''}</span>
                         <span style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                             <span style="font-size:10px; font-weight:800; letter-spacing:0.04em; color:#3949ab; background:rgba(92,107,192,0.16); border-radius:999px; padding:2px 7px;">N/A</span>
                             <button type="button" onclick="clearMapDeviceNotApplicable('${keyJs}','${numberJs}')" style="border:1px solid rgba(92,107,192,0.5); background:transparent; color:#3949ab; border-radius:6px; font-size:10px; font-weight:700; padding:2px 6px; cursor:pointer;">Count as mine</button>
@@ -35743,7 +35859,7 @@
             return { device: fallback, fromAdditional: !!fallback && !inBuildings };
         }
 
-        function refreshMapAfterNotApplicableChange(locationKey, fromAdditional) {
+        function refreshMapAfterNotApplicableChange(locationKey, fromAdditional, deviceNumber) {
             if (fromAdditional) {
                 setAdditionalLocations(getAdditionalLocations());
                 if (typeof updateAdditionalLocationsPanel === 'function') updateAdditionalLocationsPanel();
@@ -35757,6 +35873,13 @@
                     ...ctx,
                     bin: ctx.bin || String(locationKey || '').trim()
                 });
+                // The report is rebuilt from scratch, so bring the edited card back into view.
+                const number = String(deviceNumber || '').trim().toUpperCase();
+                const card = number
+                    ? Array.from(document.querySelectorAll('#deviceReportList .device-report-item'))
+                        .find(item => String(item.getAttribute('data-device-number') || '').toUpperCase() === number)
+                    : null;
+                if (card) card.scrollIntoView({ block: 'center' });
             }
         }
 
@@ -35773,35 +35896,58 @@
                 details: `${device.device_number} marked N/A — no longer counted as needing tests`
             });
             showMapNotification(`${device.device_number} is marked not yours. Add a note below if you want.`, '#5c6bc0');
-            refreshMapAfterNotApplicableChange(locationKey, fromAdditional);
+            refreshMapAfterNotApplicableChange(locationKey, fromAdditional, device.device_number);
         }
 
         function mapNotApplicableNoteElementId(deviceIndex) {
             return 'mapNotApplicableNote_' + String(deviceIndex);
         }
 
-        function saveMapDeviceNotApplicableNote(locationKey, deviceNumber, deviceIndex) {
+        function mapNotApplicableTagElementId(deviceIndex) {
+            return 'mapNotApplicableTag_' + String(deviceIndex);
+        }
+
+        // Typing a preset in different casing reuses the existing spelling.
+        function matchExistingMapNotApplicableTag(tag) {
+            const text = normalizeMapNotApplicableTag(tag);
+            if (!text) return '';
+            const existing = collectMapNotApplicableTags(
+                window.lastBulkSearchResults && window.lastBulkSearchResults.binGroups,
+                getAdditionalLocations()
+            ).find(candidate => candidate.toUpperCase() === text.toUpperCase());
+            return existing || text;
+        }
+
+        function saveMapDeviceNotApplicableDetails(locationKey, deviceNumber, deviceIndex) {
             const { device, fromAdditional } = findMapReportDevice(locationKey, deviceNumber);
             if (!device) {
                 showMapNotification('That device is no longer in this map file', '#ff9800');
                 return;
             }
             const noteEl = document.getElementById(mapNotApplicableNoteElementId(deviceIndex));
-            const note = noteEl ? String(noteEl.value || '').trim().slice(0, 2000) : '';
-            const previous = getMapDeviceNotApplicableNote(device);
-            if (note === previous) {
-                showMapNotification('Note unchanged', '#607d8b');
+            const tagEl = document.getElementById(mapNotApplicableTagElementId(deviceIndex));
+            const note = noteEl ? String(noteEl.value || '').trim().slice(0, 2000) : getMapDeviceNotApplicableNote(device);
+            const tag = tagEl ? matchExistingMapNotApplicableTag(tagEl.value) : getMapDeviceNotApplicableTag(device);
+            const previousNote = getMapDeviceNotApplicableNote(device);
+            const previousTag = getMapDeviceNotApplicableTag(device);
+            if (note === previousNote && tag === previousTag) {
+                showMapNotification('Tag and note unchanged', '#607d8b');
                 return;
             }
             if (note) device.map_not_applicable_note = note;
             else delete device.map_not_applicable_note;
-            addMapActivity(note ? 'Saved note on N/A device' : 'Cleared note on N/A device', {
+            if (tag) device.map_not_applicable_tag = tag;
+            else delete device.map_not_applicable_tag;
+            const parts = [];
+            if (tag !== previousTag) parts.push(tag ? `tag "${tag}"` : 'tag cleared');
+            if (note !== previousNote) parts.push(note ? `note: ${note.length > 80 ? note.substring(0, 80) + '...' : note}` : 'note cleared');
+            addMapActivity('Updated N/A device tag/note', {
                 type: 'Device',
                 bin: locationKey,
-                details: `${device.device_number}${note ? ' — ' + (note.length > 80 ? note.substring(0, 80) + '...' : note) : ''}`
+                details: `${device.device_number} — ${parts.join('; ')}`
             });
-            showMapNotification(note ? `Note saved for ${device.device_number}. Save the map file to keep it.` : `Note cleared for ${device.device_number}`, '#4CAF50');
-            refreshMapAfterNotApplicableChange(locationKey, fromAdditional);
+            showMapNotification(`Saved for ${device.device_number}. Save the map file to keep it.`, '#4CAF50');
+            refreshMapAfterNotApplicableChange(locationKey, fromAdditional, device.device_number);
         }
 
         function clearMapDeviceNotApplicable(locationKey, deviceNumber) {
@@ -35811,18 +35957,20 @@
                 return;
             }
             const note = getMapDeviceNotApplicableNote(device);
-            if (note && !confirm(`Count ${device.device_number} as your device again?\n\nIts note will be removed:\n${note}`)) {
+            const tag = getMapDeviceNotApplicableTag(device);
+            if ((note || tag) && !confirm(`Count ${device.device_number} as your device again?\n\nIts ${tag && note ? 'tag and note' : (tag ? 'tag' : 'note')} will be removed:${tag ? `\nTag: ${tag}` : ''}${note ? `\nNote: ${note}` : ''}`)) {
                 return;
             }
             delete device.map_not_applicable;
             delete device.map_not_applicable_note;
+            delete device.map_not_applicable_tag;
             addMapActivity('Counted N/A device as a job device', {
                 type: 'Device',
                 bin: locationKey,
                 details: `${device.device_number} is no longer marked N/A`
             });
             showMapNotification(`${device.device_number} now counts as your device`, '#0d6efd');
-            refreshMapAfterNotApplicableChange(locationKey, fromAdditional);
+            refreshMapAfterNotApplicableChange(locationKey, fromAdditional, device.device_number);
         }
 
         function createBuildingMarkerIcon(building) {
@@ -36034,7 +36182,8 @@
                                     number: device.device_number,
                                     type: device.device_type || 'Unknown',
                                     status: device.device_status || 'N/A',
-                                    note: getMapDeviceNotApplicableNote(device)
+                                    note: getMapDeviceNotApplicableNote(device),
+                                    tag: getMapDeviceNotApplicableTag(device)
                                 });
                                 return;
                             }
