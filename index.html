@@ -379,14 +379,6 @@
             <option value="dark">Dark</option>
         </select>
         <p style="margin: 0 0 8px; font-size: 0.82em; opacity: 0.75; line-height: 1.4;">Saved in this browser only. Tab choice applies on the next visit; theme applies as soon as you save. The disclaimer appears on every page load until Agree.</p>
-        <section class="settings-unscheduled" aria-labelledby="settingsUnscheduledTitle">
-            <h4 id="settingsUnscheduledTitle">Jobs not scheduled yet — <span id="settingsUnscheduledJobsCount">0</span></h4>
-            <p id="settingsUnscheduledJobsNote">Load a map to see jobs that have not been scheduled.</p>
-            <input type="search" id="settingsUnscheduledSearch" class="settings-unscheduled-search" placeholder="Search address or AKA" oninput="filterSettingsUnscheduledJobs(this.value)">
-            <div id="settingsUnscheduledJobsList" class="settings-unscheduled-list" aria-live="polite">
-                <div class="settings-unscheduled-empty">No map loaded</div>
-            </div>
-        </section>
         <div style="margin-top: 16px; display: flex; gap: 10px;">
             <button onclick="saveSettings()">Save</button>
             <button onclick="closeSettings()" style="background-color: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; padding: 10px 20px; font-size: 1.2em; transition: background-color 0.3s ease, color 0.3s ease;">Cancel</button>
@@ -1378,7 +1370,8 @@
                             #mapControlsPanelBody.mcp-detail-mode #noTestByJuneDisregardedList,
                             #mapControlsPanelBody.mcp-detail-mode #noTestYetList,
                             #mapControlsPanelBody.mcp-detail-mode #noTestYetDisregardedList,
-                            #mapControlsPanelBody.mcp-detail-mode #testDatesPanelList { max-height: min(68vh, 620px) !important; }
+                            #mapControlsPanelBody.mcp-detail-mode #testDatesPanelList,
+                            #mapControlsPanelBody.mcp-detail-mode #mapUnscheduledJobsList { max-height: min(68vh, 620px) !important; }
                             #favoritesBuildingsList,
                             #monitoredBuildingsList,
                             #inProcessBuildingsList,
@@ -1400,7 +1393,8 @@
                             #noTestByJuneDisregardedList,
                             #noTestYetList,
                             #noTestYetDisregardedList,
-                            #testDatesPanelList { max-height: min(52vh, 460px) !important; }
+                            #testDatesPanelList,
+                            #mapUnscheduledJobsList { max-height: min(52vh, 460px) !important; }
                             /* Popped-out panel: lift list height caps so content fills available space */
                             #mapControlsPanel.mcp-popped-out #favoritesBuildingsList,
                             #mapControlsPanel.mcp-popped-out #monitoredBuildingsList,
@@ -1423,7 +1417,8 @@
                             #mapControlsPanel.mcp-popped-out #noTestByJuneDisregardedList,
                             #mapControlsPanel.mcp-popped-out #noTestYetList,
                             #mapControlsPanel.mcp-popped-out #noTestYetDisregardedList,
-                            #mapControlsPanel.mcp-popped-out #testDatesPanelList { max-height: none !important; }
+                            #mapControlsPanel.mcp-popped-out #testDatesPanelList,
+                            #mapControlsPanel.mcp-popped-out #mapUnscheduledJobsList { max-height: none !important; }
                             #noTestYetList .no-test-yet-linked {
                                 box-shadow: 0 0 0 2px #c0392b;
                                 background: rgba(192,57,43,0.16) !important;
@@ -1510,6 +1505,22 @@
                         </div>
 
                         <!-- Hidden -->
+                        <!-- Jobs not scheduled yet -->
+                        <div class="mcp-section">
+                            <div class="mcp-header" onclick="toggleMcpSection('mcpUnscheduledJobs'); renderMapUnscheduledJobs();">
+                                <span class="mcp-title"><span style="color:#e67e22;">📋</span> Not Scheduled - <span id="mapUnscheduledJobsCount">0</span></span>
+                                <span class="mcp-arrow" id="mcpUnscheduledJobsArrow">›</span>
+                            </div>
+                            <div class="mcp-body" id="mcpUnscheduledJobs">
+                                <p class="mcp-desc" id="mapUnscheduledJobsNote" style="font-size:0.94em; line-height:1.5; opacity:0.82;">Address and also-known-as name for each loaded job with no scheduled test date. Fully completed jobs are left off. Click an address to view it on the map.</p>
+                                <input type="search" id="mapUnscheduledJobsSearch" class="mcp-search-input" placeholder="🔍 Search address or AKA"
+                                       oninput="filterMapUnscheduledJobs(this.value)">
+                                <div id="mapUnscheduledJobsList" style="max-height: 260px; overflow-y: auto; margin-bottom: 8px;">
+                                    <div style="font-size: 1em; opacity: 0.6; text-align: center; padding: 8px;">No jobs yet</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Scheduled Test Dates -->
                         <div class="mcp-section">
                             <div class="mcp-header" onclick="toggleMcpSection('mcpTestDates')">
@@ -4507,16 +4518,6 @@
                 const savedTheme = (typeof getSavedTheme === 'function') ? getSavedTheme() : localStorage.getItem('theme');
                 themeSelect.value = savedTheme === 'dark' ? 'dark' : 'light';
             }
-            renderSettingsUnscheduledJobs();
-            const unscheduledList = document.getElementById('settingsUnscheduledJobsList');
-            if (unscheduledList && !unscheduledList.dataset.settingsListenersAttached) {
-                unscheduledList.dataset.settingsListenersAttached = 'true';
-                unscheduledList.addEventListener('click', function(event) {
-                    const row = event.target.closest('.settings-unscheduled-row');
-                    if (!row || !row.dataset.bin) return;
-                    openUnscheduledJobFromSettings(row.dataset.bin);
-                });
-            }
 
             // Close settings when clicking outside (attach once to avoid stacking listeners)
             if (!overlay.dataset.settingsListenersAttached) {
@@ -4595,11 +4596,19 @@
             return selectUnscheduledMapJobs(records);
         }
 
-        function renderSettingsUnscheduledJobs() {
-            const listEl = document.getElementById('settingsUnscheduledJobsList');
-            const countEl = document.getElementById('settingsUnscheduledJobsCount');
-            const noteEl = document.getElementById('settingsUnscheduledJobsNote');
+        function renderMapUnscheduledJobs() {
+            const listEl = document.getElementById('mapUnscheduledJobsList');
+            const countEl = document.getElementById('mapUnscheduledJobsCount');
+            const noteEl = document.getElementById('mapUnscheduledJobsNote');
             if (!listEl) return;
+            if (!listEl.dataset.unscheduledClickBound) {
+                listEl.dataset.unscheduledClickBound = 'true';
+                listEl.addEventListener('click', function(event) {
+                    const row = event.target.closest('.settings-unscheduled-row');
+                    if (!row || !row.dataset.bin) return;
+                    if (typeof flyToMapBuilding === 'function') flyToMapBuilding(row.dataset.bin, { temporarilyShowHidden: true });
+                });
+            }
             const year = typeof getMapDisplayedCalendarYear === 'function'
                 ? getMapDisplayedCalendarYear()
                 : new Date().getFullYear();
@@ -4609,7 +4618,7 @@
             );
             if (noteEl) {
                 noteEl.textContent = loaded
-                    ? `Address and also-known-as name for each loaded map job with no scheduled test date for ${year}. Fully completed jobs are left off. Click an address to open it on the map.`
+                    ? `Address and also-known-as name for each loaded job with no scheduled test date for ${year}. Fully completed jobs are left off. Click an address to view it on the map.`
                     : 'Load a map to see jobs that have not been scheduled.';
             }
             if (!loaded) {
@@ -4632,12 +4641,12 @@
                     <span class="settings-unscheduled-aka"><span class="settings-unscheduled-aka-label">AKA</span> ${escapeMapSuggestionHtml(akaText)}</span>
                 </button>`;
             }).join('');
-            const search = document.getElementById('settingsUnscheduledSearch');
-            if (search && search.value) filterSettingsUnscheduledJobs(search.value);
+            const search = document.getElementById('mapUnscheduledJobsSearch');
+            if (search && search.value) filterMapUnscheduledJobs(search.value);
         }
 
-        function filterSettingsUnscheduledJobs(query) {
-            const listEl = document.getElementById('settingsUnscheduledJobsList');
+        function filterMapUnscheduledJobs(query) {
+            const listEl = document.getElementById('mapUnscheduledJobsList');
             if (!listEl) return;
             const q = String(query || '').toLowerCase().trim();
             const rows = listEl.querySelectorAll('.settings-unscheduled-row');
@@ -4659,17 +4668,6 @@
             } else if (empty) {
                 empty.style.display = 'none';
             }
-        }
-
-        function openUnscheduledJobFromSettings(bin) {
-            closeSettings();
-            if (typeof showTab === 'function') showTab('map');
-            const modal = document.getElementById('buildingMapModal');
-            const modalHidden = !modal || modal.style.display === 'none' || modal.style.display === '';
-            if (modalHidden && typeof showBuildingMap === 'function') showBuildingMap();
-            setTimeout(() => {
-                if (typeof flyToMapBuilding === 'function') flyToMapBuilding(bin, { temporarilyShowHidden: true });
-            }, modalHidden ? 400 : 60);
         }
 
         // Dropdown menu was removed; the old window.onclick close handler referenced a
@@ -30041,10 +30039,7 @@
                 filterMcpBinRowList('testDatesPanelList', tds.value);
             }
             if (typeof refreshMcpDetailBackTitle === 'function') refreshMcpDetailBackTitle();
-            const settingsModal = document.getElementById('settingsModal');
-            if (settingsModal && settingsModal.style.display === 'block' && typeof renderSettingsUnscheduledJobs === 'function') {
-                renderSettingsUnscheduledJobs();
-            }
+            if (typeof renderMapUnscheduledJobs === 'function') renderMapUnscheduledJobs();
         }
 
         function updateMapDeadlinesPanel() {
@@ -32873,8 +32868,12 @@
             };
 
             const testDatesSection = sectionFor('mcpTestDates');
+            const unscheduledSection = sectionFor('mcpUnscheduledJobs');
             const deadlinesSection = sectionFor('mcpDeadlines');
             const monthsSection = sectionFor('mcpMonths');
+            if (unscheduledSection && testDatesSection && testDatesSection.previousElementSibling !== unscheduledSection) {
+                testDatesSection.before(unscheduledSection);
+            }
             if (testDatesSection && deadlinesSection && testDatesSection.nextElementSibling !== deadlinesSection) {
                 testDatesSection.after(deadlinesSection);
             }

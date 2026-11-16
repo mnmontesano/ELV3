@@ -45,8 +45,10 @@ assert.equal(jobs[0].onHold, true);
 assert.equal(jobs[1].address, 'BIN 1000004');
 assert.equal(JSON.stringify(jobs[1].aka), JSON.stringify(['Corner Shop']));
 
-assert.match(html, /id="settingsUnscheduledJobsList"/);
+assert.match(html, /id="mapUnscheduledJobsList"/);
+assert.match(html, /id="mcpUnscheduledJobs"/);
+assert.doesNotMatch(html, /id="settingsUnscheduledJobsList"/);
 assert.match(html, /getHousePinInitials\(location\)/);
 assert.doesNotMatch(html, /iconText = '🏠'/);
 
-console.log('House initials and unscheduled job selection match the settings list.');
+console.log('House initials and unscheduled job selection match the map settings list.');
