@@ -44,8 +44,40 @@ assert.equal(JSON.stringify(jobs[0].aka), JSON.stringify(['The Smith House']));
 assert.equal(jobs[0].onHold, true);
 assert.equal(jobs[1].address, 'BIN 1000004');
 assert.equal(JSON.stringify(jobs[1].aka), JSON.stringify(['Corner Shop']));
+assert.equal(jobs[0].missingCategory, true);
+assert.equal(jobs[0].missingPvi, true);
+
+const typedJobs = [
+    { bin: '1', address: 'A Street', hasCategorySchedule: true, hasPviSchedule: false },
+    { bin: '2', address: 'B Street', hasCategorySchedule: false, hasPviSchedule: true },
+    { bin: '3', address: 'C Street', hasCategorySchedule: false, hasPviSchedule: false, categoryCompleted: true },
+    { bin: '4', address: 'D Street', hasCategorySchedule: true, hasPviSchedule: true },
+    { bin: '5', address: 'E Street', categoryCompleted: true, pviCompleted: true },
+    { bin: '6', address: 'F Street', hasCategorySchedule: false, hasPviSchedule: false, onHold: true, aka: ['Alias'] }
+];
+
+assert.equal(
+    JSON.stringify(context.selectUnscheduledMapJobs(typedJobs, 'either').map(job => job.bin)),
+    JSON.stringify(['1', '2', '3', '6'])
+);
+assert.equal(
+    JSON.stringify(context.selectUnscheduledMapJobs(typedJobs, 'category').map(job => job.bin)),
+    JSON.stringify(['2', '6'])
+);
+assert.equal(
+    JSON.stringify(context.selectUnscheduledMapJobs(typedJobs, 'pvi').map(job => job.bin)),
+    JSON.stringify(['1', '3', '6'])
+);
+const onlyPviMissing = context.selectUnscheduledMapJobs(typedJobs, 'pvi').find(job => job.bin === '1');
+assert.equal(onlyPviMissing.missingCategory, false);
+assert.equal(onlyPviMissing.missingPvi, true);
+const bothMissing = context.selectUnscheduledMapJobs(typedJobs, 'either').find(job => job.bin === '6');
+assert.equal(bothMissing.missingCategory, true);
+assert.equal(bothMissing.missingPvi, true);
+assert.equal(bothMissing.onHold, true);
 
 assert.match(html, /id="mapUnscheduledJobsList"/);
+assert.match(html, /id="mapUnscheduledJobsTypeFilter"/);
 assert.match(html, /id="mcpUnscheduledJobs"/);
 assert.doesNotMatch(html, /id="settingsUnscheduledJobsList"/);
 assert.match(html, /getHousePinInitials\(location\)/);
