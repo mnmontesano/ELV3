@@ -48,6 +48,15 @@ assert.equal(context.formatMapDaysLeftLabel(-3), '3 days past');
 
 const htmlHasSection = html.includes('id="mcpNoTestYet"') && html.includes('No Test Yet');
 assert.ok(htmlHasSection, 'Settings must include the No Test Yet section');
+const helpTag = html.indexOf('<details class="mcp-desc-collapse" id="noTestYetHelp">');
+const statusTag = html.indexOf('id="noTestYetStatus"');
+assert.ok(helpTag >= 0, 'No Test Yet help must be a collapsed details block');
+assert.ok(statusTag > helpTag, 'Red device-count status must stay visible after the short help');
+const helpBlock = html.slice(helpTag, statusTag);
+assert.doesNotMatch(helpBlock, /\sopen(?:\s|=|>)/, 'No Test Yet help starts collapsed');
+assert.match(helpBlock, /<summary>Devices with no Category or PVI test filed yet this calendar year/);
+assert.match(helpBlock, /mcp-desc-collapse-body/);
+assert.match(helpBlock, /Copy on a building copies that building's device numbers only/);
 assert.match(html, /toggleNoTestYetShowOnMap/);
 assert.match(html, /copyNoTestYetDevices/);
 assert.match(html, /showNoTestYetDisregardModal/);
@@ -109,18 +118,21 @@ assert.match(popupHtml, /No test yet \(1\)/);
 assert.match(popupHtml, /openMapNoTestYetSection\('1000001', '1000001'\)/);
 assert.match(popupHtml, /openMapNoTestYetSection\('1000001', '1000001', '1P1234'\)/);
 assert.match(popupHtml, /View in No Test Yet/);
-assert.match(popupHtml, /Copy this building's devices/);
+assert.match(popupHtml, /Copy this building's device numbers/);
 assert.match(popupHtml, /copyNoTestYetDevicesForLocation\('1000001'/);
 assert.match(popupHtml, /1P1234/);
 assert.match(popupHtml, /PVI \+ CAT 1/);
 assert.doesNotMatch(popupHtml, /123 Main St/);
 
-const copyStart = html.indexOf('        function formatNoTestYetDeviceCopyText(groups) {');
+const copyStart = html.indexOf('        function formatNoTestYetDeviceCopyText(groups, options) {');
 assert.ok(copyStart >= 0, 'formatNoTestYetDeviceCopyText must exist');
 const copyEnd = html.indexOf('        async function copyNoTestYetDevices(event) {', copyStart);
 assert.ok(copyEnd > copyStart, 'copyNoTestYetDevices must follow the copy formatter');
 const copyContext = vm.createContext({});
-vm.runInContext(html.slice(copyStart, copyEnd) + '\nthis.formatNoTestYetDeviceCopyText = formatNoTestYetDeviceCopyText;\n', copyContext);
+vm.runInContext(html.slice(copyStart, copyEnd) + `
+this.formatNoTestYetDeviceCopyText = formatNoTestYetDeviceCopyText;
+this.copyNoTestYetDeviceGroups = copyNoTestYetDeviceGroups;
+`, copyContext);
 assert.equal(copyContext.formatNoTestYetDeviceCopyText([
     { address: '123 MAIN STREET', bin: '1000001', devices: [{ number: '1P11111' }, { number: '1P22222' }] },
     { address: '456 OTHER AVENUE', bin: '1000002', devices: [{ number: '2P33333' }] }
@@ -132,17 +144,48 @@ assert.equal(copyContext.formatNoTestYetDeviceCopyText([
 ].join('\n'));
 assert.equal(copyContext.formatNoTestYetDeviceCopyText([
     { address: '123 MAIN STREET', bin: '1000001', devices: [{ number: '1P11111' }, { number: '1P22222' }] }
-]), [
+], { devicesOnly: true }), '1P11111\n1P22222');
+assert.equal(copyContext.formatNoTestYetDeviceCopyText([
+    { address: '123 MAIN STREET', bin: '1000001', devices: [{ number: '1P11111' }, '1P22222'] }
+], { devicesOnly: true }), '1P11111\n1P22222');
+assert.equal(copyContext.formatNoTestYetDeviceCopyText([], { devicesOnly: true }), '');
+assert.doesNotMatch(
+    copyContext.formatNoTestYetDeviceCopyText([
+        { address: '123 MAIN STREET', bin: '1000001', devices: [{ number: '1P11111' }] }
+    ], { devicesOnly: true }),
+    /MAIN STREET|1000001|Device\tBuilding\tBIN/
+);
+copyContext.MAP_NO_TEST_YET_COLOR = '#c0392b';
+copyContext.notifications = [];
+copyContext.clipboardText = '';
+vm.runInContext(`
+this.copyNoTestYetDeviceGroups = copyNoTestYetDeviceGroups;
+writeMapClipboardText = async function(text) { clipboardText = text; };
+flashNoTestYetCopyButton = function() {};
+showMapNotification = function(message) { notifications.push(message); };
+`, copyContext);
+await copyContext.copyNoTestYetDeviceGroups(
+    [{ address: '123 MAIN STREET', bin: '1000001', devices: [{ number: '1P11111' }, { number: '1P22222' }] }],
+    { devicesOnly: true, scopeLabel: 'from 123 MAIN STREET' }
+);
+assert.equal(copyContext.clipboardText, '1P11111\n1P22222');
+assert.match(copyContext.notifications[0], /Copied 2 devices from 123 MAIN STREET/);
+await copyContext.copyNoTestYetDeviceGroups(
+    [{ address: '123 MAIN STREET', bin: '1000001', devices: [{ number: '1P11111' }, { number: '1P22222' }] }],
+    { scopeLabel: 'across all buildings' }
+);
+assert.equal(copyContext.clipboardText, [
     'Device\tBuilding\tBIN',
     '1P11111\t123 MAIN STREET\t1000001',
     '1P22222\t123 MAIN STREET\t1000001'
 ].join('\n'));
 assert.match(html, /copyNoTestYetDevicesForLocation/);
-assert.match(html, /Copy this building's devices/);
+assert.match(html, /Copy this building's device numbers/);
+assert.match(html, /devicesOnly: true/);
 assert.match(html, /scopeLabel: 'across all buildings'/);
 
 const byBuildingStart = html.indexOf('        function getNoTestYetDevicesByBuilding(options) {');
-const byBuildingEnd = html.indexOf('        function formatNoTestYetDeviceCopyText(groups) {', byBuildingStart);
+const byBuildingEnd = html.indexOf('        function formatNoTestYetDeviceCopyText(groups, options) {', byBuildingStart);
 assert.ok(byBuildingStart >= 0 && byBuildingEnd > byBuildingStart, 'getNoTestYetDevicesByBuilding must exist');
 const byBuildingContext = vm.createContext({
     document: { getElementById: () => null }
