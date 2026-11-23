@@ -11,6 +11,8 @@ If a secret is committed, revoke or rotate it immediately. Removing it from the 
 ## Release checks
 
 - Run `node tools/check_nyc_api_contract.mjs` to detect NYC dataset or terminology changes.
+- Run `node tools/check_dob_backup.mjs` to confirm device, BIN, address, violation, permit, and device-detail lookups still fall back to the saved DOB backup.
+- Run `node tools/refresh_dob_backup.mjs` after NYC Open Data is publishing a full elevator file again. The command refuses a partial file, so it will not replace the backup during an incomplete republish.
 - Keep the pinned libraries in `vendor/` current and update their checksums and license files together.
 - Publish only over HTTPS.
 - Test PDF, spreadsheet, JSON-map import, device lookup, BIN lookup, violations, permits, and CSV export in a clean browser profile.
