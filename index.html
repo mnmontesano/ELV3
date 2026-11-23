@@ -12103,6 +12103,20 @@
             return `NYC Open Data is temporarily unavailable.${skipped} The city website that supplies DOB device records did not respond, so this is not a missing-device result. Try the lookup again in a few minutes.`;
         }
 
+        const DOB_INCOMPLETE_DATA_MIN_DEVICES = 20;
+        const DOB_INCOMPLETE_DATA_MISSING_SHARE = 0.5;
+
+        // A partial republish of the city dataset answers normally but leaves most devices out.
+        function isDobDataLikelyIncomplete(checkedCount, notFoundCount) {
+            const checked = Number(checkedCount) || 0;
+            const missing = Number(notFoundCount) || 0;
+            return checked >= DOB_INCOMPLETE_DATA_MIN_DEVICES && missing / checked >= DOB_INCOMPLETE_DATA_MISSING_SHARE;
+        }
+
+        function dobIncompleteDataUserMessage(notFoundCount, checkedCount) {
+            return `DOB's published device data looks incomplete right now. ${notFoundCount} of ${checkedCount} devices were not in the NYC Open Data results, so they were left unchanged. This usually means the city is partway through republishing the data. Try DOB Info Update again later.`;
+        }
+
         function renderDobLookupErrorHtml(error) {
             if (typeof isDobServiceUnavailableError === 'function' && isDobServiceUnavailableError(error)) {
                 return `<span style="color: #c77700; font-weight: 600;">${escapeMapSuggestionHtml(dobServiceUnavailableUserMessage())}</span>`;
@@ -14250,7 +14264,7 @@
             }
         }
 
-        function showDobInfoUpdateChangesModal(changeRows, failedDevices, autoCompletedRows, monitoredNewDevices, confirmationRows, deadlinesMetRows, unavailableDeviceCount) {
+        function showDobInfoUpdateChangesModal(changeRows, failedDevices, autoCompletedRows, monitoredNewDevices, confirmationRows, deadlinesMetRows, unavailableDeviceCount, incompleteData) {
             const existing = document.getElementById('dobInfoUpdateChangesModal');
             if (existing) existing.remove();
 
@@ -14383,13 +14397,25 @@
                 </div>`
                 : '';
 
-            const failuresHtml = failures.length > 0
+            const incomplete = incompleteData && incompleteData.notFoundCount > 0 ? incompleteData : null;
+            const incompleteDataHtml = incomplete
+                ? `<div style="margin-bottom:10px; padding:12px; border-radius:8px; background:rgba(199,119,0,0.12); border:1px solid rgba(199,119,0,0.45); color:var(--text-color); font-size:0.92em; line-height:1.45;">
+                    <div style="font-weight:700; color:#c77700; margin-bottom:4px;">DOB data looks incomplete</div>
+                    <div>${escapeMapSuggestionHtml(dobIncompleteDataUserMessage(incomplete.notFoundCount, incomplete.checkedCount))}</div>
+                </div>`
+                : '';
+
+            const listedFailures = incomplete
+                ? failures.filter(item => String(item).startsWith('BIN '))
+                : failures;
+            const failuresHtml = listedFailures.length > 0
                 ? `<div style="margin-top:10px; padding:9px 10px; border-radius:8px; background:rgba(255,107,107,0.1); border:1px solid rgba(255,107,107,0.35); color:#ff6b6b; font-size:0.9em;">
-                    Could not update ${failures.length} device${failures.length !== 1 ? 's' : ''}: ${escapeMapSuggestionHtml(failures.join(', '))}
+                    Could not update ${listedFailures.length} ${incomplete ? 'item' : 'device'}${listedFailures.length !== 1 ? 's' : ''}: ${escapeMapSuggestionHtml(listedFailures.join(', '))}
                 </div>`
                 : '';
 
             const summaryParts = [];
+            if (incomplete) summaryParts.push(`DOB data looks incomplete, so ${incomplete.notFoundCount} device${incomplete.notFoundCount !== 1 ? 's were' : ' was'} left unchanged`);
             if (unavailableCount > 0) summaryParts.push(`NYC Open Data was unavailable, so ${unavailableCount} device${unavailableCount !== 1 ? 's were' : ' was'} not checked`);
             summaryParts.push(`${changes.length} date change${changes.length !== 1 ? 's' : ''} applied to saved device records`);
             if (monitoredFound.length) summaryParts.push(`${monitoredFound.length} new device${monitoredFound.length !== 1 ? 's' : ''} found on radar-monitored buildings`);
@@ -14416,6 +14442,7 @@
                     </div>
                     <div style="padding:8px 18px 16px; overflow-y:auto;">
                         ${serviceUnavailableHtml}
+                        ${incompleteDataHtml}
                         ${monitoredHtml}
                         ${dobConfirmationHtml}
                         ${autoCompletedHtml}
@@ -14484,6 +14511,11 @@
                     reportProgress('Updating');
                 });
                 completedSteps = uniqueDeviceNumbers.length;
+                const answeredCount = uniqueDeviceNumbers.length - unavailableDevices.length;
+                const notFoundCount = failed.length;
+                const incompleteData = isDobDataLikelyIncomplete(answeredCount, notFoundCount)
+                    ? { notFoundCount, checkedCount: answeredCount }
+                    : null;
 
                 let dateUpdates = 0;
                 const changeRows = [];
@@ -14524,7 +14556,7 @@
                 const confirmationRows = recordMapDobCompletionConfirmations(touchedBins, changeRows, dobDetectedAt);
                 const autoCompletedRows = autoCompleteMapBuildingsFromDobUpdate(touchedBins);
 
-                if (!serviceUnavailable || Object.keys(freshByDevice).length > 0) {
+                if (!incompleteData && (!serviceUnavailable || Object.keys(freshByDevice).length > 0)) {
                     setMapDobInfoUpdatedAt(Date.now());
                 }
                 updateDobInfoButtonState(true, 'Refreshing map...', 100);
@@ -14550,7 +14582,16 @@
                 }
 
                 if (!refreshFailed) {
-                    if (serviceUnavailable) {
+                    if (incompleteData) {
+                        const appliedText = dateUpdates > 0
+                            ? `${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''} applied. `
+                            : '';
+                        showMapNotification(
+                            appliedText + dobIncompleteDataUserMessage(incompleteData.notFoundCount, incompleteData.checkedCount),
+                            '#c77700',
+                            9000
+                        );
+                    } else if (serviceUnavailable) {
                         const appliedText = dateUpdates > 0
                             ? `${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''} applied. `
                             : '';
@@ -14581,7 +14622,7 @@
                         );
                     }
                 }
-                setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows, monitoredNewDevices, confirmationRows, deadlinesMetRows, unavailableDevices.length), 150);
+                setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows, monitoredNewDevices, confirmationRows, deadlinesMetRows, unavailableDevices.length, incompleteData), 150);
             } catch (error) {
                 console.error('DOB Info Update failed:', error);
                 showMapNotification(
@@ -39351,7 +39392,9 @@
                             <div style="margin-bottom: 4px;">BINs scanned for other devices: <strong>${uniqueBins.length}</strong></div>
                             <div style="margin-bottom: 4px;">New devices not in your file: <strong style="color: ${newDevicesByBin.length > 0 ? '#ff9800' : 'var(--text-color)'};">${newDevicesByBin.length}</strong></div>
                             ${dobLookup.serviceUnavailable ? `<div style="margin-bottom: 8px; color: #c77700; font-weight: 600;">${esc(dobServiceUnavailableUserMessage(unavailableDeviceSet.size))}</div>` : ''}
-                            ${stillNotFound.length > 0 ? `<div style="margin-bottom: 4px; color: #ff6b6b;">Not found in DOB data: ${esc(stillNotFound.join(', '))}</div>` : ''}
+                            ${isDobDataLikelyIncomplete(uniqueDeviceNumbers.length - unavailableDeviceSet.size, new Set(stillNotFound).size)
+                                ? `<div style="margin-bottom: 8px; color: #c77700; font-weight: 600;">${esc(dobIncompleteDataUserMessage(new Set(stillNotFound).size, uniqueDeviceNumbers.length - unavailableDeviceSet.size))}</div>`
+                                : (stillNotFound.length > 0 ? `<div style="margin-bottom: 4px; color: #ff6b6b;">Not found in DOB data: ${esc(stillNotFound.join(', '))}</div>` : '')}
                             ${failedBins.length > 0 ? `<div style="margin-bottom: 4px; color: #ff6b6b;">BIN scan failed for: ${esc(failedBins.join(', '))}</div>` : ''}
                             <div style="margin: 10px 0; opacity: 0.8; font-size: 0.9em;">${saveHint}</div>
                             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0;">

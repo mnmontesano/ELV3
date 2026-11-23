@@ -16,7 +16,7 @@ function load(fetchImpl) {
         escapeMapSuggestionHtml: value => String(value == null ? '' : value)
     };
     vm.createContext(context);
-    vm.runInContext(`${html.slice(start, end)}\nthis.fetchCurrentDobDeviceRecords = fetchCurrentDobDeviceRecords;\nthis.dobServiceUnavailableUserMessage = dobServiceUnavailableUserMessage;\nthis.renderDobLookupErrorHtml = renderDobLookupErrorHtml;`, context);
+    vm.runInContext(`${html.slice(start, end)}\nthis.fetchCurrentDobDeviceRecords = fetchCurrentDobDeviceRecords;\nthis.dobServiceUnavailableUserMessage = dobServiceUnavailableUserMessage;\nthis.renderDobLookupErrorHtml = renderDobLookupErrorHtml;\nthis.isDobDataLikelyIncomplete = isDobDataLikelyIncomplete;\nthis.dobIncompleteDataUserMessage = dobIncompleteDataUserMessage;`, context);
     return context;
 }
 
@@ -86,5 +86,16 @@ const siteDown = await downAfterBatch.fetchCurrentDobDeviceRecords(['1P1', '1P2'
 assert.equal(siteDown.serviceUnavailable, true);
 assert.equal(JSON.stringify(siteDown.unavailableDevices), JSON.stringify(['1P1', '1P2', '1P3']));
 assert.equal(siteDown.failed.length, 0);
+
+const thinDataset = load(async () => ({ ok: true, status: 200, json: async () => [{ device_number: '1P1000' }] }));
+const thin = await thinDataset.fetchCurrentDobDeviceRecords(devices.slice(0, 40));
+assert.equal(thin.serviceUnavailable, false);
+assert.equal(thin.failed.length, 39);
+assert.equal(thinDataset.isDobDataLikelyIncomplete(40, thin.failed.length), true);
+assert.match(thinDataset.dobIncompleteDataUserMessage(39, 40), /looks incomplete/);
+assert.match(thinDataset.dobIncompleteDataUserMessage(39, 40), /39 of 40 devices/);
+assert.equal(thinDataset.isDobDataLikelyIncomplete(40, 3), false);
+assert.equal(thinDataset.isDobDataLikelyIncomplete(5, 5), false);
+assert.equal(thinDataset.isDobDataLikelyIncomplete(2185, 2185), true);
 
 console.log('DOB update outage checks passed');
