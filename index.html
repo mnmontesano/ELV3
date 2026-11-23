@@ -18,6 +18,7 @@
     <link rel="stylesheet" href="styles.css?v=20261101-popup-scroll">
     <!-- Pinned, locally hosted libraries for user-supplied document parsing. -->
     <script src="vendor/pdf-lib/pdf-lib.min.js?v=1.17.1"></script>
+    <script src="dob-backup.js?v=20261123-dob-backup"></script>
     
     <!-- Inline theme application to prevent flash: respect saved preference -->
     <script>
@@ -158,6 +159,7 @@
         <button onclick="popoutQuickLookup()" title="Open in new window" style="position: absolute; right: 44px; top: 10px; background: none; border: none; color: var(--text-color); font-size: 20px; cursor: pointer; transition: color 0.2s; line-height: 1;" aria-label="Pop out">⤢</button>
         <button onclick="toggleQuickLookup()" style="position: absolute; right: 10px; top: 10px; background: none; border: none; color: #ff6b6b; font-size: 20px; cursor: pointer; transition: color 0.2s; line-height: 1;">×</button>
         <h3 style="color: var(--text-color); margin-bottom: 15px; text-align: center;">ELV3 Lookup</h3>
+        <div id="quickDobBackupNotice" role="status" hidden style="margin-bottom: 12px; padding: 8px 10px; border-radius: 6px; border: 2px solid #ff9800; background: rgba(255,152,0,0.14); color: var(--text-color); font-size: 0.82em; line-height: 1.4;"></div>
         
         <!-- ELV3 Lookup Fields -->
         <div style="margin-bottom: 15px;">
@@ -799,6 +801,7 @@
     </div>
 
     <div id="dobContent" class="content-section">
+        <div id="dobBackupNotice" role="status" hidden style="max-width: 800px; margin: 16px auto 0; padding: 12px 14px; border-radius: 6px; border: 2px solid #ff9800; background: rgba(255,152,0,0.14); color: var(--text-color); font-size: 0.92em; line-height: 1.45;"></div>
         <!-- The quickLookupPanel has been moved outside the tab for access from any tab -->
         
         <!-- Add ELV3 Lookup toggle button -->
@@ -12124,17 +12127,29 @@
             return '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
         }
 
-        async function fetchDobApiJson(url, errorMessage) {
+        async function fetchDobApiJson(url, errorMessage, init) {
             let lastError = null;
             for (let attempt = 1; attempt <= 3; attempt++) {
                 try {
-                    const response = await fetch(url);
+                    const response = await fetch(url, init);
                     if (!response.ok) {
                         const err = new Error(`${errorMessage} (${response.status})`);
                         err.status = response.status;
                         throw err;
                     }
-                    return await response.json();
+                    const data = await response.json();
+                    const backupAt = response.headers && typeof response.headers.get === 'function'
+                        ? response.headers.get('X-ELV3-Dob-Backup')
+                        : '';
+                    if (backupAt && Array.isArray(data)) {
+                        data.forEach(row => {
+                            if (row && typeof row === 'object' && row._dobBackup) {
+                                Object.defineProperty(row, 'dobBackupCapturedAt', { value: row._dobBackup });
+                                delete row._dobBackup;
+                            }
+                        });
+                    }
+                    return data;
                 } catch (error) {
                     lastError = error;
                     if (!isDobServiceUnavailableError(error) || attempt === 3) throw error;
@@ -12144,13 +12159,14 @@
             throw lastError;
         }
 
-        async function fetchCurrentDobDeviceRecord(deviceNumber) {
+        async function fetchCurrentDobDeviceRecord(deviceNumber, init) {
             const params = new URLSearchParams();
             params.set('device_number', deviceNumber);
             params.set('$limit', '1');
             const data = await fetchDobApiJson(
                 `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?${params.toString()}`,
-                `DOB lookup failed for ${deviceNumber}`
+                `DOB lookup failed for ${deviceNumber}`,
+                init
             );
             return data && data.length > 0 ? data[0] : null;
         }
@@ -12173,12 +12189,12 @@
             await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), list.length) }, worker));
         }
 
-        async function fetchDobDeviceRecordsChunk(deviceNumbers) {
+        async function fetchDobDeviceRecordsChunk(deviceNumbers, init) {
             const chunk = (deviceNumbers || []).map(d => String(d || '').trim().toUpperCase()).filter(Boolean);
             if (chunk.length === 0) return {};
             const list = chunk.map(d => `'${d.replace(/'/g, "''")}'`).join(',');
             const url = `https://data.cityofnewyork.us/resource/e5aq-a4j2.json?$where=${encodeURIComponent(`upper(device_number) in(${list})`)}&$limit=${chunk.length * 3}`;
-            const data = await fetchDobApiJson(url, 'DOB batch lookup failed');
+            const data = await fetchDobApiJson(url, 'DOB batch lookup failed', init);
             const found = {};
             (Array.isArray(data) ? data : []).forEach(rec => {
                 const key = String(rec && rec.device_number || '').trim().toUpperCase();
@@ -12402,7 +12418,8 @@
 
         // One HTTP call per device made large map refreshes take minutes. Batch + limited
         // concurrency cuts that to a handful of SODA queries, with per-device fallback.
-        async function fetchCurrentDobDeviceRecords(deviceNumbers, onProgress) {
+        async function fetchCurrentDobDeviceRecords(deviceNumbers, onProgress, options) {
+            const liveOnly = options && options.liveOnly ? { headers: { 'X-ELV3-Dob-Live-Only': '1' } } : undefined;
             const numbers = Array.from(new Set(
                 (deviceNumbers || []).map(d => String(d || '').trim().toUpperCase()).filter(Boolean)
             ));
@@ -12429,7 +12446,7 @@
                 let unavailable = false;
                 for (let round = 0; round <= DOB_UNAVAILABLE_BATCH_RETRIES && !found; round++) {
                     try {
-                        found = await fetchDobDeviceRecordsChunk(chunk);
+                        found = await fetchDobDeviceRecordsChunk(chunk, liveOnly);
                     } catch (error) {
                         unavailable = isDobServiceUnavailableError(error);
                         if (!unavailable) {
@@ -12459,7 +12476,7 @@
                             continue;
                         }
                         try {
-                            const rec = await fetchCurrentDobDeviceRecord(deviceNumber);
+                            const rec = await fetchCurrentDobDeviceRecord(deviceNumber, liveOnly);
                             if (rec) freshByDevice[deviceNumber] = rec;
                             else failed.push(deviceNumber);
                         } catch (deviceError) {
@@ -13627,6 +13644,8 @@
 
         function mergeDobDeviceRecord(savedDevice, freshDevice) {
             if (!savedDevice || !freshDevice) return [];
+            // Backup rows are for lookups. They must not roll saved test dates backward.
+            if (freshDevice.dobBackupCapturedAt || freshDevice._dobBackup) return [];
 
             const priorDates = {
                 cat1: normalizeDobDateValue(savedDevice.cat1_latest_report_filed),
@@ -14509,7 +14528,7 @@
                 const { freshByDevice, failed, unavailableDevices, serviceUnavailable } = await fetchCurrentDobDeviceRecords(uniqueDeviceNumbers, (done) => {
                     completedSteps = done;
                     reportProgress('Updating');
-                });
+                }, { liveOnly: true });
                 completedSteps = uniqueDeviceNumbers.length;
                 const answeredCount = uniqueDeviceNumbers.length - unavailableDevices.length;
                 const notFoundCount = failed.length;
@@ -19070,6 +19089,7 @@
                     <div>Missing devices found: <strong style="color:${pending.length ? '#0d6efd' : 'inherit'};">${pending.length}</strong></div>
                     <div>Added to the map: <strong style="color:${added.length ? '#0d6efd' : 'inherit'};">${added.length}</strong>${naCount ? ` <span style="color:#3949ab;font-weight:800;">(${naCount} N/A)</span>` : ''}</div>
                     <div>Not found in DOB: <strong style="color:${notFound.length ? '#ff6b6b' : 'inherit'};">${notFound.length}</strong></div>
+                    ${summary.backupCount ? `<div style="margin-top:6px; color:#c77700; font-weight:700;">${summary.backupCount} of those matches came from the DOB backup because NYC Open Data did not have them. Their inspection dates are from the backup.</div>` : ''}
                     ${summary.skippedBins.length ? `<div>BIN numbers skipped: <strong>${summary.skippedBins.length}</strong></div>` : ''}
                     ${summary.skippedOther.length ? `<div>Other values skipped: <strong>${summary.skippedOther.length}</strong></div>` : ''}
                     ${pending.length ? `<button type="button" onclick="showMissingDevicesPicker()" class="mcp-btn" style="color:#0d6efd; font-weight:700;">Choose devices to add</button>` : ''}
@@ -19459,12 +19479,14 @@
                     pendingMissingDeviceRecords[choice.deviceNumber] = lookup.freshByDevice[choice.deviceNumber];
                 });
 
+                const backupCount = foundNumbers.filter(deviceNumber => lookup.freshByDevice[deviceNumber] && lookup.freshByDevice[deviceNumber].dobBackupCapturedAt).length;
                 lastMapMissingDeviceImport = {
                     ...summary,
                     added: [],
                     notFound,
                     pendingChoices: choices,
-                    failed: lookup.failed || []
+                    failed: lookup.failed || [],
+                    backupCount
                 };
                 renderMapMissingDevicesResult(lastMapMissingDeviceImport);
                 refreshMapMissingDevicesFileCount();
@@ -38981,7 +39003,7 @@
 
         /** Fetch device records for many device numbers in batched SoQL "in" queries. */
         async function fetchDeviceRecordsBatch(deviceNumbers) {
-            return fetchCurrentDobDeviceRecords(deviceNumbers);
+            return fetchCurrentDobDeviceRecords(deviceNumbers, null, { liveOnly: true });
         }
 
         /** Open a previously exported bulk file for refresh (File System Access API when available). */
