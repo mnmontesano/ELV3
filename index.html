@@ -8042,7 +8042,7 @@
                 }
             } catch (error) {
                 setDobNowBinSearchIdentity(null);
-                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
+                resultDiv.innerHTML = renderDobLookupErrorHtml(error);
                 console.error('Error:', error);
                 window.lastBinSearchResults = null;
                 document.getElementById('binExportButton').style.display = 'none';
@@ -9918,7 +9918,7 @@
                 window.bulkLookupSessions[session.resultDivId] = session;
                 await renderBulkLookupResults(session, { isNewSearch: true });
             } catch (error) {
-                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
+                resultDiv.innerHTML = renderDobLookupErrorHtml(error);
                 console.error('Error:', error);
             }
         }
@@ -11265,7 +11265,7 @@
                 document.getElementById(session.exportBtnId).style.display = 'block';
                 document.getElementById(session.mapBtnId).style.display = 'block';
             } catch (error) {
-                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
+                resultDiv.innerHTML = renderDobLookupErrorHtml(error);
                 console.error('Error:', error);
             }
         }
@@ -12095,6 +12095,21 @@
             return status === 0 || status === 429 || status >= 500;
         }
 
+        function dobServiceUnavailableUserMessage(deviceCount) {
+            const count = Number(deviceCount) || 0;
+            const skipped = count > 0
+                ? ` ${count} device${count === 1 ? ' was' : 's were'} not checked.`
+                : '';
+            return `NYC Open Data is temporarily unavailable.${skipped} The city website that supplies DOB device records did not respond, so this is not a missing-device result. Try the lookup again in a few minutes.`;
+        }
+
+        function renderDobLookupErrorHtml(error) {
+            if (typeof isDobServiceUnavailableError === 'function' && isDobServiceUnavailableError(error)) {
+                return `<span style="color: #c77700; font-weight: 600;">${escapeMapSuggestionHtml(dobServiceUnavailableUserMessage())}</span>`;
+            }
+            return '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
+        }
+
         async function fetchDobApiJson(url, errorMessage) {
             let lastError = null;
             for (let attempt = 1; attempt <= 3; attempt++) {
@@ -12379,13 +12394,16 @@
             ));
             const freshByDevice = {};
             const failed = [];
+            const unavailableDevices = [];
             let completed = 0;
 
             const report = () => {
                 if (typeof onProgress === 'function') onProgress(completed, numbers.length);
             };
             report();
-            if (numbers.length === 0) return { freshByDevice, failed };
+            if (numbers.length === 0) {
+                return { freshByDevice, failed, unavailableDevices, serviceUnavailable: false };
+            }
 
             const chunks = [];
             for (let i = 0; i < numbers.length; i += DOB_DEVICE_BATCH_SIZE) {
@@ -12418,12 +12436,12 @@
                     });
                 } else if (unavailable) {
                     // One request per device would only multiply the load on a service that is already down.
-                    chunk.forEach(deviceNumber => failed.push(deviceNumber));
+                    chunk.forEach(deviceNumber => unavailableDevices.push(deviceNumber));
                 } else {
                     let serviceDown = false;
                     for (const deviceNumber of chunk) {
                         if (serviceDown) {
-                            failed.push(deviceNumber);
+                            unavailableDevices.push(deviceNumber);
                             continue;
                         }
                         try {
@@ -12432,8 +12450,12 @@
                             else failed.push(deviceNumber);
                         } catch (deviceError) {
                             console.warn('DOB info update failed for device:', deviceNumber, deviceError);
-                            failed.push(deviceNumber);
-                            serviceDown = isDobServiceUnavailableError(deviceError);
+                            if (isDobServiceUnavailableError(deviceError)) {
+                                unavailableDevices.push(deviceNumber);
+                                serviceDown = true;
+                            } else {
+                                failed.push(deviceNumber);
+                            }
                         }
                     }
                 }
@@ -12442,7 +12464,12 @@
                 report();
             });
 
-            return { freshByDevice, failed };
+            return {
+                freshByDevice,
+                failed,
+                unavailableDevices,
+                serviceUnavailable: unavailableDevices.length > 0
+            };
         }
 
         async function fetchDobDevicesForBin(bin) {
@@ -14223,7 +14250,7 @@
             }
         }
 
-        function showDobInfoUpdateChangesModal(changeRows, failedDevices, autoCompletedRows, monitoredNewDevices, confirmationRows, deadlinesMetRows) {
+        function showDobInfoUpdateChangesModal(changeRows, failedDevices, autoCompletedRows, monitoredNewDevices, confirmationRows, deadlinesMetRows, unavailableDeviceCount) {
             const existing = document.getElementById('dobInfoUpdateChangesModal');
             if (existing) existing.remove();
 
@@ -14348,6 +14375,14 @@
                 </details>`
                 : '';
 
+            const unavailableCount = Number(unavailableDeviceCount) || 0;
+            const serviceUnavailableHtml = unavailableCount > 0
+                ? `<div style="margin-bottom:10px; padding:12px; border-radius:8px; background:rgba(199,119,0,0.12); border:1px solid rgba(199,119,0,0.45); color:var(--text-color); font-size:0.92em; line-height:1.45;">
+                    <div style="font-weight:700; color:#c77700; margin-bottom:4px;">DOB website unavailable</div>
+                    <div>${escapeMapSuggestionHtml(dobServiceUnavailableUserMessage(unavailableCount))}</div>
+                </div>`
+                : '';
+
             const failuresHtml = failures.length > 0
                 ? `<div style="margin-top:10px; padding:9px 10px; border-radius:8px; background:rgba(255,107,107,0.1); border:1px solid rgba(255,107,107,0.35); color:#ff6b6b; font-size:0.9em;">
                     Could not update ${failures.length} device${failures.length !== 1 ? 's' : ''}: ${escapeMapSuggestionHtml(failures.join(', '))}
@@ -14355,6 +14390,7 @@
                 : '';
 
             const summaryParts = [];
+            if (unavailableCount > 0) summaryParts.push(`NYC Open Data was unavailable, so ${unavailableCount} device${unavailableCount !== 1 ? 's were' : ' was'} not checked`);
             summaryParts.push(`${changes.length} date change${changes.length !== 1 ? 's' : ''} applied to saved device records`);
             if (monitoredFound.length) summaryParts.push(`${monitoredFound.length} new device${monitoredFound.length !== 1 ? 's' : ''} found on radar-monitored buildings`);
             if (autoCompleted.length) summaryParts.push(`${autoCompleted.length} building${autoCompleted.length !== 1 ? 's' : ''} auto-marked completed`);
@@ -14379,6 +14415,7 @@
                         </div>
                     </div>
                     <div style="padding:8px 18px 16px; overflow-y:auto;">
+                        ${serviceUnavailableHtml}
                         ${monitoredHtml}
                         ${dobConfirmationHtml}
                         ${autoCompletedHtml}
@@ -14442,7 +14479,7 @@
             );
 
             try {
-                const { freshByDevice, failed } = await fetchCurrentDobDeviceRecords(uniqueDeviceNumbers, (done) => {
+                const { freshByDevice, failed, unavailableDevices, serviceUnavailable } = await fetchCurrentDobDeviceRecords(uniqueDeviceNumbers, (done) => {
                     completedSteps = done;
                     reportProgress('Updating');
                 });
@@ -14487,7 +14524,9 @@
                 const confirmationRows = recordMapDobCompletionConfirmations(touchedBins, changeRows, dobDetectedAt);
                 const autoCompletedRows = autoCompleteMapBuildingsFromDobUpdate(touchedBins);
 
-                setMapDobInfoUpdatedAt(Date.now());
+                if (!serviceUnavailable || Object.keys(freshByDevice).length > 0) {
+                    setMapDobInfoUpdatedAt(Date.now());
+                }
                 updateDobInfoButtonState(true, 'Refreshing map...', 100);
                 // Yield so the button label can paint before the synchronous map rebuild.
                 await new Promise(resolve => setTimeout(resolve, 0));
@@ -14511,30 +14550,47 @@
                 }
 
                 if (!refreshFailed) {
-                    const saveHint = currentMapViewFileHandle
-                        ? ' Click Save to overwrite the linked file.'
-                        : ' Save the map view to keep these updates in your file.';
-                    const autoCompleteText = autoCompletedRows.length > 0
-                        ? ` ${autoCompletedRows.length} building${autoCompletedRows.length !== 1 ? 's' : ''} auto-marked completed.`
-                        : '';
-                    const confirmationText = confirmationRows.length > 0
-                        ? ` DOB posting delay recorded for ${confirmationRows.length} building${confirmationRows.length !== 1 ? 's' : ''}.`
-                        : '';
-                    const deadlinesMetText = deadlinesMetRows.length > 0
-                        ? ` ${deadlinesMetRows.length} testing deadline${deadlinesMetRows.length !== 1 ? 's' : ''} removed — testing completed on time.`
-                        : '';
-                    const monitorText = monitoredNewDevices.length > 0
-                        ? ` 📡 ${monitoredNewDevices.length} new device${monitoredNewDevices.length !== 1 ? 's' : ''} on monitored buildings.`
-                        : (monitoredTargets.length > 0 ? ' No new devices on monitored buildings.' : '');
-                    showMapNotification(
-                        `DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${monitorText}${autoCompleteText}${deadlinesMetText}${confirmationText}${saveHint}`,
-                        dateUpdates > 0 || monitoredNewDevices.length > 0 || autoCompletedRows.length > 0 || confirmationRows.length > 0 || deadlinesMetRows.length > 0 ? '#27ae60' : '#17a2b8'
-                    );
+                    if (serviceUnavailable) {
+                        const appliedText = dateUpdates > 0
+                            ? `${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''} applied. `
+                            : '';
+                        showMapNotification(
+                            appliedText + dobServiceUnavailableUserMessage(unavailableDevices.length),
+                            '#c77700',
+                            9000
+                        );
+                    } else {
+                        const saveHint = currentMapViewFileHandle
+                            ? ' Click Save to overwrite the linked file.'
+                            : ' Save the map view to keep these updates in your file.';
+                        const autoCompleteText = autoCompletedRows.length > 0
+                            ? ` ${autoCompletedRows.length} building${autoCompletedRows.length !== 1 ? 's' : ''} auto-marked completed.`
+                            : '';
+                        const confirmationText = confirmationRows.length > 0
+                            ? ` DOB posting delay recorded for ${confirmationRows.length} building${confirmationRows.length !== 1 ? 's' : ''}.`
+                            : '';
+                        const deadlinesMetText = deadlinesMetRows.length > 0
+                            ? ` ${deadlinesMetRows.length} testing deadline${deadlinesMetRows.length !== 1 ? 's' : ''} removed — testing completed on time.`
+                            : '';
+                        const monitorText = monitoredNewDevices.length > 0
+                            ? ` 📡 ${monitoredNewDevices.length} new device${monitoredNewDevices.length !== 1 ? 's' : ''} on monitored buildings.`
+                            : (monitoredTargets.length > 0 ? ' No new devices on monitored buildings.' : '');
+                        showMapNotification(
+                            `DOB update complete: ${dateUpdates} test date update${dateUpdates !== 1 ? 's' : ''}.${monitorText}${autoCompleteText}${deadlinesMetText}${confirmationText}${saveHint}`,
+                            dateUpdates > 0 || monitoredNewDevices.length > 0 || autoCompletedRows.length > 0 || confirmationRows.length > 0 || deadlinesMetRows.length > 0 ? '#27ae60' : '#17a2b8'
+                        );
+                    }
                 }
-                setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows, monitoredNewDevices, confirmationRows, deadlinesMetRows), 150);
+                setTimeout(() => showDobInfoUpdateChangesModal(changeRows, failed, autoCompletedRows, monitoredNewDevices, confirmationRows, deadlinesMetRows, unavailableDevices.length), 150);
             } catch (error) {
                 console.error('DOB Info Update failed:', error);
-                showMapNotification('DOB Info Update failed. Please try again.', '#ff6b6b');
+                showMapNotification(
+                    isDobServiceUnavailableError(error)
+                        ? dobServiceUnavailableUserMessage()
+                        : 'DOB Info Update failed. Please try again.',
+                    isDobServiceUnavailableError(error) ? '#c77700' : '#ff6b6b',
+                    isDobServiceUnavailableError(error) ? 9000 : undefined
+                );
             } finally {
                 updateDobInfoButtonState(false);
             }
@@ -38884,8 +38940,7 @@
 
         /** Fetch device records for many device numbers in batched SoQL "in" queries. */
         async function fetchDeviceRecordsBatch(deviceNumbers) {
-            const { freshByDevice } = await fetchCurrentDobDeviceRecords(deviceNumbers);
-            return freshByDevice;
+            return fetchCurrentDobDeviceRecords(deviceNumbers);
         }
 
         /** Open a previously exported bulk file for refresh (File System Access API when available). */
@@ -39068,7 +39123,9 @@
                 }
 
                 const uniqueDeviceNumbers = [...new Set(dataRows.map(d => d.deviceNumber))];
-                const deviceRecords = await fetchDeviceRecordsBatch(uniqueDeviceNumbers);
+                const dobLookup = await fetchDeviceRecordsBatch(uniqueDeviceNumbers);
+                const deviceRecords = dobLookup.freshByDevice || {};
+                const unavailableDeviceSet = new Set(dobLookup.unavailableDevices || []);
 
                 // Fetch violations and machine type with limited concurrency
                 const needViolations = presentViolationCols.length > 0;
@@ -39103,7 +39160,7 @@
                 dataRows.forEach(({ rowIndex, deviceNumber }) => {
                     const record = deviceRecords[deviceNumber];
                     if (!record) {
-                        stillNotFound.push(deviceNumber);
+                        if (!unavailableDeviceSet.has(deviceNumber)) stillNotFound.push(deviceNumber);
                         return;
                     }
                     const extra = extras[deviceNumber] || { violations: [], machineType: '' };
@@ -39293,6 +39350,7 @@
                             <div style="margin-bottom: 4px;">Values refreshed: <strong>${changes.length}</strong></div>
                             <div style="margin-bottom: 4px;">BINs scanned for other devices: <strong>${uniqueBins.length}</strong></div>
                             <div style="margin-bottom: 4px;">New devices not in your file: <strong style="color: ${newDevicesByBin.length > 0 ? '#ff9800' : 'var(--text-color)'};">${newDevicesByBin.length}</strong></div>
+                            ${dobLookup.serviceUnavailable ? `<div style="margin-bottom: 8px; color: #c77700; font-weight: 600;">${esc(dobServiceUnavailableUserMessage(unavailableDeviceSet.size))}</div>` : ''}
                             ${stillNotFound.length > 0 ? `<div style="margin-bottom: 4px; color: #ff6b6b;">Not found in DOB data: ${esc(stillNotFound.join(', '))}</div>` : ''}
                             ${failedBins.length > 0 ? `<div style="margin-bottom: 4px; color: #ff6b6b;">BIN scan failed for: ${esc(failedBins.join(', '))}</div>` : ''}
                             <div style="margin: 10px 0; opacity: 0.8; font-size: 0.9em;">${saveHint}</div>
@@ -39363,7 +39421,10 @@
             } catch (error) {
                 console.error('Error updating exported file:', error);
                 if (resultDiv) {
-                    resultDiv.innerHTML = `<div style="padding: 15px;"><span style="color: #ff6b6b; font-weight: 500;">Error updating file: ${esc(error.message)}</span></div>`;
+                    const fileError = isDobServiceUnavailableError(error)
+                        ? dobServiceUnavailableUserMessage()
+                        : `Error updating file: ${error.message || 'Please try again.'}`;
+                    resultDiv.innerHTML = `<div style="padding: 15px;"><span style="color: ${isDobServiceUnavailableError(error) ? '#c77700' : '#ff6b6b'}; font-weight: 600;">${esc(fileError)}</span></div>`;
                     resultDiv.style.display = 'block';
                 }
             }
@@ -41031,7 +41092,7 @@
                     document.getElementById('binExportButton').style.display = 'none';
                 }
             } catch (error) {
-                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
+                resultDiv.innerHTML = renderDobLookupErrorHtml(error);
                 console.error('Error:', error);
                 window.lastBinSearchResults = null;
                 document.getElementById('binExportButton').style.display = 'none';
@@ -41235,7 +41296,7 @@
                 // Show the export button if we have results
                 document.getElementById('exportButton').style.display = 'block';
             } catch (error) {
-                resultDiv.innerHTML = '<span style="color: #ff6b6b; font-weight: 500;">Error looking up devices. Please try again later.</span>';
+                resultDiv.innerHTML = renderDobLookupErrorHtml(error);
                 console.error('Error:', error);
                 document.getElementById('exportButton').style.display = 'none';
             }
